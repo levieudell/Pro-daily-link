@@ -159,7 +159,7 @@
         <label>Office summary<textarea id="report-summary" rows="3" placeholder="AI will draft this summary. Tap here to correct it."></textarea></label>
         <div class="section-heading"><h3>Production completed</h3><div><button type="button" id="add-production-row">＋ Estimate item</button><button type="button" id="add-custom-production">＋ Custom work</button></div></div>
         <div id="production-rows"></div>
-        <fieldset class="labor-fieldset"><legend>Individual labor hours</legend><div id="report-labor-list"></div></fieldset>
+        <fieldset class="labor-fieldset"><legend>Individual labor hours</legend><small class="input-help">Calculated from the workday clock. Tap any person’s hours to correct them before submitting.</small><div id="report-labor-list"></div></fieldset>
         <div class="two-col"><label>Materials used<textarea id="report-materials" rows="2" placeholder="Concrete, fasteners, pipe…"></textarea></label><label>Equipment used<textarea id="report-equipment" rows="2" placeholder="Pump, excavator, lift…"></textarea></label></div>
         <div class="two-col"><label>Delays / issues<textarea id="report-delays" rows="2" placeholder="Cause and duration"></textarea></label><label>Safety observations<textarea id="report-safety" rows="2" placeholder="Positive observations or incidents"></textarea></label></div>
         <label>Next step<textarea id="report-next" rows="2" placeholder="What should happen next? Leave blank if unknown."></textarea></label>
@@ -265,6 +265,7 @@
       <div id="end-day-summary" class="weather-row"></div>
       <label>What was completed?<textarea id="end-day-notes" rows="6" placeholder="Speak or type what the crew accomplished, quantities, delays, and tomorrow's plan." required></textarea></label>
       <button type="button" class="secondary" id="end-day-voice">🎙 Speak completed work</button>
+      <label>What happens next?<textarea id="end-day-next" rows="2" placeholder="Optional: tomorrow’s plan, follow-up work, or what the office needs to arrange."></textarea></label>
       <label>End-of-day photos<input type="file" id="end-day-photos" accept="image/jpeg,image/png,image/webp" multiple capture="environment" /><small class="input-help">Add progress and completed-work photos.</small></label>
       <div class="timestamp-preview">End time and total hours will be calculated when you finish.</div>
       <div class="modal-actions"><button value="cancel" class="secondary">Not yet</button><button type="button" class="primary big-action" id="confirm-end-day">■ End day & build report</button></div>
