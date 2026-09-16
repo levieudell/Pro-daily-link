@@ -1,0 +1,23 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: pro-daily-link-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: pro_daily_link
+      POSTGRES_USER: pro_daily_link
+      POSTGRES_PASSWORD: ${PDL_POSTGRES_PASSWORD:?Set PDL_POSTGRES_PASSWORD in .env}
+    ports:
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - pro_daily_link_postgres:/var/lib/postgresql/data
+      - ./database/001_tenant_foundation.sql:/docker-entrypoint-initdb.d/001_tenant_foundation.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U pro_daily_link -d pro_daily_link"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+
+volumes:
+  pro_daily_link_postgres:
+    name: pro-daily-link-postgres-data

@@ -1,0 +1,17 @@
+BEGIN;
+CREATE EXTENSION IF NOT EXISTS pgtap;
+SELECT plan(8);
+SELECT set_config('app.company_id','11111111-1111-1111-1111-111111111111',true);
+INSERT INTO companies(id,slug,name) VALUES ('11111111-1111-1111-1111-111111111111','company-a','Company A'),('22222222-2222-2222-2222-222222222222','company-b','Company B');
+INSERT INTO customers(company_id,name) VALUES ('11111111-1111-1111-1111-111111111111','A Customer');
+SELECT is((SELECT count(*)::int FROM customers),1,'Company A sees its customer');
+SELECT set_config('app.company_id','22222222-2222-2222-2222-222222222222',true);
+SELECT is((SELECT count(*)::int FROM customers),0,'Company B cannot see Company A customer');
+SELECT throws_ok($$ INSERT INTO customers(company_id,name) VALUES ('11111111-1111-1111-1111-111111111111','Cross tenant') $$,'42501',NULL,'Company B cannot insert for Company A');
+SELECT is((WITH changed AS (UPDATE customers SET name='Stolen' WHERE company_id='11111111-1111-1111-1111-111111111111' RETURNING 1) SELECT count(*)::int FROM changed),0,'Company B cannot update Company A rows');
+SELECT is((SELECT count(*)::int FROM projects),0,'No foreign projects visible');
+SELECT is((SELECT count(*)::int FROM reports),0,'No foreign reports visible');
+SELECT is((SELECT count(*)::int FROM photos),0,'No foreign photos visible');
+SELECT is((SELECT count(*)::int FROM guest_links),0,'No foreign guest links visible');
+SELECT * FROM finish();
+ROLLBACK;

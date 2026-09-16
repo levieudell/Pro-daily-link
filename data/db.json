@@ -1,0 +1,507 @@
+{
+  "company": {
+    "id": "northstar",
+    "name": "Northstar Construction"
+  },
+  "users": [
+    {
+      "id": 1,
+      "name": "Levi Foreman",
+      "email": "owner@northstar.local",
+      "role": "owner",
+      "projectIds": [],
+      "memberId": null,
+      "status": "Active",
+      "mustSetPassword": false,
+      "createdAt": "2026-09-15T00:00:00.000Z"
+    }
+  ],
+  "customers": [
+    {
+      "id": 1,
+      "name": "Apex Health Partners",
+      "contact": "Dana Walsh",
+      "email": "dana@apexhealth.example",
+      "phone": "(916) 555-0142"
+    },
+    {
+      "id": 2,
+      "name": "Briar Residential",
+      "contact": "Nina Price",
+      "email": "nina@briar.example",
+      "phone": "(916) 555-0188"
+    },
+    {
+      "id": 3,
+      "name": "Westline Logistics",
+      "contact": "Grant Hill",
+      "email": "grant@westline.example",
+      "phone": "(530) 555-0107"
+    },
+    {
+      "id": 4,
+      "name": "Twin Rivers USD",
+      "contact": "Maya Chen",
+      "email": "maya@trusd.example",
+      "phone": "(916) 555-0191"
+    },
+    {
+      "id": 5,
+      "name": "Linden Commercial",
+      "contact": "Owen Brooks",
+      "email": "owen@linden.example",
+      "phone": "(707) 555-0134"
+    }
+  ],
+  "projects": [
+    {
+      "id": 1,
+      "customerId": 1,
+      "name": "Riverside Medical Center",
+      "customer": "Apex Health Partners",
+      "code": "RMC",
+      "color": "#dcebe4",
+      "site": "1240 River Rd, Sacramento",
+      "crew": 9,
+      "progress": 68,
+      "production": 96.4,
+      "status": "On track",
+      "budget": "$1.82M",
+      "startDate": "2026-04-06",
+      "endDate": "2026-11-20",
+      "supervisor": "Marcus Reed",
+      "siteContact": "Dana Walsh · (916) 555-0142",
+      "estimateItems": [
+        {
+          "id": 1,
+          "name": "Foundation concrete",
+          "plannedQuantity": 1250,
+          "unit": "CY",
+          "budgetHours": 2400,
+          "cost": 385000
+        },
+        {
+          "id": 2,
+          "name": "Structural slab",
+          "plannedQuantity": 84000,
+          "unit": "SF",
+          "budgetHours": 3150,
+          "cost": 472000
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "customerId": 2,
+      "name": "Oakview Apartments",
+      "customer": "Briar Residential",
+      "code": "OA",
+      "color": "#e6e1f2",
+      "site": "88 Oakview Dr, Roseville",
+      "crew": 7,
+      "progress": 42,
+      "production": 91.2,
+      "status": "At risk",
+      "budget": "$940K",
+      "startDate": "2026-06-01",
+      "endDate": "2027-02-12",
+      "supervisor": "Tyler Morgan",
+      "siteContact": "Nina Price · (916) 555-0188",
+      "estimateItems": [
+        {
+          "id": 1,
+          "name": "Wood framing",
+          "plannedQuantity": 148000,
+          "unit": "SF",
+          "budgetHours": 5200,
+          "cost": 510000
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "customerId": 3,
+      "name": "Westline Distribution Hub",
+      "customer": "Westline Logistics",
+      "code": "WD",
+      "color": "#e3edf2",
+      "site": "4500 Commerce Way, Elk Grove",
+      "crew": 12,
+      "progress": 81,
+      "production": 102.8,
+      "status": "Ahead",
+      "budget": "$2.45M",
+      "startDate": "2026-01-12",
+      "endDate": "2026-10-30",
+      "supervisor": "Aaron Kim",
+      "siteContact": "Grant Hill · (530) 555-0107",
+      "estimateItems": [
+        {
+          "id": 1,
+          "name": "Tilt wall panels",
+          "plannedQuantity": 164,
+          "unit": "EA",
+          "budgetHours": 1960,
+          "cost": 625000
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "customerId": 4,
+      "name": "Cedar Grove Elementary",
+      "customer": "Twin Rivers USD",
+      "code": "CG",
+      "color": "#f5ead7",
+      "site": "307 Cedar St, Folsom",
+      "crew": 6,
+      "progress": 24,
+      "production": 88.7,
+      "status": "At risk",
+      "budget": "$710K",
+      "startDate": "2026-08-03",
+      "endDate": "2027-05-28",
+      "supervisor": "Sam Patel",
+      "siteContact": "Maya Chen · (916) 555-0191",
+      "estimateItems": []
+    },
+    {
+      "id": 5,
+      "customerId": 5,
+      "name": "Parkway Retail Center",
+      "customer": "Linden Commercial",
+      "code": "PR",
+      "color": "#e2eee9",
+      "site": "860 Parkway Blvd, Davis",
+      "crew": 0,
+      "progress": 93,
+      "production": 99.1,
+      "status": "On track",
+      "budget": "$1.15M",
+      "startDate": "2025-11-10",
+      "endDate": "2026-09-30",
+      "supervisor": "Chris Bennett",
+      "siteContact": "Owen Brooks · (707) 555-0134",
+      "estimateItems": []
+    },
+    {
+      "id": 6,
+      "customerId": 1,
+      "customer": "Apex Health Partners",
+      "name": "rosewood remodel",
+      "code": "RMC",
+      "budget": "$0",
+      "site": "123 main street new york city new york",
+      "startDate": "",
+      "endDate": "",
+      "supervisor": "",
+      "siteContact": "",
+      "estimateItems": [
+        {
+          "id": 1,
+          "name": "mobilization",
+          "plannedQuantity": 3,
+          "unit": "EA",
+          "budgetHours": 0,
+          "cost": 0
+        }
+      ],
+      "color": "#e7effd",
+      "crew": 0,
+      "progress": 0,
+      "production": 0,
+      "status": "On track"
+    }
+  ],
+  "team": [
+    {
+      "id": 1,
+      "name": "Marcus Reed",
+      "role": "General Foreman",
+      "initials": "MR",
+      "crew": "Crew A",
+      "hours": 38,
+      "site": "Riverside Medical"
+    },
+    {
+      "id": 2,
+      "name": "Diego Santos",
+      "role": "Concrete Finisher",
+      "initials": "DS",
+      "crew": "Crew A",
+      "hours": 40,
+      "site": "Riverside Medical"
+    },
+    {
+      "id": 3,
+      "name": "Jamal Brooks",
+      "role": "Carpenter",
+      "initials": "JB",
+      "crew": "Crew B",
+      "hours": 36,
+      "site": "Oakview Apartments"
+    },
+    {
+      "id": 4,
+      "name": "Aaron Kim",
+      "role": "Equipment Operator",
+      "initials": "AK",
+      "crew": "Crew C",
+      "hours": 40,
+      "site": "Westline Hub"
+    },
+    {
+      "id": 5,
+      "name": "Luis Herrera",
+      "role": "Laborer",
+      "initials": "LH",
+      "crew": "Crew A",
+      "hours": 34,
+      "site": "Riverside Medical"
+    },
+    {
+      "id": 6,
+      "name": "Tyler Morgan",
+      "role": "Site Supervisor",
+      "initials": "TM",
+      "crew": "Crew B",
+      "hours": 39,
+      "site": "Oakview Apartments"
+    },
+    {
+      "id": 7,
+      "name": "Chris Bennett",
+      "role": "Electrician",
+      "initials": "CB",
+      "crew": "Crew C",
+      "hours": 32,
+      "site": "Westline Hub"
+    },
+    {
+      "id": 8,
+      "name": "Sam Patel",
+      "role": "Laborer",
+      "initials": "SP",
+      "crew": "Crew D",
+      "hours": 28,
+      "site": "Cedar Grove"
+    }
+  ],
+  "reports": [
+    {
+      "project": 0,
+      "dateIso": "2026-09-15",
+      "notes": "No delays today.",
+      "status": "Draft",
+      "foreman": "Levi Foreman",
+      "summary": "",
+      "next": "",
+      "weather": "",
+      "temperature": "",
+      "productionEntries": [],
+      "laborEntries": [],
+      "materials": "",
+      "equipment": "",
+      "delays": "",
+      "safety": "",
+      "signature": "",
+      "id": 6,
+      "date": "Sep 15",
+      "originalNotes": "No delays today.",
+      "noteLanguage": "en",
+      "englishTranslation": "No delays today.",
+      "labor": "",
+      "quantity": "",
+      "history": [
+        {
+          "action": "Draft saved",
+          "by": "Levi Foreman",
+          "at": "2026-09-16T06:19:45.431Z"
+        }
+      ],
+      "flags": []
+    },
+    {
+      "id": 5,
+      "project": 0,
+      "date": "Sep 15",
+      "dateIso": "2026-09-15",
+      "foreman": "Levi Foreman",
+      "status": "Draft",
+      "notes": "No delays today.",
+      "weather": "",
+      "temperature": "",
+      "productionEntries": [],
+      "laborEntries": [
+        {
+          "memberId": 1,
+          "hours": 8
+        },
+        {
+          "memberId": 2,
+          "hours": 8
+        },
+        {
+          "memberId": 5,
+          "hours": 8
+        }
+      ],
+      "materials": "",
+      "equipment": "",
+      "delays": "No delays today.",
+      "safety": "",
+      "signature": "",
+      "history": [
+        {
+          "action": "Draft saved",
+          "by": "Levi Foreman",
+          "at": "2026-09-15T15:07:25.918Z"
+        }
+      ],
+      "summary": "Field work recorded: No delays today.",
+      "labor": "Needs confirmation",
+      "quantity": "Needs confirmation",
+      "productions": [],
+      "issue": "No delays today.",
+      "next": "Confirm next field activity"
+    },
+    {
+      "id": 4,
+      "project": 0,
+      "date": "Sep 15",
+      "dateIso": "2026-09-15",
+      "foreman": "Levi Foreman",
+      "status": "Draft",
+      "notes": "5",
+      "weather": "",
+      "temperature": "",
+      "productionEntries": [],
+      "laborEntries": [
+        {
+          "memberId": 1,
+          "hours": 8
+        },
+        {
+          "memberId": 2,
+          "hours": 8
+        },
+        {
+          "memberId": 5,
+          "hours": 8
+        }
+      ],
+      "materials": "",
+      "equipment": "",
+      "delays": "",
+      "safety": "",
+      "signature": "",
+      "history": [
+        {
+          "action": "Draft saved",
+          "by": "Levi Foreman",
+          "at": "2026-09-15T15:01:15.123Z"
+        }
+      ],
+      "summary": "Field work recorded: 5",
+      "labor": "Needs confirmation",
+      "quantity": "Needs confirmation",
+      "productions": [],
+      "issue": "None reported",
+      "next": "Confirm next field activity"
+    },
+    {
+      "id": 1,
+      "project": 0,
+      "date": "Sep 15",
+      "foreman": "Marcus Reed",
+      "status": "Needs review",
+      "notes": "Poured 86 yards on the east foundation. Nine workers, 72 labor hours. Pump arrived 45 minutes late but we recovered by lunch.",
+      "summary": "East foundation pour completed at 96% of the planned daily quantity. A concrete pump delay occurred with no schedule impact.",
+      "labor": "9 people · 72 hours",
+      "quantity": "86 CY concrete",
+      "issue": "45-minute pump delay",
+      "next": "Strip east forms tomorrow"
+    },
+    {
+      "id": 2,
+      "project": 1,
+      "date": "Sep 15",
+      "foreman": "Tyler Morgan",
+      "status": "Missing data",
+      "notes": "Framed third floor west wing. Waiting on revised window details.",
+      "summary": "Framing progressed on the third-floor west wing. Production quantity was not included and requires confirmation.",
+      "labor": "7 people · hours missing",
+      "quantity": "Needs confirmation",
+      "issue": "Window detail RFI pending",
+      "next": "Continue west wing framing"
+    },
+    {
+      "id": 3,
+      "project": 2,
+      "date": "Sep 15",
+      "foreman": "Aaron Kim",
+      "status": "Approved",
+      "notes": "Set 14 tilt panels today with 12-person crew. Finished two panels ahead of plan.",
+      "summary": "Tilt-panel installation exceeded the daily target by two panels. No delays or safety issues reported.",
+      "labor": "12 people · 96 hours",
+      "quantity": "14 panels installed",
+      "issue": "None reported",
+      "next": "Begin north elevation panels"
+    }
+  ],
+  "assignments": [
+    {
+      "id": 1,
+      "projectId": 1,
+      "memberIds": [
+        2,
+        5
+      ],
+      "crew": "Crew A",
+      "date": "2026-09-15",
+      "start": "07:00",
+      "end": "15:30",
+      "activity": "East foundation pour"
+    },
+    {
+      "id": 2,
+      "projectId": 2,
+      "memberIds": [
+        3,
+        6
+      ],
+      "crew": "Crew B",
+      "date": "2026-09-15",
+      "start": "07:00",
+      "end": "15:30",
+      "activity": "Third-floor framing"
+    },
+    {
+      "id": 3,
+      "projectId": 3,
+      "memberIds": [
+        4,
+        7
+      ],
+      "crew": "Crew C",
+      "date": "2026-09-15",
+      "start": "06:30",
+      "end": "15:00",
+      "activity": "Tilt-panel erection"
+    },
+    {
+      "id": 4,
+      "projectId": 4,
+      "memberIds": [
+        8
+      ],
+      "crew": "Crew D",
+      "date": "2026-09-16",
+      "start": "07:00",
+      "end": "15:30",
+      "activity": "Site preparation"
+    }
+  ],
+  "photos": [],
+  "workdays": []
+}

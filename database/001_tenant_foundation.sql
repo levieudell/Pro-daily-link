@@ -1,0 +1,23 @@
+BEGIN;
+CREATE EXTENSION IF NOT EXISTS pgcrypto;
+
+CREATE TABLE companies (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), slug text UNIQUE NOT NULL, name text NOT NULL, created_at timestamptz NOT NULL DEFAULT now());
+CREATE TABLE users (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), email text UNIQUE NOT NULL, password_hash text, name text NOT NULL, status text NOT NULL DEFAULT 'active', created_at timestamptz NOT NULL DEFAULT now());
+CREATE TABLE memberships (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), company_id uuid NOT NULL REFERENCES companies(id), user_id uuid NOT NULL REFERENCES users(id), role text NOT NULL CHECK(role IN ('owner','admin','project_manager','field')), project_ids uuid[] NOT NULL DEFAULT '{}', UNIQUE(company_id,user_id));
+CREATE TABLE customers (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), company_id uuid NOT NULL REFERENCES companies(id), name text NOT NULL, contact jsonb NOT NULL DEFAULT '{}', created_at timestamptz NOT NULL DEFAULT now());
+CREATE TABLE projects (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), company_id uuid NOT NULL REFERENCES companies(id), customer_id uuid REFERENCES customers(id), name text NOT NULL, contract_type text NOT NULL DEFAULT 'estimated', data jsonb NOT NULL DEFAULT '{}', created_at timestamptz NOT NULL DEFAULT now());
+CREATE TABLE team_members (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), company_id uuid NOT NULL REFERENCES companies(id), name text NOT NULL, data jsonb NOT NULL DEFAULT '{}');
+CREATE TABLE subcontractors (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), company_id uuid NOT NULL REFERENCES companies(id), name text NOT NULL, data jsonb NOT NULL DEFAULT '{}');
+CREATE TABLE reports (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), company_id uuid NOT NULL REFERENCES companies(id), project_id uuid NOT NULL REFERENCES projects(id), submitted_by uuid REFERENCES users(id), subcontractor_id uuid REFERENCES subcontractors(id), status text NOT NULL, data jsonb NOT NULL DEFAULT '{}', created_at timestamptz NOT NULL DEFAULT now());
+CREATE TABLE photos (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), company_id uuid NOT NULL REFERENCES companies(id), project_id uuid NOT NULL REFERENCES projects(id), report_id uuid REFERENCES reports(id), storage_key text NOT NULL, data jsonb NOT NULL DEFAULT '{}');
+CREATE TABLE assignments (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), company_id uuid NOT NULL REFERENCES companies(id), project_id uuid NOT NULL REFERENCES projects(id), data jsonb NOT NULL DEFAULT '{}');
+CREATE TABLE workdays (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), company_id uuid NOT NULL REFERENCES companies(id), project_id uuid NOT NULL REFERENCES projects(id), data jsonb NOT NULL DEFAULT '{}');
+CREATE TABLE changes (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), company_id uuid NOT NULL REFERENCES companies(id), project_id uuid NOT NULL REFERENCES projects(id), report_id uuid REFERENCES reports(id), data jsonb NOT NULL DEFAULT '{}');
+CREATE TABLE guest_links (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), company_id uuid NOT NULL REFERENCES companies(id), project_id uuid NOT NULL REFERENCES projects(id), subcontractor_id uuid NOT NULL REFERENCES subcontractors(id), token_hash text UNIQUE NOT NULL, expires_at timestamptz NOT NULL, revoked_at timestamptz, data jsonb NOT NULL DEFAULT '{}');
+CREATE TABLE audit_events (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), company_id uuid NOT NULL REFERENCES companies(id), actor_user_id uuid REFERENCES users(id), action text NOT NULL, resource_type text NOT NULL, resource_id uuid, data jsonb NOT NULL DEFAULT '{}', created_at timestamptz NOT NULL DEFAULT now());
+
+CREATE OR REPLACE FUNCTION app_company_id() RETURNS uuid LANGUAGE sql STABLE AS $$ SELECT nullif(current_setting('app.company_id',true),'')::uuid $$;
+DO $$ DECLARE table_name text; BEGIN FOREACH table_name IN ARRAY ARRAY['memberships','customers','projects','team_members','subcontractors','reports','photos','assignments','workdays','changes','guest_links','audit_events'] LOOP EXECUTE format('ALTER TABLE %I ENABLE ROW LEVEL SECURITY',table_name); EXECUTE format('ALTER TABLE %I FORCE ROW LEVEL SECURITY',table_name); EXECUTE format('CREATE POLICY tenant_isolation ON %I USING (company_id = app_company_id()) WITH CHECK (company_id = app_company_id())',table_name); END LOOP; END $$;
+
+CREATE INDEX ON customers(company_id); CREATE INDEX ON projects(company_id); CREATE INDEX ON reports(company_id,project_id); CREATE INDEX ON photos(company_id,project_id); CREATE INDEX ON assignments(company_id,project_id); CREATE INDEX ON workdays(company_id,project_id); CREATE INDEX ON changes(company_id,project_id); CREATE INDEX ON guest_links(company_id,project_id);
+COMMIT;

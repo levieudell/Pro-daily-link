@@ -1,0 +1,7 @@
+.env
+.env.local
+data/*.tmp
+uploads/*
+!uploads/.gitkeep
+node_modules/
+.gitdata/

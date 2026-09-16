@@ -1,0 +1,277 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="theme-color" content="#10251e" />
+  <title>Pro Daily Link</title>
+  <link rel="icon" type="image/png" href="assets/pro-daily-link-logo.png" />
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Oswald:wght@500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div class="app-shell">
+    <div class="connection-banner" id="connection-banner" role="status"></div>
+    <aside class="sidebar" id="sidebar">
+      <div class="brand"><span class="brand-mark"><img src="assets/pro-daily-link-logo.png" alt="Pro Daily Link logo" /></span><span>Pro Daily <b>Link</b></span></div>
+      <nav id="main-nav">
+        <button class="nav-item active office-only" data-page="dashboard"><span>▦</span> Overview</button>
+        <button class="nav-item office-only" data-page="actions"><span>!</span> Action center <em id="action-count">0</em></button>
+        <button class="nav-item office-only" data-page="schedule"><span>▣</span> Schedule</button>
+        <button class="nav-item field-only" data-page="myday"><span>☀</span> My day</button>
+        <button class="nav-item" data-page="fieldday"><span>◷</span> Start / end day</button>
+        <button class="nav-item office-only" data-page="projects"><span>⌂</span> Projects</button>
+        <button class="nav-item office-only" data-page="catalog"><span>▧</span> Production catalog</button>
+        <button class="nav-item office-only" data-page="customers"><span>▤</span> Customers</button>
+        <button class="nav-item" data-page="reports"><span>≡</span> Daily reports <em id="report-count">3</em></button>
+        <button class="nav-item office-only" data-page="team"><span>♙</span> Team</button>
+      </nav>
+      <div class="sidebar-bottom">
+        <div class="trial-card"><small>PRO PLAN</small><strong>14 days remaining</strong><div class="trial-bar"><i></i></div><button>Manage plan</button></div>
+        <button class="profile"><span class="avatar">LF</span><span><b>Levi Foreman</b><small>Administrator</small></span><i>•••</i></button>
+      </div>
+    </aside>
+
+    <main>
+      <header class="topbar">
+        <button class="menu-button" id="menu-button">☰</button>
+        <div class="site-switcher"><small>VIEW AS</small><select id="role-switcher"><option value="office">Office administrator</option><option value="field">Field team · Marcus Reed</option></select></div>
+        <div class="top-actions"><button class="icon-button">⌕</button><button class="icon-button notification">♢<i></i></button><button class="primary small" data-open-report>＋ New daily report</button></div>
+      </header>
+
+      <section class="page active" id="dashboard-page">
+        <div class="page-heading"><div><p class="eyebrow">TUESDAY, SEPTEMBER 15</p><h1>Good morning, Levi.</h1><p>Here’s what’s happening across your jobs today.</p></div><button class="secondary" id="export-button">⇩ Export summary</button></div>
+
+        <div class="alert"><span>!</span><div><strong>3 daily reports need attention</strong><p>Two are missing production quantities and one has a potential delay.</p></div><button data-page-link="reports">Review reports →</button></div>
+
+        <div class="stats-grid">
+          <article class="stat-card"><div class="stat-icon green">⌂</div><div><small>ACTIVE PROJECTS</small><strong>8</strong><p><b>↑ 2</b> this month</p></div></article>
+          <article class="stat-card"><div class="stat-icon blue">♙</div><div><small>PEOPLE IN THE FIELD</small><strong>34</strong><p>Across 6 job sites</p></div></article>
+          <article class="stat-card"><div class="stat-icon amber">◷</div><div><small>REPORTS SUBMITTED</small><strong>5 <i>/ 8</i></strong><p><b class="amber-text">3 still due</b></p></div></article>
+          <article class="stat-card"><div class="stat-icon red">↘</div><div><small>WEEKLY PRODUCTION</small><strong>94.2%</strong><p><b class="red-text">↓ 3.1%</b> vs. estimate</p></div></article>
+        </div>
+
+        <div class="dashboard-grid">
+          <article class="panel production-panel">
+            <div class="panel-header"><div><h2>Production performance</h2><p>Actual production compared with estimate</p></div><select id="period-select"><option>This week</option><option>This month</option></select></div>
+            <div class="chart-summary"><div><small>ACTUAL</small><strong>94.2%</strong><span class="trend">-3.1%</span></div><div class="legend"><span><i class="actual"></i>Actual</span><span><i class="estimate"></i>Estimated</span></div></div>
+            <div class="chart" id="production-chart"></div>
+          </article>
+          <article class="panel today-panel">
+            <div class="panel-header"><div><h2>Today’s field activity</h2><p>Tuesday, September 15</p></div><button data-page-link="schedule">Full schedule →</button></div>
+            <div id="activity-list"></div>
+          </article>
+        </div>
+
+        <article class="panel projects-panel">
+          <div class="panel-header"><div><h2>Projects at a glance</h2><p>Live progress across active work</p></div><button data-page-link="projects">View all projects →</button></div>
+          <div class="table-wrap"><table><thead><tr><th>PROJECT</th><th>CREW TODAY</th><th>COMPLETION</th><th>PRODUCTION</th><th>STATUS</th></tr></thead><tbody id="project-table"></tbody></table></div>
+        </article>
+      </section>
+
+      <section class="page" id="actions-page">
+        <div class="page-heading"><div><p class="eyebrow">TODAY’S PRIORITIES</p><h1>Action center</h1><p>The office’s single queue for items that need attention.</p></div><button class="secondary" id="refresh-actions">Refresh</button></div>
+        <div class="action-stats" id="action-stats"></div><div class="panel action-list" id="action-list"></div>
+      </section>
+
+      <section class="page" id="myday-page">
+        <div class="field-tip" id="field-first-tip"><strong>Three quick steps</strong><span>Start your day → add photos and notes → end your day.</span><button type="button" id="dismiss-field-tip">Got it</button></div>
+        <div class="field-welcome"><p class="eyebrow">MY FIELD DASHBOARD</p><h1 id="field-greeting">Good morning, Marcus.</h1><p>Here’s everything you need for today—nothing you don’t.</p></div>
+        <article class="start-day-hero" id="field-start-card"><div><small>READY TO GET TO WORK?</small><h2>Start your day</h2><p id="field-start-detail">Confirm your job site and who is with you. We’ll handle the time.</p></div><button class="hero-start-button" data-start-day>▶ START</button></article>
+        <div class="field-dashboard-grid"><article class="panel"><div class="panel-header"><div><h2>Today’s assignment</h2><p>Your scheduled project and activity</p></div></div><div id="field-today"></div></article><article class="panel"><div class="panel-header"><div><h2>Coming up</h2><p>Your next scheduled work</p></div></div><div id="field-upcoming"></div></article></div>
+        <article class="panel field-reports-panel"><div class="panel-header"><div><h2>My recent dailies</h2><p>Reports you submitted from the field</p></div><button data-page-link="reports">View my dailies →</button></div><div id="field-reports"></div></article>
+      </section>
+
+      <section class="page" id="schedule-page">
+        <div class="page-heading"><div><p class="eyebrow">FIELD OPERATIONS</p><h1>Crew schedule</h1><p>Assign crews and individual team members to job sites.</p></div><button class="primary" id="new-assignment">＋ New assignment</button></div>
+        <div class="schedule-toolbar"><button>‹</button><strong>September 14–20, 2026</strong><button>›</button><span></span><button class="secondary">Today</button></div>
+        <article class="panel schedule-board" id="schedule-board"></article>
+      </section>
+
+      <section class="page" id="fieldday-page">
+        <div class="page-heading"><div><p class="eyebrow">FIELD TIME</p><h1>Start / end day</h1><p>Capture who is on site, opening photos, completed work, and automatic hours.</p></div><button class="primary" id="start-day-button">▶ Start a workday</button></div>
+        <div class="fieldday-callout"><span>1</span><b>Start</b><i></i><span>2</span><b>Work</b><i></i><span>3</span><b>End & verify</b></div>
+        <div class="active-day-grid" id="active-day-list"></div>
+      </section>
+
+      <section class="page" id="projects-page">
+        <div class="page-heading"><div><p class="eyebrow">CUSTOMERS & WORK</p><h1>Projects</h1><p>Track customers, job sites, estimates, and actual production.</p></div><div><button class="secondary" id="import-estimate">Import estimate PDF</button> <button class="primary" id="new-project">＋ New project</button></div></div>
+        <div class="filter-row"><div class="search-box">⌕ <input id="project-search" placeholder="Search projects or customers" /></div><select><option>All statuses</option><option>On track</option><option>At risk</option></select></div>
+        <div class="project-card-grid" id="project-cards"></div>
+      </section>
+
+      <section class="page" id="customers-page">
+        <div class="page-heading"><div><p class="eyebrow">CLIENT PORTFOLIO</p><h1>Customers</h1><p>See every customer and the projects that belong to them.</p></div><button class="primary" id="new-customer">＋ New customer</button></div>
+        <div class="filter-row"><div class="search-box">⌕ <input id="customer-search" placeholder="Search customers" /></div></div>
+        <div class="customer-layout"><div class="customer-list" id="customer-list"></div><article class="panel customer-detail" id="customer-detail"></article></div>
+      </section>
+      <section class="page" id="catalog-page"><div class="page-heading"><div><p class="eyebrow">REUSABLE WORK</p><h1>Production catalog</h1><p>Save common scope items once, reuse them in estimates, and build verified production history.</p></div><button class="primary" id="new-catalog-item">＋ Catalog item</button></div><div class="filter-row"><div class="search-box">⌕ <input id="catalog-search" placeholder="Search work items or categories"></div></div><div class="catalog-grid" id="catalog-grid"></div></section>
+
+      <section class="page" id="reports-page">
+        <div class="page-heading"><div><p class="eyebrow">FIELD TO OFFICE</p><h1>Daily reports</h1><p>Review field notes transformed into structured production data.</p></div><button class="primary" data-open-report>＋ New daily report</button></div>
+        <div class="report-layout"><div class="report-list" id="report-list"></div><article class="panel report-detail" id="report-detail"></article></div>
+      </section>
+
+      <section class="page" id="team-page">
+        <div class="page-heading"><div><p class="eyebrow">WORKFORCE</p><h1>Team</h1><p>Manage employees and subcontractor companies separately.</p></div><button class="primary" id="team-add-button">＋ Add team member</button></div>
+        <div class="team-tabs"><button class="active" data-team-tab="employees">Employees</button><button data-team-tab="subcontractors">Subcontractors</button><button data-team-tab="accounts">User accounts</button></div>
+        <div class="team-grid" id="team-grid"></div><div class="subcontractor-grid" id="subcontractor-grid"></div><div class="account-list panel" id="account-list"></div>
+      </section>
+    </main>
+  </div>
+
+  <dialog id="subcontractor-modal">
+    <form method="dialog"><div class="modal-header"><div><p class="eyebrow">CONTRACTOR DIRECTORY</p><h2>Add subcontractor</h2></div><button class="close-button" value="cancel">×</button></div>
+      <div class="two-col"><label>Company name<input id="sub-name" required></label><label>Trade<input id="sub-trade" placeholder="Electrical, concrete, roofing…"></label></div>
+      <div class="two-col"><label>Main contact<input id="sub-contact"></label><label>Email<input id="sub-email" type="email"></label></div>
+      <div class="two-col"><label>Phone<input id="sub-phone"></label><label>Insurance expiration<input id="sub-insurance" type="date"></label></div>
+      <label>Office notes<textarea id="sub-notes" rows="3"></textarea></label><div class="modal-actions"><button value="cancel" class="secondary">Cancel</button><button type="button" class="primary" id="save-subcontractor">Save subcontractor</button></div>
+    </form>
+  </dialog>
+  <dialog id="user-modal"><form method="dialog"><div class="modal-header"><div><p class="eyebrow">ACCOUNT ACCESS</p><h2>Add user</h2></div><button class="close-button" value="cancel">×</button></div><div class="two-col"><label>Name<input id="user-name"></label><label>Email or username<input id="user-email"></label></div><div class="two-col"><label>Role<select id="user-role"><option value="admin">Admin · all office operations</option><option value="project_manager">Project manager · assigned projects</option><option value="field">Field user · assigned field work</option></select></label><label>Preferred language<select id="user-language"><option value="en">English</option><option value="es">Español</option></select></label></div><div id="user-project-access"><label>Project access<div class="member-picker" id="user-projects"></div></label></div><label id="user-field-member-wrap">Linked field team member<select id="user-field-member"></select></label><div id="setup-code-result"></div><div class="modal-actions"><button value="cancel" class="secondary">Close</button><button type="button" class="primary" id="save-user">Create user & setup code</button></div></form></dialog>
+  <dialog id="catalog-modal"><form method="dialog"><div class="modal-header"><div><p class="eyebrow">STANDARD WORK ITEM</p><h2>Add catalog item</h2></div><button class="close-button" value="cancel">×</button></div><div class="two-col"><label>Name<input id="catalog-name"></label><label>Category<input id="catalog-category" placeholder="Concrete, framing, civil…"></label></div><div class="two-col"><label>Default unit<select id="catalog-unit"><option>EA</option><option>SF</option><option>LF</option><option>CY</option><option>TON</option><option>HR</option></select></label><label>Target labor hours per unit<input id="catalog-rate" type="number" min="0" step="0.01"></label></div><label>Description<textarea id="catalog-description" rows="3"></textarea></label><div class="modal-actions"><button value="cancel" class="secondary">Cancel</button><button type="button" class="primary" id="save-catalog-item">Save catalog item</button></div></form></dialog>
+  <dialog id="catalog-use-modal"><form method="dialog"><div class="modal-header"><div><p class="eyebrow">ADD TO ESTIMATE</p><h2 id="catalog-use-title">Catalog item</h2></div><button class="close-button" value="cancel">×</button></div><input type="hidden" id="catalog-use-id"><label>Project<select id="catalog-use-project"></select></label><label>Planned quantity<input id="catalog-use-quantity" type="number" min="0.01" step="0.01"></label><div class="modal-actions"><button value="cancel" class="secondary">Cancel</button><button type="button" class="primary" id="apply-catalog-item">Add to project estimate</button></div></form></dialog>
+  <dialog id="estimate-import-modal" class="wide-modal"><form method="dialog"><div class="modal-header"><div><p class="eyebrow">NO DOUBLE ENTRY</p><h2>Import estimate PDF</h2></div><button class="close-button" value="cancel">×</button></div><label>Estimate PDF<input id="estimate-pdf" type="file" accept="application/pdf"></label><button type="button" class="ai-button" id="analyze-estimate"><span>✦</span><b>Extract draft estimate</b><small>The office verifies every line before import.</small></button><div id="estimate-import-review"></div><div class="modal-actions"><button value="cancel" class="secondary">Cancel</button><button type="button" class="primary" id="approve-estimate-import" style="display:none">Approve and add to project</button></div></form></dialog>
+  <dialog id="sub-link-modal"><form method="dialog"><div class="modal-header"><div><p class="eyebrow">PROJECT ACCESS</p><h2 id="sub-link-title">Guest link</h2></div><button class="close-button" value="cancel">×</button></div>
+    <input id="sub-link-id" type="hidden"><label>Project<select id="sub-link-project"></select></label><label>Reporting mode<select id="sub-link-mode"><option value="progress">Simple progress check-in</option><option value="tm">Detailed T&M ticket</option></select></label><label>Link expires<input id="sub-link-expires" type="date"></label><div id="sub-link-result"></div><div class="modal-actions"><button value="cancel" class="secondary">Close</button><button type="button" class="primary" id="generate-sub-link">Generate secure link</button></div>
+  </form></dialog>
+  <dialog id="report-modal">
+    <form method="dialog" id="report-form">
+      <div class="modal-header"><div><p class="eyebrow">FIELD REPORT</p><h2 id="report-modal-title">Create daily report</h2></div><button class="close-button" value="cancel">×</button></div>
+      <div class="report-steps"><span class="active" data-step-dot="1"><b>1</b> Field notes</span><i></i><span data-step-dot="2"><b>2</b> Verify report</span></div>
+      <div class="report-step active" data-report-step="1">
+        <label>Project<select id="report-project" required></select></label>
+        <div class="two-col"><label>Date<input type="date" id="report-date" required /></label><label id="report-language-label">Note language<select id="report-language"><option value="en-US">English</option><option value="es-MX">Español</option></select></label></div><label>Crew<select id="report-crew"><option value="Crew A">Crew A · Concrete</option><option value="Crew B">Crew B · Framing</option><option value="Crew C">Crew C · Civil</option><option value="Crew D">Crew D · General</option></select></label>
+        <div class="weather-row"><div><small>JOB-SITE WEATHER</small><strong id="weather-summary">Not loaded</strong></div><button type="button" class="secondary" id="load-weather">⌖ Use my location</button></div>
+        <input type="hidden" id="report-weather" /><input type="hidden" id="report-temperature" />
+        <label id="field-notes-label">Tell us what happened today<textarea id="field-notes" rows="8" placeholder="Example: Crew A poured 86 yards on the east footing with 9 people for 8 hours. Also stripped 1,200 SF of forms. Pump arrived 45 minutes late…" required></textarea></label>
+        <div class="note-tools"><button type="button" id="voice-notes">🎙 Speak notes</button><button type="button" data-note-chip="No delays today. ">No delays</button><button type="button" data-note-chip="No safety incidents. ">No incidents</button><button type="button" data-note-chip="Tomorrow we plan to ">Tomorrow</button></div>
+        <div class="autosave-status" id="autosave-status">Notes save automatically on this device</div>
+        <label>Daily photos<input type="file" id="report-photos" accept="image/jpeg,image/png,image/webp" multiple /><small class="input-help">Add progress, material, issue, or completed-work photos.</small></label>
+        <button type="button" class="ai-button" id="ai-convert"><span>✦</span><b>Analyze notes and build report</b><small>AI will propose production, labor, delays, materials, equipment, and safety details</small></button>
+        <div class="modal-actions"><button value="cancel" class="secondary">Cancel</button><button type="button" class="secondary" id="save-report-draft">Save notes as draft</button></div>
+      </div>
+      <div class="report-step" data-report-step="2">
+        <div id="ai-preview" class="ai-preview"></div>
+        <div class="verify-banner"><b>Verify before submitting</b><span>AI suggestions can be changed. Confirm every quantity and hour.</span></div>
+        <label>Office summary<textarea id="report-summary" rows="3" placeholder="AI will draft this summary. Tap here to correct it."></textarea></label>
+        <div class="section-heading"><h3>Production completed</h3><div><button type="button" id="add-production-row">＋ Estimate item</button><button type="button" id="add-custom-production">＋ Custom work</button></div></div>
+        <div id="production-rows"></div>
+        <fieldset class="labor-fieldset"><legend>Individual labor hours</legend><div id="report-labor-list"></div></fieldset>
+        <div class="two-col"><label>Materials used<textarea id="report-materials" rows="2" placeholder="Concrete, fasteners, pipe…"></textarea></label><label>Equipment used<textarea id="report-equipment" rows="2" placeholder="Pump, excavator, lift…"></textarea></label></div>
+        <div class="two-col"><label>Delays / issues<textarea id="report-delays" rows="2" placeholder="Cause and duration"></textarea></label><label>Safety observations<textarea id="report-safety" rows="2" placeholder="Positive observations or incidents"></textarea></label></div>
+        <label>Next step<textarea id="report-next" rows="2" placeholder="What should happen next? Leave blank if unknown."></textarea></label>
+        <label>Foreman signature<input id="report-signature" placeholder="Type full name to sign" /></label>
+        <div class="modal-actions"><button type="button" class="secondary" id="report-back">← Back to notes</button><button value="default" class="primary" id="save-report">Submit verified report</button></div>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="photo-modal">
+    <form method="dialog" id="photo-form">
+      <div class="modal-header"><div><p class="eyebrow">OFFICE REFERENCE</p><h2>Add project photos</h2></div><button class="close-button" value="cancel">×</button></div>
+      <input type="hidden" id="photo-project" />
+      <label>Photos<input type="file" id="office-photos" accept="image/jpeg,image/png,image/webp" multiple required /></label>
+      <label>Information for the field<textarea id="photo-caption" rows="3" placeholder="Example: Install flashing to match this approved detail."></textarea></label>
+      <div class="modal-actions"><button value="cancel" class="secondary">Cancel</button><button type="button" class="primary" id="save-photos">Upload photos</button></div>
+    </form>
+  </dialog>
+
+  <dialog id="customer-modal">
+    <form method="dialog" id="customer-form">
+      <div class="modal-header"><div><p class="eyebrow">NEW CLIENT</p><h2>Add customer</h2></div><button class="close-button" value="cancel">×</button></div>
+      <label>Company name<input id="customer-name" required placeholder="Customer or organization" /></label>
+      <div class="two-col"><label>Primary contact<input id="customer-contact" placeholder="Full name" /></label><label>Phone<input id="customer-phone" type="tel" placeholder="(555) 555-0123" /></label></div>
+      <label>Email<input id="customer-email" type="email" placeholder="contact@company.com" /></label>
+      <div class="modal-actions"><button value="cancel" class="secondary">Cancel</button><button type="button" class="primary" id="save-customer">Save customer</button></div>
+    </form>
+  </dialog>
+
+  <dialog id="project-modal">
+    <form method="dialog" id="project-form">
+      <div class="modal-header"><div><p class="eyebrow">NEW WORK</p><h2>Add project</h2></div><button class="close-button" value="cancel">×</button></div>
+      <label>Customer<div class="select-action"><select id="project-customer" required></select><button type="button" id="project-new-customer">＋ New customer</button></div></label>
+      <label>Project name<input id="project-name" required placeholder="Project name" /></label>
+      <label>Project type<select id="project-type"><option value="estimated">Estimated project</option><option value="tm">Time & material</option><option value="hybrid">Hybrid · estimate plus T&M / changes</option></select></label>
+      <div id="tm-project-fields" class="tm-project-fields">
+        <div class="two-col"><label>Default labor billing rate<input id="tm-labor-rate" type="number" min="0" step="0.01" placeholder="$ per labor hour" /></label><label>Material markup<input id="tm-material-markup" type="number" min="0" step="0.1" placeholder="Percent" /></label></div>
+        <label>Equipment markup<input id="tm-equipment-markup" type="number" min="0" step="0.1" placeholder="Percent" /></label>
+        <small>Office-only billing settings. Field users never receive these values.</small>
+      </div>
+      <div class="two-col"><label>Project code<input id="project-code" maxlength="4" placeholder="RMC" /></label><label>Contract value<input id="project-budget" placeholder="$500K" /></label></div>
+      <label>Job-site address<input id="project-site" placeholder="Street, city" /></label>
+      <div class="two-col"><label>Start date<input id="project-start" type="date" /></label><label>Target finish<input id="project-end" type="date" /></label></div>
+      <div class="two-col"><label>Supervisor<select id="project-supervisor"></select></label><label>Job-site contact<input id="project-contact" placeholder="Name and phone" /></label></div>
+      <div class="modal-actions"><button value="cancel" class="secondary">Cancel</button><button type="button" class="primary" id="save-project">Save project</button></div>
+    </form>
+  </dialog>
+
+  <dialog id="project-detail-modal" class="wide-modal">
+    <form method="dialog">
+      <div class="modal-header"><div><p class="eyebrow">PROJECT CONTROL</p><h2 id="detail-project-name">Project</h2></div><button class="close-button" value="cancel">×</button></div>
+      <div id="project-detail-content"></div>
+    </form>
+  </dialog>
+
+  <dialog id="estimate-modal">
+    <form method="dialog">
+      <div class="modal-header"><div><p class="eyebrow">PRODUCTION BUDGET</p><h2>Add estimate item</h2></div><button class="close-button" value="cancel">×</button></div>
+      <input type="hidden" id="estimate-project-id" />
+      <label>Scope of work<input id="estimate-name" required placeholder="Example: Place slab concrete" /></label>
+      <div class="two-col"><label>Planned quantity<input id="estimate-quantity" type="number" min="0" step="0.01" /></label><label>Unit<select id="estimate-unit"><option>CY</option><option>SF</option><option>LF</option><option>EA</option><option>TON</option><option>HR</option></select></label></div>
+      <div class="two-col"><label>Budgeted labor hours<input id="estimate-hours" type="number" min="0" step="0.5" /></label><label>Estimated cost<input id="estimate-cost" type="number" min="0" step="1" /></label></div>
+      <div class="modal-actions"><button value="cancel" class="secondary">Cancel</button><button type="button" class="primary" id="save-estimate">Add to estimate</button></div>
+    </form>
+  </dialog>
+
+  <dialog id="assignment-modal">
+    <form method="dialog">
+      <div class="modal-header"><div><p class="eyebrow">FIELD SCHEDULING</p><h2>New assignment</h2></div><button class="close-button" value="cancel">×</button></div>
+      <div class="two-col"><label>Assign by<select id="assignment-type"><option value="crew">Whole crew</option><option value="individual">Individual person</option></select></label><label id="assignment-target-label">Crew<select id="assignment-target"></select></label></div>
+      <label>Project / job site<select id="assignment-project"></select></label>
+      <div class="two-col"><label>Date<input id="assignment-date" type="date" required /></label><label>Work activity<input id="assignment-activity" placeholder="Concrete pour, framing…" /></label></div>
+      <div class="two-col"><label>Start time<input id="assignment-start" type="time" value="07:00" required /></label><label>End time<input id="assignment-end" type="time" value="15:30" required /></label></div>
+      <div id="assignment-warning" class="form-warning"></div>
+      <div class="modal-actions"><button value="cancel" class="secondary">Cancel</button><button type="button" class="primary" id="save-assignment">Assign to site</button></div>
+    </form>
+  </dialog>
+
+  <dialog id="assignment-detail-modal">
+    <form method="dialog">
+      <div class="modal-header"><div><p class="eyebrow">SCHEDULED WORK</p><h2 id="scheduled-project-name">Assignment</h2></div><button class="close-button" value="cancel">×</button></div>
+      <div id="scheduled-work-detail"></div>
+      <div class="modal-actions assignment-remove-actions"><button value="cancel" class="secondary">Keep assignment</button><button type="button" class="danger-button" id="remove-person">Unassign this person</button><button type="button" class="danger-button solid" id="remove-assignment">Unassign entire crew</button></div>
+    </form>
+  </dialog>
+
+  <dialog id="start-day-modal">
+    <form method="dialog">
+      <div class="modal-header"><div><p class="eyebrow">CLOCK IN CREW</p><h2>Start workday</h2></div><button class="close-button" value="cancel">×</button></div>
+      <label>Project / job site<select id="start-day-project"></select></label>
+      <fieldset class="labor-fieldset"><legend>Who is starting?</legend><div id="start-day-members" class="member-check-list"></div></fieldset>
+      <label>Opening photos<input type="file" id="start-day-photos" accept="image/jpeg,image/png,image/webp" multiple capture="environment" /><small class="input-help">Document site conditions before work begins.</small></label>
+      <label>Starting note<textarea id="start-day-note" rows="2" placeholder="Optional: planned work or site conditions"></textarea></label>
+      <div class="timestamp-preview">Start time will be recorded when you tap the button.</div>
+      <div class="modal-actions"><button value="cancel" class="secondary">Cancel</button><button type="button" class="primary big-action" id="confirm-start-day">▶ Start day now</button></div>
+    </form>
+  </dialog>
+
+  <dialog id="end-day-modal">
+    <form method="dialog">
+      <div class="modal-header"><div><p class="eyebrow">CLOCK OUT CREW</p><h2>End workday</h2></div><button class="close-button" value="cancel">×</button></div>
+      <input type="hidden" id="end-day-id" />
+      <div id="end-day-summary" class="weather-row"></div>
+      <label>What was completed?<textarea id="end-day-notes" rows="6" placeholder="Speak or type what the crew accomplished, quantities, delays, and tomorrow's plan." required></textarea></label>
+      <button type="button" class="secondary" id="end-day-voice">🎙 Speak completed work</button>
+      <label>End-of-day photos<input type="file" id="end-day-photos" accept="image/jpeg,image/png,image/webp" multiple capture="environment" /><small class="input-help">Add progress and completed-work photos.</small></label>
+      <div class="timestamp-preview">End time and total hours will be calculated when you finish.</div>
+      <div class="modal-actions"><button value="cancel" class="secondary">Not yet</button><button type="button" class="primary big-action" id="confirm-end-day">■ End day & build report</button></div>
+    </form>
+  </dialog>
+
+  <div class="toast" id="toast"></div>
+  <script src="app.js"></script>
+</body>
+</html>

@@ -1,0 +1,23 @@
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const os = require('node:os');
+const path = require('node:path');
+const supabase = require('./database/supabase');
+
+const root = fs.mkdtempSync(path.join(os.tmpdir(), 'pdl-env-'));
+fs.writeFileSync(path.join(root, '.env.local'), '\uFEFFSUPABASE_URL=https://example.supabase.co\nSUPABASE_SECRET_KEY=sb_secret_test\n');
+const previousUrl = process.env.SUPABASE_URL;
+const previousKey = process.env.SUPABASE_SECRET_KEY;
+const previousEnabled = process.env.PDL_SUPABASE_ENABLED;
+delete process.env.SUPABASE_URL;
+delete process.env.SUPABASE_SECRET_KEY;
+process.env.PDL_SUPABASE_ENABLED = '1';
+supabase.loadLocalEnv(root);
+assert.equal(process.env.SUPABASE_URL, 'https://example.supabase.co');
+assert.equal(process.env.SUPABASE_SECRET_KEY, 'sb_secret_test');
+assert.equal(supabase.configured(), true);
+if (previousUrl === undefined) delete process.env.SUPABASE_URL; else process.env.SUPABASE_URL = previousUrl;
+if (previousKey === undefined) delete process.env.SUPABASE_SECRET_KEY; else process.env.SUPABASE_SECRET_KEY = previousKey;
+if (previousEnabled === undefined) delete process.env.PDL_SUPABASE_ENABLED; else process.env.PDL_SUPABASE_ENABLED = previousEnabled;
+fs.rmSync(root, { recursive: true, force: true });
+console.log('Supabase adapter tests passed');
