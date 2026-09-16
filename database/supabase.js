@@ -68,6 +68,20 @@ async function saveCompanySnapshot(snapshot) {
   return true;
 }
 
+async function loadSnapshot(id) {
+  return loadCompanySnapshot(id);
+}
+
+async function saveSnapshot(id, name, data) {
+  if (!configured()) return false;
+  await request('/rest/v1/companies?on_conflict=id', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Prefer: 'resolution=merge-duplicates,return=minimal' },
+    body: JSON.stringify([{ id, slug: `snapshot-${id}`, name, data }])
+  });
+  return true;
+}
+
 async function health() {
   if (!configured()) return { configured: false, reachable: false };
   try {
@@ -78,4 +92,4 @@ async function health() {
   }
 }
 
-module.exports = { loadLocalEnv, configured, upload, download, loadCompanySnapshot, saveCompanySnapshot, health, request };
+module.exports = { loadLocalEnv, configured, upload, download, loadCompanySnapshot, saveCompanySnapshot, loadSnapshot, saveSnapshot, health, request };
