@@ -39,7 +39,7 @@
       <header class="topbar">
         <button class="menu-button" id="menu-button">☰</button>
         <div class="site-switcher"><small>VIEW AS</small><select id="role-switcher"><option value="office">Office administrator</option><option value="field">Field team · Marcus Reed</option></select></div>
-        <div class="top-actions"><button class="icon-button">⌕</button><button class="icon-button notification">♢<i></i></button><button class="primary small" data-open-report>＋ New daily report</button></div>
+        <div class="top-actions"><button class="icon-button help-trigger" id="help-button" aria-label="Open Help Center" title="Help Center">?</button><button class="icon-button notification">♢<i></i></button><button class="primary small" data-open-report>＋ New daily report</button></div>
       </header>
 
       <section class="page active" id="dashboard-page">
@@ -281,6 +281,7 @@
     </form>
   </dialog>
 
+  <dialog id="help-modal" class="wide-modal"><form method="dialog"><div class="modal-header"><div><p class="eyebrow">PRO DAILY LINK SUPPORT</p><h2>Help Center</h2></div><button class="close-button" value="cancel">×</button></div><label class="help-search">Search help<input id="help-search" type="search" placeholder="Search setup, dailies, production, mobile…"></label><div class="help-layout"><aside id="help-categories"></aside><section id="help-results"></section><article id="help-detail"><div class="help-empty"><strong>Choose a help topic</strong><p>Step-by-step guidance will appear here.</p></div></article></div></form></dialog>
   <dialog id="profile-modal"><form method="dialog"><div class="modal-header"><div><p class="eyebrow">YOUR ACCOUNT</p><h2>Profile settings</h2></div><button class="close-button" value="cancel">×</button></div><div class="profile-photo-editor"><span class="avatar" id="profile-preview">LF</span><div><strong>Profile photo</strong><p>Upload a JPG, PNG, or WebP image.</p><input id="profile-photo" type="file" accept="image/jpeg,image/png,image/webp"></div></div><label>Display name<input id="profile-display-name"></label><label>Appearance<select id="profile-theme"><option value="light">Light</option><option value="dark">Dark</option><option value="system">Use device setting</option></select></label><div class="modal-actions"><button value="cancel" class="secondary">Cancel</button><button type="button" class="primary" id="save-profile">Save profile</button></div></form></dialog>
   <div class="toast" id="toast"></div>
   <script src="app.js"></script>
