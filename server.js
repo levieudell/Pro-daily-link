@@ -3,6 +3,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const crypto = require('node:crypto');
 const zlib = require('node:zlib');
+const { AsyncLocalStorage } = require('node:async_hooks');
 const supabase = require('./database/supabase');
 const { stableUuid } = require('./database/migrate-json');
 
@@ -13,8 +14,11 @@ const PLATFORM_FILE = process.env.PDL_PLATFORM_FILE || path.join(path.dirname(DB
 const PORT = Number(process.env.PORT || 4173);
 const MIME = {'.html':'text/html; charset=utf-8','.css':'text/css; charset=utf-8','.js':'text/javascript; charset=utf-8','.json':'application/json; charset=utf-8','.svg':'image/svg+xml','.pdf':'application/pdf','.jpg':'image/jpeg','.jpeg':'image/jpeg','.png':'image/png','.webp':'image/webp'};
 
-function readDb(){ return JSON.parse(fs.readFileSync(DB_FILE, 'utf8')); }
-function writeDb(db){ const tmp=DB_FILE+'.tmp'; fs.writeFileSync(tmp, JSON.stringify(db,null,2)); fs.renameSync(tmp,DB_FILE); }
+const dbContext=new AsyncLocalStorage();
+function activeDbFile(){return dbContext.getStore()?.file||DB_FILE}
+function readDb(){ return JSON.parse(fs.readFileSync(activeDbFile(), 'utf8')); }
+function writeDb(db){ const file=activeDbFile(),tmp=file+'.tmp'; fs.writeFileSync(tmp, JSON.stringify(db,null,2)); fs.renameSync(tmp,file); }
+function requestDbFile(req){const companyId=String(req.headers['x-pdl-company']||'').trim();if(!companyId)return DB_FILE;const primary=JSON.parse(fs.readFileSync(DB_FILE,'utf8'));if(companyId===String(primary.company.id))return DB_FILE;if(!/^[0-9a-f]{8}-[0-9a-f-]{27}$/i.test(companyId))return null;const file=path.join(path.dirname(DB_FILE),'tenants',`${companyId}.json`);return fs.existsSync(file)?file:null}
 function readPlatform(){return fs.existsSync(PLATFORM_FILE)?JSON.parse(fs.readFileSync(PLATFORM_FILE,'utf8')):{users:[],notes:[]}}
 function writePlatform(data){const tmp=PLATFORM_FILE+'.tmp';fs.writeFileSync(tmp,JSON.stringify(data,null,2));fs.renameSync(tmp,PLATFORM_FILE)}
 function json(res,status,data){res.writeHead(status,{'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store'});res.end(JSON.stringify(data));}
@@ -155,6 +159,6 @@ async function api(req,res,url){
   return json(res,404,{error:'Not found'});
 }
 
-const server=http.createServer(async(req,res)=>{try{const url=new URL(req.url,'http://localhost');if(url.pathname.startsWith('/api/'))return await api(req,res,url);let requested=decodeURIComponent(url.pathname==='/'?'/index.html':/^\/guest\/[a-f0-9]{48}$/.test(url.pathname)?'/guest.html':url.pathname);let file=path.resolve(ROOT,'.'+requested);if(!file.startsWith(ROOT)||!fs.existsSync(file)||fs.statSync(file).isDirectory()){res.writeHead(404);return res.end('Not found')}res.writeHead(200,{'Content-Type':MIME[path.extname(file)]||'application/octet-stream'});fs.createReadStream(file).pipe(res)}catch(error){console.error(error);json(res,500,{error:'Unexpected server error',requestId:crypto.randomUUID()})}});
+const server=http.createServer(async(req,res)=>{try{const url=new URL(req.url,'http://localhost');if(url.pathname.startsWith('/api/')){const file=requestDbFile(req);if(!file)return json(res,404,{error:'Company workspace not found'});return await dbContext.run({file},()=>api(req,res,url))}let requested=decodeURIComponent(url.pathname==='/'?'/index.html':/^\/guest\/[a-f0-9]{48}$/.test(url.pathname)?'/guest.html':url.pathname);let file=path.resolve(ROOT,'.'+requested);if(!file.startsWith(ROOT)||!fs.existsSync(file)||fs.statSync(file).isDirectory()){res.writeHead(404);return res.end('Not found')}res.writeHead(200,{'Content-Type':MIME[path.extname(file)]||'application/octet-stream'});fs.createReadStream(file).pipe(res)}catch(error){console.error(error);json(res,500,{error:'Unexpected server error',requestId:crypto.randomUUID()})}});
 if(require.main===module) server.listen(PORT,()=>console.log(`Pro Daily Link running at http://localhost:${PORT}`));
 module.exports={server,localExtract};
