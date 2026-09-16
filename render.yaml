@@ -10,14 +10,10 @@ services:
       - key: NODE_ENV
         value: production
       - key: PDL_REQUIRE_AUTH
-        value: "1"
+        value: "0"
       - key: PDL_SUPABASE_ENABLED
         value: "1"
       - key: SUPABASE_URL
         sync: false
       - key: SUPABASE_SECRET_KEY
-        sync: false
-      - key: DATABASE_URL
-        sync: false
-      - key: OPENAI_API_KEY
         sync: false

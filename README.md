@@ -38,6 +38,6 @@ To enable genuine AI report extraction, copy `.env.example` to `.env`, provide a
 
 ## Cloud demo
 
-The repository includes `render.yaml` for a Render web service. Production secrets are entered in Render's environment settings and must never be committed. Set `PDL_SUPABASE_ENABLED=1` to use Supabase private storage and health checks. Supabase stores tenant data and private uploads; Render runs the Node web application.
+The repository includes `render.yaml` for a Render web service. Secrets are entered in Render's environment settings and must never be committed. Set `PDL_SUPABASE_ENABLED=1` to use Supabase private storage and health checks. The included Blueprint runs with authentication enforcement disabled for a controlled product demo; do not use that setting for a public customer launch.
 
 This is a connected MVP. Public production launch still requires completing the PostgreSQL repository cutover, backup/restore validation, billing, and monitoring.
