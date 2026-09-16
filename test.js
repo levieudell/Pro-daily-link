@@ -5,6 +5,7 @@ const path=require('node:path');
 const crypto=require('node:crypto');
 const tempDir=fs.mkdtempSync(path.join(os.tmpdir(),'pdl-test-'));
 process.env.PDL_DB_FILE=path.join(tempDir,'db.json');
+process.env.PDL_SUPABASE_ENABLED='0';
 process.env.PDL_PLATFORM_FILE=path.join(tempDir,'platform.json');process.env.PDL_PLATFORM_KEY='test-platform-key-32-characters-minimum';
 fs.copyFileSync(path.join(__dirname,'data','db.json'),process.env.PDL_DB_FILE);
 fs.copyFileSync(path.join(__dirname,'data','platform.json'),process.env.PDL_PLATFORM_FILE);
