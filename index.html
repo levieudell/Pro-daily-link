@@ -27,10 +27,11 @@
         <button class="nav-item office-only" data-page="customers"><span>▤</span> Customers</button>
         <button class="nav-item" data-page="reports"><span>≡</span> Daily reports <em id="report-count">3</em></button>
         <button class="nav-item office-only" data-page="team"><span>♙</span> Team</button>
+        <button class="nav-item office-only" data-page="settings"><span>⚙</span> Company settings</button>
       </nav>
       <div class="sidebar-bottom">
         <div class="trial-card"><small>PRO PLAN</small><strong>14 days remaining</strong><div class="trial-bar"><i></i></div><button>Manage plan</button></div>
-        <button class="profile"><span class="avatar">LF</span><span><b>Levi Foreman</b><small>Administrator</small></span><i>•••</i></button>
+        <button class="profile" id="profile-button"><span class="avatar" id="profile-avatar">LF</span><span><b id="profile-name">Levi Foreman</b><small id="profile-role">Administrator</small></span><i>•••</i></button>
       </div>
     </aside>
 
@@ -120,6 +121,10 @@
         <div class="page-heading"><div><p class="eyebrow">WORKFORCE</p><h1>Team</h1><p>Manage employees and subcontractor companies separately.</p></div><button class="primary" id="team-add-button">＋ Add team member</button></div>
         <div class="team-tabs"><button class="active" data-team-tab="employees">Employees</button><button data-team-tab="subcontractors">Subcontractors</button><button data-team-tab="accounts">User accounts</button></div>
         <div class="team-grid" id="team-grid"></div><div class="subcontractor-grid" id="subcontractor-grid"></div><div class="account-list panel" id="account-list"></div>
+      </section>
+      <section class="page" id="settings-page">
+        <div class="page-heading"><div><p class="eyebrow">OFFICE ADMINISTRATION</p><h1>Company settings</h1><p>Keep the company information and operating defaults used across Pro Daily Link.</p></div></div>
+        <article class="panel settings-panel"><div class="settings-section-heading"><div class="company-setting-logo" id="company-setting-logo">PDL</div><div><h2>Company profile</h2><p>Visible to authorized office users. Field users cannot access this page.</p></div></div><div class="two-col"><label>Company name<input id="company-name"></label><label>Primary trade<input id="company-trade" placeholder="General contractor, concrete, electrical…"></label></div><div class="two-col"><label>Office email<input id="company-email" type="email"></label><label>Office phone<input id="company-phone" type="tel"></label></div><div class="two-col"><label>Time zone<select id="company-timezone"><option value="America/Los_Angeles">Pacific Time</option><option value="America/Denver">Mountain Time</option><option value="America/Chicago">Central Time</option><option value="America/New_York">Eastern Time</option></select></label><label>Week starts<select id="company-week-start"><option value="monday">Monday</option><option value="sunday">Sunday</option></select></label></div><div class="modal-actions"><button type="button" class="primary" id="save-company-settings">Save company settings</button></div></article>
       </section>
     </main>
   </div>
@@ -274,6 +279,7 @@
     </form>
   </dialog>
 
+  <dialog id="profile-modal"><form method="dialog"><div class="modal-header"><div><p class="eyebrow">YOUR ACCOUNT</p><h2>Profile settings</h2></div><button class="close-button" value="cancel">×</button></div><div class="profile-photo-editor"><span class="avatar" id="profile-preview">LF</span><div><strong>Profile photo</strong><p>Upload a JPG, PNG, or WebP image.</p><input id="profile-photo" type="file" accept="image/jpeg,image/png,image/webp"></div></div><label>Display name<input id="profile-display-name"></label><label>Appearance<select id="profile-theme"><option value="light">Light</option><option value="dark">Dark</option><option value="system">Use device setting</option></select></label><div class="modal-actions"><button value="cancel" class="secondary">Cancel</button><button type="button" class="primary" id="save-profile">Save profile</button></div></form></dialog>
   <div class="toast" id="toast"></div>
   <script src="app.js"></script>
 </body>
