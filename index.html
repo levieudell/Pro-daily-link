@@ -97,7 +97,7 @@
       </section>
 
       <section class="page" id="projects-page">
-        <div class="page-heading"><div><p class="eyebrow">CUSTOMERS & WORK</p><h1>Projects</h1><p>Track customers, job sites, estimates, and actual production.</p></div><div><button class="secondary" id="import-estimate">Import estimate PDF</button> <button class="primary" id="new-project">＋ New project</button></div></div>
+        <div class="page-heading"><div><p class="eyebrow">CUSTOMERS & WORK</p><h1>Projects</h1><p>Track customers, job sites, estimates, and actual production.</p></div><button class="primary" id="new-project">＋ New project</button></div>
         <div class="filter-row"><div class="search-box">⌕ <input id="project-search" placeholder="Search projects or customers" /></div><select><option>All statuses</option><option>On track</option><option>At risk</option></select></div>
         <div class="project-card-grid" id="project-cards"></div>
       </section>
@@ -204,7 +204,7 @@
       <label>Job-site address<input id="project-site" placeholder="Street, city" /></label>
       <div class="two-col"><label>Start date<input id="project-start" type="date" /></label><label>Target finish<input id="project-end" type="date" /></label></div>
       <div class="two-col"><label>Supervisor<select id="project-supervisor"></select></label><label>Job-site contact<input id="project-contact" placeholder="Name and phone" /></label></div>
-      <div class="modal-actions"><button value="cancel" class="secondary">Cancel</button><button type="button" class="primary" id="save-project">Save project</button></div>
+      <div class="modal-actions"><button value="cancel" class="secondary">Cancel</button><button type="button" class="secondary" id="save-project-import">Save & import estimate</button><button type="button" class="primary" id="save-project">Save project</button></div>
     </form>
   </dialog>
 
