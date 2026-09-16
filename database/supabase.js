@@ -50,6 +50,24 @@ async function download(bucket, objectKey) {
   return request(`/storage/v1/object/${bucket}/${safeKey}`);
 }
 
+async function loadCompanySnapshot(companyId) {
+  if (!configured()) return null;
+  const response = await request(`/rest/v1/companies?id=eq.${encodeURIComponent(companyId)}&select=data&limit=1`);
+  const rows = await response.json();
+  return rows[0]?.data || null;
+}
+
+async function saveCompanySnapshot(snapshot) {
+  if (!configured()) return false;
+  const id = snapshot.company.id;
+  await request('/rest/v1/companies?on_conflict=id', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Prefer: 'resolution=merge-duplicates,return=minimal' },
+    body: JSON.stringify([{ id, slug: `company-${id}`, name: snapshot.company.name, data: snapshot }])
+  });
+  return true;
+}
+
 async function health() {
   if (!configured()) return { configured: false, reachable: false };
   try {
@@ -60,4 +78,4 @@ async function health() {
   }
 }
 
-module.exports = { loadLocalEnv, configured, upload, download, health, request };
+module.exports = { loadLocalEnv, configured, upload, download, loadCompanySnapshot, saveCompanySnapshot, health, request };
