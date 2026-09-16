@@ -59,5 +59,7 @@ server.listen(4188,async()=>{try{
   const assignment=(await request('/api/assignments',{method:'POST',body:JSON.stringify({projectId:project.id,memberIds:[1],date:'2026-09-15',start:'06:00',end:'07:00',activity:'Test'})})).data;assert.ok(assignment.id);
   result=await request('/api/assignments',{method:'POST',body:JSON.stringify({projectId:project.id,memberIds:[1],date:'2026-09-15',start:'06:30',end:'07:30',activity:'Conflict'})});assert.equal(result.response.status,409);
   result=await request(`/api/assignments/${assignment.id}`,{method:'DELETE'});assert.equal(result.data.ok,true);
+  const preferences=(await request(`/api/users/${original.users[0].id}/preferences`,{method:'PATCH',body:JSON.stringify({scheduleCrew:'Crew A',scheduleShowOffice:false})})).data;assert.equal(preferences.scheduleCrew,'Crew A');const officeState=(await request('/api/state')).data;assert.equal(officeState.currentUser.preferences.scheduleCrew,'Crew A');
+  let archived=(await request(`/api/projects/${project.id}/archive`,{method:'PATCH',body:JSON.stringify({archived:true})})).data;assert.equal(archived.archived,true);archived=(await request(`/api/projects/${project.id}/archive`,{method:'PATCH',body:JSON.stringify({archived:false})})).data;assert.equal(archived.archived,false);
   console.log('API workflow tests passed');
 }catch(error){console.error(error);process.exitCode=1}finally{server.close(()=>{fs.rmSync(tempDir,{recursive:true,force:true})})}});
