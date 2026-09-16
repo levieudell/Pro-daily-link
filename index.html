@@ -148,7 +148,7 @@
   <dialog id="report-modal">
     <form method="dialog" id="report-form">
       <div class="modal-header"><div><p class="eyebrow">FIELD REPORT</p><h2 id="report-modal-title">Create daily report</h2></div><button class="close-button" value="cancel">×</button></div>
-      <div class="report-steps"><span class="active" data-step-dot="1"><b>1</b> Field notes</span><i></i><span data-step-dot="2"><b>2</b> Verify report</span></div>
+      <div class="report-steps"><span class="active" data-step-dot="1"><b>1</b> Field notes & photos</span><i></i><span data-step-dot="2"><b>2</b> Production & labor</span></div>
       <div class="report-step active" data-report-step="1">
         <label>Project<select id="report-project" required></select></label>
         <div class="two-col"><label>Date<input type="date" id="report-date" required /></label><label id="report-language-label">Note language<select id="report-language"><option value="en-US">English</option><option value="es-MX">Español</option></select></label></div><label>Crew<select id="report-crew"><option value="Crew A">Crew A · Concrete</option><option value="Crew B">Crew B · Framing</option><option value="Crew C">Crew C · Civil</option><option value="Crew D">Crew D · General</option></select></label>
@@ -164,6 +164,7 @@
       <div class="report-step" data-report-step="2">
         <div id="ai-preview" class="ai-preview"></div>
         <div class="verify-banner"><b>Verify before submitting</b><span>AI suggestions can be changed. Confirm every quantity and hour.</span></div>
+        <div class="report-gaps" id="report-gaps"></div>
         <label>Office summary<textarea id="report-summary" rows="3" placeholder="AI will draft this summary. Tap here to correct it."></textarea></label>
         <div class="section-heading"><h3>Production completed</h3><div><button type="button" id="add-production-row">＋ Estimate item</button><button type="button" id="add-custom-production">＋ Custom work</button></div></div>
         <div id="production-rows"></div>
@@ -172,7 +173,7 @@
         <div class="two-col"><label>Delays / issues<textarea id="report-delays" rows="2" placeholder="Cause and duration"></textarea></label><label>Safety observations<textarea id="report-safety" rows="2" placeholder="Positive observations or incidents"></textarea></label></div>
         <label>Next step<textarea id="report-next" rows="2" placeholder="What should happen next? Leave blank if unknown."></textarea></label>
         <label>Foreman signature<input id="report-signature" placeholder="Type full name to sign" /></label>
-        <div class="modal-actions"><button type="button" class="secondary" id="report-back">← Back to notes</button><button value="default" class="primary" id="save-report">Submit verified report</button></div>
+        <div class="modal-actions"><button type="button" class="secondary" id="report-back">← Back to notes</button><button type="button" class="secondary" id="save-report-step2-draft">Save draft</button><button value="default" class="primary" id="save-report">Submit to office</button></div>
       </div>
     </form>
   </dialog>
