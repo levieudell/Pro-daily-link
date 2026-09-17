@@ -1,0 +1,30 @@
+button{color:#111416;-webkit-text-fill-color:#111416}
+.secondary{color:#26302c;-webkit-text-fill-color:#26302c;border:1px solid #d9dcd8}
+nav button{color:#cbd1d4;-webkit-text-fill-color:#cbd1d4}
+nav button.active,nav button:hover{color:#fff;-webkit-text-fill-color:#fff}
+
+@media(max-width:800px){
+  aside{position:sticky;top:0;z-index:20;width:auto;padding:11px 14px;display:grid;grid-template-columns:50px 1fr;grid-template-rows:auto auto;column-gap:11px;row-gap:1px;box-shadow:0 5px 20px #0003}
+  aside img{grid-row:1/3;width:50px;height:50px;object-fit:contain;border-radius:8px;padding:3px}
+  aside strong{align-self:end;font-size:14px}
+  aside small{align-self:start;font-size:10px}
+  aside nav{grid-column:1/-1;display:flex;gap:7px;margin:10px -2px 0;overflow-x:auto;padding:0 2px 2px;scrollbar-width:none}
+  aside nav::-webkit-scrollbar{display:none}
+  aside nav button{flex:0 0 auto;white-space:nowrap;padding:9px 12px;border:1px solid #31383b;border-radius:8px;font-size:12px}
+  main{margin:0;padding:20px 14px 36px}
+  header{margin-bottom:18px}
+  header h1{font-size:26px;line-height:1.12}
+  header>div:last-child{flex-wrap:wrap}
+  header>div:last-child button{min-height:42px}
+}
+
+@media(max-width:560px){
+  .metrics{grid-template-columns:1fr 1fr}
+  .metric,article{padding:16px}
+  .article-heading h2{margin-bottom:6px}
+  header>div:last-child{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+  header>div:last-child #primary-action{grid-column:1/-1}
+  header>div:last-child button{width:100%}
+  .customer-card{grid-template-columns:1fr auto}
+  .customer-card>.badge{grid-column:1/-1;justify-self:start}
+}
