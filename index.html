@@ -12,11 +12,12 @@
   <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
+  <a class="skip-link" href="#app-main">Skip to main content</a>
   <div class="app-shell">
     <div class="connection-banner" id="connection-banner" role="status"></div>
     <aside class="sidebar" id="sidebar">
       <div class="brand"><span class="brand-mark"><img src="assets/pro-daily-link-logo.png" alt="Pro Daily Link logo" /></span><span>Pro Daily <b>Link</b></span></div>
-      <nav id="main-nav">
+      <nav id="main-nav" aria-label="Primary navigation">
         <button class="nav-item active office-only" data-page="dashboard"><span>▦</span> Overview</button>
         <button class="nav-item office-only" data-page="actions"><span>!</span> Action center <em id="action-count">0</em></button>
         <button class="nav-item office-only" data-page="schedule"><span>▣</span> Schedule</button>
@@ -33,11 +34,11 @@
       </div>
     </aside>
 
-    <main>
+    <main id="app-main" tabindex="-1">
       <header class="topbar">
-        <button class="menu-button" id="menu-button">☰</button>
+        <button class="menu-button" id="menu-button" type="button" aria-label="Open navigation" aria-controls="sidebar" aria-expanded="false">☰</button>
         <div class="site-switcher"><small>VIEW AS</small><select id="role-switcher"><option value="office">Office administrator</option><option value="field">Field team · Marcus Reed</option></select></div>
-        <div class="top-actions"><button class="icon-button help-trigger" id="help-button" aria-label="Open Help Center" title="Help Center">?</button><button class="icon-button notification">♢<i></i></button><button class="secondary small" id="logout-button" hidden>Sign out</button><button class="primary small" data-open-report>＋ New daily report</button></div>
+        <div class="top-actions"><button class="icon-button help-trigger" id="help-button" aria-label="Open Help Center" title="Help Center">?</button><button class="icon-button notification" aria-label="View notifications">♢<i aria-hidden="true"></i></button><button class="secondary small" id="logout-button" hidden>Sign out</button><button class="primary small" data-open-report aria-label="New daily report">＋ New daily report</button></div>
       </header>
 
       <section class="page active" id="dashboard-page">
@@ -290,7 +291,7 @@
   <dialog id="help-modal" class="wide-modal"><form method="dialog"><div class="modal-header"><div><p class="eyebrow">PRO DAILY LINK SUPPORT</p><h2>Help Center</h2></div><button class="close-button" value="cancel">×</button></div><label class="help-search">Search help<input id="help-search" type="search" placeholder="Search setup, dailies, production, mobile…"></label><div class="help-layout"><aside id="help-categories"></aside><section id="help-results"></section><article id="help-detail"><div class="help-empty"><strong>Choose a help topic</strong><p>Step-by-step guidance will appear here.</p></div></article></div></form></dialog>
   <dialog id="billing-modal" class="wide-modal"><form method="dialog"><div class="modal-header"><div><p class="eyebrow">ACCOUNT &amp; BILLING</p><h2>Manage plan</h2></div><button class="close-button" value="cancel">×</button></div><div id="billing-summary" class="billing-summary"></div><div id="billing-plans" class="billing-plans"></div><div class="billing-note">Payments are securely processed by Stripe. Pro Daily Link never stores card numbers.</div><div class="modal-actions"><button value="cancel" class="secondary">Close</button><button type="button" class="secondary" id="billing-portal">Payment methods &amp; invoices</button></div></form></dialog>
   <dialog id="profile-modal"><form method="dialog"><div class="modal-header"><div><p class="eyebrow">YOUR ACCOUNT</p><h2>Profile settings</h2></div><button class="close-button" value="cancel">×</button></div><div class="profile-photo-editor"><span class="avatar" id="profile-preview">LF</span><div><strong>Profile photo</strong><p>Upload a JPG, PNG, or WebP image.</p><input id="profile-photo" type="file" accept="image/jpeg,image/png,image/webp"></div></div><label>Display name<input id="profile-display-name"></label><label>Appearance<select id="profile-theme"><option value="light">Light</option><option value="dark">Dark</option><option value="system">Use device setting</option></select></label><div class="modal-actions"><button value="cancel" class="secondary">Cancel</button><button type="button" class="primary" id="save-profile">Save profile</button></div></form></dialog>
-  <div class="toast" id="toast"></div>
+  <div class="toast" id="toast" role="status" aria-live="polite" aria-atomic="true"></div>
   <script src="app.js"></script>
 </body>
 </html>
