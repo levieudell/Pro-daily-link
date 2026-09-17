@@ -17,3 +17,10 @@ services:
         sync: false
       - key: SUPABASE_SECRET_KEY
         sync: false
+      - key: PDL_PUBLIC_URL
+        value: https://pro-daily-link-demo.onrender.com
+      - key: RESEND_API_KEY
+        sync: false
+      - key: RESEND_FROM
+        value: Pro Daily Link <support@prodailylink.com>
+
