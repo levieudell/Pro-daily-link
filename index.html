@@ -164,7 +164,7 @@
         <label id="field-notes-label">Tell us what happened today<textarea id="field-notes" rows="8" placeholder="Example: Crew A poured 86 yards on the east footing with 9 people for 8 hours. Also stripped 1,200 SF of forms. Pump arrived 45 minutes late…" required></textarea></label>
         <div class="note-tools"><button type="button" id="voice-notes">🎙 Speak notes</button><button type="button" data-note-chip="No delays today. ">No delays</button><button type="button" data-note-chip="No safety incidents. ">No incidents</button><button type="button" data-note-chip="Tomorrow we plan to ">Tomorrow</button></div>
         <div class="autosave-status" id="autosave-status">Notes save automatically on this device</div>
-        <label>Daily photos<input type="file" id="report-photos" accept="image/jpeg,image/png,image/webp" multiple /><small class="input-help">Add progress, material, issue, or completed-work photos.</small></label>
+        <label>Daily photos<input type="file" id="report-photos" accept="image/jpeg,image/png,image/webp" multiple /><small class="input-help">Add progress, material, issue, or completed-work photos.</small></label><label>Photo tags<input id="report-photo-tags" placeholder="progress, concrete, east wall"><small class="input-help">Separate tags with commas. Date and time are added automatically.</small></label>
         <button type="button" class="ai-button" id="ai-convert"><span>✦</span><b>Analyze notes and build report</b><small>AI will propose production, labor, delays, materials, equipment, and safety details</small></button>
         <div class="modal-actions"><button value="cancel" class="secondary">Cancel</button><button type="button" class="secondary" id="save-report-draft">Save notes as draft</button><button type="button" class="primary" id="report-next-step">Next: production & labor →</button></div>
       </div>
@@ -190,7 +190,7 @@
       <div class="modal-header"><div><p class="eyebrow">OFFICE REFERENCE</p><h2>Add project photos</h2></div><button class="close-button" value="cancel">×</button></div>
       <input type="hidden" id="photo-project" />
       <label>Photos<input type="file" id="office-photos" accept="image/jpeg,image/png,image/webp" multiple required /></label>
-      <label>Information for the field<textarea id="photo-caption" rows="3" placeholder="Example: Install flashing to match this approved detail."></textarea></label>
+      <label>Information for the field<textarea id="photo-caption" rows="3" placeholder="Example: Install flashing to match this approved detail."></textarea></label><label>Photo tags<input id="photo-tags" placeholder="approved detail, flashing, west elevation"><small class="input-help">Separate tags with commas. Date and time are added automatically.</small></label>
       <div class="modal-actions"><button value="cancel" class="secondary">Cancel</button><button type="button" class="primary" id="save-photos">Upload photos</button></div>
     </form>
   </dialog>
@@ -267,7 +267,7 @@
       <div class="modal-header"><div><p class="eyebrow">CLOCK IN CREW</p><h2>Start workday</h2></div><button class="close-button" value="cancel">×</button></div>
       <label>Project / job site<select id="start-day-project"></select></label>
       <fieldset class="labor-fieldset"><legend>Who is starting?</legend><div id="start-day-members" class="member-check-list"></div></fieldset>
-      <label>Opening photos<input type="file" id="start-day-photos" accept="image/jpeg,image/png,image/webp" multiple capture="environment" /><small class="input-help">Document site conditions before work begins.</small></label>
+      <label>Opening photos<input type="file" id="start-day-photos" accept="image/jpeg,image/png,image/webp" multiple capture="environment" /><small class="input-help">Document site conditions before work begins.</small></label><label>Photo tags<input id="start-day-photo-tags" placeholder="site conditions, delivery, weather"><small class="input-help">Date and time are added automatically.</small></label>
       <label>Starting note<textarea id="start-day-note" rows="2" placeholder="Optional: planned work or site conditions"></textarea></label>
       <div class="timestamp-preview">Start time will be recorded when you tap the button.</div>
       <div class="modal-actions"><button value="cancel" class="secondary">Cancel</button><button type="button" class="primary big-action" id="confirm-start-day">▶ Start day now</button></div>
@@ -282,7 +282,7 @@
       <label>What was completed?<textarea id="end-day-notes" rows="6" placeholder="Speak or type what the crew accomplished, quantities, delays, and tomorrow's plan." required></textarea></label>
       <button type="button" class="secondary" id="end-day-voice">🎙 Speak completed work</button>
       <label>What happens next?<textarea id="end-day-next" rows="2" placeholder="Optional: tomorrow’s plan, follow-up work, or what the office needs to arrange."></textarea></label>
-      <label>End-of-day photos<input type="file" id="end-day-photos" accept="image/jpeg,image/png,image/webp" multiple capture="environment" /><small class="input-help">Add progress and completed-work photos.</small></label>
+      <label>End-of-day photos<input type="file" id="end-day-photos" accept="image/jpeg,image/png,image/webp" multiple capture="environment" /><small class="input-help">Add progress and completed-work photos.</small></label><label>Photo tags<input id="end-day-photo-tags" placeholder="completed work, progress, issue"><small class="input-help">Date and time are added automatically.</small></label>
       <div class="timestamp-preview">End time and total hours will be calculated when you finish.</div>
       <div class="modal-actions"><button value="cancel" class="secondary">Not yet</button><button type="button" class="primary big-action" id="confirm-end-day">■ End day & build report</button></div>
     </form>
@@ -291,6 +291,7 @@
   <dialog id="help-modal" class="wide-modal"><form method="dialog"><div class="modal-header"><div><p class="eyebrow">PRO DAILY LINK SUPPORT</p><h2>Help Center</h2></div><button class="close-button" value="cancel">×</button></div><label class="help-search">Search help<input id="help-search" type="search" placeholder="Search setup, dailies, production, mobile…"></label><div class="help-layout"><aside id="help-categories"></aside><section id="help-results"></section><article id="help-detail"><div class="help-empty"><strong>Choose a help topic</strong><p>Step-by-step guidance will appear here.</p></div></article></div></form></dialog>
   <dialog id="billing-modal" class="wide-modal"><form method="dialog"><div class="modal-header"><div><p class="eyebrow">ACCOUNT &amp; BILLING</p><h2>Manage plan</h2></div><button class="close-button" value="cancel">×</button></div><div id="billing-summary" class="billing-summary"></div><div id="billing-plans" class="billing-plans"></div><div class="billing-note">Payments are securely processed by Stripe. Pro Daily Link never stores card numbers.</div><div class="modal-actions"><button value="cancel" class="secondary">Close</button><button type="button" class="secondary" id="billing-portal">Payment methods &amp; invoices</button></div></form></dialog>
   <dialog id="profile-modal"><form method="dialog"><div class="modal-header"><div><p class="eyebrow">YOUR ACCOUNT</p><h2>Profile settings</h2></div><button class="close-button" value="cancel">×</button></div><div class="profile-photo-editor"><span class="avatar" id="profile-preview">LF</span><div><strong>Profile photo</strong><p>Upload a JPG, PNG, or WebP image.</p><input id="profile-photo" type="file" accept="image/jpeg,image/png,image/webp"></div></div><label>Display name<input id="profile-display-name"></label><label>Appearance<select id="profile-theme"><option value="light">Light</option><option value="dark">Dark</option><option value="system">Use device setting</option></select></label><div class="modal-actions"><button value="cancel" class="secondary">Cancel</button><button type="button" class="primary" id="save-profile">Save profile</button></div></form></dialog>
+  <dialog id="photo-detail-modal"><form method="dialog"><div class="modal-header"><div><p class="eyebrow">PHOTO RECORD</p><h2>Photo details</h2></div><button class="close-button" value="cancel">×</button></div><div id="photo-detail"></div><div class="modal-actions"><button value="cancel" class="secondary">Close</button></div></form></dialog>
   <div class="toast" id="toast" role="status" aria-live="polite" aria-atomic="true"></div>
   <script src="app.js"></script>
 </body>
