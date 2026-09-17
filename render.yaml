@@ -25,10 +25,16 @@ services:
         value: Pro Daily Link <support@prodailylink.com>
       - key: STRIPE_SECRET_KEY
         sync: false
+      - key: STRIPE_WEBHOOK_SECRET
+        sync: false
       - key: STRIPE_PRICE_STARTER
         sync: false
       - key: STRIPE_PRICE_GROWTH
         sync: false
       - key: STRIPE_PRICE_PRO
+        sync: false
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: SENTRY_DSN
         sync: false
 
