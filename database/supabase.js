@@ -1,5 +1,6 @@
 const fs = require('node:fs');
 const path = require('node:path');
+const crypto = require('node:crypto');
 
 function loadLocalEnv(root) {
   const file = path.join(root, '.env.local');
@@ -43,6 +44,32 @@ async function upload(bucket, objectKey, bytes, contentType) {
     body: bytes
   });
   return { bucket, objectKey, url: `/api/files/${encodeURIComponent(bucket)}/${safeKey}` };
+}
+
+async function ensurePrivateBucket(bucket, fileSizeLimit = 25_000_000, allowedMimeTypes = ['application/json']) {
+  if (!configured()) return false;
+  const response = await fetch(`${process.env.SUPABASE_URL}/storage/v1/bucket`, {
+    method: 'POST',
+    headers: headers({ 'Content-Type': 'application/json' }),
+    body: JSON.stringify({ id: bucket, name: bucket, public: false, file_size_limit: fileSizeLimit, allowed_mime_types: allowedMimeTypes })
+  });
+  if (!response.ok && response.status !== 409) throw new Error(`Supabase bucket setup failed (${response.status}): ${(await response.text()).slice(0, 300)}`);
+  return true;
+}
+
+async function createVerifiedBackup(snapshot) {
+  if (!configured()) return null;
+  await ensurePrivateBucket('tenant-backups');
+  const bytes = Buffer.from(JSON.stringify(snapshot));
+  const hash = crypto.createHash('sha256').update(bytes).digest('hex');
+  const companyId = snapshot.company.id;
+  const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+  const objectKey = `${companyId}/${stamp}-${hash.slice(0, 12)}.json`;
+  await upload('tenant-backups', objectKey, bytes, 'application/json');
+  const restored = Buffer.from(await (await download('tenant-backups', objectKey)).arrayBuffer());
+  const restoredHash = crypto.createHash('sha256').update(restored).digest('hex');
+  if (restoredHash !== hash) throw new Error('Supabase backup verification failed');
+  return { bucket: 'tenant-backups', objectKey, hash, bytes: bytes.length, verifiedAt: new Date().toISOString() };
 }
 
 async function download(bucket, objectKey) {
@@ -92,4 +119,5 @@ async function health() {
   }
 }
 
-module.exports = { loadLocalEnv, configured, upload, download, loadCompanySnapshot, saveCompanySnapshot, loadSnapshot, saveSnapshot, health, request };
+module.exports = { loadLocalEnv, configured, upload, download, ensurePrivateBucket, createVerifiedBackup, loadCompanySnapshot, saveCompanySnapshot, loadSnapshot, saveSnapshot, health, request };
+
