@@ -23,4 +23,12 @@ services:
         sync: false
       - key: RESEND_FROM
         value: Pro Daily Link <support@prodailylink.com>
+      - key: STRIPE_SECRET_KEY
+        sync: false
+      - key: STRIPE_PRICE_STARTER
+        sync: false
+      - key: STRIPE_PRICE_GROWTH
+        sync: false
+      - key: STRIPE_PRICE_PRO
+        sync: false
 
