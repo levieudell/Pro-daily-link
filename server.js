@@ -37,6 +37,24 @@ function platformAudit(platform,req,action,reason,companyId){platform.auditEvent
 function json(res,status,data){res.writeHead(status,{'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store'});res.end(JSON.stringify(data));}
 function body(req){return new Promise((resolve,reject)=>{let raw='';req.on('data',c=>{raw+=c;if(raw.length>30_000_000)reject(new Error('Request too large'));});req.on('end',()=>{try{resolve(raw?JSON.parse(raw):{})}catch(e){reject(e)}});req.on('error',reject);});}
 function nextId(rows){return rows.reduce((max,row)=>Math.max(max,Number(row.id)||0),0)+1}
+function ensureOwnerTeamMember(db){
+  db.team ||= [];
+  const owner=(db.users||[]).find(user=>user.role==='owner'&&user.status==='Active');
+  if(!owner)return false;
+  let changed=false;
+  let member=db.team.find(row=>Number(row.id)===Number(owner.memberId));
+  if(!member)member=db.team.find(row=>row.email&&owner.email&&row.email.toLowerCase()===owner.email.toLowerCase());
+  if(!member){
+    const initials=owner.name.split(/\s+/).filter(Boolean).map(part=>part[0]).join('').slice(0,2).toUpperCase();
+    member={id:nextId(db.team),companyId:db.company.id,name:owner.name,role:'Account Owner',initials,crew:'Office',hours:0,site:'Not assigned',email:owner.email||'',phone:''};
+    db.team.push(member);
+    changed=true;
+  }
+  if(member.role!=='Account Owner'){member.role='Account Owner';changed=true}
+  if(member.crew!=='Office'){member.crew='Office';changed=true}
+  if(Number(owner.memberId)!==Number(member.id)){owner.memberId=member.id;changed=true}
+  return changed
+}
 function tenantUuid(db){return /^[0-9a-f]{8}-[0-9a-f-]{27}$/i.test(String(db.company.id))?db.company.id:stableUuid('company',db.company.id)}
 async function saveAsset(db,bucket,filename,bytes,contentType,localDirectory='uploads'){
   if(supabase.configured())return supabase.upload(bucket,`${tenantUuid(db)}/${Date.now()}-${crypto.randomUUID()}-${filename.replace(/[^a-zA-Z0-9._-]/g,'_')}`,bytes,contentType);
@@ -134,6 +152,7 @@ async function api(req,res,url){
   const tmSummary=url.pathname.match(/^\/api\/projects\/(\d+)\/tm-summary$/);if(req.method==='GET'&&tmSummary){const db=readDb(),projectIndex=db.projects.findIndex(p=>p.id===Number(tmSummary[1])),project=db.projects[projectIndex];if(!project)return json(res,404,{error:'Project not found'});const reports=db.reports.filter(r=>r.project===projectIndex&&r.status==='Approved'),rate=Number(project.tmSettings?.defaultLaborRate)||0,groups=new Map();for(const report of reports)for(const entry of report.laborEntries||[]){const member=db.team.find(m=>m.id===entry.memberId),key=member?.role||'Unclassified labor',current=groups.get(key)||{classification:key,hours:0};current.hours+=Number(entry.hours)||0;groups.set(key,current)}const labor=[...groups.values()].map(row=>({...row,rate,amount:row.hours*rate})),laborHours=labor.reduce((sum,row)=>sum+row.hours,0),laborAmount=labor.reduce((sum,row)=>sum+row.amount,0);return json(res,200,{projectId:project.id,approvedDailies:reports.length,laborHours,laborAmount,materialEntries:reports.filter(r=>r.materials).length,equipmentEntries:reports.filter(r=>r.equipment).length,labor,materialMarkup:Number(project.tmSettings?.materialMarkup)||0,equipmentMarkup:Number(project.tmSettings?.equipmentMarkup)||0})}
   if(req.method==='GET'&&url.pathname==='/api/state'){
     const db=readDb();
+    if(ensureOwnerTeamMember(db))writeDb(db);
     const userId=Number(url.searchParams.get('userId')),accountUser=(db.users||[]).find(user=>user.id===userId);
     if(userId&&!accountUser)return json(res,404,{error:'User not found'});
     if(accountUser?.status!=='Active'&&userId)return json(res,403,{error:'User access is deactivated'});
