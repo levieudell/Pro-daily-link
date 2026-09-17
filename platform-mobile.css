@@ -28,3 +28,8 @@ nav button.active,nav button:hover{color:#fff;-webkit-text-fill-color:#fff}
   .customer-card{grid-template-columns:1fr auto}
   .customer-card>.badge{grid-column:1/-1;justify-self:start}
 }
+
+:where(button,a,input,select,textarea):focus-visible{outline:3px solid #ff6b1a;outline-offset:3px}
+button,input,select,textarea{min-height:44px}
+@media(prefers-reduced-motion:reduce){*,*::before,*::after{animation-duration:.01ms!important;transition-duration:.01ms!important}}
+
