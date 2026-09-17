@@ -19,16 +19,13 @@
       <nav id="main-nav">
         <button class="nav-item active office-only" data-page="dashboard"><span>▦</span> Overview</button>
         <button class="nav-item office-only" data-page="actions"><span>!</span> Action center <em id="action-count">0</em></button>
-        <button class="nav-item office-only" data-page="insights"><span>↗</span> Production insights</button>
         <button class="nav-item office-only" data-page="schedule"><span>▣</span> Schedule</button>
         <button class="nav-item field-only" data-page="myday"><span>☀</span> My day</button>
-        <button class="nav-item" data-page="fieldday"><span>◷</span> Start / end day</button>
-        <button class="nav-item office-only" data-page="projects"><span>⌂</span> Projects</button>
-        <button class="nav-item office-only" data-page="catalog"><span>▧</span> Production catalog</button>
+        <button class="nav-item field-only" data-page="fieldday"><span>◷</span> Start / end day</button>
         <button class="nav-item office-only" data-page="customers"><span>▤</span> Customers</button>
+        <button class="nav-item office-only" data-page="projects"><span>⌂</span> Projects</button>
         <button class="nav-item" data-page="reports"><span>≡</span> Daily reports <em id="report-count">3</em></button>
-        <button class="nav-item office-only" data-page="team"><span>♙</span> Team</button>
-        <button class="nav-item office-only" data-page="settings"><span>⚙</span> Company settings</button>
+        <details class="nav-more office-only" id="nav-more"><summary><span>•••</span> More tools</summary><div><button class="nav-item office-only" data-page="insights"><span>↗</span> Production insights</button><button class="nav-item office-only" data-page="catalog"><span>▧</span> Production catalog</button><button class="nav-item office-only" data-page="team"><span>♙</span> Team</button><button class="nav-item office-only" data-page="settings"><span>⚙</span> Company settings</button></div></details>
       </nav>
       <div class="sidebar-bottom">
         <div class="trial-card"><small id="plan-name">PLAN</small><strong id="trial-days">Loading plan…</strong><div class="trial-bar"><i id="trial-progress"></i></div><button type="button" id="manage-plan">Manage plan</button></div>
