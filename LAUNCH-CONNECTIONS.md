@@ -16,8 +16,11 @@ Add these Render environment variables:
 
 - `STRIPE_SECRET_KEY`
 - `STRIPE_PRICE_STARTER`
+- `STRIPE_PRICE_STARTER_ANNUAL`
 - `STRIPE_PRICE_GROWTH`
+- `STRIPE_PRICE_GROWTH_ANNUAL`
 - `STRIPE_PRICE_PRO`
+- `STRIPE_PRICE_PRO_ANNUAL`
 - `STRIPE_WEBHOOK_SECRET`
 
 Use recurring monthly Stripe prices for $79, $179, and $349. The webhook destination will be the production Pro Daily Link webhook endpoint after its final verified-handler cutover. Never paste Stripe keys into GitHub or chat.

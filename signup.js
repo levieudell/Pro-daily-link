@@ -33,7 +33,11 @@ $('#signup').onsubmit=async event=>{
         password,
         employeeCount:+$('#employees').value,
         projectCount:+$('#projects').value,
-        plan:document.querySelector('[name="plan"]:checked').value
+        plan:document.querySelector('[name="plan"]:checked').value,
+        billingCycle:document.querySelector('[name="billingCycle"]:checked').value,
+        onboardingPreference:document.querySelector('[name="onboarding"]:checked').value,
+        legalAccepted:$('#legal-acceptance').checked,
+        legalVersion:'2026-09-17'
       })
     });
     const data=await response.json();
@@ -47,4 +51,3 @@ $('#signup').onsubmit=async event=>{
 };
 
 recommend();
-
