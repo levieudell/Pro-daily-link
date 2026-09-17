@@ -19,6 +19,7 @@
       <nav id="main-nav">
         <button class="nav-item active office-only" data-page="dashboard"><span>▦</span> Overview</button>
         <button class="nav-item office-only" data-page="actions"><span>!</span> Action center <em id="action-count">0</em></button>
+        <button class="nav-item office-only" data-page="insights"><span>↗</span> Production insights</button>
         <button class="nav-item office-only" data-page="schedule"><span>▣</span> Schedule</button>
         <button class="nav-item field-only" data-page="myday"><span>☀</span> My day</button>
         <button class="nav-item" data-page="fieldday"><span>◷</span> Start / end day</button>
@@ -75,6 +76,14 @@
       <section class="page" id="actions-page">
         <div class="page-heading"><div><p class="eyebrow">TODAY’S PRIORITIES</p><h1>Action center</h1><p>The office’s single queue for items that need attention.</p></div><button class="secondary" id="refresh-actions">Refresh</button></div>
         <div class="action-stats" id="action-stats"></div><div class="panel action-list" id="action-list"></div>
+      </section>
+
+      <section class="page" id="insights-page">
+        <div class="page-heading"><div><p class="eyebrow">VERIFIED PERFORMANCE</p><h1>Production insights</h1><p>Compare estimated and actual production using approved daily reports.</p></div><button class="secondary" id="export-insights">⇩ Export CSV</button></div>
+        <div class="insight-filters panel"><label>From<input id="insight-from" type="date"></label><label>To<input id="insight-to" type="date"></label><label>Project<select id="insight-project"><option value="all">All projects</option></select></label><label>Scope<select id="insight-scope"><option value="all">All line items</option></select></label><label>Crew<select id="insight-crew"><option value="all">All crews</option></select></label></div>
+        <div class="stats-grid insight-stats"><article class="stat-card"><div class="stat-icon green">↗</div><div><small>PRODUCTION EFFICIENCY</small><strong id="insight-efficiency">—</strong><p>Actual rate vs estimate</p></div></article><article class="stat-card"><div class="stat-icon blue">▧</div><div><small>QUANTITY COMPLETED</small><strong id="insight-quantity">—</strong><p>Across filtered work</p></div></article><article class="stat-card"><div class="stat-icon amber">◷</div><div><small>LABOR HOURS</small><strong id="insight-hours">—</strong><p>Approved and allocated</p></div></article><article class="stat-card"><div class="stat-icon red">♙</div><div><small>CREWS COMPARED</small><strong id="insight-crews">—</strong><p>With verified production</p></div></article></div>
+        <div class="insight-grid"><article class="panel"><div class="panel-header"><div><h2>Crew comparison</h2><p>Quantity per labor hour and performance against estimate</p></div></div><div id="insight-crew-list" class="insight-bars"></div></article><article class="panel"><div class="panel-header"><div><h2>Scope performance</h2><p>Where production is winning or needs attention</p></div></div><div id="insight-scope-list" class="insight-bars"></div></article></div>
+        <article class="panel insight-detail"><div class="panel-header"><div><h2>Verified production detail</h2><p>Approved quantities and labor behind the totals</p></div></div><div class="table-wrap"><table><thead><tr><th>DATE</th><th>PROJECT</th><th>LINE ITEM</th><th>CREW</th><th>QUANTITY</th><th>LABOR</th><th>RATE</th><th>VS EST.</th></tr></thead><tbody id="insight-table"></tbody></table></div></article>
       </section>
 
       <section class="page" id="myday-page">
