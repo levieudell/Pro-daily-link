@@ -9,5 +9,7 @@ Guest tokens are looked up by a global hash, then the server opens a transaction
 
 1. Run `001_tenant_foundation.sql` without RLS impersonation. The migration creates and forces tenant RLS policies.
 2. Run `003_private_storage.sql` to create private photo and estimate buckets.
-3. Keep the Supabase service-role credential on the application server only. Never expose it to browser code or commit it.
-4. Store every object beneath a company-prefixed key, such as `<company-id>/projects/<project-id>/photos/<uuid>.jpg`.
+3. Run `005_verified_backups.sql` to provision the private tenant-backup bucket. The server also creates it defensively on first use.
+4. Keep the Supabase service-role credential on the application server only. Never expose it to browser code or commit it.
+5. Store every object beneath a company-prefixed key, such as `<company-id>/projects/<project-id>/photos/<uuid>.jpg`.
+
