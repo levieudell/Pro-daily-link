@@ -1,7 +1,11 @@
 {
   "company": {
     "id": "northstar",
-    "name": "Northstar Construction"
+    "name": "Northstar Construction",
+    "demo": true,
+    "plan": "pro",
+    "planPrice": 349,
+    "subscriptionStatus": "Demo"
   },
   "users": [
     {
@@ -505,3 +509,4 @@
   "photos": [],
   "workdays": []
 }
+
