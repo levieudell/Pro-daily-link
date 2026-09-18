@@ -23,7 +23,13 @@ Add these Render environment variables:
 - `STRIPE_PRICE_PRO_ANNUAL`
 - `STRIPE_WEBHOOK_SECRET`
 
-Use recurring monthly Stripe prices for $79, $179, and $349. The webhook destination will be the production Pro Daily Link webhook endpoint after its final verified-handler cutover. Never paste Stripe keys into GitHub or chat.
+Create recurring Stripe prices for each billing interval:
+
+- Starter: $99 monthly and $990 annually
+- Growth: $199 monthly and $1,990 annually
+- Pro: $399 monthly and $3,990 annually
+
+The webhook destination will be the production Pro Daily Link webhook endpoint after its final verified-handler cutover. Never paste Stripe keys into GitHub or chat.
 
 ### Password-reset email
 
@@ -38,7 +44,11 @@ Add `OPENAI_API_KEY` for Spanish translation and scanned-estimate extraction. Th
 
 ### Error monitoring
 
-Create a Sentry Node project and add `SENTRY_DSN`. Do not include customer field notes or photos in error payloads.
+Create a Sentry Node project and add `SENTRY_DSN`. The server integration is already installed and sends request IDs, request methods, and route names without customer field notes, photos, passwords, query strings, or personal data. Optional: set `SENTRY_TRACES_SAMPLE_RATE` (the default is `0.05`).
+
+### Backup restoration
+
+Run `npm run backup:restore-drill` with the Supabase variables configured. The drill creates and downloads a private backup, verifies its SHA-256 hash, compares every record count, and reconstructs an isolated copy under a new company ID without overwriting live tenant data.
 
 ## Final launch checks
 
@@ -46,6 +56,6 @@ Create a Sentry Node project and add `SENTRY_DSN`. Do not include customer field
 2. Run `npm run launch:check` in the production environment.
 3. Complete a Stripe test checkout, plan change, failed-payment test, cancellation, and customer-portal return.
 4. Request and use a password-reset email.
-5. Restore a verified Supabase backup into an isolated test tenant and compare record totals.
+5. Run `npm run backup:restore-drill` and retain the successful output with the launch checklist.
 6. Run the two-company tenant-denial suite.
 7. Confirm legal terms, privacy policy, support contact, and data-retention policy.

@@ -4,6 +4,7 @@
   "private": true,
   "description": "Construction field production SaaS MVP",
   "dependencies": {
+    "@sentry/node": "^10.0.0",
     "pg": "^8.16.3"
   },
   "scripts": {
@@ -14,9 +15,12 @@
     "migrate:tenant:preview": "node database/migrate-json.js",
     "migrate:tenant:apply": "node database/migrate-json.js --apply",
     "launch:check": "node database/launch-readiness.js",
+    "backup:restore-drill": "node database/restore-drill.js",
     "db:start": "powershell -NoProfile -ExecutionPolicy Bypass -File database/bootstrap-postgres.ps1",
     "db:stop": "docker compose stop postgres",
     "db:status": "docker compose ps postgres"
   },
-  "engines": { "node": ">=20" }
+  "engines": {
+    "node": ">=20"
+  }
 }

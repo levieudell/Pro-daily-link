@@ -4,4 +4,6 @@ data/*.tmp
 uploads/*
 !uploads/.gitkeep
 node_modules/
+.npm-cache/
+.edge-audit/
 .gitdata/
