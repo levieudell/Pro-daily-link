@@ -16,6 +16,7 @@
     "migrate:tenant:apply": "node database/migrate-json.js --apply",
     "launch:check": "node database/launch-readiness.js",
     "backup:restore-drill": "node database/restore-drill.js",
+    "account:commercial": "node database/set-commercial-account.js",
     "db:start": "powershell -NoProfile -ExecutionPolicy Bypass -File database/bootstrap-postgres.ps1",
     "db:stop": "docker compose stop postgres",
     "db:status": "docker compose ps postgres"
