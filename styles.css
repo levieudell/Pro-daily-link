@@ -67,3 +67,5 @@ label input,label select,label textarea{width:100%;min-width:0}input[type="file"
 .billing-cycle{display:flex;justify-content:center;gap:4px;margin:0 auto 18px;background:#ecebe7;border-radius:10px;padding:4px;width:max-content;max-width:100%}.billing-cycle button{border:0;border-radius:7px;background:transparent;color:var(--ink);padding:10px 14px}.billing-cycle button.active{background:#fff;box-shadow:0 1px 4px #0002;color:#1769e0}
 .alert.all-clear{background:#f2f8f5;border-color:#cfe3d8}.alert.all-clear>span{background:#dcefe5;color:#1e6a50}.alert.all-clear p{color:#60736a}
 .topbar-control{place-items:center;color:#1769e0}.icon-button.topbar-control{display:grid}.menu-button.topbar-control{display:none}.topbar-control svg{width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}@media(max-width:760px){.menu-button.topbar-control{display:grid}}
+.member-card .status.off-site{background:#eef1ef;color:#69756f}
+
