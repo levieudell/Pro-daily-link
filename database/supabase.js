@@ -84,6 +84,25 @@ async function loadCompanySnapshot(companyId) {
   return rows[0]?.data || null;
 }
 
+async function findCompanyByUserEmail(email) {
+  if (!configured()) return null;
+  const normalized = String(email || '').trim().toLowerCase();
+  if (!normalized) return null;
+  const response = await request('/rest/v1/companies?select=id,data&limit=1000');
+  const rows = await response.json();
+  const match = rows.find(row => (row.data?.users || []).some(user =>
+    user.status === 'Active' && String(user.email || '').trim().toLowerCase() === normalized
+  ));
+  return match?.id || null;
+}
+
+async function listCompanySnapshots() {
+  if (!configured()) return [];
+  const response = await request('/rest/v1/companies?select=data&limit=1000');
+  const rows = await response.json();
+  return rows.map(row => row.data).filter(snapshot => snapshot?.company?.id);
+}
+
 async function saveCompanySnapshot(snapshot) {
   if (!configured()) return false;
   const id = snapshot.company.id;
@@ -119,5 +138,4 @@ async function health() {
   }
 }
 
-module.exports = { loadLocalEnv, configured, upload, download, ensurePrivateBucket, createVerifiedBackup, loadCompanySnapshot, saveCompanySnapshot, loadSnapshot, saveSnapshot, health, request };
-
+module.exports = { loadLocalEnv, configured, upload, download, ensurePrivateBucket, createVerifiedBackup, loadCompanySnapshot, findCompanyByUserEmail, listCompanySnapshots, saveCompanySnapshot, loadSnapshot, saveSnapshot, health, request };
