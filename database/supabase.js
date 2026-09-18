@@ -92,9 +92,15 @@ async function findCompanyByUserEmail(email) {
   if (!normalized) return null;
   const response = await request('/rest/v1/companies?select=id,data&limit=1000');
   const rows = await response.json();
-  const match = rows.find(row => (row.data?.users || []).some(user =>
+  const matches = rows.filter(row => !row.data?.company?.archivedDuplicate && (row.data?.users || []).some(user =>
     user.status === 'Active' && String(user.email || '').trim().toLowerCase() === normalized
   ));
+  matches.sort((a, b) => {
+    const activityA = (a.data?.projects || []).length + (a.data?.reports || []).length;
+    const activityB = (b.data?.projects || []).length + (b.data?.reports || []).length;
+    return activityB - activityA || new Date(b.data?.company?.createdAt || 0) - new Date(a.data?.company?.createdAt || 0);
+  });
+  const match = matches[0];
   return match?.id || null;
 }
 
