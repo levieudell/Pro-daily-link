@@ -53,7 +53,9 @@ async function ensurePrivateBucket(bucket, fileSizeLimit = 25_000_000, allowedMi
     headers: headers({ 'Content-Type': 'application/json' }),
     body: JSON.stringify({ id: bucket, name: bucket, public: false, file_size_limit: fileSizeLimit, allowed_mime_types: allowedMimeTypes })
   });
-  if (!response.ok && response.status !== 409) throw new Error(`Supabase bucket setup failed (${response.status}): ${(await response.text()).slice(0, 300)}`);
+  const responseText = response.ok ? '' : await response.text();
+  const alreadyExists = response.status === 409 || /BucketAlreadyExists|resource already exists/i.test(responseText);
+  if (!response.ok && !alreadyExists) throw new Error(`Supabase bucket setup failed (${response.status}): ${responseText.slice(0, 300)}`);
   return true;
 }
 
