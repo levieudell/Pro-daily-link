@@ -17,6 +17,7 @@
     "launch:check": "node database/launch-readiness.js",
     "backup:restore-drill": "node database/restore-drill.js",
     "account:commercial": "node database/set-commercial-account.js",
+    "account:temp-password": "node database/set-temp-password.js",
     "db:start": "powershell -NoProfile -ExecutionPolicy Bypass -File database/bootstrap-postgres.ps1",
     "db:stop": "docker compose stop postgres",
     "db:status": "docker compose ps postgres"
