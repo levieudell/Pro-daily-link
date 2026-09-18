@@ -19,7 +19,7 @@ assert.equal(supabase.configured(), true);
 const originalFetch = global.fetch;
 let backupBytes;
 global.fetch = async (url, options = {}) => {
-  if (String(url).endsWith('/storage/v1/bucket')) return new Response('', { status: 200 });
+  if (String(url).endsWith('/storage/v1/bucket')) return new Response(JSON.stringify({ statusCode:'409',code:'BucketAlreadyExists',message:'The resource already exists' }), { status: 400 });
   if (String(url).includes('/storage/v1/object/tenant-backups/') && options.method === 'POST') { backupBytes = Buffer.from(options.body); return new Response('', { status: 200 }); }
   if (String(url).includes('/storage/v1/object/tenant-backups/')) return new Response(backupBytes, { status: 200, headers: { 'Content-Type': 'application/json' } });
   if (String(url).includes('/rest/v1/companies?select=id,data')) return new Response(JSON.stringify([{ id:'tenant-a',data:{users:[{email:'owner@example.test',status:'Active'}]} }]), { status: 200, headers: { 'Content-Type':'application/json' } });
