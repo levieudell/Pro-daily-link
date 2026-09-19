@@ -68,4 +68,5 @@ label input,label select,label textarea{width:100%;min-width:0}input[type="file"
 .alert.all-clear{background:#f2f8f5;border-color:#cfe3d8}.alert.all-clear>span{background:#dcefe5;color:#1e6a50}.alert.all-clear p{color:#60736a}
 .topbar-control{place-items:center;color:#1769e0}.icon-button.topbar-control{display:grid}.menu-button.topbar-control{display:none}.topbar-control svg{width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}@media(max-width:760px){.menu-button.topbar-control{display:grid}}
 .member-card .status.off-site{background:#eef1ef;color:#69756f}
+.password-copy-row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px;align-items:center;margin:7px 0}.generated-link .password-copy-row input{margin:0;min-width:0}.password-copy-row button{white-space:nowrap}@media(max-width:520px){.password-copy-row{grid-template-columns:1fr}.password-copy-row button{width:100%}}
 
