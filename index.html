@@ -98,7 +98,7 @@
 
       <section class="page" id="schedule-page">
         <div class="page-heading"><div><p class="eyebrow">FIELD OPERATIONS</p><h1>Crew schedule</h1><p>Assign crews and individual team members to job sites.</p></div><button class="primary" id="new-assignment">＋ New assignment</button></div>
-        <div class="schedule-toolbar"><button aria-label="Previous week">‹</button><strong>September 14–20, 2026</strong><button aria-label="Next week">›</button><span></span><button class="secondary">Today</button></div>
+        <div class="schedule-toolbar"><button aria-label="Previous week">‹</button><strong id="schedule-week-label">This week</strong><button aria-label="Next week">›</button><span></span><button class="secondary">Today</button></div>
         <div class="schedule-filters"><label>People<select id="schedule-crew-filter"><option value="all">All crews</option></select></label><label class="filter-check"><input type="checkbox" id="schedule-show-office" /> Show office staff</label><small id="schedule-filter-status">Filters save to your profile.</small></div>
         <article class="panel schedule-board" id="schedule-board"></article>
       </section>
@@ -167,7 +167,7 @@
         <div class="two-col"><label>Date<input type="date" id="report-date" required /></label><label id="report-language-label">Note language<select id="report-language"><option value="en-US">English</option><option value="es-MX">Español</option></select></label></div><label>Crew<select id="report-crew"><option value="">No crew selected</option></select><small class="input-help">Crews are managed from Team → Crews.</small></label>
         <div class="weather-row"><div><small>JOB-SITE WEATHER</small><strong id="weather-summary">Not loaded</strong></div><button type="button" class="secondary" id="load-weather">⌖ Use my location</button></div>
         <input type="hidden" id="report-weather" /><input type="hidden" id="report-temperature" />
-        <label id="field-notes-label">Tell us what happened today<textarea id="field-notes" rows="8" placeholder="Example: Crew A poured 86 yards on the east footing with 9 people for 8 hours. Also stripped 1,200 SF of forms. Pump arrived 45 minutes late…" required></textarea></label>
+        <label id="field-notes-label">Tell us what happened today<textarea id="field-notes" rows="8" placeholder="Example: Concrete crew poured 86 yards on the east foundation with 3 people for 8 hours. Pump arrived 45 minutes late…" required></textarea></label>
         <div class="note-tools"><button type="button" id="voice-notes">🎙 Speak notes</button><button type="button" data-note-chip="No delays today. ">No delays</button><button type="button" data-note-chip="No safety incidents. ">No incidents</button><button type="button" data-note-chip="Tomorrow we plan to ">Tomorrow</button></div>
         <div class="autosave-status" id="autosave-status">Notes save automatically on this device</div>
         <label>Daily photos<input type="file" id="report-photos" accept="image/jpeg,image/png,image/webp" multiple /><small class="input-help">Add progress, material, issue, or completed-work photos.</small></label><label>Photo tags<input id="report-photo-tags" placeholder="progress, concrete, east wall"><small class="input-help">Separate tags with commas. Date and time are added automatically.</small></label>
@@ -206,7 +206,7 @@
     <form method="dialog" id="customer-form">
       <div class="modal-header"><div><p class="eyebrow">NEW CLIENT</p><h2>Add customer</h2></div><button class="close-button" value="cancel">×</button></div>
       <label>Company name<input id="customer-name" required placeholder="Customer or organization" /></label>
-      <div class="two-col"><label>Primary contact<input id="customer-contact" placeholder="Full name" /></label><label>Phone<input id="customer-phone" type="tel" placeholder="(555) 555-0123" /></label></div>
+      <div class="two-col"><label>Primary contact<input id="customer-contact" placeholder="Full name" /></label><label>Phone<input id="customer-phone" type="tel" placeholder="(503) 555-0100" /></label></div>
       <label>Email<input id="customer-email" type="email" placeholder="contact@company.com" /></label>
       <div class="modal-actions"><button value="cancel" class="secondary">Cancel</button><button type="button" class="primary" id="save-customer">Save customer</button></div>
     </form>
