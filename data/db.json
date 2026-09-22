@@ -5,16 +5,27 @@
     "demo": true,
     "plan": "pro",
     "planPrice": 349,
-    "subscriptionStatus": "Demo"
+    "subscriptionStatus": "Demo",
+    "trade": "General contractor",
+    "email": "office@northstarconstruction.example",
+    "phone": "(503) 555-0140",
+    "timezone": "America/Los_Angeles",
+    "weekStart": "monday",
+    "address": "1847 SE Division St, Portland, OR 97202",
+    "persistence": {
+      "revision": 1,
+      "updatedAt": "2026-09-22T23:21:27.278Z",
+      "lastBackupAt": "2026-09-22T23:21:27.278Z"
+    }
   },
   "users": [
     {
       "id": 1,
       "name": "Levi Foreman",
-      "email": "owner@northstar.local",
+      "email": "levi.foreman@northstarconstruction.example",
       "role": "owner",
       "projectIds": [],
-      "memberId": null,
+      "memberId": 10,
       "status": "Active",
       "mustSetPassword": false,
       "createdAt": "2026-09-15T00:00:00.000Z"
@@ -23,101 +34,103 @@
   "customers": [
     {
       "id": 1,
-      "name": "Apex Health Partners",
+      "name": "Hawthorne Health",
       "contact": "Dana Walsh",
-      "email": "dana@apexhealth.example",
-      "phone": "(916) 555-0142"
+      "email": "dana.walsh@hawthornehealth.example",
+      "phone": "(503) 555-0142"
     },
     {
       "id": 2,
-      "name": "Briar Residential",
+      "name": "Oak & Elm Homes",
       "contact": "Nina Price",
-      "email": "nina@briar.example",
-      "phone": "(916) 555-0188"
+      "email": "nina.price@oakandelm.example",
+      "phone": "(503) 555-0148"
     },
     {
       "id": 3,
-      "name": "Westline Logistics",
+      "name": "Willamette Logistics",
       "contact": "Grant Hill",
-      "email": "grant@westline.example",
-      "phone": "(530) 555-0107"
+      "email": "grant.hill@willamettelogistics.example",
+      "phone": "(541) 555-0107"
     },
     {
       "id": 4,
-      "name": "Twin Rivers USD",
+      "name": "Bend School District",
       "contact": "Maya Chen",
-      "email": "maya@trusd.example",
-      "phone": "(916) 555-0191"
+      "email": "maya.chen@bendsd.example",
+      "phone": "(541) 555-0191"
     },
     {
       "id": 5,
-      "name": "Linden Commercial",
+      "name": "Alberta Street Retail",
       "contact": "Owen Brooks",
-      "email": "owen@linden.example",
-      "phone": "(707) 555-0134"
+      "email": "owen.brooks@albertaretail.example",
+      "phone": "(503) 555-0134"
     }
   ],
   "projects": [
     {
       "id": 1,
       "customerId": 1,
-      "name": "Riverside Medical Center",
-      "customer": "Apex Health Partners",
-      "code": "RMC",
+      "name": "Division Street Clinic",
+      "customer": "Hawthorne Health",
+      "code": "DSC",
       "color": "#dcebe4",
-      "site": "1240 River Rd, Sacramento",
-      "crew": 9,
-      "progress": 68,
+      "site": "4120 SE Division St, Portland, OR 97206",
+      "crew": 3,
+      "progress": 27,
       "production": 96.4,
       "status": "On track",
-      "budget": "$1.82M",
-      "startDate": "2026-04-06",
-      "endDate": "2026-11-20",
+      "budget": "$486K",
+      "contractType": "estimated",
+      "startDate": "2026-08-04",
+      "endDate": "2026-12-18",
       "supervisor": "Marcus Reed",
-      "siteContact": "Dana Walsh · (916) 555-0142",
+      "siteContact": "Dana Walsh · (503) 555-0142",
       "estimateItems": [
         {
           "id": 1,
           "name": "Foundation concrete",
-          "plannedQuantity": 1250,
+          "plannedQuantity": 180,
           "unit": "CY",
-          "budgetHours": 2400,
-          "cost": 385000
+          "budgetHours": 220,
+          "cost": 96000
         },
         {
           "id": 2,
-          "name": "Structural slab",
-          "plannedQuantity": 84000,
+          "name": "Slab on grade",
+          "plannedQuantity": 4200,
           "unit": "SF",
-          "budgetHours": 3150,
-          "cost": 472000
+          "budgetHours": 160,
+          "cost": 74000
         }
       ]
     },
     {
       "id": 2,
       "customerId": 2,
-      "name": "Oakview Apartments",
-      "customer": "Briar Residential",
-      "code": "OA",
+      "name": "Sellwood Flats",
+      "customer": "Oak & Elm Homes",
+      "code": "SF",
       "color": "#e6e1f2",
-      "site": "88 Oakview Dr, Roseville",
-      "crew": 7,
+      "site": "1622 SE Milwaukie Ave, Portland, OR 97202",
+      "crew": 2,
       "progress": 42,
       "production": 91.2,
       "status": "At risk",
       "budget": "$940K",
+      "contractType": "estimated",
       "startDate": "2026-06-01",
       "endDate": "2027-02-12",
       "supervisor": "Tyler Morgan",
-      "siteContact": "Nina Price · (916) 555-0188",
+      "siteContact": "Nina Price · (503) 555-0148",
       "estimateItems": [
         {
           "id": 1,
           "name": "Wood framing",
-          "plannedQuantity": 148000,
+          "plannedQuantity": 18000,
           "unit": "SF",
-          "budgetHours": 5200,
+          "budgetHours": 2100,
           "cost": 510000
         }
       ]
@@ -125,20 +138,21 @@
     {
       "id": 3,
       "customerId": 3,
-      "name": "Westline Distribution Hub",
-      "customer": "Westline Logistics",
-      "code": "WD",
+      "name": "Willamette Distribution Hub",
+      "customer": "Willamette Logistics",
+      "code": "WDH",
       "color": "#e3edf2",
-      "site": "4500 Commerce Way, Elk Grove",
-      "crew": 12,
-      "progress": 81,
+      "site": "8750 Prairie Rd, Eugene, OR 97402",
+      "crew": 2,
+      "progress": 82,
       "production": 102.8,
       "status": "Ahead",
       "budget": "$2.45M",
+      "contractType": "estimated",
       "startDate": "2026-01-12",
       "endDate": "2026-10-30",
       "supervisor": "Aaron Kim",
-      "siteContact": "Grant Hill · (530) 555-0107",
+      "siteContact": "Grant Hill · (541) 555-0107",
       "estimateItems": [
         {
           "id": 1,
@@ -153,68 +167,97 @@
     {
       "id": 4,
       "customerId": 4,
-      "name": "Cedar Grove Elementary",
-      "customer": "Twin Rivers USD",
-      "code": "CG",
+      "name": "Pilot Butte Elementary",
+      "customer": "Bend School District",
+      "code": "PBE",
       "color": "#f5ead7",
-      "site": "307 Cedar St, Folsom",
-      "crew": 6,
+      "site": "2205 NE Neff Rd, Bend, OR 97701",
+      "crew": 2,
       "progress": 24,
-      "production": 88.7,
-      "status": "At risk",
-      "budget": "$710K",
+      "production": 94.6,
+      "status": "On track",
+      "budget": "$1.12M",
+      "contractType": "estimated",
       "startDate": "2026-08-03",
       "endDate": "2027-05-28",
       "supervisor": "Sam Patel",
-      "siteContact": "Maya Chen · (916) 555-0191",
-      "estimateItems": []
+      "siteContact": "Maya Chen · (541) 555-0191",
+      "estimateItems": [
+        {
+          "id": 1,
+          "name": "Building pad earthwork",
+          "plannedQuantity": 4200,
+          "unit": "CY",
+          "budgetHours": 680,
+          "cost": 186000
+        }
+      ]
     },
     {
       "id": 5,
       "customerId": 5,
-      "name": "Parkway Retail Center",
-      "customer": "Linden Commercial",
-      "code": "PR",
+      "name": "Alberta Street Retail",
+      "customer": "Alberta Street Retail",
+      "code": "ASR",
       "color": "#e2eee9",
-      "site": "860 Parkway Blvd, Davis",
-      "crew": 0,
+      "site": "1421 NE Alberta St, Portland, OR 97211",
+      "crew": 2,
       "progress": 93,
       "production": 99.1,
       "status": "On track",
       "budget": "$1.15M",
+      "contractType": "estimated",
       "startDate": "2025-11-10",
       "endDate": "2026-09-30",
-      "supervisor": "Chris Bennett",
-      "siteContact": "Owen Brooks · (707) 555-0134",
-      "estimateItems": []
-    },
-    {
-      "id": 6,
-      "customerId": 1,
-      "customer": "Apex Health Partners",
-      "name": "rosewood remodel",
-      "code": "RMC",
-      "budget": "$0",
-      "site": "123 main street new york city new york",
-      "startDate": "",
-      "endDate": "",
-      "supervisor": "",
-      "siteContact": "",
+      "supervisor": "Elena Vasquez",
+      "siteContact": "Owen Brooks · (503) 555-0134",
       "estimateItems": [
         {
           "id": 1,
-          "name": "mobilization",
-          "plannedQuantity": 3,
-          "unit": "EA",
-          "budgetHours": 0,
-          "cost": 0
+          "name": "Interior finishes",
+          "plannedQuantity": 12000,
+          "unit": "SF",
+          "budgetHours": 1600,
+          "cost": 390000
         }
-      ],
+      ]
+    },
+    {
+      "id": 6,
+      "customerId": 2,
+      "name": "Rosewood Bungalow Remodel",
+      "customer": "Oak & Elm Homes",
+      "code": "RBR",
       "color": "#e7effd",
-      "crew": 0,
-      "progress": 0,
-      "production": 0,
-      "status": "On track"
+      "site": "734 SE 28th Ave, Portland, OR 97214",
+      "crew": 2,
+      "progress": 18,
+      "production": 97.8,
+      "status": "On track",
+      "budget": "$186K",
+      "contractType": "estimated",
+      "startDate": "2026-08-17",
+      "endDate": "2026-12-11",
+      "supervisor": "Elena Vasquez",
+      "siteContact": "Nina Price · (503) 555-0148",
+      "estimateItems": [
+        {
+          "id": 1,
+          "name": "Selective demolition",
+          "plannedQuantity": 1860,
+          "unit": "SF",
+          "budgetHours": 220,
+          "cost": 28000
+        },
+        {
+          "id": 2,
+          "name": "Kitchen cabinetry",
+          "plannedQuantity": 48,
+          "unit": "LF",
+          "budgetHours": 160,
+          "cost": 64000
+        }
+      ]
     }
   ],
   "team": [
@@ -223,234 +266,1264 @@
       "name": "Marcus Reed",
       "role": "General Foreman",
       "initials": "MR",
-      "crew": "Crew A",
+      "crew": "Concrete",
       "hours": 38,
-      "site": "Riverside Medical"
+      "site": "Division Street Clinic",
+      "phone": "(503) 555-0161",
+      "email": "marcus.reed@northstarconstruction.example"
     },
     {
       "id": 2,
       "name": "Diego Santos",
       "role": "Concrete Finisher",
       "initials": "DS",
-      "crew": "Crew A",
+      "crew": "Concrete",
       "hours": 40,
-      "site": "Riverside Medical"
+      "site": "Division Street Clinic",
+      "phone": "(503) 555-0162",
+      "email": "diego.santos@northstarconstruction.example"
     },
     {
       "id": 3,
       "name": "Jamal Brooks",
       "role": "Carpenter",
       "initials": "JB",
-      "crew": "Crew B",
+      "crew": "Framing",
       "hours": 36,
-      "site": "Oakview Apartments"
+      "site": "Sellwood Flats",
+      "phone": "(503) 555-0163",
+      "email": "jamal.brooks@northstarconstruction.example"
     },
     {
       "id": 4,
       "name": "Aaron Kim",
       "role": "Equipment Operator",
       "initials": "AK",
-      "crew": "Crew C",
+      "crew": "Sitework",
       "hours": 40,
-      "site": "Westline Hub"
+      "site": "Willamette Hub",
+      "phone": "(541) 555-0164",
+      "email": "aaron.kim@northstarconstruction.example"
     },
     {
       "id": 5,
       "name": "Luis Herrera",
       "role": "Laborer",
       "initials": "LH",
-      "crew": "Crew A",
+      "crew": "Concrete",
       "hours": 34,
-      "site": "Riverside Medical"
+      "site": "Division Street Clinic",
+      "phone": "(503) 555-0165",
+      "email": "luis.herrera@northstarconstruction.example"
     },
     {
       "id": 6,
       "name": "Tyler Morgan",
       "role": "Site Supervisor",
       "initials": "TM",
-      "crew": "Crew B",
+      "crew": "Framing",
       "hours": 39,
-      "site": "Oakview Apartments"
+      "site": "Sellwood Flats",
+      "phone": "(503) 555-0166",
+      "email": "tyler.morgan@northstarconstruction.example"
     },
     {
       "id": 7,
       "name": "Chris Bennett",
-      "role": "Electrician",
+      "role": "Carpenter",
       "initials": "CB",
-      "crew": "Crew C",
+      "crew": "Sitework",
       "hours": 32,
-      "site": "Westline Hub"
+      "site": "Willamette Hub",
+      "phone": "(541) 555-0167",
+      "email": "chris.bennett@northstarconstruction.example"
     },
     {
       "id": 8,
       "name": "Sam Patel",
       "role": "Laborer",
       "initials": "SP",
-      "crew": "Crew D",
+      "crew": "Finish",
       "hours": 28,
-      "site": "Cedar Grove"
+      "site": "Pilot Butte Elementary",
+      "phone": "(541) 555-0168",
+      "email": "sam.patel@northstarconstruction.example"
+    },
+    {
+      "id": 9,
+      "name": "Elena Vasquez",
+      "role": "Carpenter",
+      "initials": "EV",
+      "crew": "Finish",
+      "hours": 36,
+      "site": "Rosewood Bungalow",
+      "phone": "(503) 555-0169",
+      "email": "elena.vasquez@northstarconstruction.example"
+    },
+    {
+      "id": 10,
+      "companyId": "northstar",
+      "name": "Levi Foreman",
+      "role": "Account Owner",
+      "initials": "LF",
+      "crew": "Office",
+      "hours": 0,
+      "site": "Not assigned",
+      "email": "levi.foreman@northstarconstruction.example",
+      "phone": ""
     }
   ],
-  "reports": [
-    {
-      "project": 0,
-      "dateIso": "2026-09-15",
-      "notes": "No delays today.",
-      "status": "Draft",
-      "foreman": "Levi Foreman",
-      "summary": "",
-      "next": "",
-      "weather": "",
-      "temperature": "",
-      "productionEntries": [],
-      "laborEntries": [],
-      "materials": "",
-      "equipment": "",
-      "delays": "",
-      "safety": "",
-      "signature": "",
-      "id": 6,
-      "date": "Sep 15",
-      "originalNotes": "No delays today.",
-      "noteLanguage": "en",
-      "englishTranslation": "No delays today.",
-      "labor": "",
-      "quantity": "",
-      "history": [
-        {
-          "action": "Draft saved",
-          "by": "Levi Foreman",
-          "at": "2026-09-16T06:19:45.431Z"
-        }
-      ],
-      "flags": []
-    },
-    {
-      "id": 5,
-      "project": 0,
-      "date": "Sep 15",
-      "dateIso": "2026-09-15",
-      "foreman": "Levi Foreman",
-      "status": "Draft",
-      "notes": "No delays today.",
-      "weather": "",
-      "temperature": "",
-      "productionEntries": [],
-      "laborEntries": [
-        {
-          "memberId": 1,
-          "hours": 8
-        },
-        {
-          "memberId": 2,
-          "hours": 8
-        },
-        {
-          "memberId": 5,
-          "hours": 8
-        }
-      ],
-      "materials": "",
-      "equipment": "",
-      "delays": "No delays today.",
-      "safety": "",
-      "signature": "",
-      "history": [
-        {
-          "action": "Draft saved",
-          "by": "Levi Foreman",
-          "at": "2026-09-15T15:07:25.918Z"
-        }
-      ],
-      "summary": "Field work recorded: No delays today.",
-      "labor": "Needs confirmation",
-      "quantity": "Needs confirmation",
-      "productions": [],
-      "issue": "No delays today.",
-      "next": "Confirm next field activity"
-    },
-    {
-      "id": 4,
-      "project": 0,
-      "date": "Sep 15",
-      "dateIso": "2026-09-15",
-      "foreman": "Levi Foreman",
-      "status": "Draft",
-      "notes": "5",
-      "weather": "",
-      "temperature": "",
-      "productionEntries": [],
-      "laborEntries": [
-        {
-          "memberId": 1,
-          "hours": 8
-        },
-        {
-          "memberId": 2,
-          "hours": 8
-        },
-        {
-          "memberId": 5,
-          "hours": 8
-        }
-      ],
-      "materials": "",
-      "equipment": "",
-      "delays": "",
-      "safety": "",
-      "signature": "",
-      "history": [
-        {
-          "action": "Draft saved",
-          "by": "Levi Foreman",
-          "at": "2026-09-15T15:01:15.123Z"
-        }
-      ],
-      "summary": "Field work recorded: 5",
-      "labor": "Needs confirmation",
-      "quantity": "Needs confirmation",
-      "productions": [],
-      "issue": "None reported",
-      "next": "Confirm next field activity"
-    },
+  "crews": [
     {
       "id": 1,
-      "project": 0,
-      "date": "Sep 15",
-      "foreman": "Marcus Reed",
-      "status": "Needs review",
-      "notes": "Poured 86 yards on the east foundation. Nine workers, 72 labor hours. Pump arrived 45 minutes late but we recovered by lunch.",
-      "summary": "East foundation pour completed at 96% of the planned daily quantity. A concrete pump delay occurred with no schedule impact.",
-      "labor": "9 people · 72 hours",
-      "quantity": "86 CY concrete",
-      "issue": "45-minute pump delay",
-      "next": "Strip east forms tomorrow"
+      "name": "Concrete",
+      "createdAt": "2026-03-02T00:00:00.000Z"
     },
     {
       "id": 2,
-      "project": 1,
-      "date": "Sep 15",
-      "foreman": "Tyler Morgan",
-      "status": "Missing data",
-      "notes": "Framed third floor west wing. Waiting on revised window details.",
-      "summary": "Framing progressed on the third-floor west wing. Production quantity was not included and requires confirmation.",
-      "labor": "7 people · hours missing",
-      "quantity": "Needs confirmation",
-      "issue": "Window detail RFI pending",
-      "next": "Continue west wing framing"
+      "name": "Framing",
+      "createdAt": "2026-03-02T00:00:00.000Z"
     },
     {
       "id": 3,
+      "name": "Sitework",
+      "createdAt": "2026-03-02T00:00:00.000Z"
+    },
+    {
+      "id": 4,
+      "name": "Finish",
+      "createdAt": "2026-03-02T00:00:00.000Z"
+    }
+  ],
+  "catalog": [
+    {
+      "id": 1,
+      "name": "Foundation concrete",
+      "category": "Concrete",
+      "unit": "CY",
+      "targetHoursPerUnit": 1.2,
+      "description": "Place and finish structural foundation concrete.",
+      "createdAt": "2026-03-02T00:00:00.000Z"
+    },
+    {
+      "id": 2,
+      "name": "Wood framing",
+      "category": "Framing",
+      "unit": "SF",
+      "targetHoursPerUnit": 0.08,
+      "description": "Exterior and interior wood framing.",
+      "createdAt": "2026-03-02T00:00:00.000Z"
+    },
+    {
+      "id": 3,
+      "name": "Tilt-up wall panel",
+      "category": "Concrete",
+      "unit": "EA",
+      "targetHoursPerUnit": 12,
+      "description": "Form, pour, and erect a site-cast tilt panel.",
+      "createdAt": "2026-03-02T00:00:00.000Z"
+    },
+    {
+      "id": 4,
+      "name": "Selective demolition",
+      "category": "Demolition",
+      "unit": "SF",
+      "targetHoursPerUnit": 0.12,
+      "description": "Interior selective demolition with haul-off.",
+      "createdAt": "2026-03-02T00:00:00.000Z"
+    }
+  ],
+  "subcontractors": [
+    {
+      "id": 1,
+      "name": "Cascade Electric",
+      "trade": "Electrical",
+      "contact": "Priya Nair",
+      "email": "priya.nair@cascadeelectric.example",
+      "phone": "(503) 555-0172",
+      "insuranceExpiration": "2027-03-31",
+      "notes": "Rough and finish electrical on Portland jobs.",
+      "status": "Active"
+    },
+    {
+      "id": 2,
+      "name": "Pacific Mechanical",
+      "trade": "HVAC",
+      "contact": "Jonah Ellis",
+      "email": "jonah.ellis@pacificmechanical.example",
+      "phone": "(503) 555-0175",
+      "insuranceExpiration": "2027-05-15",
+      "notes": "Duct and equipment set for the clinic and retail closeout.",
+      "status": "Active"
+    }
+  ],
+  "subcontractorLinks": [],
+  "reports": [
+    {
+      "id": 1,
+      "project": 0,
+      "date": "Sep 21",
+      "dateIso": "2026-09-21",
+      "foreman": "Marcus Reed",
+      "status": "Approved",
+      "notes": "Poured 86 yards on the east foundation. Three-person crew, 24 labor hours. Pump arrived 45 minutes late but we recovered by lunch.",
+      "summary": "East foundation pour completed. A concrete pump delay occurred with no schedule impact.",
+      "labor": "3 people · 24 hours",
+      "quantity": "86 CY concrete",
+      "issue": "45-minute pump delay",
+      "next": "Strip east forms tomorrow",
+      "weather": "Partly cloudy",
+      "temperature": "64°F",
+      "productionEntries": [
+        {
+          "estimateItemId": 1,
+          "description": "Foundation concrete",
+          "quantity": 86,
+          "unit": "CY",
+          "laborHours": 24
+        }
+      ],
+      "laborEntries": [
+        {
+          "memberId": 1,
+          "hours": 8,
+          "crew": "Concrete"
+        },
+        {
+          "memberId": 2,
+          "hours": 8,
+          "crew": "Concrete"
+        },
+        {
+          "memberId": 5,
+          "hours": 8,
+          "crew": "Concrete"
+        }
+      ],
+      "materials": "Foundation mix, cure compound",
+      "equipment": "Concrete pump",
+      "delays": "Pump arrived 45 minutes late",
+      "safety": "Spotter on the pump setup. No incidents.",
+      "signature": "Marcus Reed",
+      "flags": [],
+      "history": [
+        {
+          "action": "Approved",
+          "by": "Office",
+          "at": "2026-09-21T23:10:00.000Z"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "project": 0,
+      "date": "Sep 22",
+      "dateIso": "2026-09-22",
+      "foreman": "Marcus Reed",
+      "status": "Approved",
+      "notes": "Stripped east foundation forms and cleaned the pad edge. No new concrete placed today.",
+      "summary": "East forms stripped and the pad edge is ready for slab prep.",
+      "labor": "3 people · 24 hours",
+      "quantity": "Forms stripped",
+      "issue": "None reported",
+      "next": "Start slab edge prep",
+      "weather": "Clear",
+      "temperature": "68°F",
+      "productionEntries": [],
+      "laborEntries": [
+        {
+          "memberId": 1,
+          "hours": 8,
+          "crew": "Concrete"
+        },
+        {
+          "memberId": 2,
+          "hours": 8,
+          "crew": "Concrete"
+        },
+        {
+          "memberId": 5,
+          "hours": 8,
+          "crew": "Concrete"
+        }
+      ],
+      "materials": "",
+      "equipment": "Form oil, flatbed",
+      "delays": "",
+      "safety": "Forms stacked clear of the walk path.",
+      "signature": "Marcus Reed",
+      "flags": [],
+      "history": [
+        {
+          "action": "Approved",
+          "by": "Office",
+          "at": "2026-09-22T22:40:00.000Z"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "project": 1,
+      "date": "Sep 15",
+      "dateIso": "2026-09-15",
+      "foreman": "Tyler Morgan",
+      "status": "Approved",
+      "notes": "Framed 2,100 SF on the third-floor west wing.",
+      "summary": "Third-floor west wing framing advanced 2,100 SF.",
+      "labor": "2 people · 16 hours",
+      "quantity": "2,100 SF framing",
+      "issue": "None reported",
+      "next": "Continue west wing",
+      "weather": "Overcast",
+      "temperature": "61°F",
+      "productionEntries": [
+        {
+          "estimateItemId": 1,
+          "description": "Wood framing",
+          "quantity": 2100,
+          "unit": "SF",
+          "laborHours": 16
+        }
+      ],
+      "laborEntries": [
+        {
+          "memberId": 3,
+          "hours": 8,
+          "crew": "Framing"
+        },
+        {
+          "memberId": 6,
+          "hours": 8,
+          "crew": "Framing"
+        }
+      ],
+      "materials": "2x6 studs, joist hangers",
+      "equipment": "",
+      "delays": "",
+      "safety": "Fall protection in place on the third floor.",
+      "signature": "Tyler Morgan",
+      "flags": [],
+      "history": [
+        {
+          "action": "Approved",
+          "by": "Office",
+          "at": "2026-09-15T23:00:00.000Z"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "project": 1,
+      "date": "Sep 16",
+      "dateIso": "2026-09-16",
+      "foreman": "Tyler Morgan",
+      "status": "Approved",
+      "notes": "Framed 1,980 SF on the third-floor west wing.",
+      "summary": "West wing framing continued for 1,980 SF.",
+      "labor": "2 people · 16 hours",
+      "quantity": "1,980 SF framing",
+      "issue": "None reported",
+      "next": "Set window openings",
+      "weather": "Light rain",
+      "temperature": "58°F",
+      "productionEntries": [
+        {
+          "estimateItemId": 1,
+          "description": "Wood framing",
+          "quantity": 1980,
+          "unit": "SF",
+          "laborHours": 16
+        }
+      ],
+      "laborEntries": [
+        {
+          "memberId": 3,
+          "hours": 8,
+          "crew": "Framing"
+        },
+        {
+          "memberId": 6,
+          "hours": 8,
+          "crew": "Framing"
+        }
+      ],
+      "materials": "2x6 studs",
+      "equipment": "",
+      "delays": "",
+      "safety": "No incidents.",
+      "signature": "Tyler Morgan",
+      "flags": [],
+      "history": [
+        {
+          "action": "Approved",
+          "by": "Office",
+          "at": "2026-09-16T23:00:00.000Z"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "project": 1,
+      "date": "Sep 17",
+      "dateIso": "2026-09-17",
+      "foreman": "Tyler Morgan",
+      "status": "Approved",
+      "notes": "Framed 1,740 SF and started window openings on the west wing.",
+      "summary": "West wing framing added 1,740 SF.",
+      "labor": "2 people · 16 hours",
+      "quantity": "1,740 SF framing",
+      "issue": "None reported",
+      "next": "Hold window openings for the revised detail",
+      "weather": "Clear",
+      "temperature": "66°F",
+      "productionEntries": [
+        {
+          "estimateItemId": 1,
+          "description": "Wood framing",
+          "quantity": 1740,
+          "unit": "SF",
+          "laborHours": 16
+        }
+      ],
+      "laborEntries": [
+        {
+          "memberId": 3,
+          "hours": 8,
+          "crew": "Framing"
+        },
+        {
+          "memberId": 6,
+          "hours": 8,
+          "crew": "Framing"
+        }
+      ],
+      "materials": "LVL headers",
+      "equipment": "",
+      "delays": "",
+      "safety": "No incidents.",
+      "signature": "Tyler Morgan",
+      "flags": [],
+      "history": [
+        {
+          "action": "Approved",
+          "by": "Office",
+          "at": "2026-09-17T23:00:00.000Z"
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "project": 1,
+      "date": "Sep 18",
+      "dateIso": "2026-09-18",
+      "foreman": "Tyler Morgan",
+      "status": "Approved",
+      "notes": "Framed 1,740 SF. Window opening layout is waiting on the revised detail.",
+      "summary": "Framing stayed productive while the window detail is in review.",
+      "labor": "2 people · 16 hours",
+      "quantity": "1,740 SF framing",
+      "issue": "Window detail RFI pending",
+      "next": "Continue straight runs until the detail returns",
+      "weather": "Clear",
+      "temperature": "70°F",
+      "productionEntries": [
+        {
+          "estimateItemId": 1,
+          "description": "Wood framing",
+          "quantity": 1740,
+          "unit": "SF",
+          "laborHours": 16
+        }
+      ],
+      "laborEntries": [
+        {
+          "memberId": 3,
+          "hours": 8,
+          "crew": "Framing"
+        },
+        {
+          "memberId": 6,
+          "hours": 8,
+          "crew": "Framing"
+        }
+      ],
+      "materials": "2x6 studs",
+      "equipment": "",
+      "delays": "Window detail RFI still open",
+      "safety": "No incidents.",
+      "signature": "Tyler Morgan",
+      "flags": [],
+      "history": [
+        {
+          "action": "Approved",
+          "by": "Office",
+          "at": "2026-09-18T23:00:00.000Z"
+        }
+      ]
+    },
+    {
+      "id": 7,
+      "project": 1,
+      "date": "Sep 21",
+      "dateIso": "2026-09-21",
+      "foreman": "Tyler Morgan",
+      "status": "Approved",
+      "notes": "Laid out the third-floor west wing and staged lumber. No new installed quantity today.",
+      "summary": "Layout and material staging only. Installed framing quantity is unchanged.",
+      "labor": "2 people · 16 hours",
+      "quantity": "Layout only",
+      "issue": "Window detail RFI still open",
+      "next": "Frame the next straight run",
+      "weather": "Partly cloudy",
+      "temperature": "64°F",
+      "productionEntries": [],
+      "laborEntries": [
+        {
+          "memberId": 3,
+          "hours": 8,
+          "crew": "Framing"
+        },
+        {
+          "memberId": 6,
+          "hours": 8,
+          "crew": "Framing"
+        }
+      ],
+      "materials": "Lumber staged on the third floor",
+      "equipment": "",
+      "delays": "Waiting on revised window details",
+      "safety": "No incidents.",
+      "signature": "Tyler Morgan",
+      "flags": [],
+      "history": [
+        {
+          "action": "Approved",
+          "by": "Office",
+          "at": "2026-09-21T23:05:00.000Z"
+        }
+      ]
+    },
+    {
+      "id": 8,
+      "project": 1,
+      "date": "Sep 22",
+      "dateIso": "2026-09-22",
+      "foreman": "Tyler Morgan",
+      "status": "Needs review",
+      "notes": "Framed the third-floor west wing straight run. Still waiting on the revised window details before we open those rough openings.",
+      "summary": "Framing progressed on the third-floor west wing. Window detail RFI is still open.",
+      "labor": "2 people · 16 hours",
+      "quantity": "640 SF framing",
+      "issue": "Window detail RFI pending",
+      "next": "Continue west wing framing away from the window openings",
+      "weather": "Clear",
+      "temperature": "68°F",
+      "productionEntries": [
+        {
+          "estimateItemId": 1,
+          "description": "Wood framing",
+          "quantity": 640,
+          "unit": "SF",
+          "laborHours": 16
+        }
+      ],
+      "laborEntries": [
+        {
+          "memberId": 3,
+          "hours": 8,
+          "crew": "Framing"
+        },
+        {
+          "memberId": 6,
+          "hours": 8,
+          "crew": "Framing"
+        }
+      ],
+      "materials": "2x6 studs",
+      "equipment": "",
+      "delays": "Window detail RFI pending",
+      "safety": "No incidents.",
+      "signature": "Tyler Morgan",
+      "flags": [],
+      "history": [
+        {
+          "action": "Submitted",
+          "by": "Tyler Morgan",
+          "at": "2026-09-22T22:15:00.000Z"
+        }
+      ]
+    },
+    {
+      "id": 9,
       "project": 2,
       "date": "Sep 15",
+      "dateIso": "2026-09-15",
       "foreman": "Aaron Kim",
       "status": "Approved",
-      "notes": "Set 14 tilt panels today with 12-person crew. Finished two panels ahead of plan.",
-      "summary": "Tilt-panel installation exceeded the daily target by two panels. No delays or safety issues reported.",
-      "labor": "12 people · 96 hours",
+      "notes": "Set 36 tilt panels on the east elevation.",
+      "summary": "East elevation tilt panels set, 36 panels.",
+      "labor": "2 people · 16 hours",
+      "quantity": "36 panels",
+      "issue": "None reported",
+      "next": "Continue east elevation",
+      "weather": "Clear",
+      "temperature": "72°F",
+      "productionEntries": [
+        {
+          "estimateItemId": 1,
+          "description": "Tilt wall panels",
+          "quantity": 36,
+          "unit": "EA",
+          "laborHours": 16
+        }
+      ],
+      "laborEntries": [
+        {
+          "memberId": 4,
+          "hours": 8,
+          "crew": "Sitework"
+        },
+        {
+          "memberId": 7,
+          "hours": 8,
+          "crew": "Sitework"
+        }
+      ],
+      "materials": "Panel braces",
+      "equipment": "Crane",
+      "delays": "",
+      "safety": "Crane lift plan followed.",
+      "signature": "Aaron Kim",
+      "flags": [],
+      "history": [
+        {
+          "action": "Approved",
+          "by": "Office",
+          "at": "2026-09-15T23:20:00.000Z"
+        }
+      ]
+    },
+    {
+      "id": 10,
+      "project": 2,
+      "date": "Sep 16",
+      "dateIso": "2026-09-16",
+      "foreman": "Aaron Kim",
+      "status": "Approved",
+      "notes": "Set 36 tilt panels and braced them before the afternoon wind.",
+      "summary": "36 panels set and braced.",
+      "labor": "2 people · 16 hours",
+      "quantity": "36 panels",
+      "issue": "None reported",
+      "next": "Move to the north elevation",
+      "weather": "Breezy",
+      "temperature": "69°F",
+      "productionEntries": [
+        {
+          "estimateItemId": 1,
+          "description": "Tilt wall panels",
+          "quantity": 36,
+          "unit": "EA",
+          "laborHours": 16
+        }
+      ],
+      "laborEntries": [
+        {
+          "memberId": 4,
+          "hours": 8,
+          "crew": "Sitework"
+        },
+        {
+          "memberId": 7,
+          "hours": 8,
+          "crew": "Sitework"
+        }
+      ],
+      "materials": "Panel braces",
+      "equipment": "Crane",
+      "delays": "",
+      "safety": "Stopped picks when gusts picked up.",
+      "signature": "Aaron Kim",
+      "flags": [],
+      "history": [
+        {
+          "action": "Approved",
+          "by": "Office",
+          "at": "2026-09-16T23:20:00.000Z"
+        }
+      ]
+    },
+    {
+      "id": 11,
+      "project": 2,
+      "date": "Sep 17",
+      "dateIso": "2026-09-17",
+      "foreman": "Aaron Kim",
+      "status": "Approved",
+      "notes": "Set 28 tilt panels on the north elevation.",
+      "summary": "North elevation started, 28 panels set.",
+      "labor": "2 people · 16 hours",
+      "quantity": "28 panels",
+      "issue": "None reported",
+      "next": "Continue north elevation",
+      "weather": "Clear",
+      "temperature": "74°F",
+      "productionEntries": [
+        {
+          "estimateItemId": 1,
+          "description": "Tilt wall panels",
+          "quantity": 28,
+          "unit": "EA",
+          "laborHours": 16
+        }
+      ],
+      "laborEntries": [
+        {
+          "memberId": 4,
+          "hours": 8,
+          "crew": "Sitework"
+        },
+        {
+          "memberId": 7,
+          "hours": 8,
+          "crew": "Sitework"
+        }
+      ],
+      "materials": "Panel braces",
+      "equipment": "Crane",
+      "delays": "",
+      "safety": "No incidents.",
+      "signature": "Aaron Kim",
+      "flags": [],
+      "history": [
+        {
+          "action": "Approved",
+          "by": "Office",
+          "at": "2026-09-17T23:20:00.000Z"
+        }
+      ]
+    },
+    {
+      "id": 12,
+      "project": 2,
+      "date": "Sep 18",
+      "dateIso": "2026-09-18",
+      "foreman": "Aaron Kim",
+      "status": "Approved",
+      "notes": "Set 20 tilt panels. Crane was released at 2 p.m.",
+      "summary": "20 panels set before the crane was released.",
+      "labor": "2 people · 16 hours",
+      "quantity": "20 panels",
+      "issue": "None reported",
+      "next": "Resume north elevation Monday",
+      "weather": "Clear",
+      "temperature": "76°F",
+      "productionEntries": [
+        {
+          "estimateItemId": 1,
+          "description": "Tilt wall panels",
+          "quantity": 20,
+          "unit": "EA",
+          "laborHours": 16
+        }
+      ],
+      "laborEntries": [
+        {
+          "memberId": 4,
+          "hours": 8,
+          "crew": "Sitework"
+        },
+        {
+          "memberId": 7,
+          "hours": 8,
+          "crew": "Sitework"
+        }
+      ],
+      "materials": "",
+      "equipment": "Crane",
+      "delays": "",
+      "safety": "No incidents.",
+      "signature": "Aaron Kim",
+      "flags": [],
+      "history": [
+        {
+          "action": "Approved",
+          "by": "Office",
+          "at": "2026-09-18T23:20:00.000Z"
+        }
+      ]
+    },
+    {
+      "id": 13,
+      "project": 2,
+      "date": "Sep 21",
+      "dateIso": "2026-09-21",
+      "foreman": "Aaron Kim",
+      "status": "Approved",
+      "notes": "Set 14 tilt panels today with the two-person Northstar crew and the crane. Finished the north run we had staged.",
+      "summary": "Tilt-panel installation stayed ahead of the weekly target.",
+      "labor": "2 people · 16 hours",
       "quantity": "14 panels installed",
       "issue": "None reported",
-      "next": "Begin north elevation panels"
+      "next": "Brace the north elevation",
+      "weather": "Clear",
+      "temperature": "71°F",
+      "productionEntries": [
+        {
+          "estimateItemId": 1,
+          "description": "Tilt wall panels",
+          "quantity": 14,
+          "unit": "EA",
+          "laborHours": 16
+        }
+      ],
+      "laborEntries": [
+        {
+          "memberId": 4,
+          "hours": 8,
+          "crew": "Sitework"
+        },
+        {
+          "memberId": 7,
+          "hours": 8,
+          "crew": "Sitework"
+        }
+      ],
+      "materials": "Panel braces",
+      "equipment": "Crane",
+      "delays": "",
+      "safety": "No incidents.",
+      "signature": "Aaron Kim",
+      "flags": [],
+      "history": [
+        {
+          "action": "Approved",
+          "by": "Office",
+          "at": "2026-09-21T23:20:00.000Z"
+        }
+      ]
+    },
+    {
+      "id": 14,
+      "project": 2,
+      "date": "Sep 22",
+      "dateIso": "2026-09-22",
+      "foreman": "Aaron Kim",
+      "status": "Approved",
+      "notes": "Braced the north elevation panels. No new panels set today.",
+      "summary": "North elevation bracing completed. Panel count is unchanged.",
+      "labor": "2 people · 16 hours",
+      "quantity": "Bracing only",
+      "issue": "None reported",
+      "next": "Pick up the remaining north panels Wednesday",
+      "weather": "Clear",
+      "temperature": "73°F",
+      "productionEntries": [],
+      "laborEntries": [
+        {
+          "memberId": 4,
+          "hours": 8,
+          "crew": "Sitework"
+        },
+        {
+          "memberId": 7,
+          "hours": 8,
+          "crew": "Sitework"
+        }
+      ],
+      "materials": "Braces and anchors",
+      "equipment": "",
+      "delays": "",
+      "safety": "All standing panels braced before the crew left.",
+      "signature": "Aaron Kim",
+      "flags": [],
+      "history": [
+        {
+          "action": "Approved",
+          "by": "Office",
+          "at": "2026-09-22T22:50:00.000Z"
+        }
+      ]
+    },
+    {
+      "id": 15,
+      "project": 3,
+      "date": "Sep 16",
+      "dateIso": "2026-09-16",
+      "foreman": "Sam Patel",
+      "status": "Approved",
+      "notes": "Exported 420 cubic yards from the building pad with the site contractor.",
+      "summary": "Building pad export, 420 CY.",
+      "labor": "1 person · 8 hours",
+      "quantity": "420 CY",
+      "issue": "None reported",
+      "next": "Continue pad cut",
+      "weather": "Clear",
+      "temperature": "78°F",
+      "productionEntries": [
+        {
+          "estimateItemId": 1,
+          "description": "Building pad earthwork",
+          "quantity": 420,
+          "unit": "CY",
+          "laborHours": 8
+        }
+      ],
+      "laborEntries": [
+        {
+          "memberId": 8,
+          "hours": 8,
+          "crew": "Finish"
+        }
+      ],
+      "materials": "",
+      "equipment": "Excavator, trucks",
+      "delays": "",
+      "safety": "Truck spotter in the haul lane.",
+      "signature": "Sam Patel",
+      "flags": [],
+      "history": [
+        {
+          "action": "Approved",
+          "by": "Office",
+          "at": "2026-09-16T23:30:00.000Z"
+        }
+      ]
+    },
+    {
+      "id": 16,
+      "project": 3,
+      "date": "Sep 17",
+      "dateIso": "2026-09-17",
+      "foreman": "Sam Patel",
+      "status": "Approved",
+      "notes": "Exported 408 cubic yards and checked pad grade at the classroom wing.",
+      "summary": "Pad cut continued, 408 CY.",
+      "labor": "1 person · 8 hours",
+      "quantity": "408 CY",
+      "issue": "None reported",
+      "next": "Finish the classroom wing cut",
+      "weather": "Clear",
+      "temperature": "80°F",
+      "productionEntries": [
+        {
+          "estimateItemId": 1,
+          "description": "Building pad earthwork",
+          "quantity": 408,
+          "unit": "CY",
+          "laborHours": 8
+        }
+      ],
+      "laborEntries": [
+        {
+          "memberId": 8,
+          "hours": 8,
+          "crew": "Finish"
+        }
+      ],
+      "materials": "",
+      "equipment": "Excavator, trucks",
+      "delays": "",
+      "safety": "No incidents.",
+      "signature": "Sam Patel",
+      "flags": [],
+      "history": [
+        {
+          "action": "Approved",
+          "by": "Office",
+          "at": "2026-09-17T23:30:00.000Z"
+        }
+      ]
+    },
+    {
+      "id": 17,
+      "project": 3,
+      "date": "Sep 21",
+      "dateIso": "2026-09-21",
+      "foreman": "Sam Patel",
+      "status": "Approved",
+      "notes": "Exported 180 cubic yards and marked the classroom wing pad for the surveyor.",
+      "summary": "Pad export and survey layout, 180 CY.",
+      "labor": "1 person · 8 hours",
+      "quantity": "180 CY",
+      "issue": "None reported",
+      "next": "Surveyor on site Thursday",
+      "weather": "Clear",
+      "temperature": "75°F",
+      "productionEntries": [
+        {
+          "estimateItemId": 1,
+          "description": "Building pad earthwork",
+          "quantity": 180,
+          "unit": "CY",
+          "laborHours": 8
+        }
+      ],
+      "laborEntries": [
+        {
+          "memberId": 8,
+          "hours": 8,
+          "crew": "Finish"
+        }
+      ],
+      "materials": "Grade stakes",
+      "equipment": "Excavator",
+      "delays": "",
+      "safety": "No incidents.",
+      "signature": "Sam Patel",
+      "flags": [],
+      "history": [
+        {
+          "action": "Approved",
+          "by": "Office",
+          "at": "2026-09-21T23:30:00.000Z"
+        }
+      ]
+    },
+    {
+      "id": 18,
+      "project": 4,
+      "date": "Sep 8",
+      "dateIso": "2026-09-08",
+      "foreman": "Elena Vasquez",
+      "status": "Approved",
+      "notes": "Completed 4,200 SF of sales-floor finishes.",
+      "summary": "Sales floor finishes, 4,200 SF.",
+      "labor": "2 people · 16 hours",
+      "quantity": "4,200 SF finishes",
+      "issue": "None reported",
+      "next": "Stockroom finishes",
+      "weather": "Clear",
+      "temperature": "72°F",
+      "productionEntries": [
+        {
+          "estimateItemId": 1,
+          "description": "Interior finishes",
+          "quantity": 4200,
+          "unit": "SF",
+          "laborHours": 16
+        }
+      ],
+      "laborEntries": [
+        {
+          "memberId": 8,
+          "hours": 8,
+          "crew": "Finish"
+        },
+        {
+          "memberId": 9,
+          "hours": 8,
+          "crew": "Finish"
+        }
+      ],
+      "materials": "Paint, base",
+      "equipment": "",
+      "delays": "",
+      "safety": "No incidents.",
+      "signature": "Elena Vasquez",
+      "flags": [],
+      "history": [
+        {
+          "action": "Approved",
+          "by": "Office",
+          "at": "2026-09-08T23:00:00.000Z"
+        }
+      ]
+    },
+    {
+      "id": 19,
+      "project": 4,
+      "date": "Sep 10",
+      "dateIso": "2026-09-10",
+      "foreman": "Elena Vasquez",
+      "status": "Approved",
+      "notes": "Completed 3,900 SF of stockroom and corridor finishes.",
+      "summary": "Stockroom and corridor finishes, 3,900 SF.",
+      "labor": "2 people · 16 hours",
+      "quantity": "3,900 SF finishes",
+      "issue": "None reported",
+      "next": "Restroom finishes",
+      "weather": "Overcast",
+      "temperature": "66°F",
+      "productionEntries": [
+        {
+          "estimateItemId": 1,
+          "description": "Interior finishes",
+          "quantity": 3900,
+          "unit": "SF",
+          "laborHours": 16
+        }
+      ],
+      "laborEntries": [
+        {
+          "memberId": 8,
+          "hours": 8,
+          "crew": "Finish"
+        },
+        {
+          "memberId": 9,
+          "hours": 8,
+          "crew": "Finish"
+        }
+      ],
+      "materials": "Paint, base",
+      "equipment": "",
+      "delays": "",
+      "safety": "No incidents.",
+      "signature": "Elena Vasquez",
+      "flags": [],
+      "history": [
+        {
+          "action": "Approved",
+          "by": "Office",
+          "at": "2026-09-10T23:00:00.000Z"
+        }
+      ]
+    },
+    {
+      "id": 20,
+      "project": 4,
+      "date": "Sep 15",
+      "dateIso": "2026-09-15",
+      "foreman": "Elena Vasquez",
+      "status": "Approved",
+      "notes": "Completed 3,060 SF of restroom and entry finishes. Punch list started.",
+      "summary": "Finish package is in closeout. 3,060 SF recorded.",
+      "labor": "2 people · 16 hours",
+      "quantity": "3,060 SF finishes",
+      "issue": "None reported",
+      "next": "Punch list Friday",
+      "weather": "Clear",
+      "temperature": "70°F",
+      "productionEntries": [
+        {
+          "estimateItemId": 1,
+          "description": "Interior finishes",
+          "quantity": 3060,
+          "unit": "SF",
+          "laborHours": 16
+        }
+      ],
+      "laborEntries": [
+        {
+          "memberId": 8,
+          "hours": 8,
+          "crew": "Finish"
+        },
+        {
+          "memberId": 9,
+          "hours": 8,
+          "crew": "Finish"
+        }
+      ],
+      "materials": "Touch-up paint",
+      "equipment": "",
+      "delays": "",
+      "safety": "No incidents.",
+      "signature": "Elena Vasquez",
+      "flags": [],
+      "history": [
+        {
+          "action": "Approved",
+          "by": "Office",
+          "at": "2026-09-15T23:00:00.000Z"
+        }
+      ]
+    },
+    {
+      "id": 21,
+      "project": 5,
+      "date": "Sep 21",
+      "dateIso": "2026-09-21",
+      "foreman": "Elena Vasquez",
+      "status": "Approved",
+      "notes": "Removed 620 SF of kitchen finishes and hauled the debris. Cabinets are not on site yet.",
+      "summary": "Kitchen selective demolition, 620 SF. Cabinetry has not started.",
+      "labor": "1 person · 8 hours",
+      "quantity": "620 SF demolition",
+      "issue": "None reported",
+      "next": "Continue kitchen demo with Sam",
+      "weather": "Partly cloudy",
+      "temperature": "65°F",
+      "productionEntries": [
+        {
+          "estimateItemId": 1,
+          "description": "Selective demolition",
+          "quantity": 620,
+          "unit": "SF",
+          "laborHours": 8
+        }
+      ],
+      "laborEntries": [
+        {
+          "memberId": 9,
+          "hours": 8,
+          "crew": "Finish"
+        }
+      ],
+      "materials": "",
+      "equipment": "Dump trailer",
+      "delays": "",
+      "safety": "Dust barrier at the hallway. No incidents.",
+      "signature": "Elena Vasquez",
+      "flags": [],
+      "history": [
+        {
+          "action": "Approved",
+          "by": "Office",
+          "at": "2026-09-21T23:40:00.000Z"
+        }
+      ]
+    },
+    {
+      "id": 22,
+      "project": 5,
+      "date": "Sep 22",
+      "dateIso": "2026-09-22",
+      "foreman": "Elena Vasquez",
+      "status": "Approved",
+      "notes": "Removed another 480 SF of kitchen plaster and the old base cabinets. Protected the existing fir floors.",
+      "summary": "Kitchen demolition continued, 480 SF. Cabinetry install is still ahead.",
+      "labor": "2 people · 16 hours",
+      "quantity": "480 SF demolition",
+      "issue": "None reported",
+      "next": "Haul remaining debris and protect the subfloor",
+      "weather": "Clear",
+      "temperature": "67°F",
+      "productionEntries": [
+        {
+          "estimateItemId": 1,
+          "description": "Selective demolition",
+          "quantity": 480,
+          "unit": "SF",
+          "laborHours": 16
+        }
+      ],
+      "laborEntries": [
+        {
+          "memberId": 8,
+          "hours": 8,
+          "crew": "Finish"
+        },
+        {
+          "memberId": 9,
+          "hours": 8,
+          "crew": "Finish"
+        }
+      ],
+      "materials": "Floor protection",
+      "equipment": "Dump trailer",
+      "delays": "",
+      "safety": "No incidents.",
+      "signature": "Elena Vasquez",
+      "flags": [],
+      "history": [
+        {
+          "action": "Approved",
+          "by": "Office",
+          "at": "2026-09-22T22:55:00.000Z"
+        }
+      ]
     }
   ],
   "assignments": [
@@ -458,11 +1531,12 @@
       "id": 1,
       "projectId": 1,
       "memberIds": [
+        1,
         2,
         5
       ],
-      "crew": "Crew A",
-      "date": "2026-09-15",
+      "crew": "Concrete",
+      "date": "2026-09-21",
       "start": "07:00",
       "end": "15:30",
       "activity": "East foundation pour"
@@ -474,11 +1548,11 @@
         3,
         6
       ],
-      "crew": "Crew B",
-      "date": "2026-09-15",
+      "crew": "Framing",
+      "date": "2026-09-21",
       "start": "07:00",
       "end": "15:30",
-      "activity": "Third-floor framing"
+      "activity": "Third-floor layout"
     },
     {
       "id": 3,
@@ -487,8 +1561,8 @@
         4,
         7
       ],
-      "crew": "Crew C",
-      "date": "2026-09-15",
+      "crew": "Sitework",
+      "date": "2026-09-21",
       "start": "06:30",
       "end": "15:00",
       "activity": "Tilt-panel erection"
@@ -499,14 +1573,238 @@
       "memberIds": [
         8
       ],
-      "crew": "Crew D",
-      "date": "2026-09-16",
+      "crew": "Finish",
+      "date": "2026-09-21",
       "start": "07:00",
       "end": "15:30",
-      "activity": "Site preparation"
+      "activity": "Building pad layout"
+    },
+    {
+      "id": 5,
+      "projectId": 6,
+      "memberIds": [
+        9
+      ],
+      "crew": "Finish",
+      "date": "2026-09-21",
+      "start": "07:00",
+      "end": "15:30",
+      "activity": "Kitchen demolition"
+    },
+    {
+      "id": 6,
+      "projectId": 1,
+      "memberIds": [
+        1,
+        2,
+        5
+      ],
+      "crew": "Concrete",
+      "date": "2026-09-22",
+      "start": "07:00",
+      "end": "15:30",
+      "activity": "Strip east forms"
+    },
+    {
+      "id": 7,
+      "projectId": 2,
+      "memberIds": [
+        3,
+        6
+      ],
+      "crew": "Framing",
+      "date": "2026-09-22",
+      "start": "07:00",
+      "end": "15:30",
+      "activity": "West wing framing"
+    },
+    {
+      "id": 8,
+      "projectId": 3,
+      "memberIds": [
+        4,
+        7
+      ],
+      "crew": "Sitework",
+      "date": "2026-09-22",
+      "start": "06:30",
+      "end": "15:00",
+      "activity": "Brace north elevation"
+    },
+    {
+      "id": 9,
+      "projectId": 6,
+      "memberIds": [
+        8,
+        9
+      ],
+      "crew": "Finish",
+      "date": "2026-09-22",
+      "start": "07:00",
+      "end": "15:30",
+      "activity": "Kitchen demolition"
+    },
+    {
+      "id": 10,
+      "projectId": 1,
+      "memberIds": [
+        1,
+        2,
+        5
+      ],
+      "crew": "Concrete",
+      "date": "2026-09-23",
+      "start": "07:00",
+      "end": "15:30",
+      "activity": "Slab edge prep"
+    },
+    {
+      "id": 11,
+      "projectId": 2,
+      "memberIds": [
+        3,
+        6
+      ],
+      "crew": "Framing",
+      "date": "2026-09-23",
+      "start": "07:00",
+      "end": "15:30",
+      "activity": "Continue west wing"
+    },
+    {
+      "id": 12,
+      "projectId": 3,
+      "memberIds": [
+        4,
+        7
+      ],
+      "crew": "Sitework",
+      "date": "2026-09-23",
+      "start": "06:30",
+      "end": "15:00",
+      "activity": "North elevation panels"
+    },
+    {
+      "id": 13,
+      "projectId": 6,
+      "memberIds": [
+        8,
+        9
+      ],
+      "crew": "Finish",
+      "date": "2026-09-23",
+      "start": "07:00",
+      "end": "15:30",
+      "activity": "Demo haul-off"
+    },
+    {
+      "id": 14,
+      "projectId": 1,
+      "memberIds": [
+        1,
+        2,
+        5
+      ],
+      "crew": "Concrete",
+      "date": "2026-09-24",
+      "start": "07:00",
+      "end": "15:30",
+      "activity": "Slab prep"
+    },
+    {
+      "id": 15,
+      "projectId": 2,
+      "memberIds": [
+        3,
+        6
+      ],
+      "crew": "Framing",
+      "date": "2026-09-24",
+      "start": "07:00",
+      "end": "15:30",
+      "activity": "West wing framing"
+    },
+    {
+      "id": 16,
+      "projectId": 3,
+      "memberIds": [
+        4,
+        7
+      ],
+      "crew": "Sitework",
+      "date": "2026-09-24",
+      "start": "06:30",
+      "end": "15:00",
+      "activity": "Panel erection"
+    },
+    {
+      "id": 17,
+      "projectId": 6,
+      "memberIds": [
+        8,
+        9
+      ],
+      "crew": "Finish",
+      "date": "2026-09-24",
+      "start": "07:00",
+      "end": "15:30",
+      "activity": "Subfloor protection"
+    },
+    {
+      "id": 18,
+      "projectId": 1,
+      "memberIds": [
+        1,
+        2,
+        5
+      ],
+      "crew": "Concrete",
+      "date": "2026-09-25",
+      "start": "07:00",
+      "end": "15:30",
+      "activity": "Slab prep"
+    },
+    {
+      "id": 19,
+      "projectId": 2,
+      "memberIds": [
+        3,
+        6
+      ],
+      "crew": "Framing",
+      "date": "2026-09-25",
+      "start": "07:00",
+      "end": "15:30",
+      "activity": "West wing framing"
+    },
+    {
+      "id": 20,
+      "projectId": 3,
+      "memberIds": [
+        4,
+        7
+      ],
+      "crew": "Sitework",
+      "date": "2026-09-25",
+      "start": "06:30",
+      "end": "15:00",
+      "activity": "Panel erection"
+    },
+    {
+      "id": 21,
+      "projectId": 5,
+      "memberIds": [
+        8,
+        9
+      ],
+      "crew": "Finish",
+      "date": "2026-09-25",
+      "start": "07:00",
+      "end": "15:30",
+      "activity": "Retail punch list"
     }
   ],
   "photos": [],
-  "workdays": []
+  "workdays": [],
+  "changes": []
 }
-
