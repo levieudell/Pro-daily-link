@@ -37,6 +37,7 @@ let customerReturnToProject=false;
 let assignments=[];
 let selectedScheduledWork=null;
 let editingReportId=null;
+let reportReturnProjectId=null;
 let workdays=[];
 let currentRole='office';
 let currentUser=null;
@@ -88,6 +89,7 @@ function showSubscriptionLock(access){const lock=$('#subscription-lock'),owner=c
 $('#subscription-lock-plan').onclick=openBilling;
 $('#subscription-lock-logout').onclick=async()=>{try{await api('/api/auth/logout',{method:'POST',body:'{}'})}finally{localStorage.removeItem('pdl-role');location.href='/login.html'}};
 $$('[data-page]').forEach(b=>b.addEventListener('click',()=>showPage(b.dataset.page)));$$('[data-page-link]').forEach(b=>b.addEventListener('click',()=>showPage(b.dataset.pageLink)));
+$('#close-report-view').onclick=async()=>{const projectId=reportReturnProjectId;reportReturnProjectId=null;$('#close-report-view').hidden=true;showPage('projects');if(projectId){await openProject(projectId);$('[data-project-detail-tab="dailies"]')?.click()}};
 $('#menu-button').onclick=()=>setNavigationOpen(!$('#sidebar').classList.contains('open'));
 document.addEventListener('keydown',event=>{if(event.key==='Escape'&&$('#sidebar').classList.contains('open')){$('#menu-button').focus();setNavigationOpen(false)}});
 $('#profile-button').onclick=openProfileSettings;
@@ -120,7 +122,7 @@ function openProject(id){
   $$('[data-project-detail-tab]').forEach(button=>button.onclick=()=>{$$('[data-project-detail-tab]').forEach(tab=>tab.classList.toggle('active',tab===button));$$('[data-project-detail-pane]').forEach(pane=>pane.classList.toggle('active',pane.dataset.projectDetailPane===button.dataset.projectDetailTab))});
   const addEstimate=$('[data-add-estimate]');if(addEstimate)addEstimate.onclick=()=>{$('#estimate-project-id').value=p.id;$('#estimate-name').value='';$('#estimate-quantity').value='';$('#estimate-hours').value='';$('#estimate-cost').value='';$('#estimate-modal').showModal()};
   const importEstimate=$('[data-import-estimate]');if(importEstimate)importEstimate.onclick=()=>openEstimateImport(p.id);
-  $$('[data-open-project-report]').forEach(button=>button.onclick=()=>{$('#project-detail-modal').close();showPage('reports');renderReports(+button.dataset.openProjectReport)});
+  $$('[data-open-project-report]').forEach(button=>button.onclick=()=>{reportReturnProjectId=p.id;$('#close-report-view').hidden=false;$('#project-detail-modal').close();showPage('reports');renderReports(+button.dataset.openProjectReport)});
   if(!$('#project-detail-modal').open)$('#project-detail-modal').showModal()
 }
 const openProjectEstimateView=openProject;
