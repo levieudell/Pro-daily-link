@@ -93,7 +93,7 @@
           "name": "Foundation concrete",
           "plannedQuantity": 180,
           "unit": "CY",
-          "budgetHours": 220,
+          "budgetHours": 48,
           "cost": 96000
         },
         {
@@ -130,7 +130,7 @@
           "name": "Wood framing",
           "plannedQuantity": 18000,
           "unit": "SF",
-          "budgetHours": 2100,
+          "budgetHours": 139,
           "cost": 510000
         }
       ]
@@ -159,7 +159,7 @@
           "name": "Tilt wall panels",
           "plannedQuantity": 164,
           "unit": "EA",
-          "budgetHours": 1960,
+          "budgetHours": 101,
           "cost": 625000
         }
       ]
@@ -188,7 +188,7 @@
           "name": "Building pad earthwork",
           "plannedQuantity": 4200,
           "unit": "CY",
-          "budgetHours": 680,
+          "budgetHours": 95,
           "cost": 186000
         }
       ]
@@ -217,7 +217,7 @@
           "name": "Interior finishes",
           "plannedQuantity": 12000,
           "unit": "SF",
-          "budgetHours": 1600,
+          "budgetHours": 51,
           "cost": 390000
         }
       ]
@@ -246,7 +246,7 @@
           "name": "Selective demolition",
           "plannedQuantity": 1860,
           "unit": "SF",
-          "budgetHours": 220,
+          "budgetHours": 40,
           "cost": 28000
         },
         {
