@@ -42,6 +42,39 @@ if(finalCta){
 
 const demoForm=document.querySelector('#demo-request-form');
 const demoStatus=document.querySelector('#demo-form-status');
+const workflowButton=document.querySelector('#workflow-example-next');
+const workflowFields=document.querySelector('#workflow-example-fields');
+const workflowTitle=document.querySelector('#workflow-example-title');
+const workflowNote=document.querySelector('#workflow-example-note');
+const workflowResult=document.querySelector('#workflow-example-result');
+const workflowSteps=[...document.querySelectorAll('.demo-steps b')];
+let workflowStage=0;
+function renderWorkflowExample(){
+  workflowSteps.forEach((step,index)=>step.classList.toggle('active',index===workflowStage));
+  if(workflowStage===0){
+    workflowTitle.textContent='Field note';workflowNote.hidden=false;workflowFields.hidden=true;
+    workflowResult.textContent='Start with the note exactly as the field might send it.';
+    workflowButton.textContent='Organize this sample →';
+  }else if(workflowStage===1){
+    workflowTitle.textContent='Organized report';workflowNote.hidden=true;workflowFields.hidden=false;
+    workflowResult.textContent='The note is structured for verification. Labor is captured; quantity stays pending until it is measured.';
+    workflowButton.textContent='Show office review →';
+  }else{
+    workflowTitle.textContent='Office review';workflowNote.hidden=true;workflowFields.hidden=false;
+    workflowResult.innerHTML='<strong>Ready for review.</strong> The office can correct hours, add the measured quantity, resolve extra work, and approve the daily before project production changes.';
+    workflowButton.textContent='Restart sample';
+  }
+}
+workflowButton?.addEventListener('click',()=>{workflowStage=(workflowStage+1)%3;renderWorkflowExample()});
+
+document.querySelectorAll('[data-implementation]').forEach(link=>link.addEventListener('click',()=>{
+  const name=link.dataset.implementation;
+  requestAnimationFrame(()=>{
+    const notes=demoForm?.elements.namedItem('notes');
+    if(notes&&!notes.value)notes.value=`I would like to discuss ${name} for our team.`;
+    if(demoStatus)demoStatus.textContent=`Tell us about your team. We’ll confirm the ${name} scope and price before anything is scheduled or billed.`;
+  });
+}));
 demoForm?.addEventListener('submit',async event=>{
   event.preventDefault();
   const button=demoForm.querySelector('button[type="submit"]');

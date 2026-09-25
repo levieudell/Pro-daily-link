@@ -1,5 +1,6 @@
 const $=selector=>document.querySelector(selector);
-let currentStep=1;
+const params=new URLSearchParams(location.search),requestedPlan=params.get('plan');
+let currentStep=1,planWasRequested=['starter','growth','pro'].includes(requestedPlan);
 
 function showStep(step){
   currentStep=step;
@@ -29,9 +30,14 @@ function validateStepOne(){
 function recommend(){
   const people=+$('#employees').value;
   const projects=+$('#projects').value;
+  if(!people&&!projects){
+    $('#recommendation').textContent=planWasRequested?`Selected from pricing: ${requestedPlan[0].toUpperCase()+requestedPlan.slice(1)}.`:'Choose the plan that fits now. You can change it before the trial ends.';
+    return;
+  }
   const plan=people<=10&&projects<=5?'starter':people<=30&&projects<=25?'growth':'pro';
   $('#recommendation').textContent=`Recommended: ${plan[0].toUpperCase()+plan.slice(1)} based on your team and active projects.`;
   document.querySelector(`[value="${plan}"]`).checked=true;
+  planWasRequested=false;
 }
 
 $('#employees').oninput=recommend;
@@ -87,5 +93,6 @@ $('#signup').onsubmit=async event=>{
   }
 };
 
+if(planWasRequested)document.querySelector(`[name="plan"][value="${requestedPlan}"]`).checked=true;
 recommend();
 showStep(1);
