@@ -86,7 +86,7 @@ $('#signup').onsubmit=async event=>{
     const data=await response.json();
     if(!response.ok)throw new Error(data.error);
     localStorage.setItem('pdl-company-id',data.company.id);
-    location.href=data.next||`/app?tenant=${encodeURIComponent(data.company.id)}`;
+    location.replace(`${data.next||`/app?tenant=${encodeURIComponent(data.company.id)}`}#dashboard`);
   }catch(error){
     $('#result').textContent=error.message;
     button.disabled=false;
