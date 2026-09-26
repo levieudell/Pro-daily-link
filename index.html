@@ -263,6 +263,7 @@
     <form method="dialog">
       <div class="modal-header"><div><p class="eyebrow">PRODUCTION BUDGET</p><h2>Add estimate item</h2></div><button class="close-button" value="cancel">×</button></div>
       <input type="hidden" id="estimate-project-id" />
+      <input type="hidden" id="estimate-item-id" />
       <label>Scope of work<input id="estimate-name" required placeholder="Example: Place slab concrete" /></label>
       <div class="two-col"><label>Planned quantity<input id="estimate-quantity" type="number" min="0" step="0.01" /></label><label>Unit<select id="estimate-unit"><option>CY</option><option>SF</option><option>LF</option><option>EA</option><option>TON</option><option>HR</option></select></label></div>
       <div class="two-col"><label>Budgeted labor hours<input id="estimate-hours" type="number" min="0" step="0.5" /></label><label>Estimated cost<input id="estimate-cost" type="number" min="0" step="1" /></label></div>
@@ -329,6 +330,7 @@
   <dialog id="profile-modal"><form method="dialog"><div class="modal-header"><div><p class="eyebrow">YOUR ACCOUNT</p><h2>Profile settings</h2></div><button class="close-button" value="cancel">×</button></div><div class="profile-photo-editor"><span class="avatar" id="profile-preview">LF</span><div><strong>Profile photo</strong><p>Upload a JPG, PNG, or WebP image.</p><input id="profile-photo" type="file" accept="image/jpeg,image/png,image/webp"></div></div><label>Display name<input id="profile-display-name"></label><label>Language preference<select id="profile-language"><option value="en">English</option><option value="es">Español</option></select><small>Used as your default for field screens and new daily reports. You can still change an individual report.</small></label><label>Appearance<select id="profile-theme"><option value="light">Light</option><option value="dark">Dark</option><option value="system">Use device setting</option></select></label><div class="modal-actions"><button value="cancel" class="secondary">Cancel</button><button type="button" class="primary" id="save-profile">Save profile</button></div></form></dialog>
   <dialog id="photo-detail-modal"><form method="dialog"><div class="modal-header"><div><p class="eyebrow">PHOTO RECORD</p><h2>Photo details</h2></div><button class="close-button" value="cancel">×</button></div><div id="photo-detail"></div><div class="modal-actions"><button value="cancel" class="secondary">Close</button></div></form></dialog>
   <div class="toast" id="toast" role="status" aria-live="polite" aria-atomic="true"></div>
+  <script src="metrics.js"></script>
   <script src="app.js"></script>
   <script src="estimate-mobile.js"></script>
 </body>
