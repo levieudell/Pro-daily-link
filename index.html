@@ -257,7 +257,9 @@
       <div class="modal-header"><div><p class="eyebrow">FIELD SCHEDULING</p><h2>New assignment</h2></div><button class="close-button" value="cancel">×</button></div>
       <div class="two-col"><label>Assign by<select id="assignment-type"><option value="crew">Whole crew</option><option value="individual">Individual person</option></select></label><label id="assignment-target-label">Crew<select id="assignment-target"></select></label></div>
       <label>Project / job site<select id="assignment-project"></select></label>
-      <div class="two-col"><label>Date<input id="assignment-date" type="date" required /></label><label>Work activity<input id="assignment-activity" placeholder="Concrete pour, framing…" /></label></div>
+      <div class="two-col"><label>First day<input id="assignment-date" type="date" required /></label><label>Through date <small>Optional for multiple days</small><input id="assignment-end-date" type="date" /></label></div>
+      <label class="inline-check"><input id="assignment-include-weekends" type="checkbox" /> Include Saturdays and Sundays in this date range</label>
+      <label>Work activity<input id="assignment-activity" placeholder="Concrete pour, framing…" /></label>
       <div class="two-col"><label>Start time<input id="assignment-start" type="time" value="07:00" required /></label><label>End time<input id="assignment-end" type="time" value="15:30" required /></label></div>
       <div id="assignment-warning" class="form-warning"></div>
       <div class="modal-actions"><button value="cancel" class="secondary">Cancel</button><button type="button" class="primary" id="save-assignment">Assign to site</button></div>
@@ -268,6 +270,12 @@
     <form method="dialog">
       <div class="modal-header"><div><p class="eyebrow">SCHEDULED WORK</p><h2 id="scheduled-project-name">Assignment</h2></div><button class="close-button" value="cancel">×</button></div>
       <div id="scheduled-work-detail"></div>
+      <div class="add-schedule-day">
+        <div class="two-col"><label>Schedule again from<input id="additional-day-date" type="date" required /></label><label>Through date <small>Optional</small><input id="additional-day-end-date" type="date" /></label></div>
+        <label class="inline-check"><input id="additional-day-weekends" type="checkbox" /> Include weekends</label>
+        <button type="button" class="primary" id="add-assignment-day">＋ Add scheduled days</button>
+      </div>
+      <div id="additional-day-warning" class="form-warning"></div>
       <div class="modal-actions assignment-remove-actions"><button value="cancel" class="secondary">Keep assignment</button><button type="button" class="danger-button" id="remove-person">Unassign this person</button><button type="button" class="danger-button solid" id="remove-assignment">Unassign entire crew</button></div>
     </form>
   </dialog>
