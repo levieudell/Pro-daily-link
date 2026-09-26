@@ -99,8 +99,9 @@
 
       <section class="page" id="schedule-page">
         <div class="page-heading"><div><p class="eyebrow">FIELD OPERATIONS</p><h1>Crew schedule</h1><p>Assign crews and individual team members to job sites.</p></div><button class="primary" id="new-assignment">＋ New assignment</button></div>
-        <div class="schedule-toolbar"><button aria-label="Previous week">‹</button><strong id="schedule-week-label">This week</strong><button aria-label="Next week">›</button><span></span><button class="secondary">Today</button></div>
+        <div class="schedule-toolbar"><button id="schedule-previous-week" aria-label="Previous week">‹</button><strong id="schedule-week-label">This week</strong><button id="schedule-next-week" aria-label="Next week">›</button><span></span><button class="secondary" id="schedule-today">Today</button></div>
         <div class="schedule-filters"><label>People<select id="schedule-crew-filter"><option value="all">All crews</option></select></label><label class="filter-check"><input type="checkbox" id="schedule-show-office" /> Show office staff</label><small id="schedule-filter-status">Filters save to your profile.</small></div>
+        <div class="schedule-summary" id="schedule-summary" aria-live="polite"></div>
         <article class="panel schedule-board" id="schedule-board"></article>
       </section>
 
