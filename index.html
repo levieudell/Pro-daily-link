@@ -239,6 +239,16 @@
       <div id="project-detail-content"></div>
     </form>
   </dialog>
+  <dialog id="project-plan-modal">
+    <form method="dialog">
+      <div class="modal-header"><div><p class="eyebrow">PROJECT PLANS</p><h2>Upload plans</h2></div><button class="close-button" value="cancel">×</button></div>
+      <input type="hidden" id="plan-project-id" />
+      <label>Plan files<input type="file" id="project-plan-files" accept="application/pdf,image/jpeg,image/png,image/webp" multiple required /></label>
+      <p class="input-help">Upload PDF plan sets, details, or marked-up drawings. Up to 10 MB per file.</p>
+      <label>Description for the field<textarea id="project-plan-note" rows="3" placeholder="Example: Latest structural plan set — use for layout beginning Monday."></textarea></label>
+      <div class="modal-actions"><button value="cancel" class="secondary">Cancel</button><button type="button" class="primary" id="save-project-plans">Upload plans</button></div>
+    </form>
+  </dialog>
   <dialog id="delete-report-modal"><form method="dialog"><div class="modal-header"><div><p class="eyebrow">CONTROLLED DELETION</p><h2>Delete daily report?</h2></div><button class="close-button" value="cancel" aria-label="Close">×</button></div><input type="hidden" id="delete-report-id"><p class="input-help">The daily will leave normal project and report views. An admin audit record will preserve who deleted it, when, and why.</p><label>Reason for deletion<textarea id="delete-report-reason" rows="3" placeholder="Duplicate report, wrong project, test entry…"></textarea></label><div class="modal-actions"><button value="cancel" class="secondary">Cancel</button><button type="button" class="danger-button" id="confirm-delete-report">Delete daily</button></div></form></dialog>
 
   <dialog id="estimate-modal">
