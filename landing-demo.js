@@ -72,7 +72,7 @@ document.querySelectorAll('[data-implementation]').forEach(link=>link.addEventLi
   requestAnimationFrame(()=>{
     const notes=demoForm?.elements.namedItem('notes');
     if(notes&&!notes.value)notes.value=`I would like to discuss ${name} for our team.`;
-    if(demoStatus)demoStatus.textContent=`Tell us about your team. We’ll confirm the ${name} scope and price before anything is scheduled or billed.`;
+    if(demoStatus)demoStatus.textContent=`Tell us about your team. We’ll confirm the ${name} scope before anything is scheduled or billed.`;
   });
 }));
 demoForm?.addEventListener('submit',async event=>{
