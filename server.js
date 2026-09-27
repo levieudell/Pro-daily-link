@@ -380,3 +380,115 @@ const server=http.createServer(async(req,res)=>{const requestId=crypto.randomUUI
 server.requestTimeout=30000;server.headersTimeout=15000;server.keepAliveTimeout=5000;
 if(require.main===module) Promise.all([loadPrimaryCloud(),loadPlatformCloud()]).finally(()=>server.listen(PORT,()=>console.log(`Pro Daily Link running at http://localhost:${PORT}`)));
 module.exports={server,localExtract,rekeyDuplicateAssignments};
+
+
+// Customer Help Center library. These are intentionally limited to supported PDL workflows.
+const PDL_SUPPORT_LIBRARY=[
+['a0000000-0000-4000-8000-000000000001','Create your company account','Getting started','all','Start a 14-day trial without entering a credit card.','1. Open the Pro Daily Link sign-up page.
+2. Enter your company and contact details.
+3. Choose a plan; you will not be charged during the trial.
+4. Accept the Terms and Privacy Policy.
+5. Select [CONFIRM BUTTON NAME] to create your workspace.'],
+['a0000000-0000-4000-8000-000000000002','Add your first customer and project','Getting started','office','Create the customer first, then set up the job you want to track.','1. Open Customers and select [CONFIRM BUTTON NAME].
+2. Enter the customer name and save it.
+3. Open Projects and select [CONFIRM BUTTON NAME].
+4. Choose the customer and enter the project details.
+5. Save the project.'],
+['a0000000-0000-4000-8000-000000000003','Invite office users','Team setup','office','Give office staff a secure sign-in and the right access.','1. Open Team, then User accounts.
+2. Select [CONFIRM BUTTON NAME].
+3. Enter the person’s name and email.
+4. Choose their office role and project access if needed.
+5. Save the account and share their sign-in instructions securely.'],
+['a0000000-0000-4000-8000-000000000004','Add crew members and crews','Team setup','office','Add people first, then organize them into saved crews.','1. Open Team, then Employees.
+2. Select [CONFIRM BUTTON NAME].
+3. Add the employee and select or create a crew.
+4. Save the employee.
+5. Open Crews to review or edit crew membership.'],
+['a0000000-0000-4000-8000-000000000005','Schedule crews','Scheduling','office','Schedule a crew or individual for one day or a date range.','1. Open Schedule and select [CONFIRM BUTTON NAME].
+2. Choose a project and crew or team member.
+3. Choose the start date and ending date if needed.
+4. Choose whether to include weekends.
+5. Enter work hours and activity, then save.'],
+['a0000000-0000-4000-8000-000000000006','What crews see in My Day','Field workflow','field','Crew members see their own assignments and recent work, not company pricing.','1. Sign in with the crew account.
+2. Open My Day.
+3. Review today’s assignment and acknowledge it.
+4. Start the workday when work begins.
+5. Use the daily report option to record work.'],
+['a0000000-0000-4000-8000-000000000007','File a daily report on a phone','Field workflow','field','Record the work while the details are fresh.','1. Open My Day and select [CONFIRM BUTTON NAME].
+2. Confirm project, date, crew, and language.
+3. Add a note about the day.
+4. Add production and labor.
+5. Add the foreman signature if required.
+6. Select Submit to office.'],
+['a0000000-0000-4000-8000-000000000008','Add photos and voice notes','Field workflow','field','Use photos and spoken notes to support a clear daily record.','1. Open a daily report.
+2. Use Speak notes or type your note.
+3. Review the note before continuing.
+4. Add photos from your phone.
+5. Add captions or tags when available.
+6. Submit the daily report.'],
+['a0000000-0000-4000-8000-000000000009','Add unplanned work','Daily reports','field','Record work that was not part of the estimate for office review.','1. Open Production & labor in the daily.
+2. Select Custom work.
+3. Describe the work clearly.
+4. Enter quantity and/or labor hours.
+5. Add notes or photos if helpful.
+6. Submit to the office for review.'],
+['a0000000-0000-4000-8000-000000000010','Approve daily reports','Daily reports','office','Approved dailies are the only reports that count toward production.','1. Open Action center.
+2. Open the daily that needs review.
+3. Check notes, photos, labor, quantities, and custom work.
+4. Correct or return it if needed.
+5. Select Approve when it is accurate.'],
+['a0000000-0000-4000-8000-000000000011','Set up estimate items','Estimate & actual','office','Add planned quantities, units, and budgeted labor to track progress.','1. Open the project.
+2. Open Estimate & actual.
+3. Select [CONFIRM BUTTON NAME].
+4. Enter the estimate item, planned quantity, unit, and budgeted labor hours.
+5. Enter estimated cost if your company uses it.
+6. Save the item.'],
+['a0000000-0000-4000-8000-000000000012','Read Estimate & actual','Estimate & actual','office','Compare approved installed quantity and labor against the plan.','1. Open the project’s Estimate & actual tab.
+2. Find the estimate item.
+3. Review completed and remaining quantity.
+4. Review percent complete.
+5. Compare labor hours used with budgeted labor hours.
+6. Remember that only approved dailies update these numbers.'],
+['a0000000-0000-4000-8000-000000000013','Understand efficiency percentage','Production insights','office','Efficiency compares earned hours from the plan against actual reported labor hours.','1. Open Overview or Production insights.
+2. Choose a week or month.
+3. Filter by project, crew, or scope if needed.
+4. Review the efficiency percentage.
+5. Review approved dailies before making a decision.'],
+['a0000000-0000-4000-8000-000000000014','Export CSV reports','Production insights','office','Download spreadsheet-ready project and production information.','1. Open Overview or Production insights.
+2. Set the date range and filters.
+3. Confirm the information on screen.
+4. Select Export or [CONFIRM BUTTON NAME].
+5. Open the downloaded CSV in your spreadsheet program.'],
+['a0000000-0000-4000-8000-000000000015','Who can see pricing','Company settings','office','Owners control which office users can see budgets, estimated cost, and pricing.','1. Sign in as the Account Owner or an Admin.
+2. Open Company settings.
+3. Select Edit company details.
+4. Find Pricing visibility.
+5. Allow all or selected office users, then save.
+6. Crew, field users, and subcontractor guests never see pricing.'],
+['a0000000-0000-4000-8000-000000000016','Subcontractor guest links','Team setup','office','Share limited project access without adding a subcontractor as a full employee.','1. Open Team, then Subcontractors.
+2. Add the subcontractor company if needed.
+3. Choose project access for that company.
+4. Set an expiration date.
+5. Create the secure guest link.
+6. Share it only with the approved contact.'],
+['a0000000-0000-4000-8000-000000000017','Trial and plans','Billing','office','New companies receive a 14-day free trial without a credit card.','1. Open Manage plan as the Account Owner.
+2. Review remaining trial days.
+3. Compare user and active-project limits.
+4. Choose Starter, Growth, or Pro when ready.
+5. Choose monthly or annual billing if available.
+6. Confirm the plan before checkout.'],
+['a0000000-0000-4000-8000-000000000018','Billing and cancelling','Billing','office','Only the Account Owner can manage billing; use support if self-service options are not available.','1. Sign in as the Account Owner.
+2. Open Manage plan.
+3. Use the billing option shown there if available.
+4. Review the effective date before confirming a change.
+5. If no option is shown, contact PDL support with your name, company, email, and question.
+6. Never send card numbers or passwords by chat or email.']
+].map(([id,title,category,audience,summary,content],index)=>({id,title,type:'article',audience,category,summary,content,url:'',status:'Published',order:100+index}));
+const readPlatformWithSupportLibrary=readPlatform;
+readPlatform=function(){
+  const platform=readPlatformWithSupportLibrary();
+  const known=new Set((platform.helpItems||[]).map(item=>item.id));
+  const missing=PDL_SUPPORT_LIBRARY.filter(item=>!known.has(item.id));
+  if(missing.length){platform.helpItems.push(...missing.map(item=>({...item,createdAt:new Date().toISOString(),updatedAt:new Date().toISOString()})));writePlatform(platform)}
+  return platform;
+};
