@@ -1,12 +1,16 @@
+function calendarDate(iso){
+  const [year,month,day]=String(iso).split('-').map(Number);
+  return new Date(year,month-1,day);
+}
+
 function reportWorkDate(report){
   const iso=String(report?.dateIso||'');
   if(/^\d{4}-\d{2}-\d{2}$/.test(iso)){
-    const [year,month,day]=iso.split('-').map(Number);
-    const date=new Date(Date.UTC(year,month-1,day));
+    const date=calendarDate(iso);
     return {
       iso,
-      short:date.toLocaleDateString('en-US',{month:'short',day:'numeric',timeZone:'UTC'}),
-      long:date.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric',timeZone:'UTC'})
+      short:date.toLocaleDateString('en-US',{month:'short',day:'numeric'}),
+      long:date.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'})
     };
   }
   const fallback=String(report?.date||'');
@@ -18,10 +22,17 @@ function reportSubmittedOn(report){
   if(!submitted?.at)return null;
   const date=new Date(submitted.at);
   if(Number.isNaN(date.valueOf()))return null;
+  const iso=`${date.getFullYear()}-${String(date.getMonth()+1).padStart(2,'0')}-${String(date.getDate()).padStart(2,'0')}`;
   return {
-    iso:date.toISOString().slice(0,10),
-    label:date.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric',timeZone:'UTC'})
+    iso,
+    label:date.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'})
   };
+}
+
+function dayPartGreeting(date=new Date(),language='en'){
+  const hour=date.getHours(),evening=hour>=17,afternoon=hour>=12;
+  if(String(language).startsWith('es'))return evening?'Buenas noches':afternoon?'Buenas tardes':'Buenos días';
+  return evening?'Good evening':afternoon?'Good afternoon':'Good morning';
 }
 
 function reportsByWorkDate(list){
@@ -86,5 +97,5 @@ function csvRound(value,kind){
 }
 
 if(typeof module!=='undefined'&&module.exports){
-  module.exports={reportWorkDate,reportSubmittedOn,reportsByWorkDate,summarizeProduction,projectEfficiency,laborRunsAhead,csvRound};
+  module.exports={reportWorkDate,reportSubmittedOn,reportsByWorkDate,summarizeProduction,projectEfficiency,laborRunsAhead,csvRound,dayPartGreeting,calendarDate};
 }
