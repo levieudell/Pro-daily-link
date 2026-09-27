@@ -263,6 +263,7 @@
     <form method="dialog">
       <div class="modal-header"><div><p class="eyebrow">PRODUCTION BUDGET</p><h2>Add estimate item</h2></div><button class="close-button" value="cancel">×</button></div>
       <input type="hidden" id="estimate-project-id" />
+      <input type="hidden" id="estimate-item-id" />
       <label>Scope of work<input id="estimate-name" required placeholder="Example: Place slab concrete" /></label>
       <div class="two-col"><label>Planned quantity<input id="estimate-quantity" type="number" min="0" step="0.01" /></label><label>Unit<select id="estimate-unit"><option>CY</option><option>SF</option><option>LF</option><option>EA</option><option>TON</option><option>HR</option></select></label></div>
       <div class="two-col"><label>Budgeted labor hours<input id="estimate-hours" type="number" min="0" step="0.5" /></label><label>Estimated cost<input id="estimate-cost" type="number" min="0" step="1" /></label></div>
