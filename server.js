@@ -1,4 +1,5 @@
-const http = require('node:http');
+const PDL_SUPPORT_LIBRARY=[
+  /*const http = require('node:http');
 const fs = require('node:fs');
 const path = require('node:path');
 const crypto = require('node:crypto');
@@ -492,3 +493,5 @@ readPlatform=function(){
   if(missing.length){platform.helpItems.push(...missing.map(item=>({...item,createdAt:new Date().toISOString(),updatedAt:new Date().toISOString()})));writePlatform(platform)}
   return platform;
 };
+
+*/
