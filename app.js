@@ -413,3 +413,27 @@ const renderProjectCardsForPricing=renderProjectCards;
 renderProjectCards=function(filter=''){renderProjectCardsForPricing(filter);if(canViewCompanyPricing())return;$$('#project-cards .project-meta div:first-child strong').forEach(node=>node.textContent='Pricing restricted')};
 const openProjectForPricing=openProject;
 openProject=function(id){openProjectForPricing(id);if(canViewCompanyPricing())return;const detail=$('#project-detail-content');detail.querySelectorAll('.detail-meta div').forEach(node=>{if(/contract|billing|budget/i.test(node.textContent))node.remove()});detail.querySelectorAll('.contract-value-row').forEach(node=>node.remove());detail.querySelectorAll('.estimate-header small').forEach(node=>node.textContent='Estimate details are restricted by your company settings.');detail.querySelectorAll('[data-import-estimate],[data-add-estimate]').forEach(node=>node.remove())};
+
+
+// Refresh post-submit feedback without making crews reload.
+const pdlSaveDailyReportWithRefresh=saveDailyReport;
+saveDailyReport=async function(status){
+  const result=await pdlSaveDailyReportWithRefresh(status);
+  if(currentRole==='field')renderMyDay();
+  return result;
+};
+// Keep the required-note message visible above the mobile action bar.
+document.addEventListener('click',event=>{
+  if(!event.target.closest('#report-next-step'))return;
+  requestAnimationFrame(()=>{
+    const message=$('#field-notes-error');
+    if(message)message.scrollIntoView({behavior:matchMedia('(prefers-reduced-motion: reduce)').matches?'auto':'smooth',block:'center'});
+  });
+},true);
+// Refresh owner actions while the workspace remains open.
+async function refreshVisibleActionCenter(){
+  if(currentRole!=='office'||document.visibilityState!=='visible')return;
+  try{await syncActionCenter()}catch{}
+}
+document.addEventListener('visibilitychange',refreshVisibleActionCenter);
+setInterval(refreshVisibleActionCenter,25000);
