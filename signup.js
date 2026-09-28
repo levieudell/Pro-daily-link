@@ -1,5 +1,24 @@
 const $=selector=>document.querySelector(selector);
 const params=new URLSearchParams(location.search),requestedPlan=params.get('plan');
+const ATTRIBUTION_KEY='pdl-signup-attribution';
+function attributionText(value,lower){const text=String(value??'').trim().slice(0,100).replace(/[^A-Za-z0-9 ._+-]/g,'').trim().slice(0,100);return lower?text.toLowerCase():text}
+function referrerHostname(){try{if(!document.referrer)return '';return new URL(document.referrer).hostname.toLowerCase().replace(/[^a-z0-9.-]/g,'').slice(0,100)}catch{return ''}}
+function readAttribution(){try{const stored=JSON.parse(localStorage.getItem(ATTRIBUTION_KEY)||'null');return stored&&typeof stored==='object'?stored:null}catch{return null}}
+// Last non-empty UTM visit wins. A later visit with no utm_* params keeps the stored set.
+function captureAttribution(){
+  const incoming={utmSource:attributionText(params.get('utm_source'),true),utmMedium:attributionText(params.get('utm_medium'),true),utmCampaign:attributionText(params.get('utm_campaign'),false),utmContent:attributionText(params.get('utm_content'),false),utmTerm:attributionText(params.get('utm_term'),false)};
+  const stored=readAttribution();
+  if(Object.values(incoming).some(Boolean)){
+    const next={...incoming,referrer:referrerHostname()||stored?.referrer||'',landedAt:new Date().toISOString()};
+    try{localStorage.setItem(ATTRIBUTION_KEY,JSON.stringify(next))}catch{}
+    return next;
+  }
+  if(stored)return stored;
+  const fallback={utmSource:'',utmMedium:'',utmCampaign:'',utmContent:'',utmTerm:'',referrer:referrerHostname(),landedAt:referrerHostname()?new Date().toISOString():''};
+  if(fallback.referrer){try{localStorage.setItem(ATTRIBUTION_KEY,JSON.stringify(fallback))}catch{}}
+  return fallback;
+}
+const signupAttribution=captureAttribution();
 let currentStep=1,planWasRequested=['starter','growth','pro'].includes(requestedPlan);
 
 function showStep(step){
@@ -96,7 +115,14 @@ $('#signup').onsubmit=async event=>{
         founderTermsAccepted:$('#founder-terms').checked,
         assistedSetup:$('#assisted-setup').checked,
         legalAccepted:$('#legal-acceptance').checked,
-        legalVersion:'2026-09-17'
+        legalVersion:'2026-09-17',
+        utmSource:signupAttribution.utmSource||'',
+        utmMedium:signupAttribution.utmMedium||'',
+        utmCampaign:signupAttribution.utmCampaign||'',
+        utmContent:signupAttribution.utmContent||'',
+        utmTerm:signupAttribution.utmTerm||'',
+        referrer:signupAttribution.referrer||'',
+        landedAt:signupAttribution.landedAt||''
       })
     });
     const data=await response.json();
