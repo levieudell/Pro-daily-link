@@ -7,6 +7,7 @@ const { AsyncLocalStorage } = require('node:async_hooks');
 const supabase = require('./database/supabase');
 const { stableUuid } = require('./database/migrate-json');
 const Sentry = require('@sentry/node');
+const stripeWebhook = require('./stripe-webhook');
 
 const ROOT = __dirname;
 supabase.loadLocalEnv(ROOT);
@@ -41,7 +42,7 @@ function secureHeaders(res){res.setHeader('X-Content-Type-Options','nosniff');re
 
 const dbContext=new AsyncLocalStorage();
 const tenantQueues=new Map();
-function withTenantQueue(companyId,task){const prior=tenantQueues.get(companyId)||Promise.resolve(),run=prior.catch(()=>{}).then(task),tracked=run.finally(()=>{if(tenantQueues.get(companyId)===tracked)tenantQueues.delete(companyId)});tenantQueues.set(companyId,tracked);return run}
+function withTenantQueue(companyId,task){const prior=tenantQueues.get(companyId)||Promise.resolve(),run=prior.catch(()=>{}).then(task),tracked=run.catch(()=>{}).finally(()=>{if(tenantQueues.get(companyId)===tracked)tenantQueues.delete(companyId)});tenantQueues.set(companyId,tracked);return run}
 function activeDbFile(){return dbContext.getStore()?.file||DB_FILE}
 function rekeyDuplicateAssignments(db){const rows=db?.assignments;if(!Array.isArray(rows))return false;const seen=new Set();let next=rows.reduce((max,row)=>Math.max(max,Number(row.id)||0),0)+1,changed=false;for(const row of rows){const id=Number(row.id);if(!seen.has(id)){seen.add(id);continue}row.id=next++;changed=true}return changed}
 function readDb(){const context=dbContext.getStore(),db=context?.db||JSON.parse(fs.readFileSync(activeDbFile(),'utf8'));if(rekeyDuplicateAssignments(db))writeDb(db);return db}
@@ -81,7 +82,32 @@ async function stripeRequest(pathname,params=null,method='POST'){
   const response=await fetch(`https://api.stripe.com/v1${pathname}`,options),data=await response.json();if(!response.ok)throw new Error(data.error?.message||`Stripe returned ${response.status}`);return data
 }
 function planIdForStripePrice(priceId){return Object.entries(BILLING_PLANS).find(([,plan])=>process.env[plan.priceEnv]===priceId||process.env[plan.annualPriceEnv]===priceId)?.[0]||null}
-async function syncStripeSubscription(db,subscriptionId){const subscription=await stripeRequest(`/subscriptions/${encodeURIComponent(subscriptionId)}`,null,'GET'),priceId=subscription.items?.data?.[0]?.price?.id,planId=planIdForStripePrice(priceId);if(planId){const plan=BILLING_PLANS[planId],billingCycle=process.env[plan.annualPriceEnv]===priceId?'annual':'monthly';db.company.plan=planId;db.company.billingCycle=billingCycle;db.company.planPrice=billingCycle==='annual'?plan.annualPrice:plan.price}db.company.stripeSubscriptionId=subscription.id;db.company.stripeCustomerId=typeof subscription.customer==='string'?subscription.customer:subscription.customer?.id;db.company.subscriptionStatus=({active:'Active',trialing:'Trial',past_due:'Past due',unpaid:'Past due',paused:'Paused',canceled:'Cancelled',incomplete:'Incomplete',incomplete_expired:'Cancelled'})[subscription.status]||subscription.status;db.company.nextBillingAt=subscription.current_period_end?new Date(subscription.current_period_end*1000).toISOString():null;writeDb(db);return subscription}
+function applyStripeSubscription(db,subscription){const priceId=subscription.items?.data?.[0]?.price?.id,planId=planIdForStripePrice(priceId);if(planId){const plan=BILLING_PLANS[planId],billingCycle=process.env[plan.annualPriceEnv]===priceId?'annual':'monthly';db.company.plan=planId;db.company.billingCycle=billingCycle;db.company.planPrice=billingCycle==='annual'?plan.annualPrice:plan.price}db.company.stripeSubscriptionId=subscription.id;db.company.stripeCustomerId=typeof subscription.customer==='string'?subscription.customer:subscription.customer?.id;db.company.subscriptionStatus=({active:'Active',trialing:'Trial',past_due:'Past due',unpaid:'Past due',paused:'Paused',canceled:'Cancelled',incomplete:'Incomplete',incomplete_expired:'Cancelled'})[subscription.status]||subscription.status;db.company.nextBillingAt=(subscription.current_period_end||subscription.items?.data?.[0]?.current_period_end)?new Date((subscription.current_period_end||subscription.items.data[0].current_period_end)*1000).toISOString():null;return subscription}
+async function syncStripeSubscription(db,subscriptionId){const subscription=await stripeRequest(`/subscriptions/${encodeURIComponent(subscriptionId)}`,null,'GET');applyStripeSubscription(db,subscription);writeDb(db);return subscription}
+async function handleStripeWebhook(req,res){
+  try {
+    const event=stripeWebhook.verifyEvent(await stripeWebhook.readRawBody(req),req.headers['stripe-signature']);
+    const result=await withTenantQueue('stripe-webhooks',()=>stripeWebhook.processEvent(event,{
+      stripeRequest,applySubscription:applyStripeSubscription,
+      withCompany:(companyId,task)=>withTenantQueue(companyId,async()=>{
+        // Load inside the queue so concurrent app writes cannot be overwritten by an old snapshot.
+        const database=await requestDatabase({headers:{'x-pdl-company':companyId}});
+        if(!database)throw new Error('Webhook company is unavailable');
+        if(!database.db)database.db=JSON.parse(fs.readFileSync(database.file,'utf8'));
+        const context={...database,pending:[],backup:null};
+        await dbContext.run(context,()=>task(context.db));
+        await Promise.all(context.pending);
+      }),
+      persist:writeDb
+    }));
+    return json(res,200,result);
+  } catch(error) {
+    const status=error.statusCode||500;
+    console.error('Stripe webhook processing failed',status);
+    return json(res,status,{error:status===400?'Invalid Stripe webhook':status===413?'Request is too large':'Webhook processing unavailable'});
+  }
+}
+
 function ensureOwnerTeamMember(db){
   db.team ||= [];
   const owner=(db.users||[]).find(user=>user.role==='owner'&&user.status==='Active');
@@ -376,7 +402,7 @@ async function api(req,res,url){
   return json(res,404,{error:'Not found'});
 }
 
-const server=http.createServer(async(req,res)=>{const requestId=crypto.randomUUID();try{secureHeaders(res);res.setHeader('X-Request-Id',requestId);const url=new URL(req.url,'http://localhost');if(url.pathname.startsWith('/api/')){if(!rateLimit(req,res,url))return;if(req.method==='POST'&&url.pathname==='/api/auth/company'){const input=await body(req),companyId=await companyIdForEmail(input.email);return json(res,200,{companyId:companyId||null})}const database=await requestDatabase(req);if(!database)return json(res,404,{error:'Company workspace not found'});const companyId=String(database.db?.company?.id||JSON.parse(fs.readFileSync(database.file,'utf8')).company.id);return withTenantQueue(companyId,async()=>{if(!database.db)database.db=JSON.parse(fs.readFileSync(database.file,'utf8'));const context={...database,pending:[],backup:null};const result=await dbContext.run(context,()=>api(req,res,url));if(isCredentialAttempt(req,url)&&res.statusCode===401)recordAuthFailure(req);await Promise.all(context.pending);return result})}let requested=decodeURIComponent(url.pathname==='/'?'/landing.html':url.pathname==='/app'?'/index.html':url.pathname==='/favicon.ico'?'/assets/pro-daily-link-logo.png':/^\/guest\/[a-f0-9]{48}$/.test(url.pathname)?'/guest.html':url.pathname);let file=path.resolve(ROOT,'.'+requested);if(!file.startsWith(ROOT)||!fs.existsSync(file)||fs.statSync(file).isDirectory()){res.writeHead(404);return res.end('Not found')}const extension=path.extname(file),mustRevalidate=['.html','.js','.css'].includes(extension);res.writeHead(200,{'Content-Type':MIME[extension]||'application/octet-stream','Cache-Control':mustRevalidate?'no-cache, no-store, must-revalidate':'public, max-age=3600'});fs.createReadStream(file).pipe(res)}catch(error){console.error(`[${requestId}]`,error);if(process.env.SENTRY_DSN)Sentry.withScope(scope=>{scope.setTag('request_id',requestId);scope.setTag('method',req.method);scope.setTag('route',String(req.url||'').split('?')[0]);Sentry.captureException(error)});json(res,error.statusCode||500,{error:error.statusCode===413?'Request is too large':error.statusCode===400?'Invalid request body':'Unexpected server error',requestId})}});
+const server=http.createServer(async(req,res)=>{const requestId=crypto.randomUUID();try{secureHeaders(res);res.setHeader('X-Request-Id',requestId);const url=new URL(req.url,'http://localhost');if(url.pathname.startsWith('/api/')){if(!rateLimit(req,res,url))return;if(req.method==='POST'&&url.pathname==='/api/billing/webhook')return await handleStripeWebhook(req,res);if(req.method==='POST'&&url.pathname==='/api/auth/company'){const input=await body(req),companyId=await companyIdForEmail(input.email);return json(res,200,{companyId:companyId||null})}const database=await requestDatabase(req);if(!database)return json(res,404,{error:'Company workspace not found'});const companyId=String(database.db?.company?.id||JSON.parse(fs.readFileSync(database.file,'utf8')).company.id);return withTenantQueue(companyId,async()=>{if(!database.db)database.db=JSON.parse(fs.readFileSync(database.file,'utf8'));const context={...database,pending:[],backup:null};const result=await dbContext.run(context,()=>api(req,res,url));if(isCredentialAttempt(req,url)&&res.statusCode===401)recordAuthFailure(req);await Promise.all(context.pending);return result})}let requested=decodeURIComponent(url.pathname==='/'?'/landing.html':url.pathname==='/app'?'/index.html':url.pathname==='/favicon.ico'?'/assets/pro-daily-link-logo.png':/^\/guest\/[a-f0-9]{48}$/.test(url.pathname)?'/guest.html':url.pathname);let file=path.resolve(ROOT,'.'+requested);if(!file.startsWith(ROOT)||!fs.existsSync(file)||fs.statSync(file).isDirectory()){res.writeHead(404);return res.end('Not found')}const extension=path.extname(file),mustRevalidate=['.html','.js','.css'].includes(extension);res.writeHead(200,{'Content-Type':MIME[extension]||'application/octet-stream','Cache-Control':mustRevalidate?'no-cache, no-store, must-revalidate':'public, max-age=3600'});fs.createReadStream(file).pipe(res)}catch(error){console.error(`[${requestId}]`,error);if(process.env.SENTRY_DSN)Sentry.withScope(scope=>{scope.setTag('request_id',requestId);scope.setTag('method',req.method);scope.setTag('route',String(req.url||'').split('?')[0]);Sentry.captureException(error)});json(res,error.statusCode||500,{error:error.statusCode===413?'Request is too large':error.statusCode===400?'Invalid request body':'Unexpected server error',requestId})}});
 server.requestTimeout=30000;server.headersTimeout=15000;server.keepAliveTimeout=5000;
 if(require.main===module) Promise.all([loadPrimaryCloud(),loadPlatformCloud()]).finally(()=>server.listen(PORT,()=>console.log(`Pro Daily Link running at http://localhost:${PORT}`)));
 module.exports={server,localExtract,rekeyDuplicateAssignments};

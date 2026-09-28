@@ -5,13 +5,14 @@
   "description": "Construction field production SaaS MVP",
   "dependencies": {
     "@sentry/node": "^10.0.0",
-    "pg": "^8.16.3"
+    "pg": "^8.16.3",
+    "stripe": "22.6.2"
   },
   "scripts": {
     "start": "node server.js",
     "dev": "node --watch server.js",
     "check": "node --check server.js && node --check app.js",
-    "test": "node test.js && node tenant-schema.test.js && node auth-tenant.test.js && node supabase.test.js",
+    "test": "node test.js && node tenant-schema.test.js && node auth-tenant.test.js && node supabase.test.js && node stripe-webhook.test.js",
     "migrate:tenant:preview": "node database/migrate-json.js",
     "migrate:tenant:apply": "node database/migrate-json.js --apply",
     "launch:check": "node database/launch-readiness.js",
