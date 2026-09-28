@@ -8,9 +8,9 @@ Founder: $79/$790, $159/$1,590, $319/$3,190 respectively, same limits.
 Optional Assisted Setup: $499 once, remote 90-minute setup/training for one project and crew using supplied information, plus a 30-minute follow-up within 14 days; no travel or extensive data entry.
 Regular signup retains its 14-day no-card trial. Invited founder signup creates a locked account, then pays immediately. No trial is granted.
 
-## Decision pending
-Confirm automatic renewal at the displayed regular price after 24 months. The draft code and consent copy implement that choice, but it must be approved before release. No lifetime price promise.
-Confirm founder portal behavior for cancellation and plan changes: scheduled subscriptions must not lose price protection or bypass the schedule.
+## Founder renewal policy
+Founder pricing is protected for 24 months from first successful payment. The Stripe schedule ends after the protected period rather than silently increasing to regular pricing. Pro Daily Link must contact the founder before that date, discuss continued service and obtain agreement to any renewal price. Add 90-day, 60-day and 30-day internal follow-ups before enabling live founder sales.
+Confirm portal behavior for cancellations and plan changes: scheduled subscriptions must not lose price protection or bypass the schedule.
 
 ## Environment
 Keep test credentials, webhook signing secret, and TEST prices together until acceptance passes.
@@ -55,7 +55,7 @@ No live Stripe calls or customer charges in those tests.
 5. Double-click/retry returns the same session. Existing subscriber cannot create another subscription.
 6. Test subscription-only and optional $499 initial invoice. Renewals must exclude the setup fee.
 7. Verify signed webhooks reach the correct synthetic tenant, persist, and retry safely.
-8. Test monthly and annual subscription schedules in Stripe test mode, including the 24-month transition.
+8. Test monthly and annual subscription schedules in Stripe test mode, including cancellation at the end of 24 months and internal 90/60/30-day renewal reminders.
 9. Test declined payment, cancellation, portal behavior, and founder cohort/paid setup operations queue.
 10. Test mobile signup consent, checkout return, cancelled checkout and account recovery.
 11. Only after passing: set matching LIVE secret, LIVE webhook secret and the live catalog IDs, then enable invitation enrollment.

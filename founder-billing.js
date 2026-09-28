@@ -88,8 +88,6 @@ async function prepareSubscription(db, subscription, plans, stripeRequest, env =
   const invoiceId = typeof subscription.latest_invoice === 'string' ? subscription.latest_invoice : subscription.latest_invoice?.id;
   const invoice = invoiceId ? await stripeRequest('/invoices/' + encodeURIComponent(invoiceId), null, 'GET') : null;
   if (!invoice || invoice.status !== 'paid') throw fail('Waiting for confirmed founder payment.', 409);
-  const standardPrice = env[priceKey(info.plan, info.cycle)];
-  await validatePrice(stripeRequest, standardPrice, info.cycle === 'annual' ? plans[info.plan].annualPrice : plans[info.plan].price, info.cycle, env);
   let scheduleId = typeof subscription.schedule === 'string' ? subscription.schedule : subscription.schedule?.id;
   let schedule = scheduleId ? await stripeRequest('/subscription_schedules/' + encodeURIComponent(scheduleId), null, 'GET') :
     await stripeRequest('/subscription_schedules', { from_subscription: subscription.id }, 'POST', 'founder-schedule-' + subscription.id);
@@ -98,19 +96,16 @@ async function prepareSubscription(db, subscription, plans, stripeRequest, env =
   const end = addMonths(start, 24);
   if (schedule.metadata?.pdl_founder_configured !== '1') {
     schedule = await stripeRequest('/subscription_schedules/' + encodeURIComponent(schedule.id), {
-      end_behavior: 'release', proration_behavior: 'none',
+      end_behavior: 'cancel', proration_behavior: 'none',
       'metadata[pdl_founder_configured]': '1', 'metadata[company_id]': db.company.id,
       'phases[0][start_date]': start, 'phases[0][end_date]': end,
       'phases[0][items][0][price]': subscription.items.data[0].price.id,
-      'phases[0][items][0][quantity]': 1, 'phases[0][proration_behavior]': 'none',
-      'phases[1][start_date]': end, 'phases[1][end_date]': addMonths(end, info.cycle === 'annual' ? 12 : 1),
-      'phases[1][items][0][price]': standardPrice,
-      'phases[1][items][0][quantity]': 1, 'phases[1][proration_behavior]': 'none'
+      'phases[0][items][0][quantity]': 1, 'phases[0][proration_behavior]': 'none'
     }, 'POST', 'founder-phases-' + subscription.id);
   }
   db.company.founder = { ...db.company.founder, scheduleId: schedule.id,
     startsAt: new Date(start*1000).toISOString(), protectedUntil: new Date(end*1000).toISOString(),
-    paidAt: db.company.founder.paidAt || new Date().toISOString() };
+    paidAt: db.company.founder.paidAt || new Date().toISOString(), renewalReviewRequired: true };
   db.company.accountType = 'early_adopter'; db.company.cohort = 'founder-2026';
   return info;
 }

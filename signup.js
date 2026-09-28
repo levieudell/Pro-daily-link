@@ -139,7 +139,7 @@ function updateFounderOffer(){
     card.querySelector('small').textContent='$'+(active?founderOffer.prices[id].annual:values[1]).toLocaleString()+'/year · '+values[2];
   }
   const plan=document.querySelector('[name="plan"]:checked').value,annual=document.querySelector('[name="billingCycle"]:checked').value==='annual';
-  $('#founder-renewal').textContent='After 24 months: $'+standard[plan][annual?1:0].toLocaleString()+'/'+(annual?'year':'month')+'. Optional setup is charged only once. Taxes, if applicable, are shown at checkout.';
+  $('#founder-renewal').textContent='Before the 24-month founder period ends, we will contact you to review renewal options. Your price will not automatically jump to the regular rate. Optional setup is charged only once. Taxes, if applicable, are shown at checkout.';
 }
 $('#founder-code').addEventListener('input',updateFounderOffer);
 document.querySelectorAll('[name="plan"],[name="billingCycle"]').forEach(el=>el.addEventListener('change',updateFounderOffer));

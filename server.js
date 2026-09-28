@@ -302,7 +302,7 @@ async function api(req,res,url){
       }
       const params={mode:'subscription',payment_method_types:'card','payment_method_types[0]':'card','line_items[0][price]':choice.priceId,'line_items[0][quantity]':1,success_url:publicUrl+'/app?tenant='+encodeURIComponent(db.company.id)+'&billing=success&session_id={CHECKOUT_SESSION_ID}',cancel_url:publicUrl+'/app?tenant='+encodeURIComponent(db.company.id)+'&billing=cancelled',client_reference_id:db.company.id,'metadata[company_id]':db.company.id,'subscription_data[metadata][company_id]':db.company.id,'subscription_data[metadata][plan]':input.plan,'subscription_data[metadata][billing_cycle]':choice.cycle};
       delete params.payment_method_types;
-      if(choice.founder){params['subscription_data[metadata][offer]']='founder';params['custom_text[submit][message]']='Founder pricing applies for 24 months from first payment, then renews at $'+(choice.cycle==='annual'?plan.annualPrice:plan.price)+'/'+(choice.cycle==='annual'?'year':'month')+'. No free trial.';}
+      if(choice.founder){params['subscription_data[metadata][offer]']='founder';params['custom_text[submit][message]']='Founder pricing applies for 24 months from first payment. We will contact you before it ends to review renewal options. No automatic regular-price increase. No free trial.';}
       if(choice.setup){params['line_items[1][price]']=process.env.STRIPE_PRICE_ASSISTED_SETUP;params['line_items[1][quantity]']=1;}
       if(db.company.stripeCustomerId)params.customer=db.company.stripeCustomerId;else params.customer_email=(db.users||[]).find(row=>row.role==='owner'&&row.status==='Active')?.email;
       const attempt=previous?.status==='creating'&&previous.plan===input.plan&&previous.cycle===choice.cycle?previous.attempt:crypto.randomUUID();

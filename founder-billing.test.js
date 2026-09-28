@@ -36,13 +36,12 @@ async function run(){
   assert.equal(new Date(billing.addMonths(leap,24)*1000).toISOString().slice(0,10),'2026-02-28');
   for(const cycle of ['monthly','annual']){
     const db={company:{id:'company_test',founder:{...enrollment,billingCycle:cycle}}};
-    const priceId=env[billing.priceKey('starter',cycle,true)],standard=env[billing.priceKey('starter',cycle)];
+    const priceId=env[billing.priceKey('starter',cycle,true)];
     const subscription={id:'sub_test_'+cycle,status:'active',customer:'cus_test',metadata:{company_id:'company_test',offer:'founder'},items:{data:[{price:{id:priceId}}]},latest_invoice:'in_test'};
     const calls=[],start=Date.UTC(2026,8,28)/1000;
     const request=async(path,params,method,key)=>{
       calls.push({path,params,method,key});
       if(path==='/invoices/in_test')return {status:'paid'};
-      if(path==='/prices/'+standard)return {id:standard,active:true,livemode:false,currency:'usd',unit_amount:(cycle==='annual'?990:99)*100,type:'recurring',recurring:{interval:cycle==='annual'?'year':'month',interval_count:1}};
       if(path==='/subscription_schedules')return {id:'sched_test',current_phase:{start_date:start}};
       if(path==='/subscription_schedules/sched_test')return {id:'sched_test',metadata:{pdl_founder_configured:'1'},phases:[{start_date:start}]};
       throw Error('Unexpected request '+path);
@@ -51,7 +50,8 @@ async function run(){
     assert.equal(db.company.accountType,'early_adopter');
     assert.equal(db.company.founder.protectedUntil,'2028-09-28T00:00:00.000Z');
     const update=calls.find(call=>call.path==='/subscription_schedules/sched_test');
-    assert.equal(update.params['phases[1][items][0][price]'],standard);
+    assert.equal(update.params.end_behavior,'cancel');
+    assert.equal(Object.keys(update.params).some(key=>key.startsWith('phases[1]')),false);
     assert.equal(update.params['phases[0][end_date]'],Date.UTC(2028,8,28)/1000);
     assert.ok(update.key);
     calls.length=0;
