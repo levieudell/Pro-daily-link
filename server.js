@@ -222,31 +222,53 @@ function normalizeLanguageCode(value){
   if(names[base])return names[base];
   return /^[a-z]{2}$/.test(base)?base:'en';
 }
-function derivableCrewHours(text){
-  const source=String(text||'');
-  const together=source.match(/(\d+(?:\.\d+)?)\s*(?:carpinteros?|trabajadores?|personas?|obreros?|people|persons?|workers?|carpenters?|men|man)\D{0,24}(\d+(?:\.\d+)?)\s*(?:horas?|hours?|hrs?)\s*(?:cada\s+uno|c\/u|each|apiece|per\s+(?:person|man|worker))/i);
-  if(together)return Math.round(Number(together[1])*Number(together[2])*100)/100;
-  const hoursEach=source.match(/(\d+(?:\.\d+)?)\s*(?:horas?|hours?|hrs?)\s*(?:cada\s+uno|c\/u|each|apiece|per\s+(?:person|man|worker))/i);
-  const headcount=source.match(/(\d+(?:\.\d+)?)\s*(?:carpinteros?|trabajadores?|personas?|obreros?|people|persons?|workers?|carpenters?|men|man)\b/i);
-  if(hoursEach&&headcount)return Math.round(Number(headcount[1])*Number(hoursEach[1])*100)/100;
-  const explicit=source.match(/(\d+(?:\.\d+)?)\s*(?:crew|labor)?\s*(?:hours?|horas?)\s+total\b/i);
-  return explicit?Number(explicit[1]):null;
+function crewHourFact(notes){
+  const source=String(notes||''),hour='(?:horas?|hours?|hrs?)',head='(?:carpinteros?|trabajadores?|personas?|obreros?|albañiles|albaniles|ayudantes?|tipos?|hombres?|guys?|people|persons?|workers?|carpenters?|laborers?|labourers?|crew\\s+members?|men|man)',totalWord='(?:total|combined|en\\s+total|entre\\s+todos)';
+  const explicit=source.match(new RegExp(`(\\d+(?:\\.\\d+)?)\\s*(?:crew\\s+|labor\\s+)?${hour}\\s*${totalWord}\\b`,'i'))||source.match(new RegExp(`${totalWord}\\D{0,24}(\\d+(?:\\.\\d+)?)\\s*${hour}\\b`,'i'));
+  const headcount=source.match(new RegExp(`(\\d+(?:\\.\\d+)?)\\s*${head}\\b`,'i'));
+  if(explicit)return{total:Number(explicit[1]),headcount:headcount?Number(headcount[1]):null,perPerson:null,mode:'total'};
+  const pair=source.match(new RegExp(`(\\d+(?:\\.\\d+)?)\\s*${head}\\D{0,40}(\\d+(?:\\.\\d+)?)\\s*${hour}\\b`,'i'));
+  if(pair){const count=Number(pair[1]),each=Number(pair[2]);return{total:Math.round(count*each*100)/100,headcount:count,perPerson:each,mode:'each'}}
+  const eachHours=source.match(new RegExp(`(\\d+(?:\\.\\d+)?)\\s*${hour}\\s*(?:cada\\s+uno|c/u|each|apiece|per\\s+(?:person|man|worker|guy))\\b`,'i'));
+  if(eachHours&&headcount){const count=Number(headcount[1]),each=Number(eachHours[1]);return{total:Math.round(count*each*100)/100,headcount:count,perPerson:each,mode:'each'}}
+  if(!headcount){const figures=[...source.matchAll(new RegExp(`(\\d+(?:\\.\\d+)?)\\s*${hour}\\b`,'gi'))].map(match=>Number(match[1]));if(figures.length)return{total:Math.round(figures.reduce((sum,n)=>sum+n,0)*100)/100,headcount:null,perPerson:null,mode:'hours'}}
+  return null;
+}
+function noteStatesLineSplit(notes,fact){
+  const figures=[...String(notes||'').matchAll(/(\d+(?:\.\d+)?)\s*(?:horas?|hours?|hrs?)\b/gi)].map(match=>Number(match[1])),crew=[];
+  if(fact.perPerson!=null)crew.push(fact.perPerson);
+  if(fact.mode!=='each')crew.push(fact.total);
+  return figures.some(n=>!crew.some(value=>Math.abs(value-n)<.01));
 }
 function noteNeedsConfirmation(parsed){
   if(['issue','next','summary','labor'].some(key=>/needs confirmation/i.test(String(parsed[key]||''))))return;
   const next=String(parsed.next||'').trim();
   parsed.next=next?`${next} Needs confirmation`:'Needs confirmation';
 }
-function collapseRepeatedCrewHours(parsed,notes){
-  const lines=Array.isArray(parsed.productions)?parsed.productions:[];
-  if(lines.length<2)return;
-  const total=derivableCrewHours(`${notes}\n${parsed.labor||''}`);
-  if(!(total>0))return;
-  const sum=lines.reduce((acc,line)=>acc+(Number(line.laborHours)||0),0);
-  if(!(sum>total+.01))return;
-  lines.forEach((line,index)=>{line.laborHours=index===0?total:0});
-  noteNeedsConfirmation(parsed);
+function formatHour(value){return Number.isInteger(value)?String(value):String(value)}
+function laborStatement(fact){
+  if(fact.mode==='each'&&fact.headcount&&fact.perPerson!=null)return `${formatHour(fact.headcount)} workers × ${formatHour(fact.perPerson)} hours = ${formatHour(fact.total)} crew hours`;
+  if(fact.headcount)return `${formatHour(fact.headcount)} workers, ${formatHour(fact.total)} crew hours`;
+  return `${formatHour(fact.total)} crew hours`;
 }
+function laborContradicts(labor,fact){
+  const text=String(labor||'');
+  if(!text.trim())return false;
+  const claims=[...text.matchAll(/(\d+(?:\.\d+)?)\s*(?:hours?|hrs?|horas?)\s*(?:total|combined)\b/gi),...text.matchAll(/(?:total|combined|en\s+total|entre\s+todos)\D{0,16}(\d+(?:\.\d+)?)/gi),...text.matchAll(/=\s*(\d+(?:\.\d+)?)\s*crew\s*hours/gi),...text.matchAll(/(\d+(?:\.\d+)?)\s*crew\s*hours/gi)].map(match=>Number(match[1]));
+  if(claims.some(n=>Math.abs(n-fact.total)>.01))return true;
+  return fact.mode==='each'&&fact.perPerson!=null&&!/\b(?:each|apiece|per\s+person|cada\s+uno)\b/i.test(text)&&!new RegExp(`\\b${fact.total}\\b`).test(text)&&new RegExp(`\\b${fact.perPerson}\\b`).test(text);
+}
+function applyCrewHours(parsed,notes){
+  const fact=crewHourFact(notes);
+  if(!fact||!(fact.total>0))return;
+  const lines=Array.isArray(parsed.productions)?parsed.productions:[];
+  const sum=lines.reduce((acc,line)=>acc+(Number(line.laborHours)||0),0),matches=Math.abs(sum-fact.total)<=.01,stated=lines.length>1&&noteStatesLineSplit(notes,fact);
+  if(lines.length===1){if(!matches)lines[0].laborHours=fact.total}
+  else if(lines.length>1&&!(stated&&matches)){lines.forEach((line,index)=>{line.laborHours=index===0?fact.total:0});noteNeedsConfirmation(parsed)}
+  if(laborContradicts(parsed.labor,fact))parsed.labor=laborStatement(fact);
+}
+function hasForwardCue(notes){return /\b(?:tomorrow|mañana|manana|pr[oó]ximo|siguiente|vamos\s+a|we(?:'ll|\s+will)|will|plan(?:ned|ning)?|pending|pendiente|next)\b/i.test(String(notes||''))}
+function applyNextBackstop(parsed,notes){if(!hasForwardCue(notes))parsed.next='Needs confirmation'}
 function holdupBackstop(parsed,notes){
   if(String(parsed.delays||'').trim()||String(parsed.issue||'').trim())return;
   const rules=[
@@ -260,14 +282,15 @@ function holdupBackstop(parsed,notes){
 function finishAiExtract(parsed,notes){
   const result={...parsed,productions:Array.isArray(parsed?.productions)?parsed.productions.map(line=>({...line,laborHours:Number(line.laborHours)||0})):[]};
   result.originalLanguage=normalizeLanguageCode(result.originalLanguage);
-  collapseRepeatedCrewHours(result,notes);
+  applyCrewHours(result,notes);
+  applyNextBackstop(result,notes);
   holdupBackstop(result,notes);
   return result;
 }
 async function aiExtract(notes,preferredLanguage='auto'){
   if(!process.env.OPENAI_API_KEY){const local=localExtract(notes),spanish=String(preferredLanguage).startsWith('es');return{...local,originalLanguage:spanish?'es':'en',englishTranslation:spanish?'Translation unavailable until AI is configured':notes,source:'local'}}
-  const schema={type:'object',additionalProperties:false,properties:{originalLanguage:{type:'string',description:'ISO 639-1 lowercase code for the original note, such as es or en. Never a locale like es-US and never a language name like Spanish or English.'},englishTranslation:{type:'string'},summary:{type:'string'},labor:{type:'string'},quantity:{type:'string'},productions:{type:'array',items:{type:'object',additionalProperties:false,properties:{description:{type:'string'},quantity:{type:'number'},unit:{type:'string'},laborHours:{type:'number',description:'This line only. Split the stated crew-hour total across lines so the shares add up to that total. Never copy the full total onto every line.'}},required:['description','quantity','unit','laborHours']}},materials:{type:'string'},equipment:{type:'string'},delays:{type:'string',description:'Hold-ups in English, including a missed inspection, a delivery that did not show, or waiting on another trade, owner, or inspector.'},safety:{type:'string'},issue:{type:'string',description:'Problems and hold-ups in English, including a missed inspection, a delivery that did not show, or waiting on another trade, owner, or inspector.'},next:{type:'string'}},required:['originalLanguage','englishTranslation','summary','labor','quantity','productions','materials','equipment','delays','safety','issue','next']};
-  const instructions=`The note language preference is ${preferredLanguage}. Detect the actual language. Set originalLanguage to an ISO 639-1 lowercase code such as es or en, never a locale like es-US and never a language name like Spanish or English. Preserve meaning, translate the complete note into clear English, and convert it into concise office-ready construction facts. Never invent numbers. Split stated crew hours across production lines so laborHours adds up to the stated total and is never repeated on each line. If the note does not state how to split the hours, put all the hours on the first production line, set the other lines to 0, and add Needs confirmation. Missed inspections, deliveries that did not show, and waiting on other trades, owners, or inspectors are hold-ups: always put them in issue and delays, in any language. Use Needs confirmation when a fact is absent. All structured office fields must be English.`;
+  const schema={type:'object',additionalProperties:false,properties:{originalLanguage:{type:'string',description:'ISO 639-1 lowercase code for the original note, such as es or en. Never a locale like es-US and never a language name like Spanish or English.'},englishTranslation:{type:'string'},summary:{type:'string'},labor:{type:'string'},quantity:{type:'string'},productions:{type:'array',items:{type:'object',additionalProperties:false,properties:{description:{type:'string'},quantity:{type:'number'},unit:{type:'string'},laborHours:{type:'number',description:'Hours for this line only. A headcount times hours is per person, so the crew total is N times that number unless the note says total or combined. Never copy the full crew total onto every line. If the note does not state a per-line split, put the crew total on the first line and 0 on the others.'}},required:['description','quantity','unit','laborHours']}},materials:{type:'string'},equipment:{type:'string'},delays:{type:'string',description:'Hold-ups in English, including a missed inspection, a delivery that did not show, or waiting on another trade, owner, or inspector.'},safety:{type:'string'},issue:{type:'string',description:'Problems and hold-ups in English, including a missed inspection, a delivery that did not show, or waiting on another trade, owner, or inspector.'},next:{type:'string',description:'A next step the note actually states, in English. If the note gives none, Needs confirmation. Never invent a next step.'}},required:['originalLanguage','englishTranslation','summary','labor','quantity','productions','materials','equipment','delays','safety','issue','next']};
+  const instructions=`The note language preference is ${preferredLanguage}. Detect the actual language. Set originalLanguage to an ISO 639-1 lowercase code such as es or en, never a locale like es-US and never a language name like Spanish or English. Preserve meaning, translate the complete note into clear English, and convert it into concise office-ready construction facts. Never invent numbers. Construction convention: a headcount times hours means per person, so the crew total is N×X unless the note says total, combined, en total, or entre todos. 3 guys 7 hrs means 3 workers × 7 hours = 21 crew hours, not 7. The labor field must show that math. Split stated crew hours across production lines so laborHours adds up to that crew total and is never repeated on each line. If the note does not state how to split the hours, put all the hours on the first production line, set the other lines to 0, and add Needs confirmation. Never invent a next step. If the note gives no next step, set next to Needs confirmation. Missed inspections, deliveries that did not show, and waiting on other trades, owners, or inspectors are hold-ups: always put them in issue and delays, in any language. Use Needs confirmation when a fact is absent. All structured office fields must be English.`;
   const response=await fetch('https://api.openai.com/v1/responses',{method:'POST',headers:{'Authorization':`Bearer ${process.env.OPENAI_API_KEY}`,'Content-Type':'application/json'},body:JSON.stringify({model:process.env.OPENAI_MODEL||'gpt-5.4-mini',store:false,instructions,input:notes,text:{format:{type:'json_schema',name:'daily_report',strict:true,schema}}})});
   if(!response.ok) throw new Error(`AI service returned ${response.status}`);
   const data=await response.json();
