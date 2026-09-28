@@ -117,6 +117,8 @@ $('#signup').onsubmit=async event=>{
 };
 
 if(planWasRequested)document.querySelector(`[name="plan"][value="${requestedPlan}"]`).checked=true;
+const requestedCycle=params.get('billingCycle');
+if(['monthly','annual'].includes(requestedCycle))document.querySelector(`[name="billingCycle"][value="${requestedCycle}"]`).checked=true;
 recommend();
 showStep(1);
 
