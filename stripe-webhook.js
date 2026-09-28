@@ -77,7 +77,7 @@ async function processEvent(event, { stripeRequest, withCompany, applySubscripti
     }
     const seen = db.company.stripeWebhookEvents || [];
     if (!seen.includes(event.id)) {
-      applySubscription(db, subscription);
+      await applySubscription(db, subscription);
       db.company.stripeWebhookEvents = [...seen, event.id].slice(-200);
     }
     // Repeat persistence on retries in case an earlier local save succeeded but cloud save failed.
