@@ -92,6 +92,9 @@ $('#signup').onsubmit=async event=>{
         plan:document.querySelector('[name="plan"]:checked').value,
         billingCycle:document.querySelector('[name="billingCycle"]:checked').value,
         onboardingPreference:document.querySelector('[name="onboarding"]:checked').value,
+        founderCode:$('#founder-code').value.trim(),
+        founderTermsAccepted:$('#founder-terms').checked,
+        assistedSetup:$('#assisted-setup').checked,
         legalAccepted:$('#legal-acceptance').checked,
         legalVersion:'2026-09-17'
       })
@@ -99,6 +102,13 @@ $('#signup').onsubmit=async event=>{
     const data=await response.json();
     if(!response.ok)throw new Error(data.error);
     localStorage.setItem('pdl-company-id',data.company.id);
+    if(data.company.founder){
+      try{
+        const checkout=await fetch('/api/billing/checkout',{method:'POST',credentials:'include',headers:{'Content-Type':'application/json','x-pdl-company':data.company.id},body:JSON.stringify({plan:document.querySelector('[name="plan"]:checked').value,billingCycle:document.querySelector('[name="billingCycle"]:checked').value})});
+        const payment=await checkout.json();if(!checkout.ok)throw new Error(payment.error);
+        location.replace(payment.url);return;
+      }catch{location.replace('/app?tenant='+encodeURIComponent(data.company.id));return;}
+    }
     location.replace(`${data.next||`/app?tenant=${encodeURIComponent(data.company.id)}`}#dashboard`);
   }catch(error){
     $('#result').textContent=error.message;
@@ -109,3 +119,28 @@ $('#signup').onsubmit=async event=>{
 if(planWasRequested)document.querySelector(`[name="plan"][value="${requestedPlan}"]`).checked=true;
 recommend();
 showStep(1);
+
+let founderOffer=null;
+function updateFounderOffer(){
+  const active=Boolean(founderOffer?.enabled && $('#founder-code').value.trim());
+  $('#founder-options').hidden=!active;
+  $('#founder-terms').required=active;
+  $('#assisted-setup').disabled=!active||!founderOffer?.setupAvailable;
+  if(!active){$('#assisted-setup').checked=false;$('#founder-terms').checked=false;}
+  $('#signup-offer-heading').textContent=active?'Founder membership · payment required · no free trial':'Start your 14-day trial · no credit card';
+  $('#plan-offer-help').textContent=active?'Pay monthly or annually. Your selected founder price is protected for 24 months from first payment.':'Nothing is charged today. Choose monthly, or pay annually and receive two months free.';
+  $('#monthly-cycle-label').textContent=active?'Monthly — pay today':'Monthly after trial';
+  $('#annual-cycle-label').textContent=active?'Annual — pay today · two months free':'Annual after trial · two months free';
+  $('#create-company').textContent=active?'Create company & continue to payment':'Create company';
+  const standard={starter:[99,990,'10 users · 5 active projects'],growth:[199,1990,'30 users · 25 active projects'],pro:[399,3990,'75 users · unlimited projects']};
+  for(const [id,values] of Object.entries(standard)){
+    const card=document.querySelector('[name="plan"][value="'+id+'"]').closest('label');
+    card.querySelector('strong').textContent='$'+(active?founderOffer.prices[id].monthly:values[0])+'/mo';
+    card.querySelector('small').textContent='$'+(active?founderOffer.prices[id].annual:values[1]).toLocaleString()+'/year · '+values[2];
+  }
+  const plan=document.querySelector('[name="plan"]:checked').value,annual=document.querySelector('[name="billingCycle"]:checked').value==='annual';
+  $('#founder-renewal').textContent='After 24 months: $'+standard[plan][annual?1:0].toLocaleString()+'/'+(annual?'year':'month')+'. Optional setup is charged only once. Taxes, if applicable, are shown at checkout.';
+}
+$('#founder-code').addEventListener('input',updateFounderOffer);
+document.querySelectorAll('[name="plan"],[name="billingCycle"]').forEach(el=>el.addEventListener('change',updateFounderOffer));
+fetch('/api/founder-offer').then(response=>response.json()).then(offer=>{founderOffer=offer;$('#founder-invitation').hidden=!offer.enabled;updateFounderOffer()}).catch(()=>{});
