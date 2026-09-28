@@ -29,7 +29,27 @@ Create recurring Stripe prices for each billing interval:
 - Growth: $199 monthly and $1,990 annually
 - Pro: $399 monthly and $3,990 annually
 
-The webhook destination will be the production Pro Daily Link webhook endpoint after its final verified-handler cutover. Never paste Stripe keys into GitHub or chat.
+After this change is merged and deployed, create a **test-mode** snapshot event destination at:
+
+`https://pro-daily-link-demo.onrender.com/api/billing/webhook`
+
+Confirm this is the intended Render service before registering the destination. Subscribe to:
+
+- `checkout.session.completed`
+- `checkout.session.async_payment_succeeded`
+- `customer.subscription.created`
+- `customer.subscription.updated`
+- `customer.subscription.deleted`
+- `invoice.paid`
+- `invoice.payment_failed`
+
+Save that destination's signing secret as `STRIPE_WEBHOOK_SECRET` in the same Render service and redeploy. Use a test secret API key and test prices for acceptance testing. Never paste Stripe keys into GitHub or chat. Existing live destinations for earlier versions of the app should not be changed as part of this test setup.
+
+Verify a real test-mode checkout from a disposable Pro Daily Link company, then test a plan change, failed payment, cancellation, and replay of a delivery. Confirm 2xx responses in Stripe Event deliveries and the matching company's billing status in the app. Unrelated Stripe fixtures without subscription `company_id` metadata are acknowledged but ignored; they do not prove billing synchronization. No live charges are required.
+
+The handler verifies raw request bytes with the official Stripe SDK before selecting a company. It retrieves current subscription state to handle delayed events, serializes updates, and acknowledges only after persistence completes. Failed Stripe or storage calls return 5xx for retries. Duplicate event IDs are retained for the most recent 200 deliveries; older replays still apply current subscription state. This uses the app's existing single-process tenant queues; multiple server instances require a shared transactional event store before scaling.
+
+Local verification: `npm run check` and `npm test`. The webhook tests use a fake signing secret, temporary company files, and mocked Stripe GET requests; they never charge a card.
 
 ### Password-reset email
 
