@@ -311,24 +311,17 @@ server.listen(4201, async () => {
     assert.equal(approved.data.approvedBy, 'Levi Foreman');
     assert.equal(approved.data.history.at(-1).action, 'Approved');
     assert.match(approved.data.historyLines.at(-1), /^Approved by Levi Foreman · \d{1,2}:\d{2} [AP]M$/);
-    const locked = await request(`/api/time-cards/${marcus.id}`, {method: 'PATCH', headers: auth, body: JSON.stringify({inAt: '2026-09-29T12:00:00.000Z', outAt: '2026-09-29T20:00:00.000Z'})});
-    assert.equal(locked.response.status, 409);
+    const correctedApproved = await request(`/api/time-cards/${marcus.id}`, {method: 'PATCH', headers: auth, body: JSON.stringify({inAt: '2026-09-29T15:00:00.000Z', outAt: '2026-09-29T16:10:00.000Z', reason: 'Correct approved punch'})});
+    assert.equal(correctedApproved.response.status, 200);
+    assert.equal(correctedApproved.data.status, 'draft');
+    assert.equal(correctedApproved.data.approvedBy, null);
     const lockedCard = (await request('/api/time-cards?memberId=1', {headers: auth})).data.find(card => card.id === marcus.id);
-    assert.equal(lockedCard.inAt, '2026-09-29T15:00:00.000Z');
     assert.equal(lockedCard.hours, 1.25);
-    assert.equal(lockedCard.status, 'approved');
+    assert.equal(lockedCard.status, 'draft');
     const dailyAfterApprove = (await request('/api/state', {headers: auth})).data.reports.find(report => report.id === ended.data.report.id);
     assert.equal(dailyAfterApprove.status, 'Draft');
     assert.deepEqual(dailyAfterApprove.laborEntries, dailyAfterEdit.laborEntries);
 
-    const unapproved = await request(`/api/time-cards/${marcus.id}/unapprove`, {method: 'POST', headers: auth, body: '{}'});
-    assert.equal(unapproved.response.status, 200);
-    assert.equal(unapproved.data.status, 'draft');
-    assert.equal(unapproved.data.approvedBy, null);
-    assert.equal(unapproved.data.history.at(-1).action, 'Unapproved');
-    assert.equal(unapproved.data.history.at(-1).by, 'Levi Foreman');
-    assert.match(unapproved.data.history.at(-1).at, /^\d{4}-\d{2}-\d{2}T/);
-    assert.match(unapproved.data.historyLines.at(-1), /^Unapproved by Levi Foreman · \d{1,2}:\d{2} [AP]M$/);
     const editedAgain = await request(`/api/time-cards/${marcus.id}`, {method: 'PATCH', headers: auth, body: JSON.stringify({inAt: '2026-09-29T15:00:00.000Z', outAt: '2026-09-29T16:10:00.000Z', reason: 'Correct missed punch'})});
     assert.equal(editedAgain.response.status, 200);
     assert.equal(editedAgain.data.hours, 1.25);
@@ -374,7 +367,8 @@ server.listen(4201, async () => {
     const openCards = (await request('/api/time-cards?memberId=6', {headers: auth})).data.filter(card => !card.outAt);
     assert.equal(openCards.length, 1);
     assert.equal(openCards[0].projectId, 1);
-    const closedGuard = await request(`/api/time-cards/${openCards[0].id}`, {method: 'PATCH', headers: auth, body: JSON.stringify({inAt: openCards[0].inAt, outAt: new Date(new Date(openCards[0].inAt).getTime() + 3600000).toISOString(), reason: 'Close forgotten punch'})});
+    const guardOut = new Date(Date.now() - 3600000).toISOString(), guardIn = new Date(Date.now() - 7200000).toISOString();
+    const closedGuard = await request(`/api/time-cards/${openCards[0].id}`, {method: 'PATCH', headers: auth, body: JSON.stringify({inAt: guardIn, outAt: guardOut, reason: 'Close forgotten punch'})});
     assert.equal(closedGuard.response.status, 200);
     assert.equal(closedGuard.data.hours, 1);
 
@@ -403,8 +397,9 @@ server.listen(4201, async () => {
     const bulkStored = JSON.parse(fs.readFileSync(dbFile, 'utf8')).timeCards.filter(card => card.workdayId === bulkStart.data.id);
     assert.equal(bulkStored.length, bulkCards.length);
     assert.equal(new Set(bulkStored.map(card => String(card.id).trim())).size, bulkCards.length);
-    const bulkLocked = await request(`/api/time-cards/${bulkCards[0].id}`, {method: 'PATCH', headers: auth, body: JSON.stringify({inAt: bulkCards[0].inAt, outAt: new Date(new Date(bulkCards[0].inAt).getTime() + 7200000).toISOString()})});
-    assert.equal(bulkLocked.response.status, 409);
+    const bulkCorrected = await request(`/api/time-cards/${bulkCards[0].id}`, {method: 'PATCH', headers: auth, body: JSON.stringify({inAt: bulkCards[0].inAt, outAt: new Date(new Date(bulkCards[0].inAt).getTime() + 7200000).toISOString(), reason: 'Approved card correction'})});
+    assert.equal(bulkCorrected.response.status, 200);
+    assert.equal(bulkCorrected.data.status, 'draft');
 
     const csv = await request('/api/time-cards.csv?from=2026-09-01&to=2026-09-30&projectId=1', {headers: auth});
     assert.equal(csv.response.status, 200);
@@ -666,7 +661,7 @@ server.listen(4201, async () => {
       {...baseCard, id: 1201, status: 'draft', hours: 9, submittedAt: null, submittedBy: null, approvedBy: null, approvedAt: null, updatedAt: '2026-09-29T18:00:00.000Z', legacyNote: 'older-draft', history: [openedEarly, draftOnly]},
       {...baseCard, id: '1201', status: 'submitted', hours: 4, submittedAt: '2026-09-29T13:00:00.000Z', submittedBy: 'QA Tester', approvedBy: null, approvedAt: null, updatedAt: '2026-09-29T17:00:00.000Z', legacyNote: 'middle-submitted', history: [openedEarly, submittedOnly]},
       {...baseCard, id: 1201, status: 'approved', hours: 1.25, submittedAt: null, submittedBy: null, approvedBy: 'QA Tester', approvedAt: '2026-09-29T14:00:00.000Z', updatedAt: '2026-09-29T14:00:00.000Z', legacyNote: 'winning-approved', history: [openedEarly, approvedOnly]},
-      {...baseCard, id: 1202, status: 'draft', hours: 3, submittedAt: null, submittedBy: null, approvedBy: null, approvedAt: null, legacyNote: 'different-id', history: [openedEarly]}
+      {...baseCard, id: 1202, memberId: 11, status: 'draft', hours: 3, submittedAt: null, submittedBy: null, approvedBy: null, approvedAt: null, legacyNote: 'different-id', history: [openedEarly]}
     );
     fs.writeFileSync(dbFile, JSON.stringify(dedupeDb));
     const collapsed = await request('/api/time-cards', {headers: auth});
@@ -692,7 +687,7 @@ server.listen(4201, async () => {
     assert.match(neverSubmittedUndo.data.historyLines.at(-1), /^Unapproved by Levi Foreman · \d{1,2}:\d{2} [AP]M$/);
     assert.equal(sameId(JSON.parse(fs.readFileSync(dbFile, 'utf8')).timeCards, 1201).length, 1);
     const withSubmittedAt = JSON.parse(fs.readFileSync(dbFile, 'utf8'));
-    withSubmittedAt.timeCards.push({...baseCard, id: 1205, status: 'approved', hours: 2, submittedAt: '2026-09-29T13:00:00.000Z', submittedBy: 'QA Tester', approvedBy: 'Levi Foreman', approvedAt: '2026-09-29T15:00:00.000Z', legacyNote: 'was-submitted', history: [openedEarly, submittedOnly, approvedOnly]});
+    withSubmittedAt.timeCards.push({...baseCard, id: 1205, memberId: 10, status: 'approved', hours: 2, submittedAt: '2026-09-29T13:00:00.000Z', submittedBy: 'QA Tester', approvedBy: 'Levi Foreman', approvedAt: '2026-09-29T15:00:00.000Z', legacyNote: 'was-submitted', history: [openedEarly, submittedOnly, approvedOnly]});
     fs.writeFileSync(dbFile, JSON.stringify(withSubmittedAt));
     const wasSubmittedUndo = await request('/api/time-cards/1205/unapprove', {method: 'POST', headers: auth, body: '{}'});
     assert.equal(wasSubmittedUndo.response.status, 200, wasSubmittedUndo.data.error || '');
@@ -716,9 +711,9 @@ server.listen(4201, async () => {
     const bulkOpened = {action: 'Opened', by: 'QA Tester', at: '2026-09-29T11:00:00.000Z'};
     const bulkClosed = {action: 'Closed', by: 'QA Tester', at: '2026-09-29T11:30:00.000Z'};
     bulkDb.timeCards.push(
-      {...baseCard, id: 1204, status: 'submitted', hours: 8, submittedAt: '2026-09-29T11:40:00.000Z', submittedBy: 'QA Tester', approvedBy: null, approvedAt: null, updatedAt: '2026-09-29T11:40:00.000Z', legacyNote: 'bulk-older', history: [bulkOpened, bulkClosed, {action: 'Submitted', by: 'QA Tester', at: '2026-09-29T11:40:00.000Z'}]},
-      {...baseCard, id: '1204', status: 'submitted', hours: 2.5, submittedAt: '2026-09-29T11:45:00.000Z', submittedBy: 'QA Tester', approvedBy: null, approvedAt: null, updatedAt: '2026-09-29T11:50:00.000Z', legacyNote: 'bulk-newer', history: [bulkOpened, bulkClosed, {action: 'Submitted', by: 'Crew lead', at: '2026-09-29T11:50:00.000Z'}]},
-      {...baseCard, id: 1206, status: 'draft', hours: 6, submittedAt: null, submittedBy: null, approvedBy: null, approvedAt: null, legacyNote: 'bulk-other', history: [bulkOpened]}
+      {...baseCard, id: 1204, memberId: 12, status: 'submitted', hours: 8, submittedAt: '2026-09-29T11:40:00.000Z', submittedBy: 'QA Tester', approvedBy: null, approvedAt: null, updatedAt: '2026-09-29T11:40:00.000Z', legacyNote: 'bulk-older', history: [bulkOpened, bulkClosed, {action: 'Submitted', by: 'QA Tester', at: '2026-09-29T11:40:00.000Z'}]},
+      {...baseCard, id: '1204', memberId: 12, status: 'submitted', hours: 2.5, submittedAt: '2026-09-29T11:45:00.000Z', submittedBy: 'QA Tester', approvedBy: null, approvedAt: null, updatedAt: '2026-09-29T11:50:00.000Z', legacyNote: 'bulk-newer', history: [bulkOpened, bulkClosed, {action: 'Submitted', by: 'Crew lead', at: '2026-09-29T11:50:00.000Z'}]},
+      {...baseCard, id: 1206, memberId: 13, status: 'draft', hours: 6, submittedAt: null, submittedBy: null, approvedBy: null, approvedAt: null, legacyNote: 'bulk-other', history: [bulkOpened]}
     );
     fs.writeFileSync(dbFile, JSON.stringify(bulkDb));
     const bulkDedupe = await request('/api/time-cards/approve', {method: 'POST', headers: auth, body: JSON.stringify({ids: [1204]})});

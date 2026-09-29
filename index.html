@@ -9,7 +9,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Oswald:wght@500;600;700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="styles.css" />
+  <link rel="stylesheet" href="styles.css?v=20260929c" />
   <link rel="stylesheet" href="estimate-mobile.css" />
 </head>
 <body>
@@ -126,7 +126,7 @@
       <section class="page" id="timecards-page">
         <div class="page-heading"><div><p class="eyebrow">LABOR HOURS</p><h1>Time cards</h1><p>Review labor hours for the crew. Approve time cards here, or download a CSV export.</p></div><div><button class="primary office-only" id="timecard-add" type="button">＋ Add time card</button><button class="primary field-only" id="company-clock" type="button">Clock company time</button><button class="secondary" id="timecard-export" type="button">CSV export</button></div></div>
         <div class="insight-filters panel" id="timecards-filters"><label>Job<select id="timecard-job"><option value="all">All jobs</option></select></label><label>Person<select id="timecard-person"><option value="all">All people</option></select></label><label>From<input id="timecard-from" type="date"></label><label>To<input id="timecard-to" type="date"></label><label>Status<select id="timecard-status"><option value="all">All statuses</option><option value="draft">Draft</option><option value="submitted">Submitted</option><option value="approved">Approved</option></select></label></div>
-        <div class="timecard-actions" id="timecard-office-actions"><button class="primary" id="timecard-bulk-approve" type="button">Approve selected</button></div>
+        <div class="timecard-actions" id="timecard-office-actions"><button class="primary" id="timecard-bulk-approve" type="button" disabled>Approve selected</button><p class="form-message" id="timecard-page-message" role="alert" hidden></p></div>
         <p class="input-help">Time cards preserve punch and correction history to support accurate records. Pro Daily Link is not payroll software; employers remain responsible for local break, overtime, leave, and retention rules.</p>
         <p class="timecard-field-note" id="timecard-field-note" hidden>These are your time cards. Submit a card after the workday ends.</p>
         <div id="timecard-hours-warning"></div>
@@ -363,7 +363,7 @@
   <dialog id="profile-modal"><form method="dialog"><div class="modal-header"><div><p class="eyebrow">YOUR ACCOUNT</p><h2>Profile settings</h2></div><button class="close-button" value="cancel">×</button></div><div class="profile-photo-editor"><span class="avatar" id="profile-preview">LF</span><div><strong>Profile photo</strong><p>Upload a JPG, PNG, or WebP image.</p><input id="profile-photo" type="file" accept="image/jpeg,image/png,image/webp"></div></div><label>Display name<input id="profile-display-name"></label><label>Language preference<select id="profile-language"><option value="en">English</option><option value="es">Español</option></select><small>Used as your default for field screens and new daily reports. You can still change an individual report.</small></label><label>Appearance<select id="profile-theme"><option value="light">Light</option><option value="dark">Dark</option><option value="system">Use device setting</option></select></label><div class="modal-actions"><button value="cancel" class="secondary">Cancel</button><button type="button" class="primary" id="save-profile">Save profile</button></div></form></dialog>
   <dialog id="photo-detail-modal"><form method="dialog"><div class="modal-header"><div><p class="eyebrow">PHOTO RECORD</p><h2>Photo details</h2></div><button class="close-button" value="cancel">×</button></div><div id="photo-detail"></div><div class="modal-actions"><button value="cancel" class="secondary">Close</button></div></form></dialog>
   <div class="toast" id="toast" role="status" aria-live="polite" aria-atomic="true"></div>
-  <script src="app.js"></script>
+  <script src="app.js?v=20260929c"></script>
   <script src="estimate-mobile.js"></script>
 </body>
 </html>
