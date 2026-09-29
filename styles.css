@@ -117,6 +117,7 @@ body:not(.templates-on) .templates-only{display:none!important}
 .timecard-actions{display:flex;gap:8px;margin:0 0 12px}
 .timecard-field-note{margin:0 0 12px;color:var(--muted)}
 .timecard-row-actions{display:flex;gap:6px;justify-content:flex-end}
+.timecard-row-actions{flex-wrap:wrap}.danger-link{border:0;background:transparent;color:#a23b2c;text-decoration:underline;cursor:pointer}.form-message{margin:8px 0 0;padding:10px 12px;border:1px solid #d96a55;border-radius:10px;background:#fff2ef;color:#8a2f23;font-weight:700}
 .timecard-history td{white-space:normal;color:var(--muted);font-size:12px;font-weight:650;padding-top:0}
 #timecards-page td,#timecards-page th{white-space:nowrap}
 #timecards-page .timecard-history td{white-space:normal}

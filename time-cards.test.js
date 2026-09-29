@@ -254,6 +254,17 @@ server.listen(4201, async () => {
     assert.equal(activities.response.status, 200);
     assert.ok(activities.data.some(row => row.name === 'Loading / unloading trucks'));
     const officeActivity = activities.data.find(row => row.name === 'Office');
+    const manualCard = await request('/api/time-cards', {method:'POST',headers:auth,body:JSON.stringify({memberId:2,projectId:1,inAt:'2035-01-02T16:00:00.000Z',outAt:'2035-01-02T20:00:00.000Z',reason:'Missed punches entered by office'})});
+    assert.equal(manualCard.response.status,201,manualCard.data.error||'');
+    assert.equal(manualCard.data.status,'draft');
+    assert.equal(manualCard.data.hours,4);
+    const overlapCard = await request('/api/time-cards', {method:'POST',headers:auth,body:JSON.stringify({memberId:2,projectId:1,inAt:'2035-01-02T19:00:00.000Z',outAt:'2035-01-02T21:00:00.000Z',reason:'This should overlap'})});
+    assert.equal(overlapCard.response.status,409);
+    assert.match(overlapCard.data.error,/overlap/i);
+    const deletedManual = await request(`/api/time-cards/${manualCard.data.id}`,{method:'DELETE',headers:auth,body:JSON.stringify({reason:'Duplicate office entry'})});
+    assert.equal(deletedManual.response.status,200);
+    assert.equal((await request('/api/time-cards',{headers:auth})).data.some(card=>card.id===manualCard.data.id),false);
+    assert.ok(JSON.parse(fs.readFileSync(dbFile,'utf8')).timeCards.find(card=>card.id===manualCard.data.id)?.deletedAt);
     const companyClock = await request('/api/time-cards/company-clock', {method: 'POST', headers: fieldAuth, body: JSON.stringify({activityCodeId: officeActivity.id})});
     assert.equal(companyClock.response.status, 201);
     assert.equal(companyClock.data.projectId, null);
@@ -283,15 +294,17 @@ server.listen(4201, async () => {
     assert.equal(edited.response.status, 200);
     assert.equal(edited.data.hours, 1.25);
     assert.equal(edited.data.date, '2026-09-29');
-    assert.equal(edited.data.status, 'submitted');
+    assert.equal(edited.data.status, 'draft');
     assert.equal(edited.data.history.at(-1).action, 'Times edited');
     assert.match(edited.data.historyLines.at(-1), /^Times corrected by Levi Foreman · \d{1,2}:\d{2} [AP]M · Correct missed punch$/);
     assert.equal(edited.data.history.at(-1).before.hours, quarterHours(marcus.inAt, marcus.outAt));
     assert.equal(edited.data.original.inAt, marcus.inAt);
     const dailyAfterEdit = (await request('/api/state', {headers: auth})).data.reports.find(report => report.id === ended.data.report.id);
-    assert.equal(dailyAfterEdit.laborEntries[0].hours, dailyBeforeEdit.laborEntries[0].hours);
+    assert.equal(dailyAfterEdit.laborEntries[0].hours, 1.25);
     assert.equal(dailyAfterEdit.status, 'Draft');
 
+    assert.equal((await request(`/api/time-cards/${marcus.id}/approve`, {method: 'POST', headers: auth, body: '{}'})).response.status, 409);
+    assert.equal((await request(`/api/time-cards/${marcus.id}/submit`, {method: 'POST', headers: auth, body: '{}'})).response.status, 200);
     const approved = await request(`/api/time-cards/${marcus.id}/approve`, {method: 'POST', headers: auth, body: '{}'});
     assert.equal(approved.response.status, 200);
     assert.equal(approved.data.status, 'approved');
@@ -310,7 +323,7 @@ server.listen(4201, async () => {
 
     const unapproved = await request(`/api/time-cards/${marcus.id}/unapprove`, {method: 'POST', headers: auth, body: '{}'});
     assert.equal(unapproved.response.status, 200);
-    assert.equal(unapproved.data.status, 'submitted');
+    assert.equal(unapproved.data.status, 'draft');
     assert.equal(unapproved.data.approvedBy, null);
     assert.equal(unapproved.data.history.at(-1).action, 'Unapproved');
     assert.equal(unapproved.data.history.at(-1).by, 'Levi Foreman');
@@ -319,6 +332,7 @@ server.listen(4201, async () => {
     const editedAgain = await request(`/api/time-cards/${marcus.id}`, {method: 'PATCH', headers: auth, body: JSON.stringify({inAt: '2026-09-29T15:00:00.000Z', outAt: '2026-09-29T16:10:00.000Z', reason: 'Correct missed punch'})});
     assert.equal(editedAgain.response.status, 200);
     assert.equal(editedAgain.data.hours, 1.25);
+    assert.equal((await request(`/api/time-cards/${marcus.id}/submit`, {method: 'POST', headers: auth, body: '{}'})).data.status, 'submitted');
     assert.equal((await request(`/api/time-cards/${marcus.id}/approve`, {method: 'POST', headers: auth, body: '{}'})).data.status, 'approved');
     const marcusRows = JSON.parse(fs.readFileSync(dbFile, 'utf8')).timeCards.filter(card => String(card.id).trim() === String(marcus.id));
     assert.equal(marcusRows.length, 1);
@@ -371,6 +385,7 @@ server.listen(4201, async () => {
     const diego = (await request('/api/time-cards?memberId=2', {headers: managerAuth})).data.find(card => card.workdayId === second.data.id);
     assert.ok(diego);
     assert.equal(diego.projectId, 1);
+    assert.equal((await request(`/api/time-cards/${diego.id}/submit`, {method: 'POST', headers: managerAuth, body: '{}'})).response.status, 200);
     const managerApproved = await request(`/api/time-cards/${diego.id}/approve`, {method: 'POST', headers: managerAuth, body: '{}'});
     assert.equal(managerApproved.response.status, 200);
     assert.equal(managerApproved.data.status, 'approved');
@@ -381,6 +396,7 @@ server.listen(4201, async () => {
     assert.equal((await request(`/api/workdays/${bulkStart.data.id}/end`, {method: 'POST', headers: auth, body: JSON.stringify({notes: 'Bulk approve these time cards.', foreman: 'Hours Snapshot'})})).response.status, 200);
     const bulkCards = (await request('/api/time-cards', {headers: auth})).data.filter(card => card.workdayId === bulkStart.data.id);
     assert.equal(bulkCards.length, 2);
+    for(const card of bulkCards)assert.equal((await request(`/api/time-cards/${card.id}/submit`, {method: 'POST', headers: auth, body: '{}'})).response.status, 200);
     const bulk = await request('/api/time-cards/approve', {method: 'POST', headers: auth, body: JSON.stringify({ids: bulkCards.map(card => card.id)})});
     assert.equal(bulk.response.status, 200);
     assert.ok(bulk.data.timeCards.every(card => card.status === 'approved'));
@@ -482,7 +498,7 @@ server.listen(4201, async () => {
       staleLoad.company.persistence.revision = Number(approvedDisk.company.persistence.revision) - 1;
       const uiUnapproved = await request(`/api/time-cards/${uiCard.id}/unapprove`, {method: 'POST', headers: uiHeaders, body: '{}'});
       assert.equal(uiUnapproved.response.status, 200, uiUnapproved.data.error || '');
-      assert.equal(uiUnapproved.data.status, 'submitted');
+      assert.equal(uiUnapproved.data.status, 'draft');
       assert.equal(uiUnapproved.data.approvedBy, null);
       assert.equal(uiUnapproved.data.history.at(-1).action, 'Unapproved');
       assert.equal(uiUnapproved.data.history.at(-1).by, 'Bea Owner');
@@ -490,6 +506,7 @@ server.listen(4201, async () => {
       const uiEdited = await request(`/api/time-cards/${uiCard.id}`, {method: 'PATCH', headers: uiHeaders, body: JSON.stringify({inAt: '2026-09-29T16:04:00.000Z', outAt: '2026-09-29T16:19:00.000Z', reason: 'Correct UI test punch'})});
       assert.equal(uiEdited.response.status, 200);
       assert.equal(uiEdited.data.hours, 0.25);
+      assert.equal((await request(`/api/time-cards/${uiCard.id}/submit`, {method: 'POST', headers: uiHeaders, body: '{}'})).response.status, 200);
       assert.equal((await request(`/api/time-cards/${uiCard.id}/approve`, {method: 'POST', headers: uiHeaders, body: '{}'})).data.status, 'approved');
       staleLoad = null;
       const bulkUi = await request('/api/workdays/start', {method: 'POST', headers: uiHeaders, body: JSON.stringify({projectId: project.data.id, memberIds: [fieldMember.data.id, crewMember.data.id]})});
@@ -497,6 +514,7 @@ server.listen(4201, async () => {
       assert.equal((await request(`/api/workdays/${bulkUi.data.id}/end`, {method: 'POST', headers: uiHeaders, body: JSON.stringify({notes: 'Bulk approve these QA cards.', foreman: 'QA Tester'})})).response.status, 200);
       const bulkUiCards = (await request('/api/time-cards', {headers: uiHeaders})).data.filter(card => card.workdayId === bulkUi.data.id);
       assert.equal(bulkUiCards.length, 2);
+      for(const card of bulkUiCards)assert.equal((await request(`/api/time-cards/${card.id}/submit`, {method: 'POST', headers: uiHeaders, body: '{}'})).response.status, 200);
       const bulkUiApproved = await request('/api/time-cards/approve', {method: 'POST', headers: uiHeaders, body: JSON.stringify({ids: bulkUiCards.map(card => card.id)})});
       assert.equal(bulkUiApproved.response.status, 200);
       assert.ok(bulkUiApproved.data.timeCards.every(card => card.status === 'approved'));
@@ -511,7 +529,7 @@ server.listen(4201, async () => {
       for (const card of bulkUiCards) {
         const undone = await request(`/api/time-cards/${card.id}/unapprove`, {method: 'POST', headers: uiHeaders, body: '{}'});
         assert.equal(undone.response.status, 200, undone.data.error || '');
-        assert.equal(undone.data.status, 'submitted');
+        assert.equal(undone.data.status, 'draft');
         assert.match(undone.data.historyLines.at(-1), /^Unapproved by Bea Owner · \d{1,2}:\d{2} [AP]M$/);
       }
       const newerCloud = structuredClone(JSON.parse(fs.readFileSync(tenantFile, 'utf8')));
@@ -524,7 +542,7 @@ server.listen(4201, async () => {
       const fromNewerCloud = await request(`/api/time-cards/${newerCard.id}/unapprove`, {method: 'POST', headers: uiHeaders, body: '{}'});
       assert.equal(fromNewerCloud.response.status, 200, fromNewerCloud.data.error || '');
       assert.equal(fromNewerCloud.data.history.at(-1).by, 'Bea Owner');
-      assert.equal(fromNewerCloud.data.status, 'submitted');
+      assert.equal(fromNewerCloud.data.status, 'draft');
     } finally {
       staleLoad = null;
       process.env.PDL_SUPABASE_ENABLED = '0';
@@ -589,17 +607,18 @@ server.listen(4201, async () => {
     const uiUnapprove = (id) => request(`/api/time-cards/${id}/unapprove`, {method: 'POST', headers: auth, body: '{}'});
     const fieldUndo = await uiUnapprove(901);
     assert.equal(fieldUndo.response.status, 200, fieldUndo.data.error || '');
-    assert.equal(fieldUndo.data.status, 'submitted');
+    assert.equal(fieldUndo.data.status, 'draft');
     assert.equal(fieldUndo.data.approvedBy, null);
     assert.equal(fieldUndo.data.legacyNote, 'field-rewalk');
     assert.equal(fieldUndo.data.hours, 0.25);
     assert.equal(fieldUndo.data.history.at(-1).action, 'Unapproved');
     assert.equal(fieldUndo.data.history.at(-1).by, 'Levi Foreman');
     assert.match(fieldUndo.data.historyLines.at(-1), /^Unapproved by Levi Foreman · \d{1,2}:\d{2} [AP]M$/);
-    const legacyEdit = await request('/api/time-cards/901', {method: 'PATCH', headers: auth, body: JSON.stringify({inAt: '2026-09-29T16:04:00.000Z', outAt: '2026-09-29T16:19:00.000Z', reason: 'Correct legacy punch'})});
+    const legacyEdit = await request('/api/time-cards/901', {method: 'PATCH', headers: auth, body: JSON.stringify({inAt: '2030-09-29T16:04:00.000Z', outAt: '2030-09-29T16:19:00.000Z', reason: 'Correct legacy punch'})});
     assert.equal(legacyEdit.response.status, 200);
     assert.equal(legacyEdit.data.hours, 0.25);
     assert.equal(legacyEdit.data.legacyNote, 'field-rewalk');
+    assert.equal((await request('/api/time-cards/901/submit', {method: 'POST', headers: auth, body: '{}'})).response.status, 200);
     const fieldAgain = await request('/api/time-cards/901/approve', {method: 'POST', headers: auth, body: '{}'});
     assert.equal(fieldAgain.response.status, 200);
     assert.equal(fieldAgain.data.status, 'approved');
@@ -613,19 +632,19 @@ server.listen(4201, async () => {
     const duplicateUndo = await uiUnapprove(909);
     assert.equal(duplicateUndo.response.status, 200, duplicateUndo.data.error || '');
     assert.equal(duplicateUndo.data.legacyNote, 'reapproved-copy');
-    assert.equal(duplicateUndo.data.status, 'submitted');
+    assert.equal(duplicateUndo.data.status, 'draft');
     assert.equal(duplicateUndo.data.hours, 0.25);
     const storedLegacy = JSON.parse(fs.readFileSync(dbFile, 'utf8')).timeCards;
     const merged909 = storedLegacy.filter(card => String(card.id).trim() === '909');
     const stateCard = storedLegacy.find(card => card.legacyNote === 'state-property');
     assert.equal(merged909.length, 1);
-    assert.equal(merged909[0].status, 'submitted');
+    assert.equal(merged909[0].status, 'draft');
     assert.equal(merged909[0].legacyNote, 'reapproved-copy');
     assert.equal(merged909[0].hours, 0.25);
     assert.equal(merged909[0].history.at(-1).action, 'Unapproved');
     assert.equal(storedLegacy.some(card => card.legacyNote === 'leftover-unapproved'), false);
     assert.equal(stateCard.state, 'approved');
-    assert.equal(stateCard.status, 'submitted');
+    assert.equal(stateCard.status, 'draft');
     const stillDraft = await uiUnapprove(911);
     assert.equal(stillDraft.response.status, 409);
     assert.equal(stillDraft.data.error, 'Only an approved time card can be unapproved');
@@ -668,7 +687,7 @@ server.listen(4201, async () => {
     assert.deepEqual(JSON.parse(fs.readFileSync(dbFile, 'utf8')).timeCards, storedOnce);
     const neverSubmittedUndo = await request('/api/time-cards/1201/unapprove', {method: 'POST', headers: auth, body: '{}'});
     assert.equal(neverSubmittedUndo.response.status, 200, neverSubmittedUndo.data.error || '');
-    assert.equal(neverSubmittedUndo.data.status, 'submitted');
+    assert.equal(neverSubmittedUndo.data.status, 'draft');
     assert.equal(neverSubmittedUndo.data.submittedAt, null);
     assert.match(neverSubmittedUndo.data.historyLines.at(-1), /^Unapproved by Levi Foreman · \d{1,2}:\d{2} [AP]M$/);
     assert.equal(sameId(JSON.parse(fs.readFileSync(dbFile, 'utf8')).timeCards, 1201).length, 1);
@@ -677,12 +696,13 @@ server.listen(4201, async () => {
     fs.writeFileSync(dbFile, JSON.stringify(withSubmittedAt));
     const wasSubmittedUndo = await request('/api/time-cards/1205/unapprove', {method: 'POST', headers: auth, body: '{}'});
     assert.equal(wasSubmittedUndo.response.status, 200, wasSubmittedUndo.data.error || '');
-    assert.equal(wasSubmittedUndo.data.status, 'submitted');
+    assert.equal(wasSubmittedUndo.data.status, 'draft');
     assert.match(wasSubmittedUndo.data.historyLines.at(-1), /^Unapproved by Levi Foreman · \d{1,2}:\d{2} [AP]M$/);
     assert.equal(sameId(JSON.parse(fs.readFileSync(dbFile, 'utf8')).timeCards, 1205).length, 1);
     const beforeReapprove = JSON.parse(fs.readFileSync(dbFile, 'utf8'));
     beforeReapprove.timeCards.unshift({...baseCard, id: 1201, status: 'draft', hours: 9, submittedAt: null, submittedBy: null, approvedBy: null, approvedAt: null, updatedAt: '2026-09-29T19:00:00.000Z', legacyNote: 'stale-draft', history: [{action: 'Opened', by: 'QA Tester', at: '2026-09-29T12:00:00.000Z'}, {action: 'Times edited', by: 'Office', at: '2026-09-29T19:00:00.000Z'}]});
     fs.writeFileSync(dbFile, JSON.stringify(beforeReapprove));
+    assert.equal((await request('/api/time-cards/1201/submit', {method: 'POST', headers: auth, body: '{}'})).response.status, 200);
     const reapprovedCycle = await request('/api/time-cards/1201/approve', {method: 'POST', headers: auth, body: '{}'});
     assert.equal(reapprovedCycle.response.status, 200, reapprovedCycle.data.error || '');
     assert.equal(reapprovedCycle.data.status, 'approved');
