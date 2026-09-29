@@ -287,7 +287,10 @@ server.listen(4201, async () => {
     assert.equal(submitted.data.history.at(-1).action, 'Submitted');
 
     const unlinkedDb = JSON.parse(fs.readFileSync(dbFile, 'utf8'));
-    unlinkedDb.timeCards.find(card => card.id === marcus.id).reportId = null;
+    const automaticDraft = unlinkedDb.reports.find(report => report.id === ended.data.report.id);
+    const submittedReport = {...automaticDraft, id: Math.max(...unlinkedDb.reports.map(report => Number(report.id))) + 1, status: 'Needs review', laborEntries: automaticDraft.laborEntries.map(entry => ({...entry})), history: [...(automaticDraft.history || []), {action: 'Submitted', by: 'Marcus Reed', at: new Date().toISOString()}]};
+    unlinkedDb.reports.unshift(submittedReport);
+    unlinkedDb.timeCards.find(card => card.id === marcus.id).reportId = automaticDraft.id;
     fs.writeFileSync(dbFile, JSON.stringify(unlinkedDb));
 
     const missingReason = await request(`/api/time-cards/${marcus.id}`, {method: 'PATCH', headers: auth, body: JSON.stringify({inAt: '2026-09-29T15:00:00.000Z', outAt: '2026-09-29T16:10:00.000Z'})});
@@ -303,10 +306,12 @@ server.listen(4201, async () => {
     assert.match(edited.data.historyLines.at(-1), /^Times corrected by Levi Foreman · \d{1,2}:\d{2} [AP]M · Correct missed punch$/);
     assert.equal(edited.data.history.at(-1).before.hours, quarterHours(marcus.inAt, marcus.outAt));
     assert.equal(edited.data.original.inAt, marcus.inAt);
-    const dailyAfterEdit = (await request('/api/state', {headers: auth})).data.reports.find(report => report.id === ended.data.report.id);
+    const stateAfterEdit = (await request('/api/state', {headers: auth})).data;
+    const dailyAfterEdit = stateAfterEdit.reports.find(report => report.id === submittedReport.id);
     assert.equal(dailyAfterEdit.laborEntries[0].hours, 1.25);
-    assert.equal(JSON.parse(fs.readFileSync(dbFile, 'utf8')).timeCards.find(card => card.id === marcus.id).reportId, ended.data.report.id);
-    assert.equal(dailyAfterEdit.status, 'Draft');
+    assert.equal(stateAfterEdit.reports.find(report => report.id === automaticDraft.id).laborEntries[0].hours, quarterHours(marcus.inAt, marcus.outAt));
+    assert.equal(JSON.parse(fs.readFileSync(dbFile, 'utf8')).timeCards.find(card => card.id === marcus.id).reportId, submittedReport.id);
+    assert.equal(dailyAfterEdit.status, 'Needs review');
 
     assert.equal((await request(`/api/time-cards/${marcus.id}/approve`, {method: 'POST', headers: auth, body: '{}'})).response.status, 409);
     assert.equal((await request(`/api/time-cards/${marcus.id}/submit`, {method: 'POST', headers: auth, body: '{}'})).response.status, 200);
@@ -327,8 +332,8 @@ server.listen(4201, async () => {
     const lockedCard = (await request('/api/time-cards?memberId=1', {headers: auth})).data.find(card => card.id === marcus.id);
     assert.equal(lockedCard.hours, 1.25);
     assert.equal(lockedCard.status, 'draft');
-    const dailyAfterApprove = (await request('/api/state', {headers: auth})).data.reports.find(report => report.id === ended.data.report.id);
-    assert.equal(dailyAfterApprove.status, 'Draft');
+    const dailyAfterApprove = (await request('/api/state', {headers: auth})).data.reports.find(report => report.id === submittedReport.id);
+    assert.equal(dailyAfterApprove.status, 'Needs review');
     assert.deepEqual(dailyAfterApprove.laborEntries, dailyAfterEdit.laborEntries);
 
     const editedAgain = await request(`/api/time-cards/${marcus.id}`, {method: 'PATCH', headers: auth, body: JSON.stringify({inAt: '2026-09-29T15:00:00.000Z', outAt: '2026-09-29T16:10:00.000Z', reason: 'Correct missed punch'})});
