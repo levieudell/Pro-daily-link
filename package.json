@@ -12,7 +12,7 @@
     "start": "node server.js",
     "dev": "node --watch server.js",
     "check": "node --check server.js && node --check app.js",
-    "test": "node test.js && node tenant-schema.test.js && node auth-tenant.test.js && node supabase.test.js && node stripe-webhook.test.js && node hours-safety.test.js && node time-cards.test.js",
+    "test": "node test.js && node tenant-schema.test.js && node auth-tenant.test.js && node supabase.test.js && node stripe-webhook.test.js && node hours-safety.test.js && node time-cards.test.js && node templates.test.js",
     "migrate:tenant:preview": "node database/migrate-json.js",
     "migrate:tenant:apply": "node database/migrate-json.js --apply",
     "launch:check": "node database/launch-readiness.js",
