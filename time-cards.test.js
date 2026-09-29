@@ -286,6 +286,10 @@ server.listen(4201, async () => {
     assert.equal(submitted.data.submittedBy, 'Marcus Reed');
     assert.equal(submitted.data.history.at(-1).action, 'Submitted');
 
+    const unlinkedDb = JSON.parse(fs.readFileSync(dbFile, 'utf8'));
+    unlinkedDb.timeCards.find(card => card.id === marcus.id).reportId = null;
+    fs.writeFileSync(dbFile, JSON.stringify(unlinkedDb));
+
     const missingReason = await request(`/api/time-cards/${marcus.id}`, {method: 'PATCH', headers: auth, body: JSON.stringify({inAt: '2026-09-29T15:00:00.000Z', outAt: '2026-09-29T16:10:00.000Z'})});
     assert.equal(missingReason.response.status, 400);
     assert.match(missingReason.data.error, /why|corrected/i);
@@ -301,6 +305,7 @@ server.listen(4201, async () => {
     assert.equal(edited.data.original.inAt, marcus.inAt);
     const dailyAfterEdit = (await request('/api/state', {headers: auth})).data.reports.find(report => report.id === ended.data.report.id);
     assert.equal(dailyAfterEdit.laborEntries[0].hours, 1.25);
+    assert.equal(JSON.parse(fs.readFileSync(dbFile, 'utf8')).timeCards.find(card => card.id === marcus.id).reportId, ended.data.report.id);
     assert.equal(dailyAfterEdit.status, 'Draft');
 
     assert.equal((await request(`/api/time-cards/${marcus.id}/approve`, {method: 'POST', headers: auth, body: '{}'})).response.status, 409);
