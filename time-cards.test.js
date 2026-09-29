@@ -42,9 +42,44 @@ server.listen(4201, async () => {
   try {
     const html = fs.readFileSync(path.join(__dirname, 'index.html'), 'utf8');
     const platformHtml = fs.readFileSync(path.join(__dirname, 'platform.js'), 'utf8');
+    const appJs = fs.readFileSync(path.join(__dirname, 'app.js'), 'utf8');
     assert.match(html, /Time cards/);
     assert.match(html, /CSV export/);
     assert.match(platformHtml, /Time cards on/);
+    assert.match(appJs, /cache:'no-store'/);
+    assert.match(appJs, /timeCards:me\.timeCards===true/);
+    assert.match(appJs, /resetTeamMemberForm\(\)/);
+    assert.match(appJs, /historyLines/);
+    assert.doesNotMatch(appJs, /localStorage\.(get|set)Item\(['"]pdl-time-cards/);
+    const formCheck = new Function('team', 'escapeHtml', `
+      const fields = {};
+      const make = id => fields[id] || (fields[id] = {value:'', hidden:false, innerHTML:'', textContent:'', classList:{remove(){}, add(){}}});
+      const $ = id => make(id);
+      ${appJs.split('\n').find(line => line.startsWith('function populateMemberCrews'))}
+      ${appJs.split('\n').find(line => line.startsWith('function resetTeamMemberForm'))}
+      ${appJs.split('\n').find(line => line.includes("$('#member-role').onchange"))}
+      make('#member-name').value = 'Crew Tester';
+      make('#member-role').value = 'Laborer';
+      make('#member-phone').value = '555';
+      make('#member-email').value = 'kept@example.test';
+      make('#member-new-crew').value = 'Crew B';
+      make('#member-account-role').value = 'field';
+      make('#member-crew').value = 'Crew A';
+      resetTeamMemberForm();
+      const cleared = {
+        name: make('#member-name').value,
+        role: make('#member-role').value,
+        phone: make('#member-phone').value,
+        email: make('#member-email').value,
+        accountRole: make('#member-account-role').value
+      };
+      make('#member-role').value = 'Laborer';
+      make('#member-role').onchange();
+      return {cleared, afterRole: make('#member-account-role').value};
+    `);
+    const formReset = formCheck([{crew: 'Crew A'}], value => String(value));
+    assert.deepEqual(formReset.cleared, {name: '', role: '', phone: '', email: '', accountRole: ''});
+    assert.equal(formReset.afterRole, '');
 
     const db = JSON.parse(fs.readFileSync(dbFile, 'utf8'));
     assert.equal(db.company.features, undefined);
@@ -60,6 +95,9 @@ server.listen(4201, async () => {
     const login = await request('/api/auth/login', {method: 'POST', body: JSON.stringify({email: 'owner@example.test', password: 'OwnerPassword!42'})});
     assert.equal(login.response.status, 200);
     const auth = {Authorization: `Bearer ${login.data.token}`};
+    const meOff = await request('/api/auth/me', {headers: auth});
+    assert.equal(meOff.response.headers.get('cache-control'), 'no-store');
+    assert.equal(meOff.data.timeCards, false);
     const platform = {'x-pdl-platform-key': platformKey};
 
     for (const route of ['/api/time-cards', '/api/time-cards.csv', '/api/time-cards/approve']) {
@@ -120,6 +158,9 @@ server.listen(4201, async () => {
     assert.equal(overviewOn.data.companies.find(company => company.id === otherId).timeCards, false);
     const turnedOn = JSON.parse(fs.readFileSync(dbFile, 'utf8'));
     assert.equal(turnedOn.company.features.timeCards, true);
+    const meOn = await request('/api/auth/me', {headers: auth});
+    assert.equal(meOn.data.timeCards, true);
+    assert.equal((await request('/api/state', {headers: auth})).data.company.features.timeCards, true);
 
     const started = await request('/api/workdays/start', {method: 'POST', headers: auth, body: JSON.stringify({projectId: 1, memberIds: [1, 3]})});
     assert.equal(started.response.status, 201);
@@ -197,6 +238,7 @@ server.listen(4201, async () => {
     assert.equal(edited.data.date, '2026-09-29');
     assert.equal(edited.data.status, 'submitted');
     assert.equal(edited.data.history.at(-1).action, 'Times edited');
+    assert.match(edited.data.historyLines.at(-1), /^Times edited by Levi Foreman · \d{1,2}:\d{2} [AP]M$/);
     assert.equal(edited.data.history.at(-1).before.hours, quarterHours(marcus.inAt, marcus.outAt));
     const dailyAfterEdit = (await request('/api/state', {headers: auth})).data.reports.find(report => report.id === ended.data.report.id);
     assert.equal(dailyAfterEdit.laborEntries[0].hours, dailyBeforeEdit.laborEntries[0].hours);
@@ -207,6 +249,7 @@ server.listen(4201, async () => {
     assert.equal(approved.data.status, 'approved');
     assert.equal(approved.data.approvedBy, 'Levi Foreman');
     assert.equal(approved.data.history.at(-1).action, 'Approved');
+    assert.match(approved.data.historyLines.at(-1), /^Approved by Levi Foreman · \d{1,2}:\d{2} [AP]M$/);
     const locked = await request(`/api/time-cards/${marcus.id}`, {method: 'PATCH', headers: auth, body: JSON.stringify({inAt: '2026-09-29T12:00:00.000Z', outAt: '2026-09-29T20:00:00.000Z'})});
     assert.equal(locked.response.status, 409);
     const lockedCard = (await request('/api/time-cards?memberId=1', {headers: auth})).data.find(card => card.id === marcus.id);
@@ -222,6 +265,9 @@ server.listen(4201, async () => {
     assert.equal(unapproved.data.status, 'submitted');
     assert.equal(unapproved.data.approvedBy, null);
     assert.equal(unapproved.data.history.at(-1).action, 'Unapproved');
+    assert.equal(unapproved.data.history.at(-1).by, 'Levi Foreman');
+    assert.match(unapproved.data.history.at(-1).at, /^\d{4}-\d{2}-\d{2}T/);
+    assert.match(unapproved.data.historyLines.at(-1), /^Unapproved by Levi Foreman · \d{1,2}:\d{2} [AP]M$/);
     const editedAgain = await request(`/api/time-cards/${marcus.id}`, {method: 'PATCH', headers: auth, body: JSON.stringify({inAt: '2026-09-29T15:00:00.000Z', outAt: '2026-09-29T16:10:00.000Z'})});
     assert.equal(editedAgain.response.status, 200);
     assert.equal(editedAgain.data.hours, 1.25);
@@ -295,7 +341,9 @@ server.listen(4201, async () => {
     assert.match(csv.response.headers.get('content-disposition'), /filename="time-cards-2026-09-01-2026-09-30\.csv"/);
     const csvLines = csv.text.trim().split('\n');
     assert.equal(csvLines[0], 'person,job,job code,date,in,out,hours,status,approved by');
-    assert.ok(csvLines.some(line => line === 'Marcus Reed,Division Street Clinic,DSC,2026-09-29,2026-09-29T15:00:00.000Z,2026-09-29T16:10:00.000Z,1.25,approved,Levi Foreman'));
+    assert.ok(csvLines.some(line => line === 'Marcus Reed,Division Street Clinic,DSC,2026-09-29,8:00 AM,9:10 AM,1.25,approved,Levi Foreman'));
+    assert.equal(csv.text.includes('2026-09-29T'), false);
+    assert.equal(quarterHours('2026-09-29T16:04:37.902Z', '2026-09-29T16:06:22.962Z'), 0);
     const filteredOut = await request('/api/time-cards.csv?from=2026-09-01&to=2026-09-30&memberId=3&status=draft', {headers: auth});
     assert.equal(filteredOut.text.includes('Marcus Reed'), false);
     assert.ok(filteredOut.text.includes('Jamal'));
@@ -313,6 +361,20 @@ server.listen(4201, async () => {
     assert.equal(otherReadsPrimary.response.status, 404);
     const northstarCards = (await request('/api/time-cards', {headers: auth})).data;
     assert.equal(northstarCards.find(card => card.id === marcus.id).hours, 1.25);
+    const shortCard = await request(`/api/time-cards/${jamal.id}`, {method: 'PATCH', headers: auth, body: JSON.stringify({inAt: '2026-09-29T16:04:37.902Z', outAt: '2026-09-29T16:06:22.962Z'})});
+    assert.equal(shortCard.response.status, 200);
+    assert.equal(shortCard.data.hours, 0);
+    assert.equal(shortCard.data.date, '2026-09-29');
+    const shortCsv = await request('/api/time-cards.csv?memberId=3&from=2026-09-29&to=2026-09-29', {headers: auth});
+    assert.match(shortCsv.text, /Jamal Brooks,Division Street Clinic,DSC,2026-09-29,9:04 AM,9:06 AM,0,/);
+    const storedZone = JSON.parse(fs.readFileSync(dbFile, 'utf8'));
+    const previousZone = storedZone.company.timezone;
+    delete storedZone.company.timezone;
+    fs.writeFileSync(dbFile, JSON.stringify(storedZone));
+    const fallbackCsv = await request('/api/time-cards.csv?memberId=1&from=2026-09-29&to=2026-09-29', {headers: auth});
+    assert.match(fallbackCsv.text, /Marcus Reed,Division Street Clinic,DSC,2026-09-29,8:00 AM,9:10 AM,1\.25,approved,Levi Foreman/);
+    storedZone.company.timezone = previousZone || 'America/Los_Angeles';
+    fs.writeFileSync(dbFile, JSON.stringify(storedZone));
 
     const afterHours = await request('/api/production', {headers: auth});
     const afterInsights = await request('/api/insights', {headers: auth});
