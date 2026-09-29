@@ -25,6 +25,17 @@ function emailsMatch(){
   return true;
 }
 
+function validateTrade(){
+  const trade=$('#trade');
+  if(!String(trade.value||'').trim()){
+    trade.setCustomValidity('Select your trade.');
+    trade.reportValidity();
+    return false;
+  }
+  trade.setCustomValidity('');
+  return true;
+}
+
 function validateStepOne(){
   const fields=['#company','#owner','#email','#confirm-email','#password','#confirm-password'].map($);
   for(const field of fields)if(!field.reportValidity())return false;
@@ -51,18 +62,21 @@ function recommend(){
   planWasRequested=false;
 }
 
+$('#trade').onchange=()=>$('#trade').setCustomValidity('');
 $('#employees').oninput=recommend;
 $('#projects').oninput=recommend;
 $('#confirm-password').oninput=()=>$('#confirm-password').setCustomValidity('');
 $('#email').oninput=$('#confirm-email').oninput=()=>$('#confirm-email').setCustomValidity('');
 document.querySelectorAll('[data-next]').forEach(button=>button.onclick=()=>{
   if(currentStep===1&&!validateStepOne())return;
+  if(currentStep===2&&!validateTrade())return;
   showStep(Number(button.dataset.next));
 });
 document.querySelectorAll('[data-back]').forEach(button=>button.onclick=()=>showStep(Number(button.dataset.back)));
 document.querySelectorAll('.signup-progress button').forEach(button=>button.onclick=()=>{
   const destination=Number(button.dataset.go);
   if(destination>currentStep&&currentStep===1&&!validateStepOne())return;
+  if(destination>2&&currentStep<=2&&!validateTrade())return;
   if(destination<=currentStep||destination===currentStep+1)showStep(destination);
 });
 $('#signup').onsubmit=async event=>{
@@ -72,6 +86,11 @@ $('#signup').onsubmit=async event=>{
   if(!emailsMatch()){$('#confirm-email').reportValidity();return}
   if(password!==$('#confirm-password').value){
     $('#result').textContent='Passwords do not match.';
+    return;
+  }
+  if(!validateTrade()){
+    showStep(2);
+    $('#result').textContent='Select your trade.';
     return;
   }
   button.disabled=true;
