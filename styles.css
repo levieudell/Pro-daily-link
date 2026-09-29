@@ -112,4 +112,6 @@ body:not(.time-cards-on) .time-cards-nav{display:none!important}
 .timecard-actions{display:flex;gap:8px;margin:0 0 12px}
 .timecard-field-note{margin:0 0 12px;color:var(--muted)}
 .timecard-row-actions{display:flex;gap:6px;justify-content:flex-end}
+.timecard-history td{white-space:normal;color:var(--muted);font-size:12px;font-weight:650;padding-top:0}
 #timecards-page td,#timecards-page th{white-space:nowrap}
+#timecards-page .timecard-history td{white-space:normal}
