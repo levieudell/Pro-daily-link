@@ -109,6 +109,11 @@ label input,label select,label textarea{width:100%;min-width:0}input[type="file"
 /* Keep daily-report validation feedback below the notes field on phones. */
 .field-required{border-color:#c54b3f!important;box-shadow:0 0 0 3px #c54b3f1f}.field-error{display:block;clear:both;margin:8px 0 12px;color:#a3322b;font-size:13px;font-weight:700;line-height:1.4}
 body:not(.time-cards-on) .time-cards-nav{display:none!important}
+body:not(.templates-on) .templates-only{display:none!important}
+#report-custom-fields,.template-answers,.template-builder{display:grid;gap:10px}
+.template-field-row{display:grid;grid-template-columns:minmax(0,1.4fr) minmax(0,.9fr) auto auto;gap:8px;align-items:end}
+.template-answers{margin-top:16px}
+.daily-template-row{display:flex;justify-content:space-between;gap:12px;align-items:center;padding:10px 0;border-bottom:1px solid rgba(20,32,46,.08)}
 .timecard-actions{display:flex;gap:8px;margin:0 0 12px}
 .timecard-field-note{margin:0 0 12px;color:var(--muted)}
 .timecard-row-actions{display:flex;gap:6px;justify-content:flex-end}
