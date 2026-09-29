@@ -9,7 +9,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Oswald:wght@500;600;700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="styles.css?v=20260929d" />
+  <link rel="stylesheet" href="styles.css?v=20260929e" />
   <link rel="stylesheet" href="estimate-mobile.css" />
 </head>
 <body>
@@ -202,7 +202,8 @@
       <div class="report-step active" data-report-step="1">
         <label>Project<select id="report-project" required></select></label>
         <div class="two-col"><label>Date<input type="date" id="report-date" required /></label><label id="report-language-label">Note language<select id="report-language"><option value="en-US">English</option><option value="es-MX">Español</option></select></label></div><label>Crew<select id="report-crew"><option value="">No crew selected</option></select><small class="input-help">Crews are managed from Team → Crews.</small></label>
-        <div class="weather-row"><div><small>JOB-SITE WEATHER</small><strong id="weather-summary">Not loaded</strong></div><button type="button" class="secondary" id="load-weather">⌖ Use my location</button></div>
+        <div class="weather-row"><div><small>JOB-SITE WEATHER</small><strong id="weather-summary">Not loaded</strong></div><div class="weather-actions"><button type="button" class="secondary" id="load-weather">⌖ Use my location</button><button type="button" class="secondary small" id="enter-weather-manually">Enter manually</button></div></div>
+        <div id="manual-weather" class="manual-weather two-col" hidden><label>Conditions<input id="manual-weather-condition" placeholder="Clear, rain, windy…"></label><label>Temperature °F<input id="manual-weather-temperature" type="number" inputmode="numeric" placeholder="72"></label><button type="button" class="secondary" id="save-manual-weather">Use this weather</button></div>
         <input type="hidden" id="report-weather" /><input type="hidden" id="report-temperature" />
         <label id="field-notes-label">Tell us what happened today<textarea id="field-notes" rows="8" placeholder="Example: Concrete crew poured 86 yards on the east foundation with 3 people for 8 hours. Pump arrived 45 minutes late…" required></textarea></label>
         <div class="note-tools"><button type="button" id="voice-notes">🎙 Speak notes</button><button type="button" data-note-chip="No delays today. ">No delays</button><button type="button" data-note-chip="No safety incidents. ">No incidents</button><button type="button" data-note-chip="Tomorrow we plan to ">Tomorrow</button></div>
@@ -212,6 +213,7 @@
         <div class="modal-actions"><button value="cancel" class="secondary">Cancel</button><button type="button" class="secondary" id="save-report-draft">Save notes as draft</button><button type="button" class="primary" id="report-next-step">Next: production & labor →</button></div>
       </div>
       <div class="report-step" data-report-step="2">
+        <div id="approved-report-edit-warning" class="verify-banner report-edit-warning" hidden><b>Approved report correction</b><span>Saving changes returns this daily to office review. Production and exceptions will be checked again before approval.</span></div>
         <div id="ai-preview" class="ai-preview"></div>
         <div class="verify-banner"><b>Verify before submitting</b><span>AI suggestions can be changed. Confirm every quantity and hour.</span></div>
         <div class="report-gaps" id="report-gaps"></div>
@@ -219,7 +221,7 @@
         <div class="section-heading"><h3>Production completed</h3><div><button type="button" id="suggest-hour-split">✦ Suggest hour split</button><button type="button" id="add-production-row">＋ Estimate item</button><button type="button" id="add-custom-production">＋ Custom work</button></div></div>
         <div id="hour-split-note" class="hour-split-note" hidden></div>
         <div id="production-rows"></div>
-        <fieldset class="labor-fieldset"><legend>Individual labor hours</legend><small class="input-help">Calculated from the workday clock. Add a person or tap any hours to correct them. Every correction is recorded.</small><div class="labor-add-row"><select id="report-add-labor-member" aria-label="Add team member to labor"><option value="">Add another team member…</option></select><button type="button" class="secondary" id="add-report-labor-member">＋ Add person</button></div><div id="report-labor-list"></div></fieldset>
+        <fieldset class="labor-fieldset"><legend>Individual labor hours</legend><small class="input-help">Approved time cards for this project and date fill these hours automatically. Add a person or tap any hours to correct them.</small><p id="report-timecard-status" class="input-help" role="status" aria-live="polite"></p><div class="labor-add-row"><select id="report-add-labor-member" aria-label="Add team member to labor"><option value="">Add another team member…</option></select><button type="button" class="secondary" id="add-report-labor-member">＋ Add person</button></div><div id="report-labor-list"></div></fieldset>
         <div class="two-col"><label>Materials used<textarea id="report-materials" rows="2" placeholder="Concrete, fasteners, pipe…"></textarea></label><label>Equipment used<textarea id="report-equipment" rows="2" placeholder="Pump, excavator, lift…"></textarea></label></div>
         <div class="two-col"><label>Delays / issues<textarea id="report-delays" rows="2" placeholder="Cause and duration"></textarea></label><label>Safety observations<textarea id="report-safety" rows="2" placeholder="Positive observations or incidents"></textarea></label></div>
         <label>Next step<textarea id="report-next" rows="2" placeholder="What should happen next? Leave blank if unknown."></textarea></label>
@@ -364,7 +366,7 @@
   <dialog id="profile-modal"><form method="dialog"><div class="modal-header"><div><p class="eyebrow">YOUR ACCOUNT</p><h2>Profile settings</h2></div><button class="close-button" value="cancel">×</button></div><div class="profile-photo-editor"><span class="avatar" id="profile-preview">LF</span><div><strong>Profile photo</strong><p>Upload a JPG, PNG, or WebP image.</p><input id="profile-photo" type="file" accept="image/jpeg,image/png,image/webp"></div></div><label>Display name<input id="profile-display-name"></label><label>Language preference<select id="profile-language"><option value="en">English</option><option value="es">Español</option></select><small>Used as your default for field screens and new daily reports. You can still change an individual report.</small></label><label>Appearance<select id="profile-theme"><option value="light">Light</option><option value="dark">Dark</option><option value="system">Use device setting</option></select></label><div class="modal-actions"><button value="cancel" class="secondary">Cancel</button><button type="button" class="primary" id="save-profile">Save profile</button></div></form></dialog>
   <dialog id="photo-detail-modal"><form method="dialog"><div class="modal-header"><div><p class="eyebrow">PHOTO RECORD</p><h2>Photo details</h2></div><button class="close-button" value="cancel">×</button></div><div id="photo-detail"></div><div class="modal-actions"><button value="cancel" class="secondary">Close</button></div></form></dialog>
   <div class="toast" id="toast" role="status" aria-live="polite" aria-atomic="true"></div>
-  <script src="app.js?v=20260929d"></script>
+  <script src="app.js?v=20260929e"></script>
   <script src="estimate-mobile.js"></script>
 </body>
 </html>

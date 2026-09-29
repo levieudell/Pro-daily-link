@@ -316,6 +316,10 @@ server.listen(4201, async () => {
     assert.equal(approved.data.approvedBy, 'Levi Foreman');
     assert.equal(approved.data.history.at(-1).action, 'Approved');
     assert.match(approved.data.historyLines.at(-1), /^Approved by Levi Foreman · \d{1,2}:\d{2} [AP]M$/);
+    const suggestedLabor = await request(`/api/report-labor-suggestions?projectId=${marcus.projectId}&date=${marcus.date}`, {headers: auth});
+    assert.equal(suggestedLabor.response.status, 200);
+    assert.equal(suggestedLabor.data.cardCount, 1);
+    assert.deepEqual(suggestedLabor.data.laborEntries.map(row => ({memberId: row.memberId, hours: row.hours})), [{memberId: marcus.memberId, hours: approved.data.hours}]);
     const correctedApproved = await request(`/api/time-cards/${marcus.id}`, {method: 'PATCH', headers: auth, body: JSON.stringify({inAt: '2026-09-29T15:00:00.000Z', outAt: '2026-09-29T16:10:00.000Z', reason: 'Correct approved punch'})});
     assert.equal(correctedApproved.response.status, 200);
     assert.equal(correctedApproved.data.status, 'draft');
