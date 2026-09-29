@@ -53,6 +53,8 @@ server.listen(4201, async () => {
     assert.match(html, /id="team-member-modal"><form method="dialog" autocomplete="off">/);
     assert.match(html, /id="member-account-role" autocomplete="off"><option value="" selected>Employee record only/);
     assert.match(appJs, /historyLines/);
+    assert.match(appJs, /function timeCardApproved/);
+    assert.match(appJs, /locked=timeCardApproved\(card\)/);
     assert.doesNotMatch(appJs, /localStorage\.(get|set)Item\(['"]pdl-time-cards/);
     const formCheck = new Function('team', 'escapeHtml', `
       const fields = {};
@@ -488,6 +490,94 @@ server.listen(4201, async () => {
       delete process.env.SUPABASE_SECRET_KEY;
       global.fetch = originalFetch;
     }
+
+    const legacyDb = JSON.parse(fs.readFileSync(dbFile, 'utf8'));
+    const legacyBefore = structuredClone(legacyDb.timeCards);
+    const at = '2026-09-29T16:08:00.000Z';
+    const punch = {projectId: 1, memberId: 1, date: '2026-09-29', inAt: '2026-09-29T16:04:00.000Z', outAt: '2026-09-29T16:19:00.000Z', hours: 0.25, workdayId: 901, reportId: null, submittedAt: null, submittedBy: null};
+    const opened = {action: 'Opened', by: 'QA Tester', at: '2026-09-29T16:04:00.000Z'};
+    const closed = {action: 'Closed', by: 'QA Tester', at: '2026-09-29T16:06:00.000Z'};
+    const approvedEntry = {action: 'Approved', by: 'QA Tester', at};
+    const unapprovedEntry = {action: 'Unapproved', by: 'QA Tester', at: '2026-09-29T16:07:00.000Z', previous: 'approved'};
+    legacyDb.timeCards.push(
+      {...punch, id: 901, status: 'approved', approvedBy: 'QA Tester', approvedAt: at, legacyNote: 'field-rewalk', history: [opened, closed, approvedEntry, unapprovedEntry, approvedEntry]},
+      {...punch, id: 902, memberId: 3, status: 'approved', approvedBy: 'QA Tester', approvedAt: at, legacyNote: 'crew-untouched', history: [opened, closed, approvedEntry]},
+      {...punch, id: 903, status: 'Approved', approvedBy: 'QA Tester', approvedAt: at, legacyNote: 'cased-status', history: [opened, closed, approvedEntry]},
+      {...punch, id: 904, status: 'approved ', approvedBy: 'QA Tester', approvedAt: at, legacyNote: 'spaced-status', history: [opened, closed, approvedEntry]},
+      {...punch, id: 905, status: 'approved', approvedBy: 'QA Tester', approvedAt: at, legacyNote: 'missing-history'},
+      {...punch, id: 906, approvedBy: 'QA Tester', approvedAt: at, legacyNote: 'missing-status', history: [opened, closed, approvedEntry]},
+      {...punch, id: 907, state: 'approved', approvedBy: 'QA Tester', approvedAt: at, legacyNote: 'state-property', history: [opened, closed, approvedEntry]},
+      {...punch, id: '910', status: 'approved', approvedBy: 'QA Tester', approvedAt: at, legacyNote: 'string-id', history: [opened, closed, approvedEntry]},
+      {...punch, id: 909, status: 'draft', approvedBy: null, approvedAt: null, legacyNote: 'leftover-unapproved', history: [opened, closed, approvedEntry, unapprovedEntry]},
+      {...punch, id: 909, status: 'approved', approvedBy: 'QA Tester', approvedAt: at, legacyNote: 'reapproved-copy', history: [opened, closed, approvedEntry, unapprovedEntry, approvedEntry]},
+      {...punch, id: 911, status: 'draft', approvedBy: null, approvedAt: null, legacyNote: 'still-draft', history: [opened, closed]}
+    );
+    fs.writeFileSync(dbFile, JSON.stringify(legacyDb));
+    const listedLegacy = await request('/api/time-cards', {headers: auth});
+    assert.equal(listedLegacy.response.status, 200);
+    assert.equal(listedLegacy.data.find(card => card.legacyNote === 'field-rewalk').status, 'approved');
+    assert.equal(listedLegacy.data.filter(card => Number(card.id) === 909).map(card => card.status).join(','), 'draft,approved');
+    const legacyCsv = await request('/api/time-cards.csv', {headers: auth});
+    assert.equal(legacyCsv.response.status, 200);
+    assert.match(legacyCsv.text, /approved/);
+    const afterRead = JSON.parse(fs.readFileSync(dbFile, 'utf8')).timeCards;
+    assert.deepEqual(afterRead.filter(card => card.legacyNote), legacyDb.timeCards.filter(card => card.legacyNote));
+    const bulkLegacy = await request('/api/time-cards/approve', {method: 'POST', headers: auth, body: JSON.stringify({ids: [903, 902]})});
+    assert.equal(bulkLegacy.response.status, 200);
+    const afterBulk = JSON.parse(fs.readFileSync(dbFile, 'utf8'));
+    const cased = afterBulk.timeCards.find(card => card.legacyNote === 'cased-status');
+    const crew = afterBulk.timeCards.find(card => card.legacyNote === 'crew-untouched');
+    assert.equal(cased.status, 'Approved');
+    assert.equal(cased.history.length, 3);
+    assert.equal(cased.legacyNote, 'cased-status');
+    assert.equal(crew.status, 'approved');
+    assert.equal(crew.history.length, 3);
+    const uiUnapprove = (id) => request(`/api/time-cards/${id}/unapprove`, {method: 'POST', headers: auth, body: '{}'});
+    const fieldUndo = await uiUnapprove(901);
+    assert.equal(fieldUndo.response.status, 200, fieldUndo.data.error || '');
+    assert.equal(fieldUndo.data.status, 'draft');
+    assert.equal(fieldUndo.data.approvedBy, null);
+    assert.equal(fieldUndo.data.legacyNote, 'field-rewalk');
+    assert.equal(fieldUndo.data.hours, 0.25);
+    assert.equal(fieldUndo.data.history.at(-1).action, 'Unapproved');
+    assert.equal(fieldUndo.data.history.at(-1).by, 'Levi Foreman');
+    assert.match(fieldUndo.data.historyLines.at(-1), /^Unapproved by Levi Foreman · \d{1,2}:\d{2} [AP]M$/);
+    const legacyEdit = await request('/api/time-cards/901', {method: 'PATCH', headers: auth, body: JSON.stringify({inAt: '2026-09-29T16:04:00.000Z', outAt: '2026-09-29T16:19:00.000Z'})});
+    assert.equal(legacyEdit.response.status, 200);
+    assert.equal(legacyEdit.data.hours, 0.25);
+    assert.equal(legacyEdit.data.legacyNote, 'field-rewalk');
+    const fieldAgain = await request('/api/time-cards/901/approve', {method: 'POST', headers: auth, body: '{}'});
+    assert.equal(fieldAgain.response.status, 200);
+    assert.equal(fieldAgain.data.status, 'approved');
+    assert.equal(fieldAgain.data.legacyNote, 'field-rewalk');
+    for (const id of [902, 903, 904, 905, 906, 907, 910]) {
+      const undone = await uiUnapprove(id);
+      assert.equal(undone.response.status, 200, `${id} ${undone.data.error || ''}`);
+      assert.equal(undone.data.approvedBy, null);
+      assert.match(undone.data.historyLines.at(-1), /^Unapproved by Levi Foreman · \d{1,2}:\d{2} [AP]M$/);
+    }
+    const duplicateUndo = await uiUnapprove(909);
+    assert.equal(duplicateUndo.response.status, 200, duplicateUndo.data.error || '');
+    assert.equal(duplicateUndo.data.legacyNote, 'reapproved-copy');
+    assert.equal(duplicateUndo.data.status, 'draft');
+    const storedLegacy = JSON.parse(fs.readFileSync(dbFile, 'utf8')).timeCards;
+    const leftover = storedLegacy.find(card => card.legacyNote === 'leftover-unapproved');
+    const reapproved = storedLegacy.find(card => card.legacyNote === 'reapproved-copy');
+    const stateCard = storedLegacy.find(card => card.legacyNote === 'state-property');
+    assert.equal(leftover.status, 'draft');
+    assert.equal(leftover.history.length, 4);
+    assert.equal(reapproved.status, 'draft');
+    assert.equal(reapproved.history.at(-1).action, 'Unapproved');
+    assert.equal(stateCard.state, 'approved');
+    assert.equal(stateCard.status, 'draft');
+    const stillDraft = await uiUnapprove(911);
+    assert.equal(stillDraft.response.status, 409);
+    assert.equal(stillDraft.data.error, 'Only an approved time card can be unapproved');
+    const originalMarcus = legacyBefore.find(row => row.approvedBy === 'Levi Foreman');
+    const marcusNow = storedLegacy.find(card => card.id === originalMarcus.id && card.memberId === originalMarcus.memberId && !card.legacyNote);
+    assert.equal(marcusNow.hours, originalMarcus.hours);
+    assert.equal(marcusNow.status, originalMarcus.status);
+    assert.deepEqual(marcusNow.history, originalMarcus.history);
 
     const afterHours = await request('/api/production', {headers: auth});
     const afterInsights = await request('/api/insights', {headers: auth});
