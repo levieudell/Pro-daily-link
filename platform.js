@@ -1,6 +1,6 @@
 const $=s=>document.querySelector(s),$$=s=>[...document.querySelectorAll(s)];let data,audit=[],helpItems=[],workType='onboarding';
 async function api(path,options={}){const response=await fetch(path,{credentials:'include',headers:{'Content-Type':'application/json'},...options}),result=await response.json();if(response.status===401){location.href='/platform-login.html';throw new Error('Your platform session expired.')}if(!response.ok)throw new Error(result.error);return result}
-const safe=value=>String(value||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const safe=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const companyOptions=()=>data.companies.map(c=>`<option value="${safe(c.id)}">${safe(c.name)}</option>`).join('');
 function row(title,detail,badge='',action=''){return `<div class="row"><span><strong>${safe(title)}</strong><small>${detail}</small></span>${badge?`<span class="badge">${safe(badge)}</span>`:''}${action}</div>`}
 function renderHelp(){const q=$('#platform-help-search').value.trim().toLowerCase(),items=helpItems.filter(i=>!q||`${i.title} ${i.category} ${i.summary}`.toLowerCase().includes(q));$('#platform-help').innerHTML=items.length?items.map(i=>row(i.title,`${safe(i.category)} · ${safe(i.summary)}`,i.audience,`<b>${safe(i.status)}</b>`)).join(''):'<p class="empty">No matching content.</p>'}
