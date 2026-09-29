@@ -120,3 +120,5 @@ body:not(.templates-on) .templates-only{display:none!important}
 .timecard-history td{white-space:normal;color:var(--muted);font-size:12px;font-weight:650;padding-top:0}
 #timecards-page td,#timecards-page th{white-space:nowrap}
 #timecards-page .timecard-history td{white-space:normal}
+.company-logo-editor{display:flex;align-items:center;gap:14px;margin:0 0 16px;padding:12px;border:1px solid var(--line);border-radius:10px}.company-logo-editor strong{font-size:12px}.company-logo-editor p{margin:3px 0 8px;color:var(--muted);font-size:10px}.company-logo-editor input{font-size:10px;max-width:100%}.company-setting-logo.has-logo,.header-company-mark.has-logo{background-color:#fff;background-position:center;background-repeat:no-repeat;background-size:contain;color:transparent}
+.header-company-mark{display:grid;place-items:center;width:36px;height:36px;margin-right:12px;border-radius:8px;background:#fff0e6;color:#c64c08;font-size:12px;font-weight:800;flex:none}

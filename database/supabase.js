@@ -46,6 +46,13 @@ async function upload(bucket, objectKey, bytes, contentType) {
   return { bucket, objectKey, url: `/api/files/${encodeURIComponent(bucket)}/${safeKey}` };
 }
 
+async function remove(bucket, objectKey) {
+  if (!configured()) return false;
+  const safeKey = objectKey.split('/').map(encodeURIComponent).join('/');
+  await request(`/storage/v1/object/${bucket}/${safeKey}`, { method: 'DELETE' });
+  return true;
+}
+
 async function ensurePrivateBucket(bucket, fileSizeLimit = 25_000_000, allowedMimeTypes = ['application/json']) {
   if (!configured()) return false;
   const response = await fetch(`${process.env.SUPABASE_URL}/storage/v1/bucket`, {
@@ -146,4 +153,4 @@ async function health() {
   }
 }
 
-module.exports = { loadLocalEnv, configured, upload, download, ensurePrivateBucket, createVerifiedBackup, loadCompanySnapshot, findCompanyByUserEmail, listCompanySnapshots, saveCompanySnapshot, loadSnapshot, saveSnapshot, health, request };
+module.exports = { loadLocalEnv, configured, upload, download, remove, ensurePrivateBucket, createVerifiedBackup, loadCompanySnapshot, findCompanyByUserEmail, listCompanySnapshots, saveCompanySnapshot, loadSnapshot, saveSnapshot, health, request };
