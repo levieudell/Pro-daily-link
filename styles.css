@@ -120,3 +120,7 @@ body:not(.templates-on) .templates-only{display:none!important}
 .timecard-history td{white-space:normal;color:var(--muted);font-size:12px;font-weight:650;padding-top:0}
 #timecards-page td,#timecards-page th{white-space:nowrap}
 #timecards-page .timecard-history td{white-space:normal}
+.pricing-access-settings .check-row,.pricing-access-settings .pricing-user-list label{display:flex;flex-direction:row;align-items:center;justify-content:flex-start;gap:8px;width:auto}
+.pricing-access-settings .check-row input[type="checkbox"],.pricing-access-settings .pricing-user-list input[type="checkbox"]{width:auto;height:16px;flex:0 0 auto;margin:0;padding:0;border:0;border-radius:3px;background:transparent;box-shadow:none}
+.labor-hours-hint{grid-column:1/-1;margin:4px 0 0;color:#95651a;font-size:11px;font-weight:700;line-height:1.4}
+.labor-line:has(.labor-hours-hint){align-items:start}
