@@ -49,6 +49,9 @@ server.listen(4201, async () => {
     assert.match(appJs, /cache:'no-store'/);
     assert.match(appJs, /timeCards:me\.timeCards===true/);
     assert.match(appJs, /resetTeamMemberForm\(\)/);
+    assert.doesNotMatch(appJs, /role\?'field'/);
+    assert.match(html, /id="team-member-modal"><form method="dialog" autocomplete="off">/);
+    assert.match(html, /id="member-account-role" autocomplete="off"><option value="" selected>Employee record only/);
     assert.match(appJs, /historyLines/);
     assert.doesNotMatch(appJs, /localStorage\.(get|set)Item\(['"]pdl-time-cards/);
     const formCheck = new Function('team', 'escapeHtml', `
@@ -75,11 +78,19 @@ server.listen(4201, async () => {
       };
       make('#member-role').value = 'Laborer';
       make('#member-role').onchange();
-      return {cleared, afterRole: make('#member-account-role').value};
+      const afterRoles = {};
+      for (const role of ['Laborer', 'Field team member', 'Foreman', 'Crew lead', 'Superintendent']) {
+        make('#member-account-role').value = 'field';
+        make('#member-role').value = role;
+        make('#member-role').onchange();
+        afterRoles[role] = make('#member-account-role').value;
+      }
+      return {cleared, afterRole: make('#member-account-role').value, afterRoles};
     `);
     const formReset = formCheck([{crew: 'Crew A'}], value => String(value));
     assert.deepEqual(formReset.cleared, {name: '', role: '', phone: '', email: '', accountRole: ''});
     assert.equal(formReset.afterRole, '');
+    assert.deepEqual(formReset.afterRoles, {Laborer: '', 'Field team member': '', Foreman: '', 'Crew lead': '', Superintendent: ''});
 
     const db = JSON.parse(fs.readFileSync(dbFile, 'utf8'));
     assert.equal(db.company.features, undefined);
@@ -375,6 +386,108 @@ server.listen(4201, async () => {
     assert.match(fallbackCsv.text, /Marcus Reed,Division Street Clinic,DSC,2026-09-29,8:00 AM,9:10 AM,1\.25,approved,Levi Foreman/);
     storedZone.company.timezone = previousZone || 'America/Los_Angeles';
     fs.writeFileSync(dbFile, JSON.stringify(storedZone));
+
+    const originalFetch = global.fetch;
+    const cloudSnapshots = new Map();
+    let staleLoad = null;
+    process.env.PDL_SUPABASE_ENABLED = '1';
+    process.env.SUPABASE_URL = 'https://supabase.test';
+    process.env.SUPABASE_SECRET_KEY = 'test-secret';
+    global.fetch = async (url, options = {}) => {
+      const href = String(url);
+      if (!href.startsWith('https://supabase.test')) return originalFetch(url, options);
+      const method = String(options.method || 'GET').toUpperCase();
+      if (href.includes('/rest/v1/companies') && method === 'GET' && href.includes('id=eq.')) {
+        const id = decodeURIComponent(href.match(/id=eq\.([^&]+)/)[1]);
+        const row = staleLoad && staleLoad.company?.id === id ? staleLoad : cloudSnapshots.get(id);
+        return new Response(JSON.stringify(row ? [{data: row}] : []), {status: 200, headers: {'Content-Type': 'application/json'}});
+      }
+      if (href.includes('/rest/v1/companies') && method === 'POST') {
+        for (const row of JSON.parse(options.body)) if (row?.data?.company?.id) cloudSnapshots.set(row.id, row.data);
+        return new Response('', {status: 201});
+      }
+      return new Response('[]', {status: 200, headers: {'Content-Type': 'application/json'}});
+    };
+    try {
+      const uiHeaders = {...otherAuth, 'Content-Type': 'application/json'};
+      const customer = await request('/api/customers', {method: 'POST', headers: uiHeaders, body: JSON.stringify({name: 'QA Customer'})});
+      assert.equal(customer.response.status, 201);
+      const project = await request('/api/projects', {method: 'POST', headers: uiHeaders, body: JSON.stringify({name: 'QA Test Job', code: 'QATE', customerId: customer.data.id, status: 'On track'})});
+      assert.equal(project.response.status, 201);
+      const fieldMember = await request('/api/team', {method: 'POST', headers: uiHeaders, body: JSON.stringify({name: 'Field Tester', role: 'Laborer', crew: 'QA Crew A', phone: '', email: '', initials: 'FT', hours: 0, site: 'Not assigned'})});
+      const crewMember = await request('/api/team', {method: 'POST', headers: uiHeaders, body: JSON.stringify({name: 'Crew Tester', role: 'Laborer', crew: 'QA Crew A', phone: '', email: '', initials: 'CT', hours: 0, site: 'Not assigned'})});
+      assert.equal(fieldMember.response.status, 201);
+      assert.equal(crewMember.response.status, 201);
+      assert.equal(fieldMember.data.user, undefined);
+      const startedUi = await request('/api/workdays/start', {method: 'POST', headers: uiHeaders, body: JSON.stringify({projectId: project.data.id, memberIds: [fieldMember.data.id]})});
+      assert.equal(startedUi.response.status, 201);
+      assert.equal((await request(`/api/workdays/${startedUi.data.id}/end`, {method: 'POST', headers: uiHeaders, body: JSON.stringify({notes: 'QA test job finished.', foreman: 'QA Tester'})})).response.status, 200);
+      const uiCard = (await request('/api/time-cards', {headers: uiHeaders})).data.find(card => card.memberId === fieldMember.data.id && card.workdayId === startedUi.data.id);
+      assert.equal((await request(`/api/time-cards/${uiCard.id}/submit`, {method: 'POST', headers: uiHeaders, body: '{}'})).response.status, 200);
+      const uiApproved = await request(`/api/time-cards/${uiCard.id}/approve`, {method: 'POST', headers: uiHeaders, body: '{}'});
+      assert.equal(uiApproved.response.status, 200);
+      assert.equal(uiApproved.data.status, 'approved');
+      const tenantFile = path.join(tempDir, 'tenants', `${otherId}.json`);
+      const approvedDisk = JSON.parse(fs.readFileSync(tenantFile, 'utf8'));
+      const approvedOnDisk = approvedDisk.timeCards.find(card => card.id === uiCard.id);
+      assert.equal(approvedOnDisk.status, 'approved');
+      staleLoad = structuredClone(approvedDisk);
+      staleLoad.timeCards.find(card => card.id === uiCard.id).status = 'submitted';
+      staleLoad.timeCards.find(card => card.id === uiCard.id).approvedBy = null;
+      staleLoad.timeCards.find(card => card.id === uiCard.id).approvedAt = null;
+      staleLoad.company.persistence.revision = Number(approvedDisk.company.persistence.revision) - 1;
+      const uiUnapproved = await request(`/api/time-cards/${uiCard.id}/unapprove`, {method: 'POST', headers: uiHeaders, body: '{}'});
+      assert.equal(uiUnapproved.response.status, 200, uiUnapproved.data.error || '');
+      assert.equal(uiUnapproved.data.status, 'submitted');
+      assert.equal(uiUnapproved.data.approvedBy, null);
+      assert.equal(uiUnapproved.data.history.at(-1).action, 'Unapproved');
+      assert.equal(uiUnapproved.data.history.at(-1).by, 'Bea Owner');
+      assert.match(uiUnapproved.data.historyLines.at(-1), /^Unapproved by Bea Owner · \d{1,2}:\d{2} [AP]M$/);
+      const uiEdited = await request(`/api/time-cards/${uiCard.id}`, {method: 'PATCH', headers: uiHeaders, body: JSON.stringify({inAt: '2026-09-29T16:04:00.000Z', outAt: '2026-09-29T16:19:00.000Z'})});
+      assert.equal(uiEdited.response.status, 200);
+      assert.equal(uiEdited.data.hours, 0.25);
+      assert.equal((await request(`/api/time-cards/${uiCard.id}/approve`, {method: 'POST', headers: uiHeaders, body: '{}'})).data.status, 'approved');
+      staleLoad = null;
+      const bulkUi = await request('/api/workdays/start', {method: 'POST', headers: uiHeaders, body: JSON.stringify({projectId: project.data.id, memberIds: [fieldMember.data.id, crewMember.data.id]})});
+      assert.equal(bulkUi.response.status, 201);
+      assert.equal((await request(`/api/workdays/${bulkUi.data.id}/end`, {method: 'POST', headers: uiHeaders, body: JSON.stringify({notes: 'Bulk approve these QA cards.', foreman: 'QA Tester'})})).response.status, 200);
+      const bulkUiCards = (await request('/api/time-cards', {headers: uiHeaders})).data.filter(card => card.workdayId === bulkUi.data.id);
+      assert.equal(bulkUiCards.length, 2);
+      const bulkUiApproved = await request('/api/time-cards/approve', {method: 'POST', headers: uiHeaders, body: JSON.stringify({ids: bulkUiCards.map(card => card.id)})});
+      assert.equal(bulkUiApproved.response.status, 200);
+      assert.ok(bulkUiApproved.data.timeCards.every(card => card.status === 'approved'));
+      const bulkDisk = JSON.parse(fs.readFileSync(tenantFile, 'utf8'));
+      staleLoad = structuredClone(bulkDisk);
+      for (const card of staleLoad.timeCards.filter(card => card.workdayId === bulkUi.data.id)) {
+        card.status = 'draft';
+        card.approvedBy = null;
+        card.approvedAt = null;
+      }
+      staleLoad.company.persistence.revision = Number(bulkDisk.company.persistence.revision) - 1;
+      for (const card of bulkUiCards) {
+        const undone = await request(`/api/time-cards/${card.id}/unapprove`, {method: 'POST', headers: uiHeaders, body: '{}'});
+        assert.equal(undone.response.status, 200, undone.data.error || '');
+        assert.equal(undone.data.status, 'draft');
+        assert.match(undone.data.historyLines.at(-1), /^Unapproved by Bea Owner · \d{1,2}:\d{2} [AP]M$/);
+      }
+      const newerCloud = structuredClone(JSON.parse(fs.readFileSync(tenantFile, 'utf8')));
+      newerCloud.company.persistence.revision = Number(newerCloud.company.persistence?.revision || 0) + 5;
+      const newerCard = newerCloud.timeCards.find(card => card.id === bulkUiCards[0].id);
+      newerCard.status = 'approved';
+      newerCard.approvedBy = 'Cloud Office';
+      newerCard.approvedAt = new Date().toISOString();
+      staleLoad = newerCloud;
+      const fromNewerCloud = await request(`/api/time-cards/${newerCard.id}/unapprove`, {method: 'POST', headers: uiHeaders, body: '{}'});
+      assert.equal(fromNewerCloud.response.status, 200, fromNewerCloud.data.error || '');
+      assert.equal(fromNewerCloud.data.history.at(-1).by, 'Bea Owner');
+      assert.equal(fromNewerCloud.data.status, 'draft');
+    } finally {
+      staleLoad = null;
+      process.env.PDL_SUPABASE_ENABLED = '0';
+      delete process.env.SUPABASE_URL;
+      delete process.env.SUPABASE_SECRET_KEY;
+      global.fetch = originalFetch;
+    }
 
     const afterHours = await request('/api/production', {headers: auth});
     const afterInsights = await request('/api/insights', {headers: auth});
