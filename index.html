@@ -25,8 +25,10 @@
         <button class="nav-item active office-only" data-page="dashboard"><span>▦</span> Overview</button>
         <button class="nav-item office-only" data-page="actions"><span>!</span> Action center <em id="action-count">0</em></button>
         <button class="nav-item office-only" data-page="schedule"><span>▣</span> Schedule</button>
+        <button class="nav-item office-only time-cards-nav" data-page="timecards"><span>◷</span> Time cards</button>
         <button class="nav-item field-only" data-page="myday"><span>☀</span> My day</button>
         <button class="nav-item field-only" data-page="fieldday"><span>◷</span> Start / end day</button>
+        <button class="nav-item field-only time-cards-nav" data-page="timecards"><span>◷</span> Time cards</button>
         <button class="nav-item office-only" data-page="customers"><span>▤</span> Customers</button>
         <button class="nav-item office-only" data-page="projects"><span>⌂</span> Projects</button>
         <button class="nav-item" data-page="reports"><span>≡</span> Daily reports <em id="report-count">3</em></button>
@@ -119,6 +121,14 @@
         <div class="active-day-grid" id="active-day-list"></div>
       </section>
 
+      <section class="page" id="timecards-page">
+        <div class="page-heading"><div><p class="eyebrow">LABOR HOURS</p><h1>Time cards</h1><p>Review labor hours for the crew. Approve time cards here, or download a CSV export.</p></div><button class="secondary" id="timecard-export" type="button">CSV export</button></div>
+        <div class="insight-filters panel" id="timecards-filters"><label>Job<select id="timecard-job"><option value="all">All jobs</option></select></label><label>Person<select id="timecard-person"><option value="all">All people</option></select></label><label>From<input id="timecard-from" type="date"></label><label>To<input id="timecard-to" type="date"></label><label>Status<select id="timecard-status"><option value="all">All statuses</option><option value="draft">Draft</option><option value="submitted">Submitted</option><option value="approved">Approved</option></select></label></div>
+        <div class="timecard-actions" id="timecard-office-actions"><button class="primary" id="timecard-bulk-approve" type="button">Approve selected</button></div>
+        <p class="timecard-field-note" id="timecard-field-note" hidden>These are your time cards. Submit a card after the workday ends.</p>
+        <article class="panel"><div class="table-wrap"><table><thead><tr><th id="timecard-check-head"><input id="timecard-check-all" type="checkbox" aria-label="Select all time cards"></th><th>PERSON</th><th>JOB</th><th>JOB CODE</th><th>DATE</th><th>IN</th><th>OUT</th><th>HOURS</th><th>STATUS</th><th>APPROVED BY</th><th></th></tr></thead><tbody id="timecard-rows"></tbody></table></div></article>
+      </section>
+
       <section class="page" id="projects-page">
         <div class="page-heading"><div><p class="eyebrow">CUSTOMERS & WORK</p><h1>Projects</h1><p>Track customers, job sites, estimates, and actual production.</p></div><button class="primary" id="new-project">＋ New project</button></div>
         <div class="project-view-tabs"><button class="active" data-project-view="active">Active projects</button><button data-project-view="archived">Archived</button></div>
@@ -150,6 +160,7 @@
     </main>
   </div>
 
+  <dialog id="timecard-edit-modal"><form method="dialog"><div class="modal-header"><div><p class="eyebrow">TIME CARDS</p><h2>Edit in and out</h2></div><button class="close-button" value="cancel">×</button></div><input id="timecard-edit-id" type="hidden"><label>In<input id="timecard-edit-in" type="datetime-local" required></label><label>Out<input id="timecard-edit-out" type="datetime-local"></label><div class="modal-actions"><button class="secondary" value="cancel">Cancel</button><button class="primary" id="timecard-edit-save" type="button">Save times</button></div></form></dialog>
   <dialog id="subcontractor-modal">
     <form method="dialog"><div class="modal-header"><div><p class="eyebrow">CONTRACTOR DIRECTORY</p><h2>Add subcontractor</h2></div><button class="close-button" value="cancel">×</button></div>
       <div class="two-col"><label>Company name<input id="sub-name" required></label><label>Trade<input id="sub-trade" placeholder="Electrical, concrete, roofing…"></label></div>
