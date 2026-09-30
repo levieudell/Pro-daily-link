@@ -157,7 +157,7 @@ server.listen(4188,async()=>{try{
   assert.match(appScript,/reportAnalyzeSequence/);
   assert.match(appScript,/\$\('#field-notes'\)\.value\.trim\(\)!==note/);
   assert.match(appScript,/\$\('#report-labor-list'\)\?\.addEventListener\('input',\(\)=>updateReportGaps\(\)\)/);
-  assert.match(appScript,/pdlRootGuard:true/);assert.match(appScript,/pdlAppEntry:true/);assert.match(appScript,/event\?\.state\?\.pdlRootGuard/);assert.match(appScript,/history\.pushState\(\{pdlAppEntry:true,pdlPage:page,pdlIndex:0\}/);assert.ok(workspace.indexOf('id="report-project-picker"')<workspace.indexOf('id="report-job-context"'));
+  assert.match(appScript,/pdlAppEntry:true/);assert.doesNotMatch(appScript,/pdlRootGuard/);assert.ok(workspace.indexOf('id="report-project-picker"')<workspace.indexOf('id="report-job-context"'));const landingScript=fs.readFileSync(path.join(__dirname,'landing-demo.js'),'utf8');assert.match(landingScript,/fetch\('\/api\/auth\/me'/);assert.match(landingScript,/credentials:'include'/);assert.match(landingScript,/Open your workspace/);
   console.log('API workflow tests passed');
 }catch(error){console.error(error);process.exitCode=1}finally{server.close(()=>{fs.rmSync(tempDir,{recursive:true,force:true})})}});
 

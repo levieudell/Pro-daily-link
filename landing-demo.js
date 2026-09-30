@@ -1,5 +1,15 @@
 const headerActions=document.querySelector('.header-actions');
 const trialButton=headerActions?.querySelector('a[href="/signup.html"]');
+async function reflectSignedInSession(){
+  const companyId=localStorage.getItem('pdl-company-id')||'';
+  try{
+    const response=await fetch('/api/auth/me',{credentials:'include',cache:'no-store',headers:companyId?{'x-pdl-company':companyId}:{}});
+    if(!response.ok)return;
+    document.body.classList.add('has-active-session');
+    document.querySelectorAll('a[href="/login.html"],a[href="/app"]').forEach(link=>{link.href='/app';link.textContent=link.closest('footer')?'Open app':'Open your workspace →'});
+  }catch{}
+}
+reflectSignedInSession();
 if(headerActions&&trialButton){
   const demoButton=document.createElement('a');
   demoButton.className='button ghost small header-demo';
