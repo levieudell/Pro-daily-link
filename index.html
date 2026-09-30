@@ -200,9 +200,10 @@
       <div class="report-steps"><span class="active" data-step-dot="1"><b>1</b> Field notes & photos</span><i></i><span data-step-dot="2"><b>2</b> Production & labor</span></div>
       <div id="report-draft-choice" class="draft-choice" hidden><div><strong>Saved draft found</strong><p id="report-draft-summary"></p></div><div><button type="button" class="secondary" id="report-start-fresh">Start fresh</button><button type="button" class="primary" id="report-resume-draft">Resume draft</button></div></div>
       <div class="report-step active" data-report-step="1">
-        <label>Project<select id="report-project" required></select></label>
+        <section id="report-job-context" class="report-job-context" aria-live="polite"></section>
+        <label id="report-project-picker">Choose job<select id="report-project" required></select><small class="input-help" id="report-project-help">Choose the job this report belongs to.</small></label>
         <div class="two-col"><label>Date<input type="date" id="report-date" required /></label><label id="report-language-label">Note language<select id="report-language"><option value="en-US">English</option><option value="es-MX">Español</option></select></label></div><label>Crew<select id="report-crew"><option value="">No crew selected</option></select><small class="input-help">Crews are managed from Team → Crews.</small></label>
-        <div class="weather-row"><div><small>JOB-SITE WEATHER</small><strong id="weather-summary">Not loaded</strong></div><div class="weather-actions"><button type="button" class="secondary" id="load-weather">⌖ Use my location</button><button type="button" class="secondary small" id="enter-weather-manually">Enter manually</button></div></div>
+        <div class="weather-row"><div><small>JOB-SITE WEATHER</small><strong id="weather-summary">Loading from the job address…</strong></div><div class="weather-actions"><button type="button" class="secondary" id="load-weather">↻ Refresh weather</button><button type="button" class="secondary small" id="enter-weather-manually">Enter manually</button></div></div>
         <div id="manual-weather" class="manual-weather two-col" hidden><label>Conditions<input id="manual-weather-condition" placeholder="Clear, rain, windy…"></label><label>Temperature °F<input id="manual-weather-temperature" type="number" inputmode="numeric" placeholder="72"></label><button type="button" class="secondary" id="save-manual-weather">Use this weather</button></div>
         <input type="hidden" id="report-weather" /><input type="hidden" id="report-temperature" />
         <label id="field-notes-label">Tell us what happened today<textarea id="field-notes" rows="8" placeholder="Example: Concrete crew poured 86 yards on the east foundation with 3 people for 8 hours. Pump arrived 45 minutes late…" required></textarea></label>
@@ -370,3 +371,4 @@
   <script src="estimate-mobile.js"></script>
 </body>
 </html>
+

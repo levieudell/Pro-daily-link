@@ -139,6 +139,14 @@ server.listen(4188,async()=>{try{
   assert.match(serverSource,/Labor hours are evidence-only/);
   assert.match(serverSource,/lines\.forEach\(line=>\{line\.laborHours=0\}\)/);
   assert.match(serverSource,/result\.laborEvidence=laborEvidence/);
+  assert.match(serverSource,/Custom fields:/);
+  assert.match(serverSource,/Never fill a required field merely because it is required/);
+  assert.match(serverSource,/geocoding-api\.open-meteo\.com/);
+  assert.match(workspace,/id="report-job-context"/);
+  assert.match(appScript,/function renderReportJobContext/);
+  assert.match(appScript,/customTemplateFields:currentReportTemplateFields\(\)/);
+  assert.match(appScript,/AI suggested from notes/);
+  assert.match(appScript,/api\(`\/api\/weather\?address=/);
   assert.match(appScript,/approved crew hours loaded from time cards and allocated/);
   assert.match(appScript,/Field-note hours override imported time-card hours/);
   assert.match(appScript,/field-note crew hours still need assignment to actual team members/);
@@ -151,3 +159,4 @@ server.listen(4188,async()=>{try{
   assert.match(appScript,/\$\('#report-labor-list'\)\?\.addEventListener\('input',\(\)=>updateReportGaps\(\)\)/);
   console.log('API workflow tests passed');
 }catch(error){console.error(error);process.exitCode=1}finally{server.close(()=>{fs.rmSync(tempDir,{recursive:true,force:true})})}});
+
