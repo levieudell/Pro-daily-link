@@ -58,15 +58,16 @@ const $=s=>document.querySelector(s), $$=s=>document.querySelectorAll(s);
 function escapeHtml(value){return String(value).replace(/[&<>"']/g,char=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]))}
 const localDateIso=(date=new Date())=>{const offset=date.getTimezoneOffset()*60000;return new Date(date.getTime()-offset).toISOString().slice(0,10)};
 function companyTodayIso(date=new Date()){const timezone=company?.timezone||'America/Los_Angeles';try{const parts=new Intl.DateTimeFormat('en-US',{timeZone:timezone,year:'numeric',month:'2-digit',day:'2-digit'}).formatToParts(date),value=type=>parts.find(part=>part.type===type)?.value;return `${value('year')}-${value('month')}-${value('day')}`}catch{return localDateIso(date)}}
-const displayLongDate=(date=new Date())=>date.toLocaleDateString(undefined,{weekday:'long',month:'long',day:'numeric'});
+const interfaceLocale=()=>preferredLanguage==='es'?'es-US':undefined;
+const displayLongDate=(date=new Date())=>date.toLocaleDateString(interfaceLocale(),{weekday:'long',month:'long',day:'numeric'});
 const reportWorkDate=report=>{
   const value=String(report?.dateIso||'');
   if(/^\d{4}-\d{2}-\d{2}$/.test(value)){
-    return new Date(`${value}T12:00:00`).toLocaleDateString(undefined,{month:'short',day:'numeric'});
+    return new Date(`${value}T12:00:00`).toLocaleDateString(interfaceLocale(),{month:'short',day:'numeric'});
   }
   return report?.date||'Date not recorded';
 };
-function reportWorkLong(report){const value=String(report?.dateIso||'');if(/^\d{4}-\d{2}-\d{2}$/.test(value))return new Date(`${value}T12:00:00`).toLocaleDateString(undefined,{month:'short',day:'numeric',year:'numeric'});return report?.date||'Date not recorded'}
+function reportWorkLong(report){const value=String(report?.dateIso||'');if(/^\d{4}-\d{2}-\d{2}$/.test(value))return new Date(`${value}T12:00:00`).toLocaleDateString(interfaceLocale(),{month:'short',day:'numeric',year:'numeric'});return report?.date||(preferredLanguage==='es'?'Fecha no registrada':'Date not recorded')}
 function reportSubmittedOn(report){const submitted=(report?.history||[]).find(row=>/^submitted/i.test(String(row.action||'')));if(!submitted?.at)return null;const date=new Date(submitted.at);if(Number.isNaN(date.valueOf()))return null;const iso=`${date.getFullYear()}-${String(date.getMonth()+1).padStart(2,'0')}-${String(date.getDate()).padStart(2,'0')}`;return{iso,label:date.toLocaleDateString(undefined,{month:'short',day:'numeric',year:'numeric'})}}
 function dayPartGreeting(date=new Date(),language='en'){const hour=date.getHours();if(String(language).startsWith('es'))return hour>=17?'Buenas noches':hour>=12?'Buenas tardes':'Buenos días';return hour>=17?'Good evening':hour>=12?'Good afternoon':'Good morning'}
 function laborRunsAhead(laborPercent,quantityPercent){const labor=Number(laborPercent),quantity=Number(quantityPercent);return Number.isFinite(labor)&&Number.isFinite(quantity)&&labor>quantity+0.05}
@@ -599,3 +600,9 @@ const reportProjectChangeBeforeSimpleFieldUx=$('#report-project').onchange;
 $('#report-project').onchange=event=>{reportProjectChangeBeforeSimpleFieldUx?.call($('#report-project'),event);renderReportJobContext({chooseAssigned:false});loadReportWeather({silent:true})};
 const reportDateChangeBeforeSimpleFieldUx=$('#report-date').onchange;
 $('#report-date').onchange=event=>{reportDateChangeBeforeSimpleFieldUx?.call($('#report-date'),event);renderReportJobContext({chooseAssigned:!editingReportId});if(!editingReportId)loadReportWeather({silent:true})};
+
+// Locale-sensitive dashboard and schedule content that contains dates or live values.
+const renderDashboardSummaryBeforeFullLocale=renderDashboardSummary;
+renderDashboardSummary=function(){const result=renderDashboardSummaryBeforeFullLocale();const first=(currentUser?.preferences?.displayName||currentUser?.name||'').split(/\s+/)[0];$('#dashboard-page .page-heading .eyebrow').textContent=displayLongDate().toUpperCase();$('#dashboard-page .page-heading h1').textContent=`${dayPartGreeting(new Date(),preferredLanguage)}, ${first}.`;window.PDLLocale?.refresh();return result};
+const renderScheduleBeforeFullLocale=renderSchedule;
+renderSchedule=function(){const result=renderScheduleBeforeFullLocale();if(preferredLanguage==='es'){const monday=scheduleMonday(),friday=new Date(monday);friday.setDate(monday.getDate()+4);$('#schedule-week-label').textContent=`${monday.toLocaleDateString('es-US',{month:'long',day:'numeric'})}–${friday.toLocaleDateString('es-US',{month:monday.getMonth()===friday.getMonth()?undefined:'long',day:'numeric',year:'numeric'})}`;const headers=$$('#schedule-board .schedule-cell.header');Array.from({length:5},(_,index)=>{const date=new Date(monday);date.setDate(monday.getDate()+index);if(headers[index+1])headers[index+1].textContent=date.toLocaleDateString('es-US',{weekday:'short',day:'numeric'}).toUpperCase()})}window.PDLLocale?.refresh();return result};
