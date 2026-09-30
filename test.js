@@ -136,5 +136,8 @@ server.listen(4188,async()=>{try{
   const serverSource=fs.readFileSync(path.join(__dirname,'server.js'),'utf8');
   assert.match(serverSource,/Labor hours are evidence-only/);
   assert.match(serverSource,/lines\.forEach\(line=>\{line\.laborHours=0\}\)/);
+  assert.match(serverSource,/result\.laborEvidence=laborEvidence/);
+  assert.match(appScript,/approved crew hours loaded from time cards and allocated/);
+  assert.match(appScript,/Field-note hours override imported time-card hours/);
   console.log('API workflow tests passed');
 }catch(error){console.error(error);process.exitCode=1}finally{server.close(()=>{fs.rmSync(tempDir,{recursive:true,force:true})})}});

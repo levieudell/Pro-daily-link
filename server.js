@@ -302,8 +302,10 @@ function holdupBackstop(parsed,notes){
 }
 function finishAiExtract(parsed,notes){
   const result={...parsed,productions:Array.isArray(parsed?.productions)?parsed.productions.map(line=>({...line,laborHours:Number(line.laborHours)||0})):[]};
+  const laborEvidence=crewHourFact(notes);
   result.originalLanguage=normalizeLanguageCode(result.originalLanguage);
   applyCrewHours(result,notes);
+  result.laborEvidence=laborEvidence&&laborEvidence.total>0?laborEvidence:null;
   applyNextBackstop(result,notes);
   holdupBackstop(result,notes);
   return result;
