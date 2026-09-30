@@ -146,5 +146,8 @@ server.listen(4188,async()=>{try{
   assert.match(appScript,/clearTimeCardDerivedReportLabor/);
   assert.match(appScript,/input\.dataset\.laborSource=source/);
   assert.match(appScript,/scrollIntoView\(\{behavior:matchMedia/);
+  assert.match(appScript,/reportAnalyzeSequence/);
+  assert.match(appScript,/\$\('#field-notes'\)\.value\.trim\(\)!==note/);
+  assert.match(appScript,/\$\('#report-labor-list'\)\?\.addEventListener\('input',\(\)=>updateReportGaps\(\)\)/);
   console.log('API workflow tests passed');
 }catch(error){console.error(error);process.exitCode=1}finally{server.close(()=>{fs.rmSync(tempDir,{recursive:true,force:true})})}});
