@@ -143,5 +143,8 @@ server.listen(4188,async()=>{try{
   assert.match(appScript,/Field-note hours override imported time-card hours/);
   assert.match(appScript,/field-note crew hours still need assignment to actual team members/);
   assert.match(appScript,/Math\.min\(24,each\)/);
+  assert.match(appScript,/clearTimeCardDerivedReportLabor/);
+  assert.match(appScript,/input\.dataset\.laborSource=source/);
+  assert.match(appScript,/scrollIntoView\(\{behavior:matchMedia/);
   console.log('API workflow tests passed');
 }catch(error){console.error(error);process.exitCode=1}finally{server.close(()=>{fs.rmSync(tempDir,{recursive:true,force:true})})}});
