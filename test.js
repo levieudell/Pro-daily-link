@@ -157,6 +157,7 @@ server.listen(4188,async()=>{try{
   assert.match(appScript,/reportAnalyzeSequence/);
   assert.match(appScript,/\$\('#field-notes'\)\.value\.trim\(\)!==note/);
   assert.match(appScript,/\$\('#report-labor-list'\)\?\.addEventListener\('input',\(\)=>updateReportGaps\(\)\)/);
+  assert.match(appScript,/pdlRootGuard:true/);assert.match(appScript,/pdlAppEntry:true/);assert.match(appScript,/event\?\.state\?\.pdlRootGuard/);assert.match(appScript,/history\.forward\(\)/);
   console.log('API workflow tests passed');
 }catch(error){console.error(error);process.exitCode=1}finally{server.close(()=>{fs.rmSync(tempDir,{recursive:true,force:true})})}});
 
