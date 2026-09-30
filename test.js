@@ -142,7 +142,7 @@ server.listen(4188,async()=>{try{
   assert.match(serverSource,/Custom fields:/);
   assert.match(serverSource,/Never fill a required field merely because it is required/);
   assert.match(serverSource,/geocoding-api\.open-meteo\.com/);
-  const localeSource=fs.readFileSync(path.join(__dirname,'i18n.js'),'utf8');assert.match(workspace,/i18n\.js/);assert.match(localeSource,/window\.PDLLocale/);assert.match(localeSource,/'Overview':'Resumen'/);assert.match(localeSource,/'Settings':'Configuración'/);assert.match(appScript,/window\.PDLLocale\?\.set\(preferredLanguage\)/);assert.doesNotMatch(appScript,/\$\('#report-language'\)\.onchange=\(\)=>\{preferredLanguage=/);
+  const localeSource=fs.readFileSync(path.join(__dirname,'i18n.js'),'utf8');assert.match(workspace,/i18n\.js/);assert.match(localeSource,/window\.PDLLocale/);assert.match(localeSource,/'Overview':'Resumen'/);assert.match(localeSource,/'Settings':'Configuración'/);assert.match(appScript,/window\.PDLLocale\?\.set\(preferredLanguage\)/);assert.doesNotMatch(appScript,/\$\('#report-language'\)\.onchange=\(\)=>\{preferredLanguage=/);assert.doesNotMatch(workspace,/id="report-language-label"/);assert.match(workspace,/<select id="report-language" hidden/);
   assert.match(workspace,/id="report-job-context"/);
   assert.match(appScript,/function renderReportJobContext/);
   assert.match(appScript,/customTemplateFields:currentReportTemplateFields\(\)/);
