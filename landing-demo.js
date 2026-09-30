@@ -6,7 +6,9 @@ async function reflectSignedInSession(){
     const response=await fetch('/api/auth/me',{credentials:'include',cache:'no-store',headers:companyId?{'x-pdl-company':companyId}:{}});
     if(!response.ok)return;
     document.body.classList.add('has-active-session');
+    document.querySelector('.header-login')?.remove();
     document.querySelectorAll('a[href="/login.html"],a[href="/app"]').forEach(link=>{link.href='/app';link.textContent=link.closest('footer')?'Open app':'Open your workspace →'});
+    document.querySelectorAll('a[href^="/signup.html"]').forEach(link=>{link.href='/app';link.textContent=link.closest('#pricing')?'Manage plan in workspace':'Open your workspace'});
   }catch{}
 }
 reflectSignedInSession();
