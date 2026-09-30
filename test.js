@@ -142,6 +142,7 @@ server.listen(4188,async()=>{try{
   assert.match(serverSource,/Custom fields:/);
   assert.match(serverSource,/Never fill a required field merely because it is required/);
   assert.match(serverSource,/geocoding-api\.open-meteo\.com/);
+  const localeSource=fs.readFileSync(path.join(__dirname,'i18n.js'),'utf8');assert.match(workspace,/i18n\.js/);assert.match(localeSource,/window\.PDLLocale/);assert.match(localeSource,/'Overview':'Resumen'/);assert.match(localeSource,/'Settings':'Configuración'/);assert.match(appScript,/window\.PDLLocale\?\.set\(preferredLanguage\)/);assert.doesNotMatch(appScript,/\$\('#report-language'\)\.onchange=\(\)=>\{preferredLanguage=/);
   assert.match(workspace,/id="report-job-context"/);
   assert.match(appScript,/function renderReportJobContext/);
   assert.match(appScript,/customTemplateFields:currentReportTemplateFields\(\)/);
@@ -160,4 +161,3 @@ server.listen(4188,async()=>{try{
   assert.match(appScript,/pdlAppEntry:true/);assert.doesNotMatch(appScript,/pdlRootGuard/);assert.ok(workspace.indexOf('id="report-project-picker"')<workspace.indexOf('id="report-job-context"'));const landingScript=fs.readFileSync(path.join(__dirname,'landing-demo.js'),'utf8');assert.match(landingScript,/fetch\('\/api\/auth\/me'/);assert.match(landingScript,/credentials:'include'/);assert.match(landingScript,/Open your workspace/);assert.match(landingScript,/a\[href\^="\/signup\.html"\]/);assert.match(landingScript,/Manage plan in workspace/);assert.match(landingScript,/header-login'\)\?\.remove/);
   console.log('API workflow tests passed');
 }catch(error){console.error(error);process.exitCode=1}finally{server.close(()=>{fs.rmSync(tempDir,{recursive:true,force:true})})}});
-
