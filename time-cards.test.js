@@ -326,7 +326,7 @@ server.listen(4201, async () => {
     assert.equal(approved.data.approvedBy, 'Levi Foreman');
     assert.equal(approved.data.history.at(-1).action, 'Approved');
     assert.match(approved.data.historyLines.at(-1), /^Approved by Levi Foreman · \d{1,2}:\d{2} [AP]M$/);
-    const suggestedLabor = await request(`/api/report-labor-suggestions?projectId=${marcus.projectId}&date=${marcus.date}`, {headers: auth});
+    const suggestedLabor = await request(`/api/report-labor-suggestions?projectId=${marcus.projectId}&date=${edited.data.date}`, {headers: auth});
     assert.equal(suggestedLabor.response.status, 200);
     assert.equal(suggestedLabor.data.cardCount, 1);
     assert.deepEqual(suggestedLabor.data.laborEntries.map(row => ({memberId: row.memberId, hours: row.hours})), [{memberId: marcus.memberId, hours: approved.data.hours}]);
@@ -429,7 +429,7 @@ server.listen(4201, async () => {
     assert.ok(csvLines.some(line => line === 'Marcus Reed,Division Street Clinic,DSC,2026-09-29,8:00 AM,9:10 AM,1.25,approved,Levi Foreman'));
     assert.equal(csv.text.includes('2026-09-29T'), false);
     assert.equal(quarterHours('2026-09-29T16:04:37.902Z', '2026-09-29T16:06:22.962Z'), 0);
-    const filteredOut = await request('/api/time-cards.csv?from=2026-09-01&to=2026-09-30&memberId=3&status=draft', {headers: auth});
+    const filteredOut = await request(`/api/time-cards.csv?from=${jamal.date}&to=${jamal.date}&memberId=3&status=draft`, {headers: auth});
     assert.equal(filteredOut.text.includes('Marcus Reed'), false);
     assert.ok(filteredOut.text.includes('Jamal'));
 
