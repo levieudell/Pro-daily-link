@@ -690,7 +690,7 @@ async function api(req,res,url){
       if(!member)return json(res,404,{error:'Field user not found'});
       return json(res,200,fieldWorkspace(db,member,null));
     }
-    const{sessions,auditLog,...publicDb}=db,officeUser=(session&&['owner','admin'].includes(session.role)?session:null)||accountUser||(db.users||[]).find(user=>user.status==='Active'&&['owner','admin'].includes(user.role)),safe={...publicDb,company:publicCompanyLogo(publicDb.company),currentUser:publicAccount(officeUser),auditLog:['owner','admin'].includes(officeUser?.role)?auditLog||[]:[],users:(db.users||[]).map(({setupHash,setupSalt,passwordHash,passwordSalt,...user})=>user),subcontractorLinks:(db.subcontractorLinks||[]).map(({tokenHash,...link})=>link)};
+    const{sessions,auditLog,...publicDb}=db,signedInOffice=session&&!fieldRole(session)?((db.users||[]).find(user=>Number(user.id)===Number(session.id))||session):null,officeUser=signedInOffice||accountUser||(db.users||[]).find(user=>user.status==='Active'&&['owner','admin'].includes(user.role)),safe={...publicDb,company:publicCompanyLogo(publicDb.company),currentUser:publicAccount(officeUser),auditLog:['owner','admin'].includes(officeUser?.role)?auditLog||[]:[],users:(db.users||[]).map(({setupHash,setupSalt,passwordHash,passwordSalt,...user})=>user),subcontractorLinks:(db.subcontractorLinks||[]).map(({tokenHash,...link})=>link)};
     if(!timeCardsEnabled(db.company))delete safe.timeCards;else safe.timeCards=db.timeCards||[];
     if(!templatesEnabled(db.company))delete safe.dailyTemplates;else safe.dailyTemplates=templateList(db);
     return json(res,200,safe);
