@@ -244,7 +244,8 @@ function localExtract(notes){
   const delay=delayFromNotes(notes);
   const next=notes.match(/(?:tomorrow|next)[:\s,-]*([^.!]+)/i);
   const labor=workers||hours?[workers?`${workers[1]} people`:'',hours?`${hours[1]} hours`:''].filter(Boolean).join(' · '):'';
-  return {summary:notes?`Field work recorded: ${notes.slice(0,180)}${notes.length>180?'…':''}`:'',labor,quantity:qty?`${qty[1]} ${qty[2]}`:'',productions,materials:'',equipment:'',delays:delay,safety:'',issue:delay,next:next?next[1].trim():'',originalLanguage:'en',englishTranslation:notes,source:'local'};
+  const summaryNotes=String(notes||'').length>180?`${String(notes).slice(0,181).replace(/\s+\S*$/,'').trim()}…`:String(notes||'');
+  return {summary:summaryNotes?`Field work recorded: ${summaryNotes}`:'',labor,quantity:qty?`${qty[1]} ${qty[2]}`:'',productions,materials:'',equipment:'',delays:delay,safety:'',issue:delay,next:next?next[1].trim():'',originalLanguage:'en',englishTranslation:notes,source:'local'};
 }
 
 function pureNoDelayClaim(text){return /^(?:no delays?(?: today)?|there (?:were|are) no delays?(?: today)?|without delays?)[.!\s]*$/i.test(String(text||'').trim())}
