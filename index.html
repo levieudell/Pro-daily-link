@@ -322,7 +322,7 @@
 
   <dialog id="assignment-modal">
     <form method="dialog">
-      <div class="modal-header"><div><p class="eyebrow">FIELD SCHEDULING</p><h2>New assignment</h2></div><button class="close-button" value="cancel">×</button></div>
+      <div class="modal-header"><div><p class="eyebrow">FIELD SCHEDULING</p><h2 id="assignment-modal-title">New assignment</h2></div><button class="close-button" value="cancel">×</button></div>
       <div class="two-col"><label>Assign by<select id="assignment-type"><option value="crew">Whole crew</option><option value="individual">Individual person</option></select></label><label id="assignment-target-label">Crew<select id="assignment-target"></select></label></div>
       <label>Project / job site<select id="assignment-project"></select></label>
       <div class="two-col"><label>First day<input id="assignment-date" type="date" required /></label><label>Through date <small>Optional for multiple days</small><input id="assignment-end-date" type="date" /></label></div>
@@ -344,7 +344,7 @@
         <button type="button" class="primary" id="add-assignment-day">＋ Add scheduled days</button>
       </div>
       <div id="additional-day-warning" class="form-warning"></div>
-      <div class="modal-actions assignment-remove-actions"><button value="cancel" class="secondary">Keep assignment</button><button type="button" class="danger-button" id="remove-person">Unassign this person</button><button type="button" class="danger-button solid" id="remove-assignment">Unassign entire crew</button></div>
+      <div class="modal-actions assignment-remove-actions"><button value="cancel" class="secondary">Close</button><button type="button" class="primary" id="edit-assignment">Edit assignment</button><button type="button" class="danger-button" id="remove-person">Unassign this person</button><button type="button" class="danger-button solid" id="remove-assignment">Unassign entire crew</button></div>
     </form>
   </dialog>
 
@@ -380,7 +380,7 @@
   <dialog id="photo-detail-modal"><form method="dialog"><div class="modal-header"><div><p class="eyebrow">PHOTO RECORD</p><h2>Photo details</h2></div><button class="close-button" value="cancel">×</button></div><div id="photo-detail"></div><div class="modal-actions"><button value="cancel" class="secondary">Close</button></div></form></dialog>
   <div class="toast" id="toast" role="status" aria-live="polite" aria-atomic="true"></div>
   <script src="i18n.js?v=20260930a"></script>
-  <script src="app.js?v=20260930a"></script>
+  <script src="app.js?v=20261001b"></script>
   <script src="estimate-mobile.js"></script>
 </body>
 </html>
