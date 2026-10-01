@@ -11,6 +11,20 @@
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Oswald:wght@500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="styles.css?v=20261001f" />
   <link rel="stylesheet" href="estimate-mobile.css" />
+  <style>html:not(.workspace-authenticated) body{visibility:hidden}</style>
+  <script>
+    window.pdlWorkspaceGate=(async()=>{
+      try{
+        const config=await fetch('/api/config',{credentials:'include',cache:'no-store'}).then(response=>response.json());
+        if(config.authRequired){
+          const response=await fetch('/api/auth/me',{credentials:'include',cache:'no-store'});
+          if(!response.ok){location.replace('/');return false}
+        }
+        document.documentElement.classList.add('workspace-authenticated');
+        return true;
+      }catch(error){location.replace('/');return false}
+    })();
+  </script>
 </head>
 <body>
   <a class="skip-link" href="#app-main">Skip to main content</a>
