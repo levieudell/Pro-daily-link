@@ -355,6 +355,9 @@ server.listen(4201, async () => {
     assert.equal((await request('/api/auth/claim', {method: 'POST', body: JSON.stringify({email: manager.email, temporaryPassword: manager.temporaryPassword, password: 'ManagerPassword!42'})})).response.status, 200);
     const managerLogin = await request('/api/auth/login', {method: 'POST', body: JSON.stringify({email: 'pat-cards@example.test', password: 'ManagerPassword!42'})});
     const managerAuth = {Authorization: `Bearer ${managerLogin.data.token}`};
+    assert.equal((await request('/api/time-cards', {headers: managerAuth})).response.status, 403);
+    const managerTimeAccess = await request(`/api/users/${manager.id}/time-access`, {method: 'PATCH', headers: auth, body: JSON.stringify({manageTime: true})});
+    assert.equal(managerTimeAccess.data.permissions.manageTime, true);
     const managerSees = await request('/api/time-cards', {headers: managerAuth});
     assert.equal(managerSees.response.status, 200);
     assert.ok(managerSees.data.some(card => card.id === jamal.id));
