@@ -159,6 +159,7 @@ server.listen(4188,async()=>{try{
   assert.match(appScript,/customTemplateFields:currentReportTemplateFields\(\)/);
   assert.match(appScript,/AI suggested from notes/);
   assert.match(appScript,/api\(`\/api\/weather\?address=/);assert.doesNotMatch(appScript,/navigator\.geolocation/);assert.doesNotMatch(appScript,/Location permission was not granted/);
+  assert.match(appCss,/data-theme="dark"\]\s+\.report-job-context/);assert.match(appCss,/data-theme="dark"\]\s+\.exception-panel/);assert.match(appCss,/data-theme="dark"\]\s+\.email-verification-banner/);assert.match(appCss,/data-theme="dark"\]\s+\.settings-panel input:disabled/);assert.match(appCss,/data-theme="dark"\]\s+\.chart-day label/);
   assert.match(appScript,/approved crew hours loaded from time cards and allocated/);
   assert.match(appScript,/Field-note hours override imported time-card hours/);
   assert.match(appScript,/field-note crew hours still need assignment to actual team members/);
