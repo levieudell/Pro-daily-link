@@ -9,9 +9,21 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Oswald:wght@500;600;700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="styles.css?v=20261001f" />
+  <link rel="stylesheet" href="styles.css?v=20261001g" />
   <link rel="stylesheet" href="estimate-mobile.css" />
-  <style>html:not(.workspace-authenticated) body{visibility:hidden}</style>
+  <style>
+    html:not(.workspace-authenticated) body{visibility:hidden}
+    .workspace-loader{display:none}
+    html.workspace-authenticated:not(.workspace-ready) .app-shell{visibility:hidden}
+    html.workspace-authenticated:not(.workspace-ready) .workspace-loader{position:fixed;inset:0;z-index:1000;display:flex;align-items:center;justify-content:center;background:#f4f2ec;color:#17382d;font-family:"DM Sans",sans-serif}
+    .workspace-loader-card{display:grid;justify-items:center;gap:12px;text-align:center;padding:28px}
+    .workspace-loader-card img{width:66px;height:66px;object-fit:contain}
+    .workspace-loader-card strong{font:700 18px "Oswald",sans-serif;letter-spacing:.04em;text-transform:uppercase}
+    .workspace-loader-card span{font-size:13px;color:#64726c}
+    .workspace-loader-bar{width:150px;height:4px;overflow:hidden;border-radius:99px;background:#dfe5e1}
+    .workspace-loader-bar::after{content:"";display:block;width:55%;height:100%;border-radius:inherit;background:#ef6c19;animation:workspace-loading 1s ease-in-out infinite alternate}
+    @keyframes workspace-loading{from{transform:translateX(-80%)}to{transform:translateX(160%)}}
+  </style>
   <script>
     window.pdlWorkspaceGate=(async()=>{
       try{
@@ -19,6 +31,7 @@
         if(config.authRequired){
           const response=await fetch('/api/auth/me',{credentials:'include',cache:'no-store'});
           if(!response.ok){location.replace('/');return false}
+          window.pdlAuthenticatedUser=await response.json();
         }
         document.documentElement.classList.add('workspace-authenticated');
         return true;
@@ -27,6 +40,7 @@
   </script>
 </head>
 <body>
+  <div class="workspace-loader" role="status" aria-live="polite"><div class="workspace-loader-card"><img src="assets/pro-daily-link-logo.png" alt="" /><strong>Opening your workspace</strong><span>Loading your company’s latest jobs and reports…</span><div class="workspace-loader-bar" aria-hidden="true"></div></div></div>
   <a class="skip-link" href="#app-main">Skip to main content</a>
   <section class="subscription-lock" id="subscription-lock" hidden aria-live="polite">
     <div class="subscription-lock-card"><img src="assets/pro-daily-link-logo.png" alt="Pro Daily Link" /><p class="eyebrow">ACCOUNT ACCESS</p><h1 id="subscription-lock-title">Choose a plan to continue</h1><p id="subscription-lock-message">Your free trial has ended.</p><button type="button" class="primary" id="subscription-lock-plan">View plans</button><button type="button" class="secondary" id="subscription-lock-logout">Sign out</button><small id="subscription-lock-help">Only the Account Owner can select or manage a plan.</small></div>
@@ -39,7 +53,8 @@
         <button class="nav-item active office-only" data-page="dashboard"><span>▦</span> Overview</button>
         <button class="nav-item office-only" data-page="actions"><span>!</span> Action center <em id="action-count">0</em></button>
         <button class="nav-item office-only" data-page="schedule"><span>▣</span> Schedule</button>
-        <button class="nav-item office-only time-cards-nav time-manager-only" data-page="timecards"><span>◷</span> Time</button>
+        <button class="nav-item office-only time-cards-nav time-manager-only" data-page="timeoverview"><span>◷</span> Time overview</button>
+        <button class="nav-item office-only time-cards-nav time-manager-only" data-page="timecards"><span>✓</span> Time-card approval</button>
         <button class="nav-item field-only" data-page="myday"><span>☀</span> My day</button>
         <button class="nav-item field-only" data-page="fieldday"><span>◷</span> Start / end day</button>
         <button class="nav-item field-only time-cards-nav" data-page="timecards"><span>◷</span> Time cards</button>
@@ -138,9 +153,15 @@
         <div class="active-day-grid" id="active-day-list"></div>
       </section>
 
+      <section class="page" id="timeoverview-page">
+        <div class="page-heading"><div><p class="eyebrow">LIVE LABOR</p><h1>Time overview</h1><p>See who is working now, where they are, and how long they have been clocked in.</p></div><button class="primary" type="button" data-page-link="timecards">Review time cards →</button></div>
+        <div class="time-overview office-only" id="time-overview"><article><small>CLOCKED IN NOW</small><strong id="time-open-count">0</strong></article><article><small>WAITING APPROVAL</small><strong id="time-submitted-count">0</strong></article><article><small>PENDING TIME OFF</small><strong id="time-off-pending-count">0</strong></article><article><small>APPROVED HOURS</small><strong id="time-approved-hours">0h</strong></article></div>
+        <article class="panel live-time-panel"><div class="panel-header"><div><h2>Clocked in now</h2><p>Live punches update automatically while this page is open.</p></div><span class="live-time-status"><i></i> Live</span></div><div id="clocked-in-list" class="clocked-in-list"></div></article>
+        <div class="time-overview-actions"><button class="secondary" type="button" data-page-link="schedule">Open schedule</button><button class="secondary" type="button" data-page-link="timecards">Open time-card approval</button><button class="secondary" type="button" data-page-link="reports">Open daily reports</button></div>
+      </section>
+
       <section class="page" id="timecards-page">
-        <div class="page-heading"><div><p class="eyebrow">LABOR & AVAILABILITY</p><h1>Time</h1><p>Review punches, approve submitted time, handle exceptions, and decide time-off requests.</p></div><div><button class="primary office-only" id="timecard-add" type="button">＋ Add time card</button><button class="primary field-only" id="company-clock" type="button">Clock company time</button><button class="secondary" id="timecard-export" type="button">CSV export</button></div></div>
-        <div class="time-overview office-only" id="time-overview"><article><small>OPEN PUNCHES</small><strong id="time-open-count">0</strong></article><article><small>WAITING APPROVAL</small><strong id="time-submitted-count">0</strong></article><article><small>PENDING TIME OFF</small><strong id="time-off-pending-count">0</strong></article><article><small>APPROVED HOURS</small><strong id="time-approved-hours">0h</strong></article></div>
+        <div class="page-heading"><div><p class="eyebrow">LABOR APPROVAL</p><h1>Time-card approval</h1><p>Review submitted time, make corrections, approve hours, and decide time-off requests.</p></div><div><button class="primary office-only" id="timecard-add" type="button">＋ Add time card</button><button class="primary field-only" id="company-clock" type="button">Clock company time</button><button class="secondary" id="timecard-export" type="button">CSV export</button></div></div>
         <div class="insight-filters panel" id="timecards-filters"><label>Job<select id="timecard-job"><option value="all">All jobs</option></select></label><label>Person<select id="timecard-person"><option value="all">All people</option></select></label><label>From<input id="timecard-from" type="date"></label><label>To<input id="timecard-to" type="date"></label><label>Status<select id="timecard-status"><option value="all">All statuses</option><option value="draft">Draft</option><option value="submitted">Submitted</option><option value="approved">Approved</option></select></label></div>
         <div class="timecard-actions" id="timecard-office-actions"><button class="primary" id="timecard-bulk-approve" type="button" disabled>Approve selected</button><p class="form-message" id="timecard-page-message" role="alert" hidden></p></div>
         <p class="input-help">Time cards preserve punch and correction history to support accurate records. Pro Daily Link is not payroll software; employers remain responsible for local break, overtime, leave, and retention rules.</p>
@@ -395,7 +416,7 @@
   <dialog id="photo-detail-modal"><form method="dialog"><div class="modal-header"><div><p class="eyebrow">PHOTO RECORD</p><h2>Photo details</h2></div><button class="close-button" value="cancel">×</button></div><div id="photo-detail"></div><div class="modal-actions"><button value="cancel" class="secondary">Close</button></div></form></dialog>
   <div class="toast" id="toast" role="status" aria-live="polite" aria-atomic="true"></div>
   <script src="i18n.js?v=20260930a"></script>
-  <script src="app.js?v=20261001d"></script>
+  <script src="app.js?v=20261001f"></script>
   <script src="estimate-mobile.js"></script>
 </body>
 </html>
