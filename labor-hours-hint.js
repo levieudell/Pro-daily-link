@@ -34,6 +34,45 @@
     const parsed=parseCrewSplit(laborText);
     return {autoSubmitted:false,mode:'hint',entries:roster.map(member=>({memberId:member.memberId,hours:0})),hints:roster.map(member=>hintFor(member,allocated,parsed))};
   }
+  function planLaborHourHints({workLineHours,members,laborText}={}){
+    const allocated=(workLineHours||[]).reduce((sum,value)=>sum+(Number(value)||0),0);
+    const roster=(members||[]).map(member=>({memberId:Number(member.memberId??member.id),name:String(member.name||'').trim(),hours:Number(member.hours)||0})).filter(member=>member.memberId);
+    return suggestLaborHours({members:roster,allocatedHours:allocated,laborText,existingEntries:roster});
+  }
+  function renderLaborHourHints(root,{laborText=''}={}){
+    if(!root||typeof root.querySelectorAll!=='function')return {autoSubmitted:false,mode:'unchanged',entries:[],hints:[]};
+    const workLineHours=[...root.querySelectorAll('.production-hours')].map(input=>input.value);
+    const memberInputs=[...root.querySelectorAll('[data-labor-member]')];
+    const members=memberInputs.map(input=>{
+      const line=typeof input.closest==='function'?input.closest('.labor-line'):null;
+      const name=line&&typeof line.querySelector==='function'?line.querySelector('strong')?.textContent||'':'';
+      return {memberId:Number(input.getAttribute?.('data-labor-member')||input.dataset?.laborMember),name,hours:Number(input.value)||0,line};
+    }).filter(member=>member.memberId);
+    const before=memberInputs.map(input=>String(input.value));
+    const plan=planLaborHourHints({workLineHours,members,laborText});
+    root.querySelectorAll('.labor-hours-hint').forEach(node=>node.remove());
+    const doc=root.ownerDocument||root;
+    const noteFor=message=>{const note=doc.createElement('p');note.className='labor-hours-hint';note.textContent=message;return note};
+    if(!members.length){
+      const allocated=workLineHours.reduce((sum,value)=>sum+(Number(value)||0),0);
+      const list=typeof root.querySelector==='function'?root.querySelector('#report-labor-list'):null;
+      if(allocated>0&&list){
+        const hours=Number.isInteger(allocated)?String(allocated):String(Math.round(allocated*100)/100);
+        const note=noteFor(`AI allocated ${hours} labor hours on the work lines. Enter each person's hours so the crew total matches. Nothing is submitted until you send the daily.`);
+        if(typeof list.prepend==='function')list.prepend(note);else list.append(note);
+      }
+    }else if(plan&&plan.mode==='hint'&&plan.autoSubmitted!==true){
+      for(const hint of plan.hints||[]){
+        const member=members.find(row=>row.memberId===Number(hint.memberId));
+        if(!member?.line)continue;
+        member.line.append(noteFor(hint.message));
+      }
+    }
+    memberInputs.forEach((input,index)=>{if(String(input.value)!==before[index])input.value=before[index]});
+    return plan;
+  }
   root.suggestLaborHours=suggestLaborHours;
-  if(typeof module==='object'&&module.exports)module.exports={suggestLaborHours};
+  root.planLaborHourHints=planLaborHourHints;
+  root.renderLaborHourHints=renderLaborHourHints;
+  if(typeof module==='object'&&module.exports)module.exports={suggestLaborHours,planLaborHourHints,renderLaborHourHints};
 })(typeof globalThis!=='undefined'?globalThis:this);

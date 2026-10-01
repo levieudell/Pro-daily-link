@@ -512,7 +512,8 @@ server.listen(4201, async () => {
       staleLoad.company.persistence.revision = Number(approvedDisk.company.persistence.revision) - 1;
       const uiUnapproved = await request(`/api/time-cards/${uiCard.id}/unapprove`, {method: 'POST', headers: uiHeaders, body: '{}'});
       assert.equal(uiUnapproved.response.status, 200, uiUnapproved.data.error || '');
-      assert.equal(uiUnapproved.data.status, 'draft');
+      assert.notEqual(uiUnapproved.response.status, 409);
+      assert.equal(uiUnapproved.data.status, 'submitted');
       assert.equal(uiUnapproved.data.approvedBy, null);
       assert.equal(uiUnapproved.data.history.at(-1).action, 'Unapproved');
       assert.equal(uiUnapproved.data.history.at(-1).by, 'Bea Owner');
@@ -543,7 +544,7 @@ server.listen(4201, async () => {
       for (const card of bulkUiCards) {
         const undone = await request(`/api/time-cards/${card.id}/unapprove`, {method: 'POST', headers: uiHeaders, body: '{}'});
         assert.equal(undone.response.status, 200, undone.data.error || '');
-        assert.equal(undone.data.status, 'draft');
+        assert.equal(undone.data.status, 'submitted');
         assert.match(undone.data.historyLines.at(-1), /^Unapproved by Bea Owner · \d{1,2}:\d{2} [AP]M$/);
       }
       const newerCloud = structuredClone(JSON.parse(fs.readFileSync(tenantFile, 'utf8')));
@@ -556,7 +557,7 @@ server.listen(4201, async () => {
       const fromNewerCloud = await request(`/api/time-cards/${newerCard.id}/unapprove`, {method: 'POST', headers: uiHeaders, body: '{}'});
       assert.equal(fromNewerCloud.response.status, 200, fromNewerCloud.data.error || '');
       assert.equal(fromNewerCloud.data.history.at(-1).by, 'Bea Owner');
-      assert.equal(fromNewerCloud.data.status, 'draft');
+      assert.equal(fromNewerCloud.data.status, 'submitted');
     } finally {
       staleLoad = null;
       process.env.PDL_SUPABASE_ENABLED = '0';
@@ -621,7 +622,7 @@ server.listen(4201, async () => {
     const uiUnapprove = (id) => request(`/api/time-cards/${id}/unapprove`, {method: 'POST', headers: auth, body: '{}'});
     const fieldUndo = await uiUnapprove(901);
     assert.equal(fieldUndo.response.status, 200, fieldUndo.data.error || '');
-    assert.equal(fieldUndo.data.status, 'draft');
+    assert.equal(fieldUndo.data.status, 'submitted');
     assert.equal(fieldUndo.data.approvedBy, null);
     assert.equal(fieldUndo.data.legacyNote, 'field-rewalk');
     assert.equal(fieldUndo.data.hours, 0.25);
@@ -646,19 +647,19 @@ server.listen(4201, async () => {
     const duplicateUndo = await uiUnapprove(909);
     assert.equal(duplicateUndo.response.status, 200, duplicateUndo.data.error || '');
     assert.equal(duplicateUndo.data.legacyNote, 'reapproved-copy');
-    assert.equal(duplicateUndo.data.status, 'draft');
+    assert.equal(duplicateUndo.data.status, 'submitted');
     assert.equal(duplicateUndo.data.hours, 0.25);
     const storedLegacy = JSON.parse(fs.readFileSync(dbFile, 'utf8')).timeCards;
     const merged909 = storedLegacy.filter(card => String(card.id).trim() === '909');
     const stateCard = storedLegacy.find(card => card.legacyNote === 'state-property');
     assert.equal(merged909.length, 1);
-    assert.equal(merged909[0].status, 'draft');
+    assert.equal(merged909[0].status, 'submitted');
     assert.equal(merged909[0].legacyNote, 'reapproved-copy');
     assert.equal(merged909[0].hours, 0.25);
     assert.equal(merged909[0].history.at(-1).action, 'Unapproved');
     assert.equal(storedLegacy.some(card => card.legacyNote === 'leftover-unapproved'), false);
     assert.equal(stateCard.state, 'approved');
-    assert.equal(stateCard.status, 'draft');
+    assert.equal(stateCard.status, 'submitted');
     const stillDraft = await uiUnapprove(911);
     assert.equal(stillDraft.response.status, 409);
     assert.equal(stillDraft.data.error, 'Only an approved time card can be unapproved');
@@ -701,8 +702,12 @@ server.listen(4201, async () => {
     assert.deepEqual(JSON.parse(fs.readFileSync(dbFile, 'utf8')).timeCards, storedOnce);
     const neverSubmittedUndo = await request('/api/time-cards/1201/unapprove', {method: 'POST', headers: auth, body: '{}'});
     assert.equal(neverSubmittedUndo.response.status, 200, neverSubmittedUndo.data.error || '');
-    assert.equal(neverSubmittedUndo.data.status, 'draft');
+    assert.notEqual(neverSubmittedUndo.response.status, 409);
+    assert.equal(neverSubmittedUndo.data.status, 'submitted');
+    assert.equal(neverSubmittedUndo.data.date, '2026-09-29');
     assert.equal(neverSubmittedUndo.data.submittedAt, null);
+    assert.equal(neverSubmittedUndo.data.approvedAt, null);
+    assert.equal(neverSubmittedUndo.data.approvedBy, null);
     assert.match(neverSubmittedUndo.data.historyLines.at(-1), /^Unapproved by Levi Foreman · \d{1,2}:\d{2} [AP]M$/);
     assert.equal(sameId(JSON.parse(fs.readFileSync(dbFile, 'utf8')).timeCards, 1201).length, 1);
     const withSubmittedAt = JSON.parse(fs.readFileSync(dbFile, 'utf8'));
@@ -710,13 +715,21 @@ server.listen(4201, async () => {
     fs.writeFileSync(dbFile, JSON.stringify(withSubmittedAt));
     const wasSubmittedUndo = await request('/api/time-cards/1205/unapprove', {method: 'POST', headers: auth, body: '{}'});
     assert.equal(wasSubmittedUndo.response.status, 200, wasSubmittedUndo.data.error || '');
-    assert.equal(wasSubmittedUndo.data.status, 'draft');
+    assert.notEqual(wasSubmittedUndo.response.status, 409);
+    assert.equal(wasSubmittedUndo.data.status, 'submitted');
+    assert.equal(wasSubmittedUndo.data.date, '2026-09-29');
+    assert.equal(wasSubmittedUndo.data.submittedAt, '2026-09-29T13:00:00.000Z');
+    assert.equal(wasSubmittedUndo.data.submittedBy, 'QA Tester');
+    assert.equal(wasSubmittedUndo.data.approvedAt, null);
+    assert.equal(wasSubmittedUndo.data.approvedBy, null);
     assert.match(wasSubmittedUndo.data.historyLines.at(-1), /^Unapproved by Levi Foreman · \d{1,2}:\d{2} [AP]M$/);
     assert.equal(sameId(JSON.parse(fs.readFileSync(dbFile, 'utf8')).timeCards, 1205).length, 1);
     const beforeReapprove = JSON.parse(fs.readFileSync(dbFile, 'utf8'));
     beforeReapprove.timeCards.unshift({...baseCard, id: 1201, status: 'draft', hours: 9, submittedAt: null, submittedBy: null, approvedBy: null, approvedAt: null, updatedAt: '2026-09-29T19:00:00.000Z', legacyNote: 'stale-draft', history: [{action: 'Opened', by: 'QA Tester', at: '2026-09-29T12:00:00.000Z'}, {action: 'Times edited', by: 'Office', at: '2026-09-29T19:00:00.000Z'}]});
     fs.writeFileSync(dbFile, JSON.stringify(beforeReapprove));
-    assert.equal((await request('/api/time-cards/1201/submit', {method: 'POST', headers: auth, body: '{}'})).response.status, 200);
+    const staleDraftSubmit = await request('/api/time-cards/1201/submit', {method: 'POST', headers: auth, body: '{}'});
+    assert.equal(staleDraftSubmit.response.status, 409);
+    assert.match(staleDraftSubmit.data.error, /Only a draft time card can be submitted/);
     const reapprovedCycle = await request('/api/time-cards/1201/approve', {method: 'POST', headers: auth, body: '{}'});
     assert.equal(reapprovedCycle.response.status, 200, reapprovedCycle.data.error || '');
     assert.equal(reapprovedCycle.data.status, 'approved');
