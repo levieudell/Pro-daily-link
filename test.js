@@ -149,7 +149,7 @@ server.listen(4188,async()=>{try{
   assert.match(serverSource,/Custom fields:/);
   assert.match(serverSource,/Never fill a required field merely because it is required/);
   assert.match(serverSource,/geocoding-api\.open-meteo\.com/);
-  assert.match(serverSource,/runAutomaticComplianceReminders/);assert.match(workspace,/30, 14, 7, and 1/);assert.match(serverSource,/Do not send tax identification numbers by ordinary email/);assert.match(workspace,/id="sub-compliance-modal"/);assert.match(appScript,/function subcontractorCompliance/);assert.match(appScript,/Cleared to work/);assert.match(appScript,/Automatic follow-up/);
+  assert.match(serverSource,/runAutomaticComplianceReminders/);assert.match(workspace,/30, 14, 7, and 1/);assert.match(serverSource,/Do not send tax identification numbers by ordinary email/);assert.match(workspace,/id="sub-compliance-modal"/);assert.match(workspace,/id="compliance-insurance" class="compliance-date" type="date" inputmode="numeric"/);assert.match(appScript,/function subcontractorCompliance/);assert.match(appScript,/Cleared to work/);assert.match(appScript,/Automatic follow-up/);
   assert.match(serverSource,/For absent materials, equipment, delays, safety, or issues, return an empty string/);
   assert.match(serverSource,/\['materials','equipment','delays','safety','issue'\]/);
   const localeSource=fs.readFileSync(path.join(__dirname,'i18n.js'),'utf8');assert.match(workspace,/i18n\.js/);assert.match(localeSource,/window\.PDLLocale/);assert.match(localeSource,/'Overview':'Resumen'/);assert.match(localeSource,/'Settings':'Configuración'/);assert.match(localeSource,/'Crew schedule':'Horario de cuadrillas'/);assert.match(localeSource,/'Scheduled hours':'Horas programadas'/);assert.match(localeSource,/'Project':'Proyecto'/);assert.match(localeSource,/'Overall completion':'Avance general'/);assert.match(localeSource,/'Open project details →':'Abrir detalles del proyecto →'/);assert.match(localeSource,/'Line item':'Partida'/);assert.match(localeSource,/'Quantity':'Cantidad'/);assert.match(localeSource,/'Labor':'Mano de obra'/);assert.match(appScript,/window\.PDLLocale\?\.set\(preferredLanguage\)/);assert.match(appScript,/dayPartGreeting\(new Date\(\),preferredLanguage\)/);assert.match(appScript,/renderScheduleBeforeFullLocale/);assert.match(appScript,/toLocaleDateString\(interfaceLocale\(\)\|\|'en-US'/);assert.doesNotMatch(appScript,/\$\('#report-language'\)\.onchange=\(\)=>\{preferredLanguage=/);assert.doesNotMatch(workspace,/id="report-language-label"/);assert.match(workspace,/<select id="report-language" hidden/);
@@ -158,7 +158,7 @@ server.listen(4188,async()=>{try{
   assert.match(appScript,/function renderReportJobContext/);
   assert.match(appScript,/customTemplateFields:currentReportTemplateFields\(\)/);
   assert.match(appScript,/AI suggested from notes/);
-  assert.match(appScript,/api\(`\/api\/weather\?address=/);
+  assert.match(appScript,/api\(`\/api\/weather\?address=/);assert.doesNotMatch(appScript,/navigator\.geolocation/);assert.doesNotMatch(appScript,/Location permission was not granted/);
   assert.match(appScript,/approved crew hours loaded from time cards and allocated/);
   assert.match(appScript,/Field-note hours override imported time-card hours/);
   assert.match(appScript,/field-note crew hours still need assignment to actual team members/);
