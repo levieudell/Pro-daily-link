@@ -390,7 +390,7 @@
       <div class="modal-header"><div><p class="eyebrow">CLOCK IN CREW</p><h2>Start workday</h2></div><button class="close-button" value="cancel">×</button></div>
       <label>Project / job site<select id="start-day-project"></select></label>
       <fieldset class="labor-fieldset"><legend>Who is starting?</legend><div id="start-day-members" class="member-check-list"></div></fieldset>
-      <label>Opening photos<input type="file" id="start-day-photos" accept="image/jpeg,image/png,image/webp" multiple capture="environment" /><small class="input-help">Document site conditions before work begins.</small></label><label>Photo tags<input id="start-day-photo-tags" placeholder="site conditions, delivery, weather"><small class="input-help">Date and time are added automatically.</small></label>
+      <label>Opening photos<input type="file" id="start-day-photos" accept="image/jpeg,image/png,image/webp" multiple /><small class="input-help">Take a new photo or choose existing photos from the phone library.</small></label><label>Photo tags<input id="start-day-photo-tags" placeholder="site conditions, delivery, weather"><small class="input-help">Date and time are added automatically.</small></label>
       <label>Starting note<textarea id="start-day-note" rows="2" placeholder="Optional: planned work or site conditions"></textarea></label>
       <div class="timestamp-preview">Start time will be recorded when you tap the button.</div>
       <p class="form-message" id="start-day-message" role="alert" hidden></p>
@@ -406,7 +406,7 @@
       <label>What was completed?<textarea id="end-day-notes" rows="6" placeholder="Speak or type what the crew accomplished, quantities, delays, and tomorrow's plan." required></textarea></label>
       <button type="button" class="secondary" id="end-day-voice">🎙 Speak completed work</button>
       <label>What happens next?<textarea id="end-day-next" rows="2" placeholder="Optional: tomorrow’s plan, follow-up work, or what the office needs to arrange."></textarea></label>
-      <label>End-of-day photos<input type="file" id="end-day-photos" accept="image/jpeg,image/png,image/webp" multiple capture="environment" /><small class="input-help">Add progress and completed-work photos.</small></label><label>Photo tags<input id="end-day-photo-tags" placeholder="completed work, progress, issue"><small class="input-help">Date and time are added automatically.</small></label>
+      <label>End-of-day photos<input type="file" id="end-day-photos" accept="image/jpeg,image/png,image/webp" multiple /><small class="input-help">Take a new photo or choose existing progress photos from the phone library.</small></label><label>Photo tags<input id="end-day-photo-tags" placeholder="completed work, progress, issue"><small class="input-help">Date and time are added automatically.</small></label>
       <div class="timestamp-preview">End time and total hours will be calculated when you finish.</div>
       <div class="modal-actions"><button value="cancel" class="secondary">Not yet</button><button type="button" class="primary big-action" id="confirm-end-day">■ End day & build report</button></div>
     </form>
