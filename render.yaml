@@ -18,7 +18,7 @@ services:
       - key: SUPABASE_SECRET_KEY
         sync: false
       - key: PDL_PUBLIC_URL
-        value: https://pro-daily-link-demo.onrender.com
+        value: https://app.prodailylink.com
       - key: RESEND_API_KEY
         sync: false
       - key: RESEND_FROM

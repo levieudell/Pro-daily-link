@@ -115,7 +115,8 @@ $('#signup').onsubmit=async event=>{
         founderTermsAccepted:$('#founder-terms').checked,
         assistedSetup:$('#assisted-setup').checked,
         legalAccepted:$('#legal-acceptance').checked,
-        legalVersion:'2026-09-17'
+        legalVersion:'2026-09-17',
+        timezone:Intl.DateTimeFormat().resolvedOptions().timeZone
       })
     });
     const data=await response.json();

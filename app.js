@@ -1,27 +1,6 @@
-let projects=[
- {id:1,name:'Division Street Clinic',customer:'Hawthorne Health',code:'DSC',color:'#dcebe4',site:'4120 SE Division St, Portland, OR 97206',crew:3,progress:27,production:96.4,status:'On track',budget:'$486K'},
- {id:2,name:'Sellwood Flats',customer:'Oak & Elm Homes',code:'SF',color:'#e6e1f2',site:'1622 SE Milwaukie Ave, Portland, OR 97202',crew:2,progress:42,production:91.2,status:'At risk',budget:'$940K'},
- {id:3,name:'Willamette Distribution Hub',customer:'Willamette Logistics',code:'WDH',color:'#e3edf2',site:'8750 Prairie Rd, Eugene, OR 97402',crew:2,progress:82,production:102.8,status:'Ahead',budget:'$2.45M'},
- {id:4,name:'Pilot Butte Elementary',customer:'Bend School District',code:'PBE',color:'#f5ead7',site:'2205 NE Neff Rd, Bend, OR 97701',crew:2,progress:24,production:94.6,status:'On track',budget:'$1.12M'},
- {id:5,name:'Alberta Street Retail',customer:'Alberta Street Retail',code:'ASR',color:'#e2eee9',site:'1421 NE Alberta St, Portland, OR 97211',crew:2,progress:93,production:99.1,status:'On track',budget:'$1.15M'},
- {id:6,name:'Rosewood Bungalow Remodel',customer:'Oak & Elm Homes',code:'RBR',color:'#e7effd',site:'734 SE 28th Ave, Portland, OR 97214',crew:2,progress:18,production:97.8,status:'On track',budget:'$186K'}
-];
-let team=[
- {name:'Marcus Reed',role:'General Foreman',initials:'MR',crew:'Concrete',hours:38,site:'Division Street Clinic'},
- {name:'Diego Santos',role:'Concrete Finisher',initials:'DS',crew:'Concrete',hours:40,site:'Division Street Clinic'},
- {name:'Jamal Brooks',role:'Carpenter',initials:'JB',crew:'Framing',hours:36,site:'Sellwood Flats'},
- {name:'Aaron Kim',role:'Equipment Operator',initials:'AK',crew:'Sitework',hours:40,site:'Willamette Hub'},
- {name:'Luis Herrera',role:'Laborer',initials:'LH',crew:'Concrete',hours:34,site:'Division Street Clinic'},
- {name:'Tyler Morgan',role:'Site Supervisor',initials:'TM',crew:'Framing',hours:39,site:'Sellwood Flats'},
- {name:'Chris Bennett',role:'Carpenter',initials:'CB',crew:'Sitework',hours:32,site:'Willamette Hub'},
- {name:'Sam Patel',role:'Laborer',initials:'SP',crew:'Finish',hours:28,site:'Pilot Butte Elementary'},
- {name:'Elena Vasquez',role:'Carpenter',initials:'EV',crew:'Finish',hours:36,site:'Rosewood Bungalow'}
-];
-let reports=[
- {id:1,project:0,date:'Sep 21',foreman:'Marcus Reed',status:'Approved',notes:'Poured 86 yards on the east foundation. Three-person crew, 24 labor hours. Pump arrived 45 minutes late but we recovered by lunch.',summary:'East foundation pour completed. A concrete pump delay occurred with no schedule impact.',labor:'3 people · 24 hours',quantity:'86 CY concrete',issue:'45-minute pump delay',next:'Strip east forms tomorrow'},
- {id:8,project:1,date:'Sep 22',foreman:'Tyler Morgan',status:'Needs review',notes:'Framed the third-floor west wing straight run. Still waiting on the revised window details before we open those rough openings.',summary:'Framing progressed on the third-floor west wing. Window detail RFI is still open.',labor:'2 people · 16 hours',quantity:'640 SF framing',issue:'Window detail RFI pending',next:'Continue west wing framing away from the window openings'},
- {id:13,project:2,date:'Sep 21',foreman:'Aaron Kim',status:'Approved',notes:'Set 14 tilt panels today with the two-person Northstar crew and the crane.',summary:'Tilt-panel installation stayed ahead of the weekly target.',labor:'2 people · 16 hours',quantity:'14 panels installed',issue:'None reported',next:'Brace the north elevation'}
-];
+let projects=[];
+let team=[];
+let reports=[];
 let auditLog=[];
 let photos=[];
 let projectTickets=[];
@@ -62,8 +41,8 @@ const $=s=>document.querySelector(s), $$=s=>document.querySelectorAll(s);
 function escapeHtml(value){return String(value).replace(/[&<>"']/g,char=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]))}
 const localDateIso=(date=new Date())=>{const offset=date.getTimezoneOffset()*60000;return new Date(date.getTime()-offset).toISOString().slice(0,10)};
 scheduleAnchorDate=localDateIso();
-function companyTodayIso(date=new Date()){const timezone=company?.timezone||'America/Los_Angeles';try{const parts=new Intl.DateTimeFormat('en-US',{timeZone:timezone,year:'numeric',month:'2-digit',day:'2-digit'}).formatToParts(date),value=type=>parts.find(part=>part.type===type)?.value;return `${value('year')}-${value('month')}-${value('day')}`}catch{return localDateIso(date)}}
-function companyTime24(date=new Date()){const timezone=company?.timezone||'America/Los_Angeles';try{return new Intl.DateTimeFormat('en-US',{timeZone:timezone,hour:'2-digit',minute:'2-digit',hourCycle:'h23'}).format(date)}catch{return `${String(date.getHours()).padStart(2,'0')}:${String(date.getMinutes()).padStart(2,'0')}`}}
+function companyTodayIso(date=new Date()){const timezone=company?.timezone||Intl.DateTimeFormat().resolvedOptions().timeZone||'UTC';try{const parts=new Intl.DateTimeFormat('en-US',{timeZone:timezone,year:'numeric',month:'2-digit',day:'2-digit'}).formatToParts(date),value=type=>parts.find(part=>part.type===type)?.value;return `${value('year')}-${value('month')}-${value('day')}`}catch{return localDateIso(date)}}
+function companyTime24(date=new Date()){const timezone=company?.timezone||Intl.DateTimeFormat().resolvedOptions().timeZone||'UTC';try{return new Intl.DateTimeFormat('en-US',{timeZone:timezone,hour:'2-digit',minute:'2-digit',hourCycle:'h23'}).format(date)}catch{return `${String(date.getHours()).padStart(2,'0')}:${String(date.getMinutes()).padStart(2,'0')}`}}
 const interfaceLocale=()=>preferredLanguage==='es'?'es-US':undefined;
 const displayLongDate=(date=new Date())=>date.toLocaleDateString(interfaceLocale(),{weekday:'long',month:'long',day:'numeric'});
 const reportWorkDate=report=>{
