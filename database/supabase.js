@@ -38,11 +38,18 @@ async function request(relativePath, options = {}) {
 
 async function upload(bucket, objectKey, bytes, contentType) {
   const safeKey = objectKey.split('/').map(encodeURIComponent).join('/');
-  await request(`/storage/v1/object/${bucket}/${safeKey}`, {
+  const save = () => request(`/storage/v1/object/${bucket}/${safeKey}`, {
     method: 'POST',
     headers: { 'Content-Type': contentType, 'x-upsert': 'false' },
     body: bytes
   });
+  try {
+    await save();
+  } catch (error) {
+    if (!/Bucket not found|NoSuchBucket/i.test(String(error.message))) throw error;
+    await ensurePrivateBucket(bucket, 6_000_000, [contentType]);
+    await save();
+  }
   return { bucket, objectKey, url: `/api/files/${encodeURIComponent(bucket)}/${safeKey}` };
 }
 
