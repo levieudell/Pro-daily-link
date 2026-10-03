@@ -732,6 +732,17 @@ function renderDashboardPresenceCount(){const live=timeCardsOn()?timeCards.filte
 const renderDashboardSummaryWithDueGuard=renderDashboardSummary;renderDashboardSummary=function(){renderDashboardSummaryWithDueGuard();renderDashboardDailyCount();renderDashboardPresenceCount()};
 const refreshTimeCardsWithDashboard=refreshTimeCards;refreshTimeCards=async function(){const result=await refreshTimeCardsWithDashboard();renderDashboardSummary();return result};
 
+// Keep in-progress notes safe on both new and previously saved drafts.
+let reportSavedNotes='';
+offlineReportDraftKey=function(projectIndex=$('#report-project').value){return editingReportId?`report-${editingReportId}`:`project-${projects[Number(projectIndex)]?.id||projectIndex}`};
+applyOfflineReportDraft=function(draft){discardedOfflineReportDrafts.delete(offlineReportDraftKey());$('#field-notes').value=draft?.notes||'';renderReportCustomFields(editingReportId?reports.find(report=>report.id===editingReportId):null);$('#autosave-status').textContent='Unsaved notes restored from this device'};
+offerOfflineReportDraft=function(){const projectKey=offlineReportDraftKey(),draft=readOfflineDraft(projectKey),choice=$('#report-draft-choice');if(discardedOfflineReportDrafts.has(projectKey)){localStorage.removeItem(`pdl-draft-${projectKey}`);choice.hidden=true;return}if(!draft.notes?.trim()||draft.notes===reportSavedNotes){choice.hidden=true;return}$('#report-draft-summary').textContent=`${draft.notes.trim().slice(0,90)}${draft.notes.trim().length>90?'…':''}`;choice.hidden=false;choice.dataset.project=projectKey;$('#report-start-fresh').textContent=editingReportId?'Keep saved version':'Start fresh'};
+const openReportBeforeDraftProtection=openReport;
+openReport=function(report=null){reportSavedNotes=report?.notes||'';const current=report?.status==='Draft'?{...report,originalNotes:report.notes}:report;return openReportBeforeDraftProtection(current)};
+$('#report-resume-draft').onclick=()=>{applyOfflineReportDraft(readOfflineDraft($('#report-draft-choice').dataset.project||offlineReportDraftKey()));$('#report-draft-choice').hidden=true};
+$('#report-start-fresh').onclick=()=>{const key=$('#report-draft-choice').dataset.project||offlineReportDraftKey();discardedOfflineReportDrafts.add(key);localStorage.removeItem(`pdl-draft-${key}`);activeNoteLaborEvidence=null;$('#field-notes').value=editingReportId?reportSavedNotes:'';$('#autosave-status').textContent=editingReportId?'Using last saved version':'Fresh report started';$('#report-draft-choice').hidden=true;renderReportCustomFields(editingReportId?reports.find(report=>report.id===editingReportId):null);$('#field-notes').focus()};
+reportHasUnsavedInput=function(){const modal=$('#report-modal');if(!modal?.open)return false;const notes=$('#field-notes')?.value.trim()||'',detailIds=['report-summary','report-next','report-materials','report-equipment','report-delays','report-safety','report-signature'];if(editingReportId)return notes!==reportSavedNotes.trim();return Boolean(notes||$('#report-photos')?.files?.length||detailIds.some(id=>String(document.getElementById(id)?.value||'').trim())||$$('.production-entry').length)};
+
 // Verified subcontractor tickets stay with the project and source daily.
 const openProjectBeforeTickets=openProject;
 function ticketLines(ticket){return ticket.lines?.length?ticket.lines:[{material:ticket.material||'',quantity:Number(ticket.quantity)||0,unit:ticket.unit||'',amount:Number(ticket.amount)||0}]}
