@@ -860,6 +860,7 @@ function applyContractValueVisibility(){
   $('#project-contract-value-field')?.toggleAttribute('hidden',!enabled);
   $('#estimate-cost-field')?.toggleAttribute('hidden',!enabled);
   $$('.contract-value-row').forEach(row=>row.toggleAttribute('hidden',!enabled));
+  if(!enabled)$$('#project-detail-modal .estimate-header small').forEach(label=>{label.textContent=label.textContent.replace(/ · \$[\d,.]+$/,'')});
 }
 const renderCompanySettingsBeforeContractValues=renderCompanySettings;
 renderCompanySettings=function(){
