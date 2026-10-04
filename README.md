@@ -10,6 +10,18 @@ Start the included Node server (Node 20 or newer):
 npm start
 ```
 
+## Forms and safety templates
+
+Companies with the Templates feature enabled can maintain multiple versioned field forms from Company settings → Forms & safety templates.
+
+- Describe a form in plain language and use **Build draft** to generate a mobile-first starting point. When OpenAI is unavailable, the server creates a conservative starter form instead of blocking the workflow.
+- Review the name, purpose, category, completion requirements, and every question before publishing. Editing a published template creates a new version; reports already started remain pinned to their original version.
+- A project can have several assigned templates. The first selection is its default daily; field users can select the appropriate safety, inspection, quality, delivery, incident, or custom form.
+- Photo, signature, and explicit acknowledgement requirements are checked before submission. Drafts may remain incomplete.
+- Safety templates always require human review. The feature supports a company safety program and recordkeeping, but it does not certify OSHA or legal compliance.
+
+Supported question types are short text, long text, number, yes/no, multiple choice, date, and acknowledgement checkbox. Project, date, crew, report photos, and foreman signature remain first-class report controls rather than duplicate custom questions.
+
 Then open `http://localhost:4173`. Data is stored in `data/db.json`.
 
 The committed `data/db.json` file is the Northstar Construction sales-demo workspace: a Portland general contractor with Oregon residential and light commercial jobs. New trial signups stay empty so a real company does not inherit sample jobs. Phone numbers use the reserved 555-0100–0199 exchange, and email addresses use the reserved `.example` domain, so the demo does not publish a live number or inbox.

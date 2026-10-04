@@ -126,6 +126,14 @@ server.listen(4203, async () => {
     assert.equal(standard.versions.length, 1);
     assert.deepEqual(standard.versions[0].fields, []);
     assert.equal(library.data.defaultTemplateId, 'standard');
+    const aiDraft = await request('/api/daily-templates/generate', {method: 'POST', headers: auth, body: JSON.stringify({prompt: 'Build a pre-task safety plan for concrete crews with hazards, controls, PPE, acknowledgement, photos, and signature.'})});
+    assert.equal(aiDraft.response.status, 200);
+    assert.equal(aiDraft.data.category, 'safety');
+    assert.equal(aiDraft.data.requirements.acknowledgement, true);
+    assert.equal(aiDraft.data.requirements.photo, true);
+    assert.ok(aiDraft.data.fields.some(field => field.type === 'checkbox'));
+    assert.match(aiDraft.data.notice, /do(?:es)? not certify/i);
+    assert.equal((await request('/api/daily-templates/generate', {method: 'POST', headers: auth, body: JSON.stringify({prompt: 'short'})})).response.status, 400);
     const stateOn = await request('/api/state', {headers: auth});
     assert.ok(stateOn.data.dailyTemplates.some(template => template.id === 'standard' && template.locked));
     assert.equal((await request('/api/daily-templates/standard', {method: 'PATCH', headers: auth, body: JSON.stringify({name: 'Changed', fields: []})})).response.status, 409);
@@ -149,6 +157,11 @@ server.listen(4203, async () => {
     assert.equal(created.data.versions.length, 1);
     assert.equal(created.data.versions[0].version, 1);
     assert.equal(created.data.versions[0].fields[0].required, true);
+    const safetyCreated = await request('/api/daily-templates', {method: 'POST', headers: auth, body: JSON.stringify({name: 'Pre-task plan', category: 'safety', description: 'Review hazards before work.', requirements: {photo: true, signature: true, acknowledgement: true}, fields: [{label: 'Crew acknowledgement', type: 'checkbox', required: true}]})});
+    assert.equal(safetyCreated.response.status, 201);
+    assert.equal(safetyCreated.data.category, 'safety');
+    assert.equal(safetyCreated.data.requirements.photo, true);
+    assert.equal(safetyCreated.data.versions[0].fields[0].type, 'checkbox');
     const originalFields = JSON.parse(JSON.stringify(created.data.versions[0].fields));
     const versionTwo = await request(`/api/daily-templates/${created.data.id}`, {method: 'PATCH', headers: auth, body: JSON.stringify({name: 'Concrete pour', fields: [...versionOneFields, {label: 'Cylinder count', type: 'number', required: true}]})});
     assert.equal(versionTwo.response.status, 200);
@@ -195,6 +208,9 @@ server.listen(4203, async () => {
     assert.equal(nextOnOldPin.data.templateVersion, 1);
     const repinned = await request(`/api/projects/${pinnedProject.data.id}/template`, {method: 'PATCH', headers: auth, body: JSON.stringify({templateId: created.data.id})});
     assert.equal(repinned.data.templateVersion, 3);
+    const multiPinned = await request(`/api/projects/${pinnedProject.data.id}/template`, {method: 'PATCH', headers: auth, body: JSON.stringify({templateIds: [created.data.id, safetyCreated.data.id]})});
+    assert.equal(multiPinned.response.status, 200);
+    assert.deepEqual(multiPinned.data.templateIds.map(String), [String(created.data.id), String(safetyCreated.data.id)]);
     const offlinePin = await request('/api/reports', {method: 'POST', headers: auth, body: JSON.stringify({projectId: pinnedProject.data.id, notes: 'Offline draft started on version 1.', status: 'Draft', foreman: 'Levi Foreman', dateIso: '2026-09-23', productionEntries: [], laborEntries: [], templateId: created.data.id, templateVersion: 1, customFields: {'pour-location': 'Kept'}})});
     assert.equal(offlinePin.response.status, 201);
     assert.equal(offlinePin.data.templateVersion, 1);

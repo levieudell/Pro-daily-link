@@ -7,6 +7,7 @@ const index = read('index.html');
 const login = read('login.html');
 const app = read('app.js');
 const styles = read('styles.css');
+const server = read('server.js');
 
 assert.equal(manifest.start_url, '/app');
 assert.equal(manifest.display, 'standalone');
@@ -42,5 +43,13 @@ assert.match(app, /updateFieldReportReview/);
 assert.match(styles, /\.myday-status-strip/);
 assert.match(styles, /\.field-assignment-daily/);
 assert.match(styles, /\.report-review-summary/);
+assert.match(app, /Describe the form you need/);
+assert.match(app, /function generateTemplateDraft/);
+assert.match(app, /function projectTemplateIds/);
+assert.match(app, /requires at least one photo/);
+assert.match(app, /does not certify OSHA or legal compliance/);
+assert.match(styles, /AI-first form and safety-template studio/);
+assert.match(server, /function aiTemplateDraft/);
+assert.match(server, /field_template_draft/);
 
 console.log('UX shell and installability tests passed.');
