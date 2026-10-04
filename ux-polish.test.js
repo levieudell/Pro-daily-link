@@ -13,6 +13,7 @@ const about = read('about.html');
 const blog = read('blog.html');
 const blogJs = read('blog.js');
 const platform = read('platform.html');
+const landingDemoStyles = read('landing-demo.css');
 
 assert.equal(manifest.start_url, '/app');
 assert.equal(manifest.display, 'standalone');
@@ -70,5 +71,6 @@ assert.match(blog, /id="blog-list"/);
 assert.match(blogJs, /safeBody/);
 assert.match(platform, /id="blog-editor"/);
 assert.match(server, /\/api\/platform\/blog/);
+assert.match(landingDemoStyles, /#workflow-example-next\{color:var\(--ink\)/);
 
 console.log('UX shell and installability tests passed.');
