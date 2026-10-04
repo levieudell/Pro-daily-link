@@ -9,7 +9,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Oswald:wght@500;600;700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="styles.css?v=20261004-core-ux" />
+  <link rel="stylesheet" href="styles.css?v=20261004-integration" />
   <link rel="stylesheet" href="estimate-mobile.css" />
   <link rel="manifest" href="manifest.webmanifest" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
@@ -198,7 +198,7 @@
       <section class="page" id="customers-page">
         <div class="page-heading"><div><p class="eyebrow">CLIENT PORTFOLIO</p><h1>Customers</h1><p>See every customer and the projects that belong to them.</p></div><button class="primary" id="new-customer">＋ New customer</button></div>
         <div class="filter-row"><div class="search-box">⌕ <input id="customer-search" placeholder="Search customers" /></div></div>
-        <div class="customer-layout"><div class="customer-list" id="customer-list"></div><article class="panel customer-detail" id="customer-detail"></article></div>
+        <div class="customer-layout"><div class="customer-list" id="customer-list" tabindex="-1"></div><article class="panel customer-detail" id="customer-detail" tabindex="-1" aria-label="Customer information"></article></div>
       </section>
       <section class="page" id="catalog-page"><div class="page-heading"><div><p class="eyebrow">REUSABLE WORK</p><h1>Production catalog</h1><p>Save common scope items once, reuse them in estimates, and build verified production history.</p></div><button class="primary" id="new-catalog-item">＋ Catalog item</button></div><div class="filter-row"><div class="search-box">⌕ <input id="catalog-search" placeholder="Search work items or categories"></div></div><div class="catalog-grid" id="catalog-grid"></div></section>
 
@@ -431,7 +431,7 @@
   <div class="toast" id="toast" role="status" aria-live="polite" aria-atomic="true"></div>
   <script src="i18n.js?v=20260930a"></script>
   <script src="csv-cell.js?v=20261004-security"></script>
-  <script src="app.js?v=20261004-core-ux"></script>
+  <script src="app.js?v=20261004-integration"></script>
   <script src="estimate-mobile.js"></script>
 </body>
 </html>
