@@ -1,5 +1,9 @@
 # Pro Daily Link Product Roadmap
 
+## Verified completion status
+
+The phase descriptions below define scope; they are not declarations of completion. See [the reconciled roadmap and launch acceptance ledger](docs/ROADMAP-STATUS-2026-10-04.md) for implementation evidence, unresolved acceptance criteria, external gates, and later product scope. Configuration checks never certify a public launch.
+
 ## Product boundary
 
 Pro Daily Link is the operational record between the field and office. The initial commercial product captures work, verifies production, compares estimates with actuals, and exports billing-ready reports. It does not create or send invoices in the first release.

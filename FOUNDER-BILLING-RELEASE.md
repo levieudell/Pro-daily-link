@@ -2,6 +2,8 @@
 
 Status: implementation branch only. Not enabled in production. Do not merge as a declaration of payment readiness.
 
+Later observation (2026-10-04, 18:01 UTC): main `6328586` is deployed and the canonical app's founder-offer endpoint reports enrollment enabled. The status above is historical. This does not certify live/test mode or payment readiness; the acceptance checklist below remains open until dated provider evidence is recorded in [the launch ledger](docs/ROADMAP-STATUS-2026-10-04.md).
+
 ## Offers
 Standard: Starter $99/month or $990/year; Growth $199/month or $1,990/year; Pro $399/month or $3,990/year.
 Founder: $79/$790, $159/$1,590, $319/$3,190 respectively, same limits.

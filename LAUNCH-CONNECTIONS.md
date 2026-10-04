@@ -1,6 +1,6 @@
 # Pro Daily Link launch connections
 
-Run `npm run launch:check` after adding the values below. The command reports only whether each value works; it never prints secrets.
+Run `npm run launch:check` after adding the values below. This command checks configuration presence and database reachability; it never prints secrets. Exit 0 means configuration is complete; it does not certify payment processing, delivery, alerts, or recovery. All missing advertised service configuration returns exit 1. Both historical checker entry points use the same policy. Complete the [launch acceptance ledger](docs/ROADMAP-STATUS-2026-10-04.md) separately.
 
 ## Already connected
 
