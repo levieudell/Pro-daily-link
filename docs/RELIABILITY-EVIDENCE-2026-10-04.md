@@ -23,6 +23,7 @@ This record separates completed verification from configuration that still requi
 - A fresh production load run completed 200 requests at concurrency 20 with zero failures: 95.1 requests/second, p50 72 ms, p95 444 ms, p99 456 ms.
 - A fresh synthetic-tenant transactional concurrency run passed; competing writers did not silently overwrite one another.
 - The first independent portable backup was written to the approved OneDrive destination for synthetic tenant `4b272b77-d674-442c-ae3a-c4186e6d234f` at revision 74. The downloaded snapshot was parsed, its tenant identity matched the manifest, and SHA-256 `581c730323e39af6d95fce3fa0d37e9d85a95f1d777991fd5ee5cd9beee337e3` matched exactly. No customer tenant was used.
+- A monthly restore-drill automation is active. It uses the documented isolated procedure, retains dated evidence, stays quiet on clean runs, and alerts only for failure, stale backups, checksum/tenant mismatch, missing access, or another actionable regression.
 - Daily-report notes-only edits now preserve existing labor when an empty editor list is produced. Subcontractor archiving is recoverable, requires a reason, revokes active guest links, preserves history, blocks active duplicates, validates contact information, and records link creation/revocation. The complete automated suite passed after these changes.
 
 ## Built but not enabled in production
@@ -38,7 +39,6 @@ This record separates completed verification from configuration that still requi
 - Migrate and reconcile a synthetic tenant through the application tooling, then prove shadow mode before any customer cutover.
 - Add a Sentry DSN to Render and verify a received alert and its human recipient.
 - Run a portable backup and isolated restore drill for each production tenant after the release branch is merged; the independent destination and synthetic proof are complete.
-- Retain each monthly restore-drill result and assign follow-up failures to the account owner/developer rather than silently retrying forever.
 - Replace the rejected Resend production key and prove delivery plus Reply-To behavior. The current production Resend API check returns HTTP 401, so email is not launch-ready.
 - Add the OpenAI key through Render's secret environment settings and remove/rotate the unexpected key-shaped file only after explicit authorization. Production health currently reports AI disabled.
 - Consolidate Stripe webhook delivery after confirming which endpoint is authoritative; three live endpoints are enabled. Stripe API access is healthy, but a controlled live checkout/webhook lifecycle still needs verification.
