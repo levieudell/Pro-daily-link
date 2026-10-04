@@ -8,6 +8,11 @@ const login = read('login.html');
 const app = read('app.js');
 const styles = read('styles.css');
 const server = read('server.js');
+const landing = read('landing.html');
+const about = read('about.html');
+const blog = read('blog.html');
+const blogJs = read('blog.js');
+const platform = read('platform.html');
 
 assert.equal(manifest.start_url, '/app');
 assert.equal(manifest.display, 'standalone');
@@ -56,5 +61,14 @@ assert.match(server, /field_template_draft/);
 assert.match(server, /function scopedTemplateList/);
 assert.match(server, /TEMPLATE_PHOTO_REQUIRED/);
 assert.match(server, /This form is not assigned to the selected project/);
+assert.match(landing, /I spent 25 years living this problem/);
+assert.match(landing, /\/about\.html/);
+assert.match(landing, /\/blog\.html/);
+assert.match(about, /Why I built Pro Daily Link/);
+assert.match(about, /Once approved, labor and installed quantities update production/);
+assert.match(blog, /id="blog-list"/);
+assert.match(blogJs, /safeBody/);
+assert.match(platform, /id="blog-editor"/);
+assert.match(server, /\/api\/platform\/blog/);
 
 console.log('UX shell and installability tests passed.');

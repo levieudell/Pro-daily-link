@@ -1,0 +1,33 @@
+const assert=require('node:assert/strict');
+const fs=require('node:fs');
+const os=require('node:os');
+const path=require('node:path');
+const crypto=require('node:crypto');
+const temp=fs.mkdtempSync(path.join(os.tmpdir(),'pdl-blog-'));
+process.env.PDL_DB_FILE=path.join(temp,'db.json');
+process.env.PDL_PLATFORM_FILE=path.join(temp,'platform.json');
+process.env.PDL_SUPABASE_ENABLED='0';
+process.env.PDL_REQUIRE_AUTH='1';
+process.env.PDL_PLATFORM_KEY='blog-test-platform-key-32-characters';
+fs.copyFileSync(path.join(__dirname,'data','db.json'),process.env.PDL_DB_FILE);
+fs.copyFileSync(path.join(__dirname,'data','platform.json'),process.env.PDL_PLATFORM_FILE);
+const platform=JSON.parse(fs.readFileSync(process.env.PDL_PLATFORM_FILE,'utf8')),salt=crypto.randomBytes(16).toString('hex');platform.users.push({id:999,name:'Support Tester',email:'support-blog@example.test',role:'support',status:'Active',passwordSalt:salt,passwordHash:crypto.scryptSync('SupportPassword!42',salt,64).toString('hex')});fs.writeFileSync(process.env.PDL_PLATFORM_FILE,JSON.stringify(platform));
+const {server}=require('./server');
+const base='http://127.0.0.1:4210';
+async function request(route,options={}){const response=await fetch(base+route,{...options,headers:{'Content-Type':'application/json',...(options.headers||{})}}),data=await response.json();return{response,data}}
+server.listen(4210,async()=>{try{
+  const admin={'x-pdl-platform-key':process.env.PDL_PLATFORM_KEY};
+  const empty=await request('/api/blog');assert.equal(empty.response.status,200);assert.deepEqual(empty.data,[]);
+  assert.equal((await request('/api/platform/blog')).response.status,401);
+  const login=await request('/api/platform/auth/login',{method:'POST',body:JSON.stringify({email:'support-blog@example.test',password:'SupportPassword!42'})});assert.equal(login.response.status,200);const support={Authorization:`Bearer ${login.data.token}`};
+  const denied=await request('/api/platform/blog',{method:'POST',headers:support,body:JSON.stringify({title:'Support cannot publish',excerpt:'Protected.',content:'Protected content.',status:'Draft'})});assert.equal(denied.response.status,403);
+  const invalid=await request('/api/platform/blog',{method:'POST',headers:admin,body:JSON.stringify({title:'Missing body'})});assert.equal(invalid.response.status,400);
+  const draft=await request('/api/platform/blog',{method:'POST',headers:admin,body:JSON.stringify({title:'Daily reports that get used',excerpt:'A practical reporting habit.',content:'## Start with the field\n\n- Keep it short\n- Verify the numbers',category:'Field reporting',author:'Levi',status:'Draft'})});assert.equal(draft.response.status,201);assert.equal(draft.data.slug,'daily-reports-that-get-used');assert.equal((await request('/api/blog')).data.length,0);assert.equal((await request(`/api/blog/${draft.data.slug}`)).response.status,404);
+  const published=await request(`/api/platform/blog/${draft.data.id}`,{method:'PATCH',headers:admin,body:JSON.stringify({status:'Published'})});assert.equal(published.response.status,200);assert.ok(published.data.publishedAt);
+  const list=await request('/api/blog?limit=3');assert.equal(list.data.length,1);assert.equal(list.data[0].title,draft.data.title);assert.equal(Object.hasOwn(list.data[0],'status'),false);assert.equal(Object.hasOwn(list.data[0],'createdBy'),false);
+  const detail=await request(`/api/blog/${draft.data.slug}`);assert.equal(detail.response.status,200);assert.match(detail.data.content,/Keep it short/);
+  const duplicate=await request('/api/platform/blog',{method:'POST',headers:admin,body:JSON.stringify({title:'Different title',slug:draft.data.slug,excerpt:'Duplicate.',content:'Duplicate content.',status:'Draft'})});assert.equal(duplicate.response.status,409);
+  const removed=await request(`/api/platform/blog/${draft.data.id}`,{method:'DELETE',headers:admin});assert.equal(removed.response.status,200);assert.equal((await request(`/api/blog/${draft.data.slug}`)).response.status,404);
+  const blogJs=fs.readFileSync(path.join(__dirname,'blog.js'),'utf8');assert.match(blogJs,/escapeHtml/);assert.match(blogJs,/safeBody/);assert.doesNotMatch(blogJs,/innerHTML\s*=\s*data\.content/);
+  console.log('Public blog and back-office publishing tests passed');server.close();process.exit(0);
+}catch(error){console.error(error);server.close();process.exit(1)}});
