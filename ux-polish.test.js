@@ -72,5 +72,6 @@ assert.match(blogJs, /safeBody/);
 assert.match(platform, /id="blog-editor"/);
 assert.match(server, /\/api\/platform\/blog/);
 assert.match(landingDemoStyles, /#workflow-example-next\{color:var\(--ink\)/);
+assert.match(landingDemoStyles, /\.dark \.features article p\{color:#c7cfcb\}/);
 
 console.log('UX shell and installability tests passed.');
