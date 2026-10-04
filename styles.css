@@ -240,3 +240,61 @@ button,.project-card,.customer-list-item,.report-list-item{-webkit-tap-highlight
 /* AI-first form and safety-template studio */
 .template-ai-builder{margin:22px 0;padding:22px;border:1px solid #b9d4ff;border-radius:18px;background:linear-gradient(135deg,#f4f8ff,#fff 70%);box-shadow:0 12px 30px rgba(31,91,165,.08)}.template-ai-builder>div:first-child{display:flex;gap:14px;align-items:flex-start;margin-bottom:14px}.template-ai-builder h3,.template-ai-builder p{margin:0}.template-ai-mark{display:grid;place-items:center;flex:0 0 42px;height:42px;border-radius:13px;background:#1673df;color:#fff;font-size:20px}.template-ai-actions{display:flex;justify-content:space-between;gap:16px;align-items:center;margin-top:12px}.template-library-heading,.template-builder-heading{display:flex;justify-content:space-between;gap:20px;align-items:center;margin:26px 0 14px}.template-library-heading h3,.template-library-heading p,.template-builder-heading h3{margin:0}.template-category-filter{display:flex;gap:6px;flex-wrap:wrap}.template-category-filter button{border:1px solid var(--line);background:var(--panel);padding:8px 12px;border-radius:999px;color:var(--muted)}.template-category-filter button.active{background:#1673df;color:#fff;border-color:#1673df}.template-library-card{align-items:flex-start;padding:18px;border-radius:14px}.template-library-card>div:first-child{display:grid;gap:6px;min-width:0}.template-library-card strong{font-size:17px}.template-library-card small{display:block}.template-type{width:max-content;padding:4px 9px;border-radius:999px;background:#eef4ff;color:#145fae;font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.07em}.template-type.safety,.template-type.incident{background:#fff1e8;color:#a84814}.template-type.inspection,.template-type.quality{background:#eaf8f1;color:#197148}.template-card-meta{display:flex;gap:6px;flex-wrap:wrap;margin-top:4px}.template-card-meta span{padding:4px 8px;border-radius:7px;background:var(--bg);font-size:11px;color:var(--muted)}.template-card-actions{display:flex;gap:7px;flex-wrap:wrap;justify-content:flex-end}.template-builder{margin-top:26px;padding:22px;border:1px solid var(--line);border-radius:18px;background:var(--panel)}.template-requirements{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin:18px 0;padding:14px;border:1px solid var(--line);border-radius:12px}.template-requirements legend{font-weight:800;padding:0 6px}.template-requirements .check-row{min-height:44px;justify-content:flex-start}.template-safety-notice{margin:14px 0;padding:14px 16px;border-radius:12px;background:#fff4e9;border-left:4px solid #ef6a16;color:#6b3513}.template-safety-notice p{margin:4px 0 0}.template-question-card{position:relative;display:grid;grid-template-columns:minmax(180px,2fr) minmax(150px,1fr) auto;gap:12px;padding:16px 16px 16px 34px;margin-bottom:10px;border:1px solid var(--line);border-radius:13px;background:var(--bg)}.template-question-order{position:absolute;left:12px;top:22px;color:var(--muted)}.template-field-help{grid-column:1/3}.template-question-card [data-field-options-wrap]{grid-column:1/3}.template-question-card [data-field-remove]{align-self:end}.template-publish-check{display:flex;gap:12px;align-items:center;margin-top:16px;padding:12px 14px;border-radius:10px;background:#eef8f3;color:#245d45}.project-form-library{display:grid;gap:14px;padding:18px;margin-bottom:18px;border:1px solid #bfd7ff;border-radius:14px;background:#f7faff}.project-form-library h3,.project-form-library p{margin:0}.project-template-options{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px}.project-template-option{display:flex!important;flex-direction:row!important;align-items:flex-start;gap:10px;padding:12px;border:1px solid var(--line);border-radius:11px;background:var(--panel)}.project-template-option input{width:auto;margin-top:3px}.project-template-option span{display:grid}.project-template-option small{color:var(--muted)}.report-template-picker{padding:12px;border:1px solid #bdd5ff;border-radius:12px;background:#f5f9ff}.template-ack{display:flex!important;flex-direction:row!important;gap:10px;align-items:flex-start;padding:14px;border:1px solid var(--line);border-radius:11px}.template-ack input{width:auto;margin-top:4px}.assignment-required-forms{display:flex;flex-wrap:wrap;gap:7px;margin-top:12px;padding-top:12px;border-top:1px solid var(--line)}.assignment-required-forms>small{width:100%;font-weight:800;color:var(--muted);letter-spacing:.08em}:root[data-theme="dark"] .template-ai-builder{background:linear-gradient(135deg,#142a3d,#172821 75%);border-color:#315d85}:root[data-theme="dark"] .template-safety-notice{background:#3a281c;color:#ffd4b8}:root[data-theme="dark"] .project-form-library,:root[data-theme="dark"] .report-template-picker{background:#162a38;border-color:#315d85}:root[data-theme="dark"] .template-card-meta span{background:#15251f}
 @media(max-width:720px){.template-ai-actions,.template-library-heading,.template-builder-heading{align-items:stretch;flex-direction:column}.template-ai-actions button{width:100%}.template-requirements,.project-template-options{grid-template-columns:1fr}.template-question-card{grid-template-columns:1fr;padding-left:30px}.template-field-help,.template-question-card [data-field-options-wrap]{grid-column:auto}.template-card-actions{justify-content:flex-start}.template-builder{padding:16px}.template-library-card{display:grid;gap:14px}}
+
+/* System-wide dark surfaces: theme background and text as one component. */
+:root[data-theme="dark"]{--dark-control:#292f2c;--dark-subtle:#1c211f;--dark-blue:#202b39;--dark-copy:#c7cfcb}
+:root[data-theme="dark"] .schedule-summary article,
+:root[data-theme="dark"] .schedule-toolbar button,
+:root[data-theme="dark"] .schedule-cell,
+:root[data-theme="dark"] .schedule-cell.person,
+:root[data-theme="dark"] .scheduled-summary>div,
+:root[data-theme="dark"] .customer-metric,
+:root[data-theme="dark"] .data-box,
+:root[data-theme="dark"] .detail-meta>div,
+:root[data-theme="dark"] .settings-panel,
+:root[data-theme="dark"] .member-card,
+:root[data-theme="dark"] .project-card,
+:root[data-theme="dark"] .project-details-card,
+:root[data-theme="dark"] .time-card,
+:root[data-theme="dark"] .time-summary-card,
+:root[data-theme="dark"] .approval-card,
+:root[data-theme="dark"] .template-builder,
+:root[data-theme="dark"] .template-question-card,
+:root[data-theme="dark"] .permission-grid .check-row{background:var(--panel)!important;border-color:var(--line)!important;color:var(--ink)!important}
+:root[data-theme="dark"] .schedule-summary .needs-attention,
+:root[data-theme="dark"] .project-health-banner.risk,
+:root[data-theme="dark"] .project-health-reason{background:#392b1c!important;border-color:#765633!important;color:#ffd9ad!important}
+:root[data-theme="dark"] .schedule-cell.header,
+:root[data-theme="dark"] table th,
+:root[data-theme="dark"] .estimate-row.header{background:var(--dark-subtle)!important;color:var(--dark-copy)!important}
+:root[data-theme="dark"] table td,
+:root[data-theme="dark"] .schedule-cell,
+:root[data-theme="dark"] .activity-item{border-color:var(--line)!important}
+:root[data-theme="dark"] .schedule-toolbar button,
+:root[data-theme="dark"] .schedule-view-switcher,
+:root[data-theme="dark"] .schedule-view-switcher button,
+:root[data-theme="dark"] .panel-header select,
+:root[data-theme="dark"] .filter-row select,
+:root[data-theme="dark"] .pagination button{background:var(--dark-control);border-color:var(--line);color:var(--ink)}
+:root[data-theme="dark"] .schedule-view-switcher button.active{background:#1769e0;color:#fff}
+:root[data-theme="dark"] .schedule-cell.today{background:var(--dark-blue)!important}
+:root[data-theme="dark"] .schedule-cell.person .avatar{color:#273026}
+:root[data-theme="dark"] .schedule-summary small,
+:root[data-theme="dark"] .schedule-summary span,
+:root[data-theme="dark"] .panel p,
+:root[data-theme="dark"] .stat-card p,
+:root[data-theme="dark"] .project-card>p,
+:root[data-theme="dark"] .activity-item small,
+:root[data-theme="dark"] .project-cell small,
+:root[data-theme="dark"] .member-card p{color:var(--dark-copy)}
+:root[data-theme="dark"] .progress-track,
+:root[data-theme="dark"] .wide-progress,
+:root[data-theme="dark"] .estimate-progress-track{background:#4a5550}
+:root[data-theme="dark"] .status.warning{background:#49351c;color:#ffd28c}
+:root[data-theme="dark"] .status.danger{background:#482724;color:#ffb5ae}
+:root[data-theme="dark"] .status:not(.warning):not(.danger){background:#213b31;color:#a9dfc7}
+:root[data-theme="dark"] .trend{background:#482724;color:#ff9f96}
+:root[data-theme="dark"] .stat-icon.green{background:#213b31;color:#88d1b0}
+:root[data-theme="dark"] .stat-icon.blue{background:#23364d;color:#8bb8ff}
+:root[data-theme="dark"] .stat-icon.amber{background:#49351c;color:#ffd28c}
+:root[data-theme="dark"] .stat-icon.red{background:#482724;color:#ffaaa2}

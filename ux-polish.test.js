@@ -73,5 +73,10 @@ assert.match(platform, /id="blog-editor"/);
 assert.match(server, /\/api\/platform\/blog/);
 assert.match(landingDemoStyles, /#workflow-example-next\{color:var\(--ink\)/);
 assert.match(landingDemoStyles, /\.dark \.features article p\{color:#c7cfcb\}/);
+assert.match(styles, /--dark-control:#292f2c/);
+assert.match(styles, /\[data-theme="dark"\] \.schedule-summary article/);
+assert.match(styles, /\[data-theme="dark"\] \.schedule-cell\.person/);
+assert.match(styles, /\[data-theme="dark"\] \.schedule-view-switcher button\.active/);
+assert.match(styles, /\[data-theme="dark"\] table th/);
 
 console.log('UX shell and installability tests passed.');
