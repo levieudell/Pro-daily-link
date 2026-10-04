@@ -17,7 +17,13 @@ assert.match(index, /rel="manifest" href="manifest\.webmanifest"/);
 assert.match(login, /rel="manifest" href="manifest\.webmanifest"/);
 assert.match(app, /Create your first project/);
 assert.match(app, /Create daily report/);
+assert.match(app, /function projectHealthDetails/);
+assert.match(app, /Why at risk\?/);
+assert.match(app, /Changes & extra work/);
+assert.match(app, /Create potential change/);
 assert.match(styles, /prefers-reduced-motion/);
 assert.match(styles, /\.network-activity/);
+assert.match(styles, /\.project-health-banner/);
+assert.match(styles, /\.change-card/);
 
 console.log('UX shell and installability tests passed.');
