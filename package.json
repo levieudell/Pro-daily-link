@@ -12,16 +12,26 @@
     "start": "node server.js",
     "dev": "node --watch server.js",
     "check": "node --check server.js && node --check app.js && node --check platform.js && node --check blog.js && node --check landing-content.js",
-    "test": "node test.js && node tenant-schema.test.js && node auth-tenant.test.js && node supabase.test.js && node stripe-webhook.test.js && node hours-safety.test.js && node time-cards.test.js && node templates.test.js && node blog.test.js && node hardcoded-identity.test.js && node draft-recovery.test.js && node ux-polish.test.js && node database/restore-drill.js --local-only",
+    "test": "node test.js && node tenant-schema.test.js && node auth-tenant.test.js && node supabase.test.js && node stripe-webhook.test.js && node hours-safety.test.js && node time-cards.test.js && node templates.test.js && node blog.test.js && node hardcoded-identity.test.js && node draft-recovery.test.js && node ux-polish.test.js && node security-regression.test.js && node data-lifecycle.test.js && node transactional-repository.test.js && node transactional-migration.test.js && node portable-backup.test.js && node database/restore-drill.js --local-only",
     "migrate:tenant:preview": "node database/migrate-json.js",
     "migrate:tenant:apply": "node database/migrate-json.js --apply",
+    "migrate:transactional:preview": "node database/migrate-transactional.js",
+    "migrate:transactional:apply": "node database/migrate-transactional.js --apply",
     "launch:check": "node database/launch-readiness.js",
     "backup:restore-drill": "node database/restore-drill.js",
+    "backup:audit": "node database/backup-audit.js",
+    "backup:portable": "node database/portable-backup.js",
+    "services:verify": "node scripts/service-smoke-test.js",
+    "services:verify-email": "node scripts/service-smoke-test.js --send-email",
     "account:commercial": "node database/set-commercial-account.js",
     "account:temp-password": "node database/set-temp-password.js",
     "db:start": "powershell -NoProfile -ExecutionPolicy Bypass -File database/bootstrap-postgres.ps1",
     "db:stop": "docker compose stop postgres",
-    "db:status": "docker compose ps postgres"
+    "db:status": "docker compose ps postgres",
+    "test:concurrency": "node database/concurrency-test.js",
+    "test:load": "node scripts/load-test.js",
+    "security:scan": "node scripts/security-scan.js",
+    "monitor:verify": "node scripts/verify-monitoring.js"
   },
   "engines": {
     "node": ">=20"

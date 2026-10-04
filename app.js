@@ -82,7 +82,7 @@ function profileStorageKey(){return `pdl-profile-photo-${currentUser?.companyId|
 function applyProfile(){const preferences=currentUser?.preferences||{},name=preferences.displayName||currentUser?.name||'User',theme=preferences.theme||localStorage.getItem('pdl-theme')||'light',photo=preferences.profilePhoto||localStorage.getItem(profileStorageKey())||'',avatar=$('#profile-avatar');$('#profile-name').textContent=name;$('#profile-role').textContent=currentRole==='field'?'Field user':String(currentUser?.role||'Administrator').replace('_',' ');avatar.textContent=photo?'':userInitials(name);avatar.style.backgroundImage=photo?`url(${photo})`:'';document.documentElement.dataset.theme=resolvedTheme(theme);localStorage.setItem('pdl-theme',theme);window.PDLLocale?.set(preferredLanguage);document.documentElement.classList.add('workspace-ready')}
 function applyCompanyLogo(){const initials=userInitials(company?.name||'Pro Daily Link'),url=company?.logo?`/api/company/logo?v=${encodeURIComponent(company.logo.updatedAt||'1')}`:'',settings=$('#company-setting-logo'),header=$('#header-company-mark'),mark=$('.brand-mark img'),paint=hasLogo=>{if(settings){settings.textContent=hasLogo?'':initials;settings.style.backgroundImage=hasLogo?`url("${url}")`:'';settings.classList.toggle('has-logo',hasLogo)}if(header){header.textContent=hasLogo?'':initials;header.style.backgroundImage=hasLogo?`url("${url}")`:'';header.classList.toggle('has-logo',hasLogo)}if(mark){if(!mark.dataset.fallback)mark.dataset.fallback=mark.getAttribute('src')||'assets/pro-daily-link-logo.png';mark.src=hasLogo?url:mark.dataset.fallback;mark.alt=hasLogo?`${company?.name||'Company'} logo`:'Pro Daily Link logo'}};if(!url){paint(false);return}const probe=new Image();probe.onload=()=>paint(true);probe.onerror=()=>paint(false);probe.src=url}
 function renderCompanySettings(){if(!$('#company-name'))return;$('#company-name').value=company.name||'';$('#company-trade').value=company.trade||'';$('#company-email').value=company.email||'';$('#company-phone').value=company.phone||'';$('#company-timezone').value=company.timezone||'America/Los_Angeles';$('#company-week-start').value=company.weekStart||'monday';$('#company-overtime-rule').value=company.overtimeRule||'weekly40';applyCompanyLogo();const canChangeLogo=!currentUser||['owner','admin'].includes(currentUser.role),logoInput=$('#company-logo'),removeLogo=$('#remove-company-logo');if(logoInput)logoInput.disabled=!canChangeLogo;if(removeLogo)removeLogo.hidden=!company?.logo||!canChangeLogo;['#company-name','#company-trade','#company-email','#company-phone','#company-timezone','#company-week-start','#company-overtime-rule'].forEach(selector=>$(selector).disabled=!companySettingsEditing);$('#edit-company-settings').hidden=companySettingsEditing;$('#save-company-settings').hidden=!companySettingsEditing;$('#cancel-company-settings').hidden=!companySettingsEditing}
-function renderAuditLog(){const container=$('#company-audit-log');if(!container)return;const canView=currentRole==='office'&&(!currentUser||['owner','admin'].includes(currentUser.role));container.closest('.audit-panel').hidden=!canView;if(!canView)return;const visibleProjects=projects.filter(project=>!project.archived),visibleIds=new Set(visibleProjects.map(project=>Number(project.id))),allProjectNames=new Set(projects.map(project=>String(project.name||'').trim().toLowerCase())),visibleNames=new Set(visibleProjects.map(project=>String(project.name||'').trim().toLowerCase())),visible=auditLog.filter(entry=>{const text=`${entry.projectName||''} ${entry.detail||''} ${entry.reason||''}`;if(/(?:seed|sample|demo data)/i.test(text))return false;if(entry.projectId!=null&&!visibleIds.has(Number(entry.projectId)))return false;const name=String(entry.projectName||'').trim().toLowerCase();if(name&&allProjectNames.has(name)&&!visibleNames.has(name))return false;return true});container.innerHTML=visible.length?visible.slice().sort((a,b)=>new Date(b.at)-new Date(a.at)).slice(0,50).map(entry=>`<article class="audit-entry"><div><span class="audit-type ${entry.type==='daily_deleted'?'deleted':'corrected'}">${entry.type==='daily_deleted'?'Daily deleted':entry.type==='labor_changed'?'Labor corrected':'Account activity'}</span><strong>${entry.projectName||entry.detail||'Company record'}${entry.reportDate?` · ${entry.reportDate}`:''}</strong><p>${entry.type==='daily_deleted'?`Reason: ${entry.reason||'Not provided'}`:entry.detail||'Activity recorded'}</p></div><small>${entry.actor||'Office user'}<br>${new Date(entry.at).toLocaleString()}</small></article>`).join(''):'<div class="audit-empty"><strong>No tracked changes yet</strong><p>Daily deletions, access changes, and labor corrections will appear here.</p></div>'}
+function renderAuditLog(){const container=$('#company-audit-log');if(!container)return;const canView=currentRole==='office'&&(!currentUser||['owner','admin'].includes(currentUser.role));container.closest('.audit-panel').hidden=!canView;if(!canView)return;const visibleProjects=projects.filter(project=>!project.archived),visibleIds=new Set(visibleProjects.map(project=>Number(project.id))),allProjectNames=new Set(projects.map(project=>String(project.name||'').trim().toLowerCase())),visibleNames=new Set(visibleProjects.map(project=>String(project.name||'').trim().toLowerCase())),visible=auditLog.filter(entry=>{const text=`${entry.projectName||''} ${entry.detail||''} ${entry.reason||''}`;if(/(?:seed|sample|demo data)/i.test(text))return false;if(entry.projectId!=null&&!visibleIds.has(Number(entry.projectId)))return false;const name=String(entry.projectName||'').trim().toLowerCase();if(name&&allProjectNames.has(name)&&!visibleNames.has(name))return false;return true});container.innerHTML=visible.length?visible.slice().sort((a,b)=>new Date(b.at)-new Date(a.at)).slice(0,50).map(entry=>`<article class="audit-entry"><div><span class="audit-type ${entry.type==='daily_deleted'?'deleted':'corrected'}">${entry.type==='daily_deleted'?'Daily deleted':entry.type==='labor_changed'?'Labor corrected':'Account activity'}</span><strong>${escapeHtml(entry.projectName||entry.detail||'Company record')}${entry.reportDate?` · ${escapeHtml(entry.reportDate)}`:''}</strong><p>${entry.type==='daily_deleted'?`Reason: ${escapeHtml(entry.reason||'Not provided')}`:escapeHtml(entry.detail||'Activity recorded')}</p></div><small>${escapeHtml(entry.actor||'Office user')}<br>${new Date(entry.at).toLocaleString()}</small></article>`).join(''):'<div class="audit-empty"><strong>No tracked changes yet</strong><p>Daily deletions, access changes, and labor corrections will appear here.</p></div>'}
 function openProfileSettings(){const preferences=currentUser?.preferences||{},name=preferences.displayName||currentUser?.name||'',photo=preferences.profilePhoto||localStorage.getItem(profileStorageKey())||'';$('#profile-display-name').value=name;$('#profile-language').value=currentUser?.preferredLanguage||localStorage.getItem('pdl-language')||'en';$('#profile-theme').value=preferences.theme||localStorage.getItem('pdl-theme')||'light';$('#profile-photo').value='';const preview=$('#profile-preview');preview.textContent=photo?'':userInitials(name);preview.style.backgroundImage=photo?`url(${photo})`:'';$('#profile-modal').showModal()}
 $('#dismiss-field-tip').onclick=()=>{localStorage.setItem('pdl-field-tip','dismissed');$('#field-first-tip').style.display='none'};
 function applyFieldLanguage(){const es=currentRole==='field'&&preferredLanguage==='es',page=$('#myday-page');if(!page)return;$('#field-first-tip').style.display=localStorage.getItem('pdl-field-tip')==='dismissed'?'none':'flex';const welcome=page.querySelector('.field-welcome');welcome.querySelector('.eyebrow').textContent=es?'MI PANEL DE CAMPO':'MY FIELD DASHBOARD';welcome.querySelector('h1').textContent=es?`${dayPartGreeting(new Date(),'es')}, ${(currentUser?.name||'Marcus').split(' ')[0]}.`:`${dayPartGreeting(new Date(),'en')}, ${(currentUser?.name||'Marcus').split(' ')[0]}.`;welcome.querySelector('p:last-child').textContent=es?'Todo lo que necesita para hoy, y nada más.':'Here’s everything you need for today—nothing you don’t.';const hero=$('#field-start-card');hero.querySelector('small').textContent=es?'¿LISTO PARA TRABAJAR?':'READY TO GET TO WORK?';hero.querySelector('h2').textContent=es?'Comience su día':'Start your day';$('#field-start-detail').textContent=es?'Confirme el proyecto y quién está presente. Nosotros calculamos el tiempo.':'Confirm your job site and who is with you. We’ll handle the time.';hero.querySelector('button').textContent=es?'▶ EMPEZAR':'▶ START';const headings=page.querySelectorAll('.panel-header');if(headings[0]){headings[0].querySelector('h2').textContent=es?'Trabajo de hoy':'Today’s assignment';headings[0].querySelector('p').textContent=es?'Su proyecto y actividad programada':'Your scheduled project and activity'}if(headings[1]){headings[1].querySelector('h2').textContent=es?'Próximamente':'Coming up';headings[1].querySelector('p').textContent=es?'Su próximo trabajo programado':'Your next scheduled work'}if(headings[2]){headings[2].querySelector('h2').textContent=es?'Mis reportes recientes':'My recent dailies';headings[2].querySelector('p').textContent=es?'Reportes enviados desde el campo':'Reports you submitted from the field'}$('#field-first-tip').querySelector('strong').textContent=es?'Tres pasos rápidos':'Three quick steps';$('#field-first-tip').querySelector('span').textContent=es?'Comience el día → agregue fotos y notas → termine el día.':'Start your day → add photos and notes → end your day.';$('#dismiss-field-tip').textContent=es?'Entendido':'Got it'}
@@ -966,6 +966,60 @@ renderProjectCards=function(filter=''){
   }
   return result;
 };
+
+// Preserve saved labor during a notes-only correction. An empty labor list can
+// be produced while the editor is rebuilding; it is not permission to erase a
+// previously saved time record.
+const apiBeforeReportLaborPreservation=api;
+api=async function(url,options={}){
+  if(/^\/api\/reports\/\d+$/.test(String(url))&&options.method==='PATCH'){
+    let payload;try{payload=JSON.parse(options.body||'{}')}catch{}
+    const id=Number(String(url).split('/').pop()),existing=reports.find(report=>Number(report.id)===id);
+    if(payload&&Array.isArray(payload.laborEntries)&&payload.laborEntries.length===0&&(existing?.laborEntries||[]).some(row=>Number(row.hours)>0)&&payload.clearLaborEntries!==true){
+      payload.laborEntries=existing.laborEntries.map(row=>({...row}));
+      options={...options,body:JSON.stringify(payload)};
+    }
+  }
+  return apiBeforeReportLaborPreservation(url,options);
+};
+
+// Subcontractor records are archived, never silently destroyed. Archiving also
+// revokes active guest links on the server and keeps the compliance history.
+const renderTeamDirectoryBeforeSubArchive=renderTeamDirectory;
+renderTeamDirectory=function(){
+  const result=renderTeamDirectoryBeforeSubArchive();
+  if(teamTab!=='subcontractors')return result;
+  const cards=[...$$('#subcontractor-grid .subcontractor-card')];
+  subcontractors.forEach((sub,index)=>{
+    const card=cards[index];if(!card)return;
+    if(sub.archivedAt||sub.status==='Archived'){card.remove();return}
+    card.dataset.subcontractorId=sub.id;
+    if(!card.querySelector('[data-sub-archive]'))card.insertAdjacentHTML('beforeend',`<button type="button" class="secondary small" data-sub-archive="${sub.id}">Archive subcontractor</button>`);
+  });
+  if(!$('#subcontractor-grid .subcontractor-card'))$('#subcontractor-grid').innerHTML='<div class="panel empty-directory">No active subcontractors. Add a company when you are ready to issue project access.</div>';
+  $$('[data-sub-archive]').forEach(button=>button.onclick=()=>archiveSubcontractor(Number(button.dataset.subArchive)));
+  return result;
+};
+async function archiveSubcontractor(id){
+  const sub=subcontractors.find(row=>Number(row.id)===Number(id));if(!sub)return;
+  const reason=prompt(`Why are you archiving ${sub.name}? This is kept in the history.`);if(!reason?.trim())return;
+  if(!confirm(`Archive ${sub.name}? Active project links will be revoked, but reports and history will stay intact.`))return;
+  try{const updated=await api(`/api/subcontractors/${id}/archive`,{method:'PATCH',body:JSON.stringify({archived:true,reason:reason.trim()})});Object.assign(sub,updated);subcontractorLinks.filter(link=>Number(link.subcontractorId)===id&&link.status==='Active').forEach(link=>link.status='Revoked');renderTeamDirectory();await syncActionCenter();notify(`${sub.name} archived. History was preserved and active links were revoked.`)}catch(error){notify(error.message)}
+}
+
+// The navigation badge is an attention signal, not a lifetime report total.
+function dailyReportAlertCount(){
+  if(currentRole!=='office')return 0;
+  return reports.filter(report=>report.status==='Needs review'||report.status==='Submitted'||report.status==='Needs correction'||(report.flags||[]).some(flag=>!flag.resolution)).length;
+}
+function updateDailyReportNavAlert(){
+  const badge=$('#report-count');if(!badge)return;
+  const count=dailyReportAlertCount();badge.textContent=String(count);badge.hidden=count===0;
+  badge.title=count?`${count} daily report${count===1?'':'s'} need attention`:'';
+  badge.setAttribute('aria-label',badge.title);
+}
+const renderReportsBeforeActionBadge=renderReports;
+renderReports=function(selected){const result=renderReportsBeforeActionBadge(selected);updateDailyReportNavAlert();return result};
 
 // Focused field experience: one obvious job, one obvious action, and a calm
 // review step that explains exactly what will be sent to the office.
