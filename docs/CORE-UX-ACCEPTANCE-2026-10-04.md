@@ -2,7 +2,7 @@
 
 Branch codex/enterprise-core-ux is isolated from reporting draft PR #30 and the customer-profile mobile fix. Base main 7e7d978 remained unchanged at the final remote check. Draft review publication is approved; no merge or deployment is authorized for this branch.
 
-Implemented: day/week phone agenda using existing scoped assignments; stacked labeled phone time cards; explicit status/correction guidance; approved cards return to Draft before correction; no submission while a clock is open; view-only PM time access; management controls remain restricted; bulk select/clear with count feedback; schedule changes require the existing scheduling permission; leave decisions require manageTime; assignment save disables during the request; larger touch targets; clearer intersection of assigned projects and crews. Desktop schedule grid and time table remain available. No server authorization, payroll rules, commercial terms or plan entitlements were expanded.
+Implemented: day/week/month phone agenda using existing scoped assignments; stacked labeled phone time cards; explicit status/correction guidance; approved cards return to Draft before correction; no submission while a clock is open; view-only PM time access; management controls remain restricted; bulk select/clear with count feedback; schedule changes require the existing scheduling permission; leave decisions require manageTime; assignment save disables with visible Saving feedback during the request; larger touch targets; clearer intersection of assigned projects and crews. Desktop schedule grid and time table remain available. No server authorization, payroll rules, commercial terms or plan entitlements were expanded.
 
 Independent reviewer closed Time-nav discoverability, leave-decision and schedule-mutation controls for view-only users; server permissions remain unchanged. Syntax/whitespace checks passed and the scanner reports zero critical findings/seven existing manual-review files. The complete npm test suite passed after reviewer fixes (exit 0). The targeted suite and syntax/whitespace checks also passed after restoring unchanged line endings.
 
@@ -16,10 +16,10 @@ No supported browser or node_repl computer-use runtime is exposed here; none was
 
 ## Short acceptance pass
 
-1. Owner: schedule the fixture date in Day/Week, inspect the phone agenda, open an assignment, edit/save once, and confirm duplicate taps do not create duplicate work. Desktop retains grid/drag behavior and conflicts remain blocked.
+1. Owner: schedule the fixture date in Day/Week, inspect each Day/Week/Month phone agenda, open an assignment, edit/save once, and confirm duplicate taps do not create duplicate work. Desktop retains grid/drag behavior and conflicts remain blocked.
 2. Managing PM: see only assigned project/crew; submit a Draft, select Submitted cards and approve; return an Approved card to Draft and correct it with a reason. Expand correction history. Confirm scoped exports and untouched other crew data.
 3. Viewing PM: discover Time in navigation, inspect assigned time and export, with no add/correct/approve/delete or leave-decision actions. Scheduling changes require the existing schedule permission.
-4. Field account: see own cards, submit a completed Draft, and receive readable pending/approved states without office controls. Check phone navigation, keyboard focus, portrait/landscape wrapping and tap targets.
+4. Field account: see own cards, submit a completed Draft, and receive readable pending/approved states without office controls. Check the obvious next action, save/loading/error feedback, Back/Cancel, keyboard focus, portrait/landscape wrapping and tap targets; confirm no horizontal page overflow at 360px.
 5. Repeat relevant cases in actual iOS Safari and installed Home Screen mode on authorized staging. Record screenshots and expected/actual outcomes before claiming visual acceptance.
 
 ## First sale boundary
