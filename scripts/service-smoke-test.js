@@ -28,15 +28,29 @@ async function checkStripe() {
 async function checkResend(send) {
   if (!process.env.RESEND_API_KEY) return { configured: false };
   const headers = { Authorization: `Bearer ${process.env.RESEND_API_KEY}`, 'Content-Type': 'application/json', 'User-Agent': 'ProDailyLink/1.0' };
+  const result = { configured: true, reachable: null, domainVerification: 'not-checked' };
   const domainResponse = await fetch('https://api.resend.com/domains', { headers });
-  if (!domainResponse.ok) throw new Error(`Resend domain check failed (${domainResponse.status})`);
-  const domains = (await domainResponse.json()).data || [];
-  const result = { configured: true, reachable: true, domains: domains.map(domain => ({ name: domain.name, status: domain.status })) };
+  if (domainResponse.ok) {
+    const domains = (await domainResponse.json()).data || [];
+    result.reachable = true;
+    result.domainVerification = 'read-from-resend';
+    result.domains = domains.map(domain => ({ name: domain.name, status: domain.status }));
+  } else if (domainResponse.status === 401 || domainResponse.status === 403) {
+    // Production intentionally uses a sending-only key. It can deliver mail but
+    // cannot enumerate account domains; do not weaken the key just for a probe.
+    result.domainVerification = 'sending-key-cannot-read-domains';
+  } else {
+    throw new Error(`Resend domain check failed (${domainResponse.status})`);
+  }
   if (send) {
     const to = String(process.env.PDL_MONITOR_EMAIL_TO || '').trim();
     if (!to) throw new Error('PDL_MONITOR_EMAIL_TO is required with --send-email');
     const response = await fetch('https://api.resend.com/emails', { method: 'POST', headers, body: JSON.stringify({ from: process.env.RESEND_FROM || 'Pro Daily Link <support@prodailylink.com>', reply_to: process.env.RESEND_REPLY_TO || 'support@prodailylink.com', to: [to], subject: 'Pro Daily Link email monitoring test', html: '<p>Pro Daily Link production email delivery verification.</p>' }) });
-    if (!response.ok) throw new Error(`Resend delivery test failed (${response.status})`);
+    if (!response.ok) {
+      const detail = await response.json().catch(() => ({}));
+      throw new Error(`Resend delivery test failed (${response.status}): ${detail.message || 'unknown error'}`);
+    }
+    result.reachable = true;
     result.testMessageId = (await response.json()).id;
   }
   return result;
@@ -48,11 +62,10 @@ async function checkResend(send) {
     !report.stripe.configured || !report.stripe.reachable,
     report.stripe.prices?.some(price => !price.ok),
     !report.stripe.webhook?.found,
-    !report.resend.configured || !report.resend.reachable,
-    report.resend.domains?.some(domain => domain.name === 'prodailylink.com' && domain.status !== 'verified')
+    !report.resend.configured || report.resend.reachable === false,
+    report.resend.domains?.some(domain => domain.name === 'mail.prodailylink.com' && domain.status !== 'verified')
   ].filter(Boolean);
   console.log(JSON.stringify(report, null, 2));
   if (failures.length) process.exitCode = 1;
 })().catch(error => { console.error(error.message); process.exitCode = 1; });
-
 
