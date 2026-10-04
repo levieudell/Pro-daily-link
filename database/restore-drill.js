@@ -9,6 +9,7 @@ const root = path.resolve(__dirname, '..');
 supabase.loadLocalEnv(root);
 
 const digest = bytes => crypto.createHash('sha256').update(bytes).digest('hex');
+const canonicalBytes = snapshot => Buffer.from(JSON.stringify(snapshot));
 
 function validateSnapshot(snapshot) {
   assert.ok(snapshot && typeof snapshot === 'object', 'Backup must contain a JSON object');
@@ -38,7 +39,11 @@ async function main() {
     let cloud = null;
     if (supabase.configured() && !process.argv.includes('--local-only')) {
       cloud = await supabase.createVerifiedBackup(snapshot);
-      assert.equal(cloud.hash, digest(original), 'Verified cloud backup hash does not match its source');
+      assert.equal(cloud.hash, digest(canonicalBytes(snapshot)), 'Verified cloud backup hash does not match the canonical source data');
+      const downloaded = Buffer.from(await (await supabase.download(cloud.bucket, cloud.objectKey)).arrayBuffer());
+      const downloadedSnapshot = JSON.parse(downloaded.toString('utf8'));
+      validateSnapshot(downloadedSnapshot);
+      assert.deepEqual(downloadedSnapshot, snapshot, 'Downloaded cloud backup data does not match its source');
     }
 
     console.log(`Backup restore drill passed for ${snapshot.company.name || snapshot.company.id}.`);

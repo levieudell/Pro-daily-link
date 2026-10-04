@@ -160,4 +160,31 @@ async function health() {
   }
 }
 
-module.exports = { loadLocalEnv, configured, upload, download, remove, ensurePrivateBucket, createVerifiedBackup, loadCompanySnapshot, findCompanyByUserEmail, listCompanySnapshots, saveCompanySnapshot, loadSnapshot, saveSnapshot, health, request };
+async function saveTransactionalSnapshot(snapshot, expectedRevision = 0) {
+  if (!configured()) throw new Error('Supabase is not configured');
+  const { splitSnapshot, canonicalHash, databaseCompanyId } = require('./transactional-repository');
+  const companyId = databaseCompanyId(snapshot);
+  const { scalarData, records } = splitSnapshot(snapshot);
+  const payload = records.map(row => ({ collection: row.collection, record_key: row.recordKey, position: row.position, data: row.data }));
+  const response = await request('/rest/v1/rpc/replace_tenant_records', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ p_company_id: companyId, p_expected_revision: Number(expectedRevision), p_scalar_data: scalarData, p_content_hash: canonicalHash(snapshot), p_records: payload })
+  });
+  const [result] = await response.json();
+  return { companyId, revision: Number(result.revision), records: Number(result.record_count), contentHash: canonicalHash(snapshot) };
+}
+
+async function loadTransactionalSnapshot(companyId) {
+  if (!configured()) return null;
+  const { assembleSnapshot, databaseCompanyId } = require('./transactional-repository');
+  const id = databaseCompanyId(companyId);
+  const stateResponse = await request(`/rest/v1/tenant_revisions?company_id=eq.${encodeURIComponent(id)}&select=revision,scalar_data,content_hash&limit=1`);
+  const [state] = await stateResponse.json();
+  if (!state) return null;
+  const recordResponse = await request(`/rest/v1/tenant_records?company_id=eq.${encodeURIComponent(id)}&select=collection,data&order=collection.asc,position.asc`);
+  const records = await recordResponse.json();
+  return { snapshot: assembleSnapshot(state.scalar_data, records), revision: Number(state.revision), contentHash: state.content_hash };
+}
+
+module.exports = { loadLocalEnv, configured, upload, download, remove, ensurePrivateBucket, createVerifiedBackup, loadCompanySnapshot, findCompanyByUserEmail, listCompanySnapshots, saveCompanySnapshot, loadSnapshot, saveSnapshot, saveTransactionalSnapshot, loadTransactionalSnapshot, health, request };
