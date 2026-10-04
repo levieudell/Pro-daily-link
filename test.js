@@ -1,4 +1,5 @@
-const assert=require('node:assert/strict');
+assert.match(landing,/>Enterprise</);assert.match(landing,/data-implementation="Enterprise"/);assert.match(landing,/>Contact us</);assert.match(landing,/enterprise-pricing\.css/);
+  const names=[...appScript.matchAllconst assert=require('node:assert/strict');
 const fs=require('node:fs');
 const os=require('node:os');
 const path=require('node:path');
