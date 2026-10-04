@@ -6,6 +6,8 @@
 - Keep backups private, encrypted by the storage provider, company-prefixed, and inaccessible to browsers.
 - Maintain a second backup destination or database-provider point-in-time recovery before broad launch.
 - Record object key, byte count, SHA-256 hash, company ID, revision, and verification time.
+- Export database data and every referenced private Storage object to an independent destination with `npm run backup:portable -- --company-id <uuid> --output <independent-directory>`. The command is deliberately single-tenant and refuses to run without an explicit destination.
+- Treat the generated `manifest.json`, `snapshot.json`, and `objects/` directory as one recovery set. Preserve the original object bucket/key mapping in the manifest.
 
 ## Restore drill
 
@@ -20,8 +22,9 @@
 
 Run the drill monthly and after any storage migration. A successful upload alone is not a recovery test.
 
+Supabase Pro daily database backups do not include Storage objects. A portable recovery set must therefore be copied to a provider or encrypted drive outside Supabase before the independent-backup requirement is considered satisfied.
+
 ## Production restoration
 
 Production restoration requires Levi’s authorization and a second-person technical review. Take a current backup first, preserve the incident evidence, restore the smallest possible tenant/time range, reconcile hashes and counts, then validate the customer journey before reopening writes.
-
 
