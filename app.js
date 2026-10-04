@@ -967,6 +967,46 @@ renderProjectCards=function(filter=''){
   return result;
 };
 
+// Preserve saved labor during a notes-only correction. An empty labor list can
+// be produced while the editor is rebuilding; it is not permission to erase a
+// previously saved time record.
+const apiBeforeReportLaborPreservation=api;
+api=async function(url,options={}){
+  if(/^\/api\/reports\/\d+$/.test(String(url))&&options.method==='PATCH'){
+    let payload;try{payload=JSON.parse(options.body||'{}')}catch{}
+    const id=Number(String(url).split('/').pop()),existing=reports.find(report=>Number(report.id)===id);
+    if(payload&&Array.isArray(payload.laborEntries)&&payload.laborEntries.length===0&&(existing?.laborEntries||[]).some(row=>Number(row.hours)>0)&&payload.clearLaborEntries!==true){
+      payload.laborEntries=existing.laborEntries.map(row=>({...row}));
+      options={...options,body:JSON.stringify(payload)};
+    }
+  }
+  return apiBeforeReportLaborPreservation(url,options);
+};
+
+// Subcontractor records are archived, never silently destroyed. Archiving also
+// revokes active guest links on the server and keeps the compliance history.
+const renderTeamDirectoryBeforeSubArchive=renderTeamDirectory;
+renderTeamDirectory=function(){
+  const result=renderTeamDirectoryBeforeSubArchive();
+  if(teamTab!=='subcontractors')return result;
+  const cards=[...$$('#subcontractor-grid .subcontractor-card')];
+  subcontractors.forEach((sub,index)=>{
+    const card=cards[index];if(!card)return;
+    if(sub.archivedAt||sub.status==='Archived'){card.remove();return}
+    card.dataset.subcontractorId=sub.id;
+    if(!card.querySelector('[data-sub-archive]'))card.insertAdjacentHTML('beforeend',`<button type="button" class="secondary small" data-sub-archive="${sub.id}">Archive subcontractor</button>`);
+  });
+  if(!$('#subcontractor-grid .subcontractor-card'))$('#subcontractor-grid').innerHTML='<div class="panel empty-directory">No active subcontractors. Add a company when you are ready to issue project access.</div>';
+  $$('[data-sub-archive]').forEach(button=>button.onclick=()=>archiveSubcontractor(Number(button.dataset.subArchive)));
+  return result;
+};
+async function archiveSubcontractor(id){
+  const sub=subcontractors.find(row=>Number(row.id)===Number(id));if(!sub)return;
+  const reason=prompt(`Why are you archiving ${sub.name}? This is kept in the history.`);if(!reason?.trim())return;
+  if(!confirm(`Archive ${sub.name}? Active project links will be revoked, but reports and history will stay intact.`))return;
+  try{const updated=await api(`/api/subcontractors/${id}/archive`,{method:'PATCH',body:JSON.stringify({archived:true,reason:reason.trim()})});Object.assign(sub,updated);subcontractorLinks.filter(link=>Number(link.subcontractorId)===id&&link.status==='Active').forEach(link=>link.status='Revoked');renderTeamDirectory();await syncActionCenter();notify(`${sub.name} archived. History was preserved and active links were revoked.`)}catch(error){notify(error.message)}
+}
+
 // Focused field experience: one obvious job, one obvious action, and a calm
 // review step that explains exactly what will be sent to the office.
 function fieldProjectForReport(report){return projects.find(project=>Number(project.id)===Number(report?.projectId))||projects[Number(report?.project)]}
