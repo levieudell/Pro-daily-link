@@ -298,3 +298,18 @@ button,.project-card,.customer-list-item,.report-list-item{-webkit-tap-highlight
 :root[data-theme="dark"] .stat-icon.blue{background:#23364d;color:#8bb8ff}
 :root[data-theme="dark"] .stat-icon.amber{background:#49351c;color:#ffd28c}
 :root[data-theme="dark"] .stat-icon.red{background:#482724;color:#ffaaa2}
+
+/* Subcontractor launch polish */
+.subcontractor-profile-fields{margin-top:0}.generated-link button{width:100%;margin-top:4px}.guest-link-row strong{overflow-wrap:anywhere}.subcontractor-card .compliance-status{min-height:64px}.subcontractor-card .compliance-status small{line-height:1.35}.subcontractor-card .project-open{min-height:42px}.subcontractor-card .exact-email{overflow-wrap:anywhere}.subcontractor-card:focus-within{border-color:#1769e0;box-shadow:0 0 0 2px rgba(23,105,224,.15)}
+:root[data-theme="dark"] .subcontractor-card,
+:root[data-theme="dark"] .compliance-form,
+:root[data-theme="dark"] .guest-link-row{background:var(--panel);border-color:var(--line);color:var(--ink)}
+:root[data-theme="dark"] .compliance-status.clear{background:#1d3328;color:#a9dfc7}
+:root[data-theme="dark"] .compliance-status.watch{background:#49351c;color:#ffd28c}
+:root[data-theme="dark"] .compliance-status.blocked{background:#482724;color:#ffb5ae}
+:root[data-theme="dark"] .trade-badge{background:#23364d;color:#9fc5ff}
+:root[data-theme="dark"] .generated-link{background:#1d3328;border-color:#345f49;color:var(--ink)}
+:root[data-theme="dark"] .generated-link input{background:#292f2c;border-color:#456a57;color:var(--ink)}
+:root[data-theme="dark"] .generated-link small{color:var(--dark-copy)}
+:root[data-theme="dark"] .compliance-date{color-scheme:dark}
+@media(max-width:650px){.team-tabs{overflow-x:auto;scrollbar-width:none;scroll-snap-type:x proximity}.team-tabs::-webkit-scrollbar{display:none}.team-tabs button{flex:0 0 auto;min-height:46px;scroll-snap-align:start}.subcontractor-card{padding:16px}.subcontractor-card .compliance-actions{grid-template-columns:1fr 1fr}.subcontractor-card .compliance-actions button{min-height:48px}.guest-link-row{align-items:flex-start}.guest-link-row button{min-height:40px;padding:8px}.subcontractor-profile-fields{padding:12px}}

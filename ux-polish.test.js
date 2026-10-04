@@ -78,6 +78,16 @@ assert.match(styles, /\[data-theme="dark"\] \.schedule-summary article/);
 assert.match(styles, /\[data-theme="dark"\] \.schedule-cell\.person/);
 assert.match(styles, /\[data-theme="dark"\] \.schedule-view-switcher button\.active/);
 assert.match(styles, /\[data-theme="dark"\] table th/);
-assert.match(index, /styles\.css\?v=20261004-dark-surfaces/);
+assert.match(index, /styles\.css\?v=20261004-subcontractor-polish/);
+assert.match(index, /app\.js\?v=20261004-subcontractor-polish/);
+assert.match(app, /Launch polish for the subcontractor directory/);
+assert.match(app, /data-copy-guest-link/);
+assert.match(app, /No active assigned project is available/);
+assert.match(styles, /Subcontractor launch polish/);
+assert.match(styles, /\[data-theme="dark"\] \.compliance-status\.blocked/);
+assert.match(styles, /\.team-tabs\{overflow-x:auto/);
+assert.match(server, /subcontractorProfile/);
+assert.match(server, /Choose a future expiration date/);
+assert.match(server, /You can only create access for an assigned project/);
 
 console.log('UX shell and installability tests passed.');

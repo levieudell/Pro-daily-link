@@ -540,6 +540,12 @@ async function handleTimeCards(req,res,url){
   json(res,404,{error:'Not found'});return true
 }
 async function api(req,res,url){
+  const subcontractorCreate=req.method==='POST'&&url.pathname==='/api/subcontractors';
+  const subcontractorUpdate=req.method==='PATCH'&&/^\/api\/subcontractors\/\d+$/.test(url.pathname);
+  const subcontractorProfile=req.method==='PATCH'&&/^\/api\/subcontractors\/\d+\/profile$/.test(url.pathname);
+  const subcontractorReminder=req.method==='POST'&&/^\/api\/subcontractors\/\d+\/compliance-reminder$/.test(url.pathname);
+  const subcontractorLinkCreate=req.method==='POST'&&/^\/api\/subcontractors\/\d+\/links$/.test(url.pathname);
+  const subcontractorLinkRevoke=req.method==='DELETE'&&/^\/api\/subcontractor-links\/\d+$/.test(url.pathname);
   if(req.method==='GET'&&url.pathname==='/api/health'){const cloud=await supabase.health();return json(res,cloud.configured&&!cloud.reachable?503:200,{ok:!cloud.configured||cloud.reachable,ai:Boolean(process.env.OPENAI_API_KEY),cloud,time:new Date().toISOString()})}
   if(req.method==='GET'&&url.pathname==='/api/config')return json(res,200,{authRequired:process.env.PDL_REQUIRE_AUTH==='1'});
   if(req.method==='POST'&&url.pathname==='/api/demo-requests'){
@@ -615,6 +621,35 @@ async function api(req,res,url){
   if(req.method==='GET'&&url.pathname==='/api/auth/me'){const db=readDb(),token=bearer(req)||cookie(req,'pdl_session'),tokenHash=token&&crypto.createHash('sha256').update(token).digest('hex'),session=(db.sessions||[]).find(row=>row.tokenHash===tokenHash&&new Date(row.expiresAt)>new Date()),user=session&&(db.users||[]).find(row=>row.id===session.userId&&row.status==='Active');if(!session||!user)return json(res,401,{error:'Authentication required'});const sessionSeconds=30*86400;session.expiresAt=new Date(Date.now()+sessionSeconds*1000).toISOString();writeDb(db);const secure=process.env.NODE_ENV==='production'?'; Secure':'';res.writeHead(200,{'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store','Set-Cookie':[`pdl_session=${token}; HttpOnly; SameSite=Strict; Path=/; Max-Age=${sessionSeconds}${secure}`,`pdl_company=${session.companyId}; SameSite=Strict; Path=/; Max-Age=${sessionSeconds}${secure}`]});return res.end(JSON.stringify({id:user.id,name:user.name,email:user.email,emailVerifiedAt:user.emailVerifiedAt||null,role:user.role==='foreman'?'field':user.role==='office'?'admin':user.role,accessRole:user.role==='office'?'admin':user.role,companyId:session.companyId,projectIds:user.projectIds||[],assignedCrews:user.assignedCrews||[],memberId:user.memberId||null,preferredLanguage:user.preferredLanguage||'en',preferences:user.preferences||{},permissions:user.permissions||{},timeCards:freshTimeCardsFlag(),templates:freshTemplatesFlag()}))}
   if(req.method==='POST'&&url.pathname==='/api/auth/logout'){const db=readDb(),token=bearer(req)||cookie(req,'pdl_session'),tokenHash=token&&crypto.createHash('sha256').update(token).digest('hex');db.sessions=(db.sessions||[]).filter(row=>row.tokenHash!==tokenHash);writeDb(db);const secure=process.env.NODE_ENV==='production'?'; Secure':'';res.writeHead(200,{'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store','Set-Cookie':[`pdl_session=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0${secure}`,`pdl_company=; SameSite=Strict; Path=/; Max-Age=0${secure}`]});return res.end(JSON.stringify({ok:true}))}
   if(process.env.PDL_REQUIRE_AUTH==='1'&&!url.pathname.startsWith('/api/guest/')){const db=readDb(),token=bearer(req)||cookie(req,'pdl_session'),tokenHash=token&&crypto.createHash('sha256').update(token).digest('hex'),session=(db.sessions||[]).find(row=>row.tokenHash===tokenHash&&new Date(row.expiresAt)>new Date()),storedUser=session&&(db.users||[]).find(row=>row.id===session.userId&&row.status==='Active'),user=storedUser?.role==='office'?{...storedUser,role:'admin'}:storedUser;if(!session||!user)return json(res,401,{error:'Authentication required'});if(session.companyId!==db.company.id)return json(res,404,{error:'Resource not found'});req.auth={session,user,companyId:session.companyId};const access=accountAccess(db.company),accessRoute=url.pathname==='/api/account-access'||url.pathname.startsWith('/api/billing');if(access.locked&&!accessRoute)return json(res,402,{error:access.reason,code:'subscription_required',access});const ownerRoute=url.pathname==='/api/users'||/^\/api\/users\//.test(url.pathname);if(ownerRoute&&user.role!=='owner')return json(res,403,{error:'Account owner permission required'});const officeRoute=['/api/production','/api/insights','/api/exceptions','/api/action-center','/api/changes','/api/catalog','/api/estimate-imports'].some(route=>url.pathname.startsWith(route))||url.pathname.includes('/approve')||url.pathname.includes('/disposition');if(officeRoute&&!['owner','admin','project_manager'].includes(user.role))return json(res,403,{error:'Office permission required'})}
+  if(process.env.PDL_REQUIRE_AUTH==='1'&&(subcontractorCreate||subcontractorUpdate||subcontractorProfile||subcontractorReminder)&&!['owner','admin'].includes(req.auth?.user?.role))return json(res,403,{error:'Account Owner or Admin permission required'});
+  if(process.env.PDL_REQUIRE_AUTH==='1'&&(subcontractorLinkCreate||subcontractorLinkRevoke)&&!['owner','admin','project_manager'].includes(req.auth?.user?.role))return json(res,403,{error:'Office permission required'});
+  if(subcontractorProfile){
+    const input=await body(req),db=readDb(),id=Number(url.pathname.split('/').at(-2)),sub=(db.subcontractors||[]).find(row=>Number(row.id)===id);
+    if(!sub)return json(res,404,{error:'Subcontractor not found'});
+    const name=Object.hasOwn(input,'name')?String(input.name||'').trim():String(sub.name||'').trim(),email=Object.hasOwn(input,'email')?String(input.email||'').trim().toLowerCase():String(sub.email||'').trim().toLowerCase();
+    if(!name)return json(res,400,{error:'Subcontractor company name is required'});
+    if(email&&!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))return json(res,400,{error:'Enter a valid subcontractor email'});
+    const tracked=['name','trade','contact','email','phone','insuranceExpiration','workersCompExpiration','licenseNumber','licenseExpiration','w9Received','agreementSigned','autoComplianceReminders','notes'],before=Object.fromEntries(tracked.map(key=>[key,sub[key]??'']));
+    sub.name=name.slice(0,140);sub.email=email.slice(0,180);
+    for(const key of ['trade','contact','phone'])if(Object.hasOwn(input,key))sub[key]=String(input[key]||'').trim().slice(0,key==='phone'?40:140);
+    for(const key of ['insuranceExpiration','workersCompExpiration','licenseExpiration'])if(Object.hasOwn(input,key))sub[key]=/^\d{4}-\d{2}-\d{2}$/.test(String(input[key]||''))?String(input[key]):'';
+    if(Object.hasOwn(input,'licenseNumber'))sub.licenseNumber=String(input.licenseNumber||'').trim().slice(0,100);
+    if(Object.hasOwn(input,'notes'))sub.notes=String(input.notes||'').trim().slice(0,2000);
+    for(const key of ['w9Received','agreementSigned','autoComplianceReminders'])if(Object.hasOwn(input,key))sub[key]=Boolean(input[key]);
+    const changed=tracked.filter(key=>String(before[key])!==String(sub[key]??''));sub.complianceHistory ||= [];
+    if(changed.length)sub.complianceHistory.push({action:'Subcontractor updated',detail:`Office reviewed ${changed.map(key=>key.replace(/([A-Z])/g,' $1').toLowerCase()).join(', ')}`,by:req.auth?.user?.name||'Office user',at:new Date().toISOString()});
+    sub.complianceReminderStages={};writeDb(db);return json(res,200,sub);
+  }
+  if(subcontractorLinkCreate){
+    const input=await body(req),db=readDb(),project=(db.projects||[]).find(row=>Number(row.id)===Number(input.projectId)),expires=String(input.expiresAt||'');
+    if(!project||project.archived)return json(res,400,{error:'Choose an active project'});
+    if(!/^\d{4}-\d{2}-\d{2}$/.test(expires)||new Date(`${expires}T23:59:59`).getTime()<=Date.now())return json(res,400,{error:'Choose a future expiration date'});
+    if(req.auth?.user?.role==='project_manager'&&!managerScope(db,req.auth.user).projectIds.has(Number(project.id)))return json(res,403,{error:'You can only create access for an assigned project'});
+  }
+  if(subcontractorLinkRevoke&&req.auth?.user?.role==='project_manager'){
+    const db=readDb(),link=(db.subcontractorLinks||[]).find(row=>Number(row.id)===Number(url.pathname.split('/').pop()));
+    if(!link||!managerScope(db,req.auth.user).projectIds.has(Number(link.projectId)))return json(res,403,{error:'You can only revoke access for an assigned project'});
+  }
   const managerAssignmentRoute=req.auth?.user?.role==='project_manager'&&['POST','PATCH','DELETE'].includes(req.method)&&(/^\/api\/assignments(?:\/\d+)?$/.test(url.pathname));
   if(managerAssignmentRoute){const db=readDb(),existingId=Number(url.pathname.split('/').at(-1)),existing=Number.isFinite(existingId)?(db.assignments||[]).find(row=>Number(row.id)===existingId):null;if(!managerCan(req.auth.user,'scheduleCrews')||existing&&!managerAssignmentAllowed(db,req.auth.user,existing))return json(res,403,{error:'You can only schedule your assigned crews on your assigned projects'})}
   if(req.auth?.user?.role==='project_manager'&&req.method==='POST'&&url.pathname==='/api/time-cards'){const input=await body(req),db=readDb(),scope=managerScope(db,req.auth.user);if(!managerCan(req.auth.user,'manageTime')||!scope.projectIds.has(Number(input.projectId))||!scope.memberIds.has(Number(input.memberId)))return json(res,403,{error:'You can only add time for your assigned crews on your assigned projects'})}
