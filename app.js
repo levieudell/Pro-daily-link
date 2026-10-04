@@ -828,3 +828,15 @@ function syntheticAuditEntry(entry){
 }
 const renderAuditLogBeforeSyntheticCleanup=renderAuditLog;
 renderAuditLog=function(){const complete=auditLog;auditLog=complete.filter(entry=>!syntheticAuditEntry(entry));try{return renderAuditLogBeforeSyntheticCleanup()}finally{auditLog=complete}};
+
+// Keep singular counts natural everywhere contractors scan quickly.
+function polishVisiblePeopleCounts(root=document){
+  root.querySelectorAll('strong,span,p').forEach(element=>{
+    if(element.children.length)return;
+    element.textContent=element.textContent.replace(/\b1 people\b/g,'1 person').replace(/— people\b/g,'—');
+  });
+}
+const renderProjectCardsBeforeCountPolish=renderProjectCards;
+renderProjectCards=function(filter=''){const result=renderProjectCardsBeforeCountPolish(filter);polishVisiblePeopleCounts($('#project-cards'));return result};
+const renderReportsBeforeCountPolish=renderReports;
+renderReports=function(selected){const result=renderReportsBeforeCountPolish(selected);polishVisiblePeopleCounts($('#report-detail'));return result};

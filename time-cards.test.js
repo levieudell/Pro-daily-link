@@ -351,11 +351,13 @@ server.listen(4201, async () => {
     assert.equal(marcusRows[0].status, 'approved');
     assert.equal(marcusRows[0].hours, 1.25);
 
-    const manager = (await request('/api/users', {method: 'POST', headers: auth, body: JSON.stringify({name: 'Pat Manager', email: 'pat-cards@example.test', role: 'project_manager', projectIds: [1]})})).data;
+    const manager = (await request('/api/users', {method: 'POST', headers: auth, body: JSON.stringify({name: 'Pat Manager', email: 'pat-cards@example.test', role: 'project_manager', projectIds: [1], assignedCrews: ['Framing', 'Concrete'], permissions: {viewTime: true, viewDailies: true}})})).data;
     assert.equal((await request('/api/auth/claim', {method: 'POST', body: JSON.stringify({email: manager.email, temporaryPassword: manager.temporaryPassword, password: 'ManagerPassword!42'})})).response.status, 200);
     const managerLogin = await request('/api/auth/login', {method: 'POST', body: JSON.stringify({email: 'pat-cards@example.test', password: 'ManagerPassword!42'})});
     const managerAuth = {Authorization: `Bearer ${managerLogin.data.token}`};
-    assert.equal((await request('/api/time-cards', {headers: managerAuth})).response.status, 403);
+    const managerViewOnly = await request('/api/time-cards', {headers: managerAuth});
+    assert.equal(managerViewOnly.response.status, 200);
+    assert.ok(managerViewOnly.data.some(card => card.id === jamal.id));
     const managerTimeAccess = await request(`/api/users/${manager.id}/time-access`, {method: 'PATCH', headers: auth, body: JSON.stringify({manageTime: true})});
     assert.equal(managerTimeAccess.data.permissions.manageTime, true);
     const managerSees = await request('/api/time-cards', {headers: managerAuth});
