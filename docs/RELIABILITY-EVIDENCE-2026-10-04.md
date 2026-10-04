@@ -7,6 +7,7 @@ This record separates completed verification from configuration that still requi
 - Full application, tenant-isolation, billing-webhook, time-card, template, recovery, UX, security-regression, transactional-repository, and local restore tests passed.
 - Production dependency audit reported zero known vulnerabilities in runtime dependencies.
 - Repository secret scan reported no hard-coded production credentials.
+- The post-backup-tooling dependency audit again reported 0 vulnerabilities across 36 production dependencies. The repository scanner reported 0 critical findings and retained 7 dynamic-rendering files for manual review rather than silently suppressing them.
 - Public production load test completed 90 requests at concurrency 10 with zero failures: p50 77 ms, p95 237 ms, p99 335 ms.
 - Every active production tenant snapshot (12 of 12) was backed up, downloaded, parsed, and compared byte-equivalently at the JSON data level.
 - Production Northstar restore artifact was independently downloaded and verified at 8,860 bytes with SHA-256 `b4ffecb2b7f536de083b3422f07119b6f05696a602da9fc19e65abf221853956`.
@@ -17,6 +18,7 @@ This record separates completed verification from configuration that still requi
 - Supabase Pro is active. Eight consecutive daily physical database restore points were visible, including the 2026-10-04 backup.
 - The additive transactional schema migration is applied in production. A synthetic QA tenant advanced atomically to revision 1, and a stale revision-0 write was rejected with `PDL_REVISION_CONFLICT expected=0 actual=1`; no customer tenant was used.
 - The reliability pull request's `Test application` and `test` checks both passed on GitHub.
+- Portable single-tenant recovery sets now include the JSON snapshot plus every referenced private logo, photo, plan, and ticket object, with per-file SHA-256 hashes and original bucket/key mappings. Cross-tenant object references and unscoped exports are rejected; the full test suite passes.
 
 ## Built but not enabled in production
 
@@ -31,6 +33,7 @@ This record separates completed verification from configuration that still requi
 - Migrate and reconcile a synthetic tenant through the application tooling, then prove shadow mode before any customer cutover.
 - Add a Sentry DSN to Render and verify a received alert and its human recipient.
 - Add an independent second backup destination. Supabase Pro now provides daily database backups, but those backups do not include Storage objects and remain within the same provider. Point-in-time recovery is a separate paid add-on and was not enabled.
+- Run the first portable backup to the approved independent destination and complete a restore drill from that copy; the exporter is built and tested, but a destination has not yet been chosen.
 - Enable recurring monthly restore drills with a named owner and retained result.
 - Save the prepared GitHub rule requiring the successful `Test application` status check and an up-to-date branch before merge.
 - Replace the rejected Resend production key and prove delivery plus Reply-To behavior. The current production Resend API check returns HTTP 401, so email is not launch-ready.
