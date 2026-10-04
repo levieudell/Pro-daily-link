@@ -895,3 +895,39 @@ renderCustomers=function(selectedId){
   return result;
 };
 applyContractValueVisibility();
+
+// Give every screen immediate, consistent network feedback without blocking work.
+let activeWorkspaceRequests=0,networkActivityTimer=null;
+function setWorkspaceUpdating(active){
+  const indicator=$('#network-activity');if(!indicator)return;
+  if(active){
+    activeWorkspaceRequests+=1;
+    if(activeWorkspaceRequests===1)networkActivityTimer=setTimeout(()=>{indicator.hidden=false;document.documentElement.classList.add('workspace-updating')},180);
+  }else{
+    activeWorkspaceRequests=Math.max(0,activeWorkspaceRequests-1);
+    if(activeWorkspaceRequests===0){clearTimeout(networkActivityTimer);indicator.hidden=true;document.documentElement.classList.remove('workspace-updating')}
+  }
+}
+const apiBeforeWorkspaceFeedback=api;
+api=async function(path,options={}){setWorkspaceUpdating(true);try{return await apiBeforeWorkspaceFeedback(path,options)}finally{setWorkspaceUpdating(false)}};
+
+// Empty screens should always explain the next useful action.
+const renderProjectCardsBeforeEmptyAction=renderProjectCards;
+renderProjectCards=function(filter=''){
+  const result=renderProjectCardsBeforeEmptyAction(filter),hasProjects=projects.some(project=>Boolean(project.archived)===(projectView==='archived'));
+  if(!hasProjects&&projectView==='active'&&currentRole==='office'){
+    $('#project-cards').innerHTML='<div class="empty-state"><strong>Create your first project</strong><p>Add the job address and schedule, then your field team can start work and file dailies.</p><button type="button" class="primary" id="empty-new-project">Create project</button></div>';
+    $('#empty-new-project').onclick=()=>openNewProject();
+  }
+  return result;
+};
+const renderReportsBeforeEmptyAction=renderReports;
+renderReports=function(selected){
+  const result=renderReportsBeforeEmptyAction(selected);
+  if(!reports.length){
+    $('#report-list').innerHTML='<div class="empty-state"><strong>No daily reports yet</strong><p>Start the first report from the field or office. It can be saved and finished later.</p><button type="button" class="primary" id="empty-new-report">Create daily report</button></div>';
+    $('#report-detail').innerHTML='<div class="empty-state"><strong>Field notes will appear here</strong><p>Submitted dailies stay organized by project and move into office review.</p></div>';
+    $('#empty-new-report').onclick=()=>document.querySelector('[data-open-report]')?.click();
+  }
+  return result;
+};

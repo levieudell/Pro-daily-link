@@ -18,7 +18,7 @@ const PLATFORM_FILE = process.env.PDL_PLATFORM_FILE || path.join(path.dirname(DB
 const DEMO_SEED=JSON.parse(fs.readFileSync(DB_FILE,'utf8'));
 const PLATFORM_CLOUD_ID=stableUuid('platform','pro-daily-link-operations');
 const PORT = Number(process.env.PORT || 4173);
-const MIME = {'.html':'text/html; charset=utf-8','.css':'text/css; charset=utf-8','.js':'text/javascript; charset=utf-8','.json':'application/json; charset=utf-8','.svg':'image/svg+xml','.pdf':'application/pdf','.jpg':'image/jpeg','.jpeg':'image/jpeg','.png':'image/png','.webp':'image/webp'};
+const MIME = {'.html':'text/html; charset=utf-8','.css':'text/css; charset=utf-8','.js':'text/javascript; charset=utf-8','.json':'application/json; charset=utf-8','.webmanifest':'application/manifest+json; charset=utf-8','.svg':'image/svg+xml','.pdf':'application/pdf','.jpg':'image/jpeg','.jpeg':'image/jpeg','.png':'image/png','.webp':'image/webp'};
 const BILLING_PLANS={starter:{name:'Starter',price:99,annualPrice:990,maxUsers:10,maxProjects:5,priceEnv:'STRIPE_PRICE_STARTER',annualPriceEnv:'STRIPE_PRICE_STARTER_ANNUAL'},growth:{name:'Growth',price:199,annualPrice:1990,maxUsers:30,maxProjects:25,priceEnv:'STRIPE_PRICE_GROWTH',annualPriceEnv:'STRIPE_PRICE_GROWTH_ANNUAL'},pro:{name:'Pro',price:399,annualPrice:3990,maxUsers:75,maxProjects:null,priceEnv:'STRIPE_PRICE_PRO',annualPriceEnv:'STRIPE_PRICE_PRO_ANNUAL'}};
 const requestBuckets=new Map();
 function clientAddress(req){return String(req.headers['x-forwarded-for']||req.socket.remoteAddress||'unknown').split(',')[0].trim()}

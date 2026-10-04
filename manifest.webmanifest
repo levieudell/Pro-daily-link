@@ -1,0 +1,14 @@
+{
+  "name": "Pro Daily Link",
+  "short_name": "PDL",
+  "description": "Daily field reports, crew time, production, and office review for construction teams.",
+  "start_url": "/app",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#f4f2ec",
+  "theme_color": "#10251e",
+  "orientation": "portrait-primary",
+  "icons": [
+    {"src":"/assets/pro-daily-link-logo.png","sizes":"482x496","type":"image/png","purpose":"any"}
+  ]
+}

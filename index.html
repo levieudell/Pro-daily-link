@@ -9,8 +9,13 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Oswald:wght@500;600;700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="styles.css?v=20261003-contracts" />
+  <link rel="stylesheet" href="styles.css?v=20261003-app-polish" />
   <link rel="stylesheet" href="estimate-mobile.css" />
+  <link rel="manifest" href="manifest.webmanifest" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+  <meta name="apple-mobile-web-app-title" content="Pro Daily Link" />
+  <link rel="apple-touch-icon" href="assets/pro-daily-link-logo.png" />
   <style>
     html:not(.workspace-authenticated) body{visibility:hidden}
     .workspace-loader{display:none}
@@ -47,6 +52,7 @@
   </section>
   <div class="app-shell">
     <div class="connection-banner" id="connection-banner" role="status"></div>
+    <div class="network-activity" id="network-activity" role="status" aria-live="polite" aria-label="Updating workspace" hidden><i></i><span>Updating…</span></div>
     <aside class="sidebar" id="sidebar">
       <div class="brand"><span class="brand-mark"><img src="assets/pro-daily-link-logo.png" alt="Pro Daily Link logo" /></span><span>Pro Daily <b>Link</b></span></div>
       <nav id="main-nav" aria-label="Primary navigation">
@@ -422,7 +428,7 @@
   <dialog id="photo-detail-modal"><form method="dialog"><div class="modal-header"><div><p class="eyebrow">PHOTO RECORD</p><h2>Photo details</h2></div><button class="close-button" value="cancel">×</button></div><div id="photo-detail"></div><div class="modal-actions"><button value="cancel" class="secondary">Close</button></div></form></dialog>
   <div class="toast" id="toast" role="status" aria-live="polite" aria-atomic="true"></div>
   <script src="i18n.js?v=20260930a"></script>
-  <script src="app.js?v=20261003-contracts"></script>
+  <script src="app.js?v=20261003-app-polish"></script>
   <script src="estimate-mobile.js"></script>
 </body>
 </html>
