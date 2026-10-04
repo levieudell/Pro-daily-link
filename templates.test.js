@@ -46,28 +46,30 @@ server.listen(4203, async () => {
       function templatesOn(){return templatesOnFlag}
       function collectCustomFields(){return globalThis.__customFields || {}}
       const $ = () => globalThis.__customHost;
-      ${appJs.slice(appJs.indexOf('function readOfflineDraft'), appJs.indexOf('function collectCustomFields'))}
-      return {readOfflineDraft, writeOfflineDraft, setTemplatesOn(value){templatesOnFlag = value}};
+      const projects = [0,1,2,3].map(id => ({id: id+10})), company = {id:'synthetic-tenant'}, currentUser = {id:1};
+      function signedInCompanyId(){return company.id}
+      ${appJs.slice(appJs.indexOf('function offlineReportStorageKey'), appJs.indexOf('function collectCustomFields'))}
+      return {readOfflineDraft, writeOfflineDraft, storageKey:offlineReportStorageKey, setTemplatesOn(value){templatesOnFlag = value}};
     `);
     const memory = {};
     const localStorage = {getItem: key => memory[key] ?? null, setItem: (key, value) => {memory[key] = String(value)}};
     const drafts = draftFns(localStorage);
-    memory['pdl-draft-0'] = 'Plain note only';
+    memory[drafts.storageKey(0)] = 'Plain note only';
     assert.deepEqual(drafts.readOfflineDraft(0), {notes: 'Plain note only'});
-    memory['pdl-draft-1'] = JSON.stringify({notes: 'Pinned note', templateId: 4, templateVersion: 1, customFields: {pour: 'east'}});
+    memory[drafts.storageKey(1)] = JSON.stringify({notes: 'Pinned note', templateId: 4, templateVersion: 1, customFields: {pour: 'east'}});
     const pinnedDraft = drafts.readOfflineDraft(1);
     assert.equal(pinnedDraft.notes, 'Pinned note');
     assert.equal(pinnedDraft.templateId, 4);
     assert.equal(pinnedDraft.templateVersion, 1);
     drafts.setTemplatesOn(false);
     drafts.writeOfflineDraft(2, 'Still a string');
-    assert.equal(JSON.parse(memory['pdl-draft-2']).notes, 'Still a string');
+    assert.equal(JSON.parse(memory[drafts.storageKey(2)]).notes, 'Still a string');
     assert.equal(drafts.readOfflineDraft(2).notes, 'Still a string');
     drafts.setTemplatesOn(true);
     globalThis.__customHost = {dataset: {templateId: '9', templateVersion: '1'}};
     globalThis.__customFields = {pour: 'west'};
     drafts.writeOfflineDraft(3, 'Started offline');
-    const stored = JSON.parse(memory['pdl-draft-3']);
+    const stored = JSON.parse(memory[drafts.storageKey(3)]);
     assert.equal(stored.notes, 'Started offline');
     assert.equal(stored.templateId, '9');
     assert.equal(stored.templateVersion, '1');

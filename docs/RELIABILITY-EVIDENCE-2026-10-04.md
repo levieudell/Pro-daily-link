@@ -2,6 +2,10 @@
 
 This record separates completed verification from configuration that still requires an external account or production cutover.
 
+## Later observation: 18:01 UTC
+
+The entries below retain earlier historical observations. The [reconciled roadmap ledger](ROADMAP-STATUS-2026-10-04.md) supersedes their current-state merge, deployment, AI and Resend-outage conclusions: PRs #23/#25 are merged, main `6328586` deployed successfully, AI/email/billing are configured, and Sentry remains unconfigured. A sending-only Resend key's domain-query rejection does not establish failed delivery. Production health's backup timestamp is not proof of independently verified backups for every tenant. Provider delivery, billing lifecycle, alerts, recovery and staged cutover remain acceptance gates.
+
 ## Passed
 
 - Full application, tenant-isolation, billing-webhook, time-card, template, recovery, UX, security-regression, transactional-repository, and local restore tests passed.

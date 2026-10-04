@@ -59,7 +59,7 @@ server.listen(4201, async () => {
     assert.match(appJs, /filter\(input=>input\.dataset\.timecardDerived!==['"]true['"]\)/, 'date refresh must discard prior time-card-derived labor');
     assert.match(appJs, /sequence!==reportLaborLookupSequence\|\|key!==reportLaborSelectionKey\(\)/, 'stale labor lookups must not repaint a newer project or date');
     assert.match(appJs, /reportLaborLoadedKey!==reportLaborSelectionKey\(\).*await refreshReportLaborFromTimeCards\(\)/s, 'submission must wait for the selected project/date labor lookup');
-    assert.match(appJs, /discardedOfflineReportDrafts\.add\(key\).*localStorage\.removeItem\(`pdl-draft-\$\{key\}`\)/s, 'Start fresh must remove and tombstone the discarded draft');
+    assert.match(appJs, /discardedOfflineReportDrafts\.add\(key\).*localStorage\.removeItem\(offlineReportStorageKey\(key\)\)/s, 'Start fresh must remove and tombstone only the current scoped draft');
     assert.match(appJs, /discardedOfflineReportDrafts\.has\(key\)&&!notes\.trim\(\).*localStorage\.removeItem/s, 'blank autosave events must not recreate a discarded draft');
     const formCheck = new Function('team', 'escapeHtml', `
       const fields = {};
