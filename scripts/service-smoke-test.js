@@ -1,4 +1,6 @@
-'use strict';
+// Stripe restricted keys use rk_live_; they are the safer production choice
+  // and should not be mistaken for test-mode credentials.
+  const liveExpected = /^(?:sk|rk)_live_/.test(process.env.STRIPE_SECRET_KEY);'use strict';
 
 const path = require('node:path');
 const Stripe = require('stripe');
@@ -9,9 +11,15 @@ supabase.loadLocalEnv(path.resolve(__dirname, '..'));
 async function checkStripe() {
   if (!process.env.STRIPE_SECRET_KEY) return { configured: false };
   const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
-  const liveExpected = process.env.STRIPE_SECRET_KEY.startsWith('sk_live_');
+  const expectedPrices = {
+    STRIPE_PRICE_STARTER: [9900, 'month'], STRIPE_PRICE_STARTER_ANNUAL: [99000, 'year'],
+    STRIPE_PRICE_GROWTH: [19900, 'month'], STRIPE_PRICE_GROWTH_ANNUAL: [199000, 'year'],
+    STRIPE_PRICE_PRO: [39900, 'month'], STRIPE_PRICE_PRO_ANNUAL: [399000, 'year']
+  };
+  const priceKeys = Object.keys(expectedPrices);
   const balance = await stripe.balance.retrieve();
-  const priceKeys = ['STRIPE_PRICE_STARTER','STRIPE_PRICE_STARTER_ANNUAL','STRIPE_PRICE_GROWTH','STRIPE_PRICE_GROWTH_ANNUAL','STRIPE_PRICE_PRO','STRIPE_PRICE_PRO_ANNUAL'];
+  const [unitAmount, interval] = expectedPrices[key];
+    prices.push({ key, ok: price.active && price.livemode === liveExpected && price.unit_amount === unitAmount && price.currency === 'usd' && price.recurring?.interval === interval, active: price.active, livemode: price.livemode, amount: price.unit_amount, currency: price.currency, recurring: price.recurring?.interval || null });
   const prices = [];
   for (const key of priceKeys) {
     if (!process.env[key]) { prices.push({ key, ok: false, reason: 'missing' }); continue; }
