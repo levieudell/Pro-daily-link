@@ -35,5 +35,12 @@ assert.match(styles, /\.change-card/);
 assert.match(styles, /\.project-results-summary/);
 assert.match(styles, /\.change-workflow/);
 assert.match(app, /Changes could not be loaded/);
+assert.match(index, /id="report-review-summary"[^>]*aria-live="polite"/);
+assert.match(app, /function openDailyForAssignment/);
+assert.match(app, /Create daily/);
+assert.match(app, /updateFieldReportReview/);
+assert.match(styles, /\.myday-status-strip/);
+assert.match(styles, /\.field-assignment-daily/);
+assert.match(styles, /\.report-review-summary/);
 
 console.log('UX shell and installability tests passed.');

@@ -951,6 +951,58 @@ renderProjectCards=function(filter=''){
   }
   return result;
 };
+
+// Focused field experience: one obvious job, one obvious action, and a calm
+// review step that explains exactly what will be sent to the office.
+function fieldProjectForReport(report){return projects.find(project=>Number(project.id)===Number(report?.projectId))||projects[Number(report?.project)]}
+function openDailyForAssignment(assignment){
+  openReport();
+  $('#report-date').value=assignment.date;
+  const projectIndex=projects.findIndex(project=>Number(project.id)===Number(assignment.projectId));
+  if(projectIndex>=0)$('#report-project').value=String(projectIndex);
+  renderReportJobContext({chooseAssigned:true});addReportMapLink();
+  clearTimeCardDerivedReportLabor();refreshReportLaborFromTimeCards();loadReportWeather({silent:true});
+  $('#field-notes').focus();
+}
+const renderMyDayBeforeFocusedFieldPolish=renderMyDay;
+renderMyDay=function(){
+  const result=renderMyDayBeforeFocusedFieldPolish();if(currentRole!=='field')return result;
+  const memberId=Number(currentUser?.memberId),es=preferredLanguage==='es',today=companyTodayIso(),mine=assignments.filter(row=>(row.memberIds||[]).map(Number).includes(memberId)),todayItems=mine.filter(row=>row.date===today),upcoming=mine.filter(row=>row.date>today).sort((a,b)=>a.date.localeCompare(b.date)),active=workdays.find(row=>row.status==='active'&&(row.memberIds||[]).map(Number).includes(memberId)),todayReports=reports.filter(report=>reportWorkDate(report)===today),hero=$('#field-start-card');
+  const activeProject=active&&projects.find(project=>Number(project.id)===Number(active.projectId));
+  if(active)$('#field-start-detail').textContent=es?`${activeProject?.name||'Trabajo activo'} · desde ${new Date(active.startedAt).toLocaleTimeString([],{hour:'numeric',minute:'2-digit'})} · ${durationText(active.startedAt)}`:`${activeProject?.name||'Active job'} · since ${new Date(active.startedAt).toLocaleTimeString([],{hour:'numeric',minute:'2-digit'})} · ${durationText(active.startedAt)}`;
+  let strip=$('#myday-status-strip');if(!strip){strip=document.createElement('div');strip.id='myday-status-strip';strip.className='myday-status-strip';hero.before(strip)}
+  strip.innerHTML=`<div><small>${es?'ESTADO':'TODAY'}</small><strong>${active?(es?'En el reloj':'Clock running'):(es?'No iniciado':'Not started')}</strong></div><div><small>${es?'TRABAJO':'ASSIGNMENT'}</small><strong>${todayItems.length||0}</strong></div><div><small>${es?'REPORTES':'DAILIES'}</small><strong>${todayReports.length}</strong></div>`;
+  const assignmentMarkup=(assignment,{upcomingCard=false}={})=>{const project=projects.find(row=>Number(row.id)===Number(assignment.projectId)),ack=assignment.acknowledgements?.[memberId],address=project?.site&&project.site!=='Address not entered'?project.site:'',maps=address?`<a class="secondary field-assignment-map" href="https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(address)}" target="_blank" rel="noopener noreferrer">${es?'Direcciones':'Directions'} ↗</a>`:'',plans=project?`<button type="button" class="secondary" data-field-plan-project="${project.id}">${es?'Planos':'Plans'}</button>`:'',daily=!upcomingCard?`<button type="button" class="primary field-assignment-daily" data-assignment-daily="${assignment.id}">${es?'Crear reporte diario':'Create daily'} →</button>`:'';return `<article class="field-assignment field-assignment-card ${ack?'assignment-confirmed':''}"><div class="field-assignment-head"><span class="status ${ack?'':'warning'}">${ack?(es?'Confirmado':'Acknowledged'):(es?'Necesita confirmar':'Needs acknowledgement')}</span><span class="field-assignment-date">${formatDate(assignment.date)}</span></div><strong>${escapeHtml(project?.name||'Assigned project')}</strong><p>${escapeHtml(assignment.activity|| (es?'Trabajo programado':'Scheduled work'))}</p><small>${displayTime(assignment.start)}–${displayTime(assignment.end)}${address?` · ${escapeHtml(address)}`:''}</small><div class="field-assignment-actions">${ack?'':`<button type="button" class="secondary acknowledge-assignment" data-ack-assignment="${assignment.id}">${es?'Confirmar':'Acknowledge'}</button>`}${maps}${plans}${daily}</div></article>`};
+  $('#field-today').innerHTML=todayItems.length?todayItems.map(item=>assignmentMarkup(item)).join(''):`<div class="field-empty"><strong>${es?'No tiene trabajo asignado hoy':'No assignment today'}</strong><p>${es?'Comuníquese con su supervisor si esto no parece correcto.':'Contact your supervisor if this does not look right.'}</p></div>`;
+  const shownUpcoming=upcoming.slice(0,3);$('#field-upcoming').innerHTML=shownUpcoming.length?shownUpcoming.map(item=>assignmentMarkup(item,{upcomingCard:true})).join(''):`<div class="field-empty"><strong>${es?'No hay próximos trabajos':'No upcoming assignments'}</strong></div>`+(upcoming.length>shownUpcoming.length?`<p class="field-more-count">${es?`${upcoming.length-shownUpcoming.length} más en el horario`:`${upcoming.length-shownUpcoming.length} more on the schedule`}</p>`:'');
+  const recent=reports.slice().sort((a,b)=>String(reportWorkDate(b)).localeCompare(String(reportWorkDate(a)))).slice(0,4);$('#field-reports').innerHTML=recent.length?recent.map(report=>{const project=fieldProjectForReport(report),status=es?({Draft:'Borrador','Needs review':'En revisión',Approved:'Aprobado','Missing data':'Faltan datos'}[report.status]||report.status):report.status;return `<button type="button" class="field-report-row" data-field-report="${report.id}"><span><strong>${escapeHtml(project?.name|| (es?'Proyecto':'Project'))}</strong><small>${formatDate(reportWorkDate(report))} · ${escapeHtml(report.summary|| (es?'Reporte diario':'Daily report'))}</small></span><span class="status ${statusClass(report.status)}">${escapeHtml(status)}</span><b>→</b></button>`}).join(''):`<div class="field-empty"><strong>${es?'Aún no hay reportes diarios':'No dailies submitted yet'}</strong><p>${es?'Su primer reporte aparecerá aquí.':'Your first submitted report will appear here.'}</p></div>`;
+  $$('[data-ack-assignment]').forEach(button=>button.onclick=()=>acknowledgeAssignment(+button.dataset.ackAssignment,memberId));
+  $$('[data-assignment-daily]').forEach(button=>button.onclick=()=>{const assignment=assignments.find(row=>Number(row.id)===Number(button.dataset.assignmentDaily));if(assignment)openDailyForAssignment(assignment)});
+  $$('[data-field-plan-project]').forEach(button=>button.onclick=async()=>{await openProject(+button.dataset.fieldPlanProject);$('[data-project-detail-tab="plans"]')?.click()});
+  $$('[data-field-report]').forEach(button=>button.onclick=()=>{showPage('reports');renderReports(+button.dataset.fieldReport)});
+  return result;
+};
+
+const renderReportJobContextBeforeFieldPolish=renderReportJobContext;
+renderReportJobContext=function(options={}){
+  const project=renderReportJobContextBeforeFieldPolish(options),date=$('#report-date').value||companyTodayIso(),assignmentsForDay=currentRole==='field'?reportAssignmentsForDate().filter(row=>Number(row.projectId)===Number(project?.id)):[],automatic=currentRole==='field'&&!editingReportId&&assignmentsForDay.length===1,form=$('#report-form'),spanish=preferredLanguage==='es',context=$('#report-job-context');
+  form?.classList.toggle('field-auto-details',automatic);
+  const dateInput=$('#report-date');if(project){dateInput.min=project.startDate||'';dateInput.max=project.endDate||''}else{dateInput.min='';dateInput.max=''}
+  const list=context?.querySelector('dl');if(list&&!list.querySelector('[data-report-context-date]'))list.insertAdjacentHTML('afterbegin',`<div data-report-context-date><dt>${spanish?'Fecha':'Date'}</dt><dd>${escapeHtml(formatDate(date))}</dd></div>`);
+  if(context&&spanish){const labels=['Fecha','Dirección','Trabajo','Horario','Cuadrilla'];context.querySelectorAll('dt').forEach((node,index)=>{if(labels[index])node.textContent=labels[index]});const today=context.querySelector('.report-job-heading small');if(today)today.textContent='TRABAJO DE HOY'}
+  return project;
+};
+
+function updateFieldReportReview(){
+  const host=$('#report-review-summary');if(!host)return;const spanish=preferredLanguage==='es',rows=[...$$('.production-entry')],totals=reportLaborTotals(),changes=rows.filter(row=>!row.querySelector('.production-item')?.value&&row.querySelector('.custom-description')?.value.trim()).length;
+  host.innerHTML=`<div><small>${spanish?'TRABAJO':'WORK LINES'}</small><strong>${rows.length}</strong></div><div><small>${spanish?'HORAS':'CREW HOURS'}</small><strong>${totals.crew}</strong></div><div><small>${spanish?'CAMBIOS':'POTENTIAL CHANGES'}</small><strong>${changes}</strong></div>`;
+}
+const updateReportGapsBeforeFieldPolish=updateReportGaps;
+updateReportGaps=function(){const result=updateReportGapsBeforeFieldPolish();updateFieldReportReview();return result};
+const showReportStepBeforeFieldPolish=showReportStep;
+showReportStep=function(step){const result=showReportStepBeforeFieldPolish(step);$('#report-form')?.setAttribute('data-current-step',String(step));if(step===2)updateFieldReportReview();return result};
+const applyReportLanguageBeforeFieldPolish=applyReportLanguage;
+applyReportLanguage=function(){const result=applyReportLanguageBeforeFieldPolish(),spanish=$('#report-language').value.startsWith('es');const type=$('#report-type')?.closest('label'),date=$('#report-date-field'),crew=$('#report-crew-field');if(type)type.childNodes[0].textContent=spanish?'Tipo de reporte':'Daily type';if(date)date.childNodes[0].textContent=spanish?'Fecha':'Date';if(crew)crew.childNodes[0].textContent=spanish?'Cuadrilla':'Crew';return result};
 const renderReportsBeforeEmptyAction=renderReports;
 renderReports=function(selected){
   const result=renderReportsBeforeEmptyAction(selected);
