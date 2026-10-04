@@ -47,9 +47,14 @@ assert.match(app, /Describe the form you need/);
 assert.match(app, /function generateTemplateDraft/);
 assert.match(app, /function projectTemplateIds/);
 assert.match(app, /requires at least one photo/);
+assert.match(app, /pendingTemplatePhotoSubmission/);
+assert.match(app, /upload the linked photo, then submit/);
 assert.match(app, /does not certify OSHA or legal compliance/);
 assert.match(styles, /AI-first form and safety-template studio/);
 assert.match(server, /function aiTemplateDraft/);
 assert.match(server, /field_template_draft/);
+assert.match(server, /function scopedTemplateList/);
+assert.match(server, /TEMPLATE_PHOTO_REQUIRED/);
+assert.match(server, /This form is not assigned to the selected project/);
 
 console.log('UX shell and installability tests passed.');
