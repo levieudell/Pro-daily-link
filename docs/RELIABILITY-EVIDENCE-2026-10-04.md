@@ -24,6 +24,7 @@ This record separates completed verification from configuration that still requi
 - A fresh synthetic-tenant transactional concurrency run passed; competing writers did not silently overwrite one another.
 - The first independent portable backup was written to the approved OneDrive destination for synthetic tenant `4b272b77-d674-442c-ae3a-c4186e6d234f` at revision 74. The downloaded snapshot was parsed, its tenant identity matched the manifest, and SHA-256 `581c730323e39af6d95fce3fa0d37e9d85a95f1d777991fd5ee5cd9beee337e3` matched exactly. No customer tenant was used.
 - A monthly restore-drill automation is active. It uses the documented isolated procedure, retains dated evidence, stays quiet on clean runs, and alerts only for failure, stale backups, checksum/tenant mismatch, missing access, or another actionable regression.
+- A daily production-health monitor is active and stays quiet while healthy. It checks public reachability and, after the reliability health format ships, requires database, billing webhook, email, monitoring, and verified-backup signals without charging, messaging customers, mutating customer data, or exposing secrets.
 - Daily-report notes-only edits now preserve existing labor when an empty editor list is produced. Subcontractor archiving is recoverable, requires a reason, revokes active guest links, preserves history, blocks active duplicates, validates contact information, and records link creation/revocation. The complete automated suite passed after these changes.
 
 ## Built but not enabled in production
@@ -43,6 +44,7 @@ This record separates completed verification from configuration that still requi
 - Add the OpenAI key through Render's secret environment settings and remove/rotate the unexpected key-shaped file only after explicit authorization. Production health currently reports AI disabled.
 - Consolidate Stripe webhook delivery after confirming which endpoint is authoritative; three live endpoints are enabled. Stripe API access is healthy, but a controlled live checkout/webhook lifecycle still needs verification.
 - Push and merge the local reliability commits. This computer currently lacks a usable GitHub credential, so commit `135a5ac` and the preceding reliability commits are not yet on the protected remote branch.
+- Render inspection on 2026-10-04 confirmed production was still running commit `884fc79`, `SENTRY_DSN` was absent, and OpenAI existed as a secret file rather than the `OPENAI_API_KEY` environment variable read by the application. Stripe, Supabase, and Resend variable names were present; values were not exposed. The live legacy health response returned HTTP 200 with Supabase reachable and AI disabled, but cannot prove email, webhook, Sentry, or backup freshness until the reliability release is deployed.
 
 ## Release rule
 
