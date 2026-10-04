@@ -61,7 +61,8 @@ server.listen(4203, async () => {
     assert.equal(pinnedDraft.templateVersion, 1);
     drafts.setTemplatesOn(false);
     drafts.writeOfflineDraft(2, 'Still a string');
-    assert.equal(memory['pdl-draft-2'], 'Still a string');
+    assert.equal(JSON.parse(memory['pdl-draft-2']).notes, 'Still a string');
+    assert.equal(drafts.readOfflineDraft(2).notes, 'Still a string');
     drafts.setTemplatesOn(true);
     globalThis.__customHost = {dataset: {templateId: '9', templateVersion: '1'}};
     globalThis.__customFields = {pour: 'west'};

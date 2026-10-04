@@ -602,8 +602,9 @@ function templatesOn(){return company?.features?.templates===true}
 function templateChoices(){return dailyTemplates.length?dailyTemplates:[{id:'standard',name:'Standard',locked:true,versions:[{version:1,fields:[]}]}]}
 function templateById(id){return templateChoices().find(template=>String(template.id)===String(id||'standard'))||templateChoices().find(template=>template.id==='standard')||templateChoices()[0]}
 function templateVersionOf(template,version){const versions=template?.versions||[];if(version==null||version==='')return versions.at(-1)||null;return versions.find(row=>Number(row.version)===Number(version))||null}
-function readOfflineDraft(projectIndex){const raw=localStorage.getItem(`pdl-draft-${projectIndex}`);if(!raw)return {notes:''};const text=String(raw);if(text.trim().startsWith('{')){try{const parsed=JSON.parse(text);if(parsed&&typeof parsed==='object'&&!Array.isArray(parsed))return {notes:String(parsed.notes||''),templateId:parsed.templateId??null,templateVersion:parsed.templateVersion??null,customFields:parsed.customFields&&typeof parsed.customFields==='object'?parsed.customFields:{}}}catch{}}return {notes:text}}
-function writeOfflineDraft(projectIndex,notes){const key=`pdl-draft-${projectIndex}`;if(!templatesOn()){localStorage.setItem(key,notes);return}const host=$('#report-custom-fields'),existing=readOfflineDraft(projectIndex),templateId=host?.dataset.templateId||existing.templateId||null,templateVersion=host?.dataset.templateVersion||existing.templateVersion||null;localStorage.setItem(key,JSON.stringify({notes,templateId,templateVersion,customFields:collectCustomFields()}))}
+function readOfflineDraft(projectIndex){const raw=localStorage.getItem(`pdl-draft-${projectIndex}`);if(!raw)return {notes:''};const text=String(raw);if(text.trim().startsWith('{')){try{const parsed=JSON.parse(text);if(parsed&&typeof parsed==='object'&&!Array.isArray(parsed))return {...parsed,notes:String(parsed.notes||''),templateId:parsed.templateId??null,templateVersion:parsed.templateVersion??null,customFields:parsed.customFields&&typeof parsed.customFields==='object'?parsed.customFields:{}}}catch{}}return {notes:text}}
+function reportRecoverySnapshot(){const queryAll=typeof $$==='function'?$$:()=>[],project=Number($('#report-project')?.value),productionEntries=[...queryAll('.production-entry')].map(row=>{const raw=row.querySelector('.production-item')?.value||'',item=projects[project]?.estimateItems?.find(entry=>String(entry.id)===String(raw));return{estimateItemId:item?.id||null,description:item?.name||row.querySelector('.custom-description')?.value.trim()||'',custom:Boolean(row.querySelector('.custom-description')),quantity:Number(row.querySelector('.production-quantity')?.value)||0,unit:row.querySelector('.production-unit')?.value||item?.unit||'',laborHours:Number(row.querySelector('.production-hours')?.value)||0}}),laborEntries=[...queryAll('[data-labor-member]')].map(input=>({memberId:Number(input.dataset.laborMember),hours:Number(input.value)||0})).filter(row=>row.hours>0);return{dateIso:$('#report-date')?.value||'',reportType:$('#report-type')?.value||'production',language:$('#report-language')?.value||'en-US',crew:$('#report-crew')?.value||'',summary:$('#report-summary')?.value||'',next:$('#report-next')?.value||'',materials:$('#report-materials')?.value||'',equipment:$('#report-equipment')?.value||'',delays:$('#report-delays')?.value||'',safety:$('#report-safety')?.value||'',signature:$('#report-signature')?.value||'',productionEntries,laborEntries,photoNames:[...($('#report-photos')?.files||[])].map(file=>file.name),updatedAt:new Date().toISOString()}}
+function writeOfflineDraft(projectIndex,notes){const key=`pdl-draft-${projectIndex}`,host=$('#report-custom-fields'),existing=readOfflineDraft(projectIndex),templateId=host?.dataset.templateId||existing.templateId||null,templateVersion=host?.dataset.templateVersion||existing.templateVersion||null;localStorage.setItem(key,JSON.stringify({...reportRecoverySnapshot(),notes,templateId,templateVersion,customFields:collectCustomFields()}))}
 function collectCustomFields(){const values={};[...$$('[data-custom-field]')].forEach(field=>{const id=field.dataset.customField,type=field.dataset.customType;if(type==='yesno')values[id]=field.value==='yes'?true:field.value==='no'?false:'';else if(type==='number')values[id]=field.value===''?'':Number(field.value);else values[id]=field.value});return values}
 function dailyTemplatePayload(){const host=$('#report-custom-fields');if(!templatesOn()||!host?.dataset.templateId||host.dataset.legacy==='1')return {};return {templateId:host.dataset.templateId,templateVersion:Number(host.dataset.templateVersion),customFields:collectCustomFields()}}
 function renderReportCustomFields(report){const host=$('#report-custom-fields');if(!host)return;host.innerHTML='';delete host.dataset.templateId;delete host.dataset.templateVersion;host.dataset.legacy=report&&!report.templateId?'1':'0';if(!templatesOn()||(report&&!report.templateId))return;let pin,values={};if(report?.templateId){pin={templateId:report.templateId,templateVersion:report.templateVersion};values=report.customFields||{}}else{const draft=readOfflineDraft($('#report-project').value);if(draft.templateId){pin={templateId:draft.templateId,templateVersion:draft.templateVersion};values=draft.customFields||{}}else{const project=projects[+$('#report-project').value];pin={templateId:project?.templateId||company.defaultTemplateId||'standard',templateVersion:project?.templateId?project.templateVersion:null}}}const template=templateById(pin.templateId),version=templateVersionOf(template,pin.templateVersion)||templateVersionOf(template);if(!template||!version)return;host.dataset.templateId=template.id;host.dataset.templateVersion=String(version.version);const fields=version.fields||[];host.innerHTML=`<div class="section-heading"><h3>Additional fields</h3><small>${escapeHtml(template.name)} · version ${version.version}</small></div>`+fields.map(field=>{const value=values[field.id]??'',required=field.required?' data-custom-required="1"':'',label=`${escapeHtml(field.label)}${field.required?' *':''}`;if(field.type==='longtext')return `<label>${label}<textarea data-custom-field="${escapeHtml(field.id)}" data-custom-type="longtext" data-custom-label="${escapeHtml(field.label)}" rows="3"${required}>${escapeHtml(value)}</textarea></label>`;if(field.type==='number')return `<label>${label}<input data-custom-field="${escapeHtml(field.id)}" data-custom-type="number" data-custom-label="${escapeHtml(field.label)}" type="number" value="${escapeHtml(value)}"${required}></label>`;if(field.type==='date')return `<label>${label}<input data-custom-field="${escapeHtml(field.id)}" data-custom-type="date" data-custom-label="${escapeHtml(field.label)}" type="date" value="${escapeHtml(value)}"${required}></label>`;if(field.type==='yesno')return `<label>${label}<select data-custom-field="${escapeHtml(field.id)}" data-custom-type="yesno" data-custom-label="${escapeHtml(field.label)}"${required}><option value="">Select</option><option value="yes" ${value===true?'selected':''}>Yes</option><option value="no" ${value===false?'selected':''}>No</option></select></label>`;if(field.type==='dropdown')return `<label>${label}<select data-custom-field="${escapeHtml(field.id)}" data-custom-type="dropdown" data-custom-label="${escapeHtml(field.label)}"${required}><option value="">Select</option>${(field.options||[]).map(option=>`<option ${String(value)===String(option)?'selected':''}>${escapeHtml(option)}</option>`).join('')}</select></label>`;return `<label>${label}<input data-custom-field="${escapeHtml(field.id)}" data-custom-type="text" data-custom-label="${escapeHtml(field.label)}" type="text" value="${escapeHtml(value)}"${required}></label>`}).join('');if(!fields.length)host.insertAdjacentHTML('beforeend','<p class="input-help">This version adds no custom fields.</p>')}
@@ -763,3 +764,67 @@ const renderEverythingBeforeManagerScope=renderEverything;
 renderEverything=function(){const result=renderEverythingBeforeManagerScope(),manager=currentUser?.role==='project_manager',canSchedule=!manager||currentUser?.permissions?.scheduleCrews===true,newAssignment=$('#new-assignment');if(newAssignment)newAssignment.hidden=!canSchedule;return result};
 const renderReportsBeforeManagerScope=renderReports;
 renderReports=function(selected){const result=renderReportsBeforeManagerScope(selected);if(currentUser?.role==='project_manager'&&currentUser?.permissions?.approveDailies!==true)$('[data-approve-report]')?.remove();return result};
+
+// Refresh-safe report recovery. Browser storage is deliberately described as
+// device storage (not a server draft), and an interrupted form is reopened with
+// the exact notes/custom fields that were present before a refresh.
+const ACTIVE_REPORT_RECOVERY_KEY='pdl-active-report-recovery-v1';
+let restoringActiveReport=false;
+function activeReportRecovery(){try{return JSON.parse(sessionStorage.getItem(ACTIVE_REPORT_RECOVERY_KEY)||'null')}catch{return null}}
+function rememberActiveReport(){
+  const modal=$('#report-modal');if(!modal?.open)return;
+  const projectIndex=Number($('#report-project').value),projectId=projects[projectIndex]?.id||null,key=offlineReportDraftKey(projectIndex),notes=$('#field-notes').value;
+  writeOfflineDraft(key,notes);
+  sessionStorage.setItem(ACTIVE_REPORT_RECOVERY_KEY,JSON.stringify({key,projectId,reportId:editingReportId||null,updatedAt:new Date().toISOString()}));
+  $('#autosave-status').textContent='Saved on this device · protected if you refresh';
+}
+function clearActiveReportRecovery(key=offlineReportDraftKey()){
+  localStorage.removeItem(`pdl-draft-${key}`);sessionStorage.removeItem(ACTIVE_REPORT_RECOVERY_KEY);
+}
+$('#field-notes').addEventListener('input',rememberActiveReport);
+$('#report-custom-fields')?.addEventListener('input',rememberActiveReport);
+$('#report-modal').addEventListener('input',event=>{if(event.target.matches('input,textarea,select'))rememberActiveReport()});
+$('#report-modal').addEventListener('change',event=>{if(event.target.matches('input,textarea,select'))rememberActiveReport()});
+$('#report-modal').addEventListener('close',()=>{
+  const recovery=activeReportRecovery();if(recovery)clearActiveReportRecovery(recovery.key);
+});
+const saveDailyReportBeforeRecovery=saveDailyReport;
+saveDailyReport=async function(status){
+  const recoveryKey=offlineReportDraftKey();
+  await saveDailyReportBeforeRecovery(status);
+  if(!$('#report-modal').open)clearActiveReportRecovery(recoveryKey)
+};
+function restoreRecoveredReportFields(draft){
+  if(draft.dateIso)$('#report-date').value=draft.dateIso;
+  if(draft.reportType&&$('#report-type')){$('#report-type').value=draft.reportType;applyReportType()}
+  if(draft.language&&$('#report-language')){$('#report-language').value=draft.language;applyReportLanguage()}
+  if(draft.crew&&$('#report-crew'))$('#report-crew').value=draft.crew;
+  for(const [id,key] of [['report-summary','summary'],['report-next','next'],['report-materials','materials'],['report-equipment','equipment'],['report-delays','delays'],['report-safety','safety'],['report-signature','signature']])if(Object.hasOwn(draft,key)&&document.getElementById(id))document.getElementById(id).value=draft[key]||'';
+  if(Array.isArray(draft.productionEntries)&&draft.productionEntries.length){$('#production-rows').innerHTML='';draft.productionEntries.forEach(addProductionRow)}
+  if(Array.isArray(draft.laborEntries)&&draft.laborEntries.length)populateReportLabor(draft.laborEntries);
+  if(draft.photoNames?.length)showReportMessage(`Your notes were restored. Reattach ${draft.photoNames.length} photo${draft.photoNames.length===1?'':'s'} before submitting: ${draft.photoNames.join(', ')}`);
+}
+async function restoreInterruptedReport(){
+  if(restoringActiveReport)return;const recovery=activeReportRecovery();if(!recovery)return;
+  const draft=readOfflineDraft(recovery.key);if(!draft.notes?.trim()){sessionStorage.removeItem(ACTIVE_REPORT_RECOVERY_KEY);return}
+  restoringActiveReport=true;
+  try{
+    const saved=recovery.reportId?reports.find(report=>Number(report.id)===Number(recovery.reportId)):null;
+    openReport(saved||null);
+    if(!saved&&recovery.projectId){const index=projects.findIndex(project=>Number(project.id)===Number(recovery.projectId));if(index>=0){$('#report-project').value=String(index);renderReportCustomFields(null)}}
+    applyOfflineReportDraft(draft);restoreRecoveredReportFields(draft);$('#report-draft-choice').hidden=true;
+    $('#autosave-status').textContent='Recovered after refresh · saved on this device';
+    notify('Your in-progress daily report was restored after refresh.');
+  }finally{restoringActiveReport=false}
+}
+const loadRoleBeforeReportRecovery=loadRole;
+loadRole=async function(role){const result=await loadRoleBeforeReportRecovery(role);await restoreInterruptedReport();return result};
+
+// Keep synthetic launch-verification activity out of the customer-facing log
+// without deleting the underlying security audit trail.
+function syntheticAuditEntry(entry){
+  const text=`${entry?.projectName||''} ${entry?.detail||''} ${entry?.reason||''} ${entry?.actor||''}`.toLowerCase();
+  return entry?.synthetic===true||/\babc test\b|\btester mctest\b|levi\+qa-|\bseed project\b|\btest pm\b|\btest crew\b/.test(text);
+}
+const renderAuditLogBeforeSyntheticCleanup=renderAuditLog;
+renderAuditLog=function(){const complete=auditLog;auditLog=complete.filter(entry=>!syntheticAuditEntry(entry));try{return renderAuditLogBeforeSyntheticCleanup()}finally{auditLog=complete}};
