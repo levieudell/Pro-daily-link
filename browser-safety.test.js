@@ -23,7 +23,7 @@ const context={$:node,$$:()=>[],location:{origin:'https://example.invalid'},URL,
   catalog:[{id:1,name:attack,category:attack,description:attack,unit:attack,targetHoursPerUnit:1,history:{actualHoursPerUnit:2}}],
   localStorage:new Map(),sessionStorage:new Map(),company:{id:'tenant-a'},currentUser:{id:1},
   signedInCompanyId:()=>context.company.id,reports:[],restoringActiveReport:false,ACTIVE_REPORT_RECOVERY_KEY:'active',
-  notify:()=>{},openReport:()=>{context.opened=true},applyOfflineReportDraft:()=>{},restoreRecoveredReportFields:()=>{},
+  notify:()=>{},openReport:report=>{context.opened=true;context.openedReport=report},applyOfflineReportDraft:draft=>{context.restoredDraft=draft},restoreRecoveredReportFields:()=>{},editingReportId:null,
   renderReportCustomFields:()=>{},activeReportRecovery:()=>JSON.parse(context.sessionStorage.get('active')||'null')};
 for(const store of [context.localStorage,context.sessionStorage]){
   store.getItem=key=>store.get(key)||null;store.setItem=(key,value)=>store.set(key,value);store.removeItem=key=>store.delete(key);
@@ -43,7 +43,10 @@ const imported=context.importLineMarkup({description:attack,unit:attack,quantity
 assert.ok(!imported.includes(attack),'imported text and numeric attribute contexts must escape markup');
 
 (async()=>{
+  vm.runInContext(source.match(/^offlineReportDraftKey=function[^\r\n]+/m)[0],context);
+  node('#report-project').value='0';
   const originalKey=context.offlineReportStorageKey(0);
+  assert.equal(context.offlineReportStorageKey(context.offlineReportDraftKey()),originalKey,'production draft key matches numeric project lookup');
   context.localStorage.setItem(originalKey,JSON.stringify({notes:'',summary:'Structured work retained',photoNames:['photo.jpg'],laborEntries:[{memberId:1,hours:8}]}));
   assert.equal(context.hasOfflineReportContent(context.readOfflineDraft(0)),true);
   context.company.id='tenant-b';assert.notEqual(context.offlineReportStorageKey(0),originalKey);
@@ -53,6 +56,23 @@ assert.ok(!imported.includes(attack),'imported text and numeric attribute contex
   context.projects.unshift({id:99});assert.equal(context.offlineReportStorageKey(1),originalKey,'project reordering preserves stable draft identity');
   context.sessionStorage.setItem('active',JSON.stringify({companyId:'tenant-a',userId:1,projectId:1,key:'0'}));
   await context.restoreInterruptedReport();assert.equal(context.opened,true,'structured draft without notes must resume');
+  context.restoringActiveReport=false;
+  node('#report-project').value='0';
+  const otherKey=context.offlineReportStorageKey(context.offlineReportDraftKey());
+  assert.notEqual(otherKey,originalKey,'production keys for different projects cannot collide');
+  context.editingReportId=42;
+  const editKey=context.offlineReportStorageKey(context.offlineReportDraftKey());
+  assert.notEqual(editKey,otherKey,'report edit draft cannot overwrite project draft');
+  context.editingReportId=43;
+  assert.notEqual(context.offlineReportStorageKey(context.offlineReportDraftKey()),editKey,'report edit drafts remain distinct');
+  context.localStorage.setItem(editKey,JSON.stringify({notes:'Report edit retained'}));
+  context.reports=[{id:42,project:1,status:'Draft'}];
+  context.sessionStorage.setItem('active',JSON.stringify({companyId:'tenant-a',userId:1,projectId:1,reportId:42,key:'report-42'}));
+  await context.restoreInterruptedReport();
+  assert.equal(context.openedReport.id,42,'editing recovery opens original report');
+  assert.equal(context.restoredDraft.notes,'Report edit retained','editing recovery reads report key rather than project key');
+  assert.ok(context.localStorage.has(originalKey),'report recovery preserves independent project draft');
+  context.restoringActiveReport=false;
   context.opened=false;context.sessionStorage.setItem('active',JSON.stringify({companyId:'tenant-b',userId:1,projectId:1,key:'0'}));
   await context.restoreInterruptedReport();assert.equal(context.opened,false,'foreign tenant recovery cannot open');
   context.sessionStorage.setItem('active',JSON.stringify({companyId:'tenant-a',userId:2,projectId:1,key:'0'}));
