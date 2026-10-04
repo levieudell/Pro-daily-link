@@ -78,5 +78,6 @@ assert.match(styles, /\[data-theme="dark"\] \.schedule-summary article/);
 assert.match(styles, /\[data-theme="dark"\] \.schedule-cell\.person/);
 assert.match(styles, /\[data-theme="dark"\] \.schedule-view-switcher button\.active/);
 assert.match(styles, /\[data-theme="dark"\] table th/);
+assert.match(index, /styles\.css\?v=20261004-dark-surfaces/);
 
 console.log('UX shell and installability tests passed.');
