@@ -272,3 +272,5 @@ The first sellable release includes phases 1–7 at a focused level: secure comp
 - Difference between reported and final production totals
 - Weekly active field and office users
 - Report exports per active project
+
+Local reporting-policy implementation: see docs/REPORTING-ACCEPTANCE-2026-10-04.md for fixed export versions, first-office-approval rate snapshots, audited adjustments, legacy review and exact test/production limits. This is local work on codex/reporting-rate-acceptance; it does not mark all reporting formats or launch gates complete.
