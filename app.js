@@ -1007,6 +1007,20 @@ async function archiveSubcontractor(id){
   try{const updated=await api(`/api/subcontractors/${id}/archive`,{method:'PATCH',body:JSON.stringify({archived:true,reason:reason.trim()})});Object.assign(sub,updated);subcontractorLinks.filter(link=>Number(link.subcontractorId)===id&&link.status==='Active').forEach(link=>link.status='Revoked');renderTeamDirectory();await syncActionCenter();notify(`${sub.name} archived. History was preserved and active links were revoked.`)}catch(error){notify(error.message)}
 }
 
+// The navigation badge is an attention signal, not a lifetime report total.
+function dailyReportAlertCount(){
+  if(currentRole!=='office')return 0;
+  return reports.filter(report=>report.status==='Needs review'||report.status==='Submitted'||report.status==='Needs correction'||(report.flags||[]).some(flag=>!flag.resolution)).length;
+}
+function updateDailyReportNavAlert(){
+  const badge=$('#report-count');if(!badge)return;
+  const count=dailyReportAlertCount();badge.textContent=String(count);badge.hidden=count===0;
+  badge.title=count?`${count} daily report${count===1?'':'s'} need attention`:'';
+  badge.setAttribute('aria-label',badge.title);
+}
+const renderReportsBeforeActionBadge=renderReports;
+renderReports=function(selected){const result=renderReportsBeforeActionBadge(selected);updateDailyReportNavAlert();return result};
+
 // Focused field experience: one obvious job, one obvious action, and a calm
 // review step that explains exactly what will be sent to the office.
 function fieldProjectForReport(report){return projects.find(project=>Number(project.id)===Number(report?.projectId))||projects[Number(report?.project)]}
