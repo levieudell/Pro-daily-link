@@ -22,6 +22,7 @@ seed.photos = [0,1].map(index=>({id:index+1,project:index,url:'/uploads/'+upload
 seed.company.demo = true;
 seed.company.pricingAccess = { enabled:true,officeMode:'selected',userIds:[4] };
 seed.projects[0].contractValue = 12345;
+seed.projects[0].contractType = 'tm';
 seed.projects[0].budget = '$12,345';
 seed.projects[0].tmSettings = { defaultLaborRate:100,materialMarkup:15,equipmentMarkup:20 };
 seed.projects[0].estimateItems = [{id:101,name:'QA production',plannedQuantity:100,budgetHours:40,unit:'SF',cost:999}];
@@ -31,6 +32,7 @@ seed.reports = [
   {id:2,status:'Approved',dateIso:'2026-10-02',quantity:20,hours:4},
   {id:3,status:'Draft',dateIso:'2026-10-03',quantity:999,hours:99}
 ].map(row=>({...row,project:0,foreman:seed.team[0].name,notes:'Synthetic acceptance',signature:'QA',flags:[],laborEntries:[{memberId,hours:row.hours}],productionEntries:[{estimateItemId:101,description:'QA production',quantity:row.quantity,unit:'SF',laborHours:row.hours}]}));
+for(const report of seed.reports.filter(row=>row.status==='Approved'))report.rateSnapshot={schemaVersion:1,laborRate:100,capturedAt:'2026-10-02T00:00:00Z',capturedBy:{id:1,name:'QA',role:'owner'},source:'synthetic-fixture'};
 seed.assignments = [{id:1,projectId,memberIds:[memberId],date:'2026-10-01',start:'07:00',end:'15:00'}];
 seed.workdays = [];
 seed.users = [
