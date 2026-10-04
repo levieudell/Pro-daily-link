@@ -275,6 +275,8 @@ function isOfficeMember(member){return /office|administrator|admin|estimator|acc
 function shiftHours(start,end){const [sh,sm]=start.split(':').map(Number),[eh,em]=end.split(':').map(Number);return Math.max(0,((eh*60+em)-(sh*60+sm))/60)}
 function assignmentActualHours(assignment,memberId){return reports.filter(report=>report.status==='Approved'&&report.dateIso===assignment.date&&projects[report.project]?.id===assignment.projectId).reduce((sum,report)=>sum+(report.laborEntries||[]).filter(entry=>Number(entry.memberId)===Number(memberId)).reduce((hours,entry)=>hours+(Number(entry.hours)||0),0),0)}
 function scheduleDate(value=scheduleAnchorDate){const date=new Date(`${value}T12:00:00`);return Number.isNaN(date.valueOf())?new Date():date}
+function chooseScheduleDate(value){if(!/^\d{4}-\d{2}-\d{2}$/.test(value))return false;const date=new Date(`${value}T12:00:00`);if(Number.isNaN(date.valueOf())||localDateIso(date)!==value)return false;scheduleAnchorDate=value;renderSchedule();return true}
+function openScheduleDatePicker(){const dialog=$('#schedule-date-dialog'),input=$('#schedule-date-input');input.value=scheduleAnchorDate;$('#schedule-date-error').hidden=true;dialog.showModal();input.focus();try{input.showPicker?.()}catch{/* The visible native date field remains available when automatic opening is unsupported. */}}
 function scheduleMonday(){const date=scheduleDate();date.setDate(date.getDate()-((date.getDay()+6)%7));return date}
 function shiftSchedulePeriod(direction){const date=scheduleDate();if(scheduleView==='day')date.setDate(date.getDate()+direction);else if(scheduleView==='month')date.setMonth(date.getMonth()+direction,1);else date.setDate(date.getDate()+direction*7);scheduleAnchorDate=localDateIso(date);renderSchedule()}
 function schedulePeriodDays(){const anchor=scheduleDate();if(scheduleView==='day')return[{label:anchor.toLocaleDateString(interfaceLocale(),{weekday:'long',month:'short',day:'numeric'}).toUpperCase(),date:localDateIso(anchor)}];if(scheduleView==='month'){const first=new Date(anchor.getFullYear(),anchor.getMonth(),1,12),last=new Date(anchor.getFullYear(),anchor.getMonth()+1,0,12),days=[];for(let date=new Date(first);date<=last;date.setDate(date.getDate()+1))days.push({label:String(date.getDate()),date:localDateIso(date)});return days}const monday=scheduleMonday();return Array.from({length:5},(_,index)=>{const date=new Date(monday);date.setDate(monday.getDate()+index);return{label:date.toLocaleDateString(interfaceLocale(),{weekday:'short',day:'numeric'}).toUpperCase(),date:localDateIso(date)}})}
@@ -419,6 +421,9 @@ function openAssignment(prefill={}){if(!canManageSchedule())return;const assignm
 $('#new-assignment').onclick=()=>openAssignment();
 $('#schedule-previous-week').onclick=()=>shiftSchedulePeriod(-1);
 $('#schedule-next-week').onclick=()=>shiftSchedulePeriod(1);
+$('#schedule-pick-date').onclick=openScheduleDatePicker;
+$('#schedule-date-form').onsubmit=event=>{event.preventDefault();if(!chooseScheduleDate($('#schedule-date-input').value)){$('#schedule-date-error').hidden=false;return}$('#schedule-date-dialog').close('selected')};
+$('#schedule-date-dialog').addEventListener('close',()=>$('#schedule-pick-date').focus());
 $('#schedule-today').onclick=()=>{scheduleWeekOffset=0;scheduleAnchorDate=localDateIso();renderSchedule()};
 $$('[data-schedule-view]').forEach(button=>button.onclick=()=>{scheduleView=button.dataset.scheduleView;renderSchedule()});
 $('#assignment-type').onchange=populateAssignmentTarget;
