@@ -9,7 +9,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Oswald:wght@500;600;700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="styles.css?v=20261003-launch" />
+  <link rel="stylesheet" href="styles.css?v=20261003-contracts" />
   <link rel="stylesheet" href="estimate-mobile.css" />
   <style>
     html:not(.workspace-authenticated) body{visibility:hidden}
@@ -322,7 +322,7 @@
         <label>Equipment markup<input id="tm-equipment-markup" type="number" min="0" step="0.1" placeholder="Percent" /></label>
         <small>Office-only billing settings. Field users never receive these values.</small>
       </div>
-      <div class="two-col"><label>Project code<input id="project-code" maxlength="4" placeholder="RMC" /></label><label>Contract value<input id="project-budget" placeholder="$500K" /></label></div>
+      <div class="two-col"><label>Project code<input id="project-code" maxlength="4" placeholder="RMC" /></label><label id="project-contract-value-field">Contract value <small>Optional</small><input id="project-budget" placeholder="$500K" /></label></div>
       <label>Job-site address<input id="project-site" placeholder="Street, city" /></label>
       <div class="two-col"><label>Start date<input id="project-start" type="date" /></label><label>Target finish<input id="project-end" type="date" /></label></div>
       <label class="templates-only">Daily template<select id="project-template"></select><small class="input-help">New dailies use this version. Saved dailies keep the version they started on.</small></label>
@@ -356,7 +356,7 @@
       <input type="hidden" id="estimate-item-id" />
       <label>Scope of work<input id="estimate-name" required placeholder="Example: Place slab concrete" /></label>
       <div class="two-col"><label>Planned quantity<input id="estimate-quantity" type="number" min="0" step="0.01" /></label><label>Unit<select id="estimate-unit"><option>CY</option><option>SF</option><option>LF</option><option>EA</option><option>TON</option><option>HR</option></select></label></div>
-      <div class="two-col"><label>Budgeted labor hours<input id="estimate-hours" type="number" min="0" step="0.5" /></label><label>Estimated cost<input id="estimate-cost" type="number" min="0" step="1" /></label></div>
+      <div class="two-col"><label>Budgeted labor hours<input id="estimate-hours" type="number" min="0" step="0.5" /></label><label id="estimate-cost-field">Estimated cost <small>Optional</small><input id="estimate-cost" type="number" min="0" step="1" /></label></div>
       <div class="modal-actions"><button value="cancel" class="secondary">Cancel</button><button type="button" class="primary" id="save-estimate">Add to estimate</button></div>
     </form>
   </dialog>
@@ -422,7 +422,7 @@
   <dialog id="photo-detail-modal"><form method="dialog"><div class="modal-header"><div><p class="eyebrow">PHOTO RECORD</p><h2>Photo details</h2></div><button class="close-button" value="cancel">×</button></div><div id="photo-detail"></div><div class="modal-actions"><button value="cancel" class="secondary">Close</button></div></form></dialog>
   <div class="toast" id="toast" role="status" aria-live="polite" aria-atomic="true"></div>
   <script src="i18n.js?v=20260930a"></script>
-  <script src="app.js?v=20261003-launch"></script>
+  <script src="app.js?v=20261003-contracts"></script>
   <script src="estimate-mobile.js"></script>
 </body>
 </html>

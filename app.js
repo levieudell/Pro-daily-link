@@ -464,7 +464,7 @@ renderEverything=function(){customers=customers.filter(customer=>!customer.archi
 const renderReportsBeforeBadgeFix=renderReports;
 renderReports=function(selected){const result=renderReportsBeforeBadgeFix(selected);$('#report-count').textContent=reports.length;return result};
 function projectHealth(project){if(['Delayed','Archived'].includes(project.status))return project.status;const items=productionData.projects.find(row=>Number(row.projectId)===Number(project.id))?.items||[],planned=items.reduce((sum,row)=>sum+Number(row.plannedQuantity||0),0),actual=items.reduce((sum,row)=>sum+Number(row.actualQuantity||0),0),budgetHours=items.reduce((sum,row)=>sum+Number(row.budgetHours||0),0),actualHours=items.reduce((sum,row)=>sum+Number(row.actualLaborHours||0),0),quantityPercent=planned>0?actual/planned*100:0,laborPercent=budgetHours>0?actualHours/budgetHours*100:0;if(actualHours>0&&laborPercent>quantityPercent+5)return'At risk';if(actual>0&&quantityPercent>laborPercent+10)return'Ahead';return project.status||'On track'}
-function projectContractDisplay(project){const value=Number(project.contractValue??String(project.budget||'').replace(/[^0-9.-]/g,''));return project.contractType==='tm'?'Time & material':value>0?(project.budget||`$${value.toLocaleString()}`):'Not entered'}
+function projectContractDisplay(project){if(!companyTracksContractValues())return'Not tracked';const value=Number(project.contractValue??String(project.budget||'').replace(/[^0-9.-]/g,''));return project.contractType==='tm'?'Time & material':value>0?(project.budget||`$${value.toLocaleString()}`):'Not entered'}
 const renderProjectCardsBeforeHealth=renderProjectCards;
 renderProjectCards=function(filter=''){const result=renderProjectCardsBeforeHealth(filter);$$('[data-project-card]').forEach(card=>{const project=projects.find(row=>Number(row.id)===Number(card.dataset.projectCard));if(!project)return;const status=projectHealth(project),pill=card.querySelector('.project-card-actions .status'),contract=card.querySelector('.project-meta div:first-child strong');if(pill){pill.textContent=status;pill.className=`status ${statusClass(status)}`}if(contract)contract.textContent=projectContractDisplay(project)});return result};
 const renderTableBeforeHealth=renderTable;
@@ -840,3 +840,57 @@ const renderProjectCardsBeforeCountPolish=renderProjectCards;
 renderProjectCards=function(filter=''){const result=renderProjectCardsBeforeCountPolish(filter);polishVisiblePeopleCounts($('#project-cards'));return result};
 const renderReportsBeforeCountPolish=renderReports;
 renderReports=function(selected){const result=renderReportsBeforeCountPolish(selected);polishVisiblePeopleCounts($('#report-detail'));return result};
+
+// Contract values are an optional company workflow. Production quantities,
+// labor hours, and efficiency remain available when financial tracking is off.
+function companyTracksContractValues(){return company?.contractValueTracking===true}
+function ensureContractValueSetting(){
+  let section=$('#contract-value-settings');
+  if(section)return section;
+  section=document.createElement('fieldset');
+  section.id='contract-value-settings';
+  section.className='pricing-access-settings';
+  section.innerHTML='<legend>Financial tracking</legend><label class="check-row"><input id="contract-value-tracking" type="checkbox"> Track contract values and estimated costs</label><p class="input-help">Optional. When off, Pro Daily Link tracks quantities, labor hours, production, and efficiency without displaying dollar fields.</p>';
+  const pricing=$('#pricing-access-settings');
+  pricing?.parentNode.insertBefore(section,pricing);
+  return section;
+}
+function applyContractValueVisibility(){
+  const enabled=companyTracksContractValues();
+  $('#project-contract-value-field')?.toggleAttribute('hidden',!enabled);
+  $('#estimate-cost-field')?.toggleAttribute('hidden',!enabled);
+  $$('.contract-value-row').forEach(row=>row.toggleAttribute('hidden',!enabled));
+}
+const renderCompanySettingsBeforeContractValues=renderCompanySettings;
+renderCompanySettings=function(){
+  const result=renderCompanySettingsBeforeContractValues();
+  ensureContractValueSetting();
+  const toggle=$('#contract-value-tracking');
+  toggle.checked=companyTracksContractValues();
+  toggle.disabled=!companySettingsEditing;
+  return result;
+};
+$('#save-company-settings').onclick=async()=>{
+  const pricingAccess={enabled:$('#pricing-enabled').checked,officeMode:$('#pricing-office-all').checked?'all':'selected',userIds:[...$$('[data-pricing-user]:checked')].map(input=>Number(input.dataset.pricingUser))};
+  const input={name:$('#company-name').value.trim(),trade:$('#company-trade').value.trim(),email:$('#company-email').value.trim(),phone:$('#company-phone').value.trim(),timezone:$('#company-timezone').value,weekStart:$('#company-week-start').value,overtimeRule:$('#company-overtime-rule').value,pricingAccess};
+  if(!input.name)return notify('Company name is required');
+  try{
+    company=await api('/api/company',{method:'PATCH',body:JSON.stringify(input)});
+    company=await api('/api/company/contract-value-tracking',{method:'PATCH',body:JSON.stringify({enabled:$('#contract-value-tracking').checked})});
+    companySettingsEditing=false;
+    renderCompanySettings();renderProjectCards($('#project-search')?.value||'');renderCustomers();
+    notify('Company settings saved');
+  }catch(error){notify(error.message)}
+};
+const openNewProjectBeforeContractValues=openNewProject;
+openNewProject=function(customerId=null){const result=openNewProjectBeforeContractValues(customerId);applyContractValueVisibility();return result};
+const openProjectBeforeContractValues=openProject;
+openProject=function(id){const result=openProjectBeforeContractValues(id);applyContractValueVisibility();return result};
+const renderCustomersBeforeContractValues=renderCustomers;
+renderCustomers=function(selectedId){
+  const result=renderCustomersBeforeContractValues(selectedId);
+  const metric=$('#customer-detail .customer-metrics .customer-metric:nth-child(3)');
+  if(metric)metric.hidden=!companyTracksContractValues();
+  return result;
+};
+applyContractValueVisibility();
