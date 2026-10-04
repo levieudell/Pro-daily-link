@@ -1,6 +1,4 @@
-// Stripe restricted keys use rk_live_; they are the safer production choice
-  // and should not be mistaken for test-mode credentials.
-  const liveExpected = /^(?:sk|rk)_live_/.test(process.env.STRIPE_SECRET_KEY);'use strict';
+'use strict';
 
 const path = require('node:path');
 const Stripe = require('stripe');
@@ -11,20 +9,22 @@ supabase.loadLocalEnv(path.resolve(__dirname, '..'));
 async function checkStripe() {
   if (!process.env.STRIPE_SECRET_KEY) return { configured: false };
   const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
+  // Stripe restricted keys use rk_live_; they are the safer production choice
+  // and should not be mistaken for test-mode credentials.
+  const liveExpected = /^(?:sk|rk)_live_/.test(process.env.STRIPE_SECRET_KEY);
+  const balance = await stripe.balance.retrieve();
   const expectedPrices = {
     STRIPE_PRICE_STARTER: [9900, 'month'], STRIPE_PRICE_STARTER_ANNUAL: [99000, 'year'],
     STRIPE_PRICE_GROWTH: [19900, 'month'], STRIPE_PRICE_GROWTH_ANNUAL: [199000, 'year'],
     STRIPE_PRICE_PRO: [39900, 'month'], STRIPE_PRICE_PRO_ANNUAL: [399000, 'year']
   };
   const priceKeys = Object.keys(expectedPrices);
-  const balance = await stripe.balance.retrieve();
-  const [unitAmount, interval] = expectedPrices[key];
-    prices.push({ key, ok: price.active && price.livemode === liveExpected && price.unit_amount === unitAmount && price.currency === 'usd' && price.recurring?.interval === interval, active: price.active, livemode: price.livemode, amount: price.unit_amount, currency: price.currency, recurring: price.recurring?.interval || null });
   const prices = [];
   for (const key of priceKeys) {
     if (!process.env[key]) { prices.push({ key, ok: false, reason: 'missing' }); continue; }
     const price = await stripe.prices.retrieve(process.env[key]);
-    prices.push({ key, ok: price.active && price.livemode === liveExpected, active: price.active, livemode: price.livemode, recurring: price.recurring?.interval || null });
+    const [unitAmount, interval] = expectedPrices[key];
+    prices.push({ key, ok: price.active && price.livemode === liveExpected && price.unit_amount === unitAmount && price.currency === 'usd' && price.recurring?.interval === interval, active: price.active, livemode: price.livemode, amount: price.unit_amount, currency: price.currency, recurring: price.recurring?.interval || null });
   }
   const endpoints = await stripe.webhookEndpoints.list({ limit: 100 });
   const publicUrl = String(process.env.PDL_PUBLIC_URL || '').replace(/\/$/, '');
@@ -76,4 +76,3 @@ async function checkResend(send) {
   console.log(JSON.stringify(report, null, 2));
   if (failures.length) process.exitCode = 1;
 })().catch(error => { console.error(error.message); process.exitCode = 1; });
-
