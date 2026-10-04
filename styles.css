@@ -301,9 +301,11 @@ button,.project-card,.customer-list-item,.report-list-item{-webkit-tap-highlight
 
 /* Subcontractor launch polish */
 .subcontractor-profile-fields{margin-top:0}.generated-link button{width:100%;margin-top:4px}.guest-link-row strong{overflow-wrap:anywhere}.subcontractor-card .compliance-status{min-height:64px}.subcontractor-card .compliance-status small{line-height:1.35}.subcontractor-card .project-open{min-height:42px}.subcontractor-card .exact-email{overflow-wrap:anywhere}.subcontractor-card:focus-within{border-color:#1769e0;box-shadow:0 0 0 2px rgba(23,105,224,.15)}
+.brand-home{display:flex;align-items:center;gap:10px;width:100%;padding:0;border:0;background:transparent;color:inherit;font:inherit;text-align:left;cursor:pointer}.brand-home:focus-visible,.header-company-mark:focus-visible{outline:3px solid #1769e0;outline-offset:3px}.header-company-mark{border:0;cursor:pointer}.subcontractor-secondary{margin:12px 0;border:1px solid var(--line);border-radius:10px;background:#fafaf8;overflow:hidden}.subcontractor-secondary>summary{display:flex;align-items:center;justify-content:space-between;gap:12px;min-height:52px;padding:11px 14px;cursor:pointer;list-style:none}.subcontractor-secondary>summary::-webkit-details-marker{display:none}.subcontractor-secondary>summary span{display:grid;gap:2px}.subcontractor-secondary>summary strong{font-size:12px}.subcontractor-secondary>summary small{color:var(--muted);font-size:9px}.subcontractor-secondary>summary>b{color:#1769e0;font-size:18px;transition:transform .16s}.subcontractor-secondary[open]>summary>b{transform:rotate(45deg)}.subcontractor-secondary .compliance-form{margin:0;border:0;border-top:1px solid var(--line);border-radius:0}.subcontractor-history-details #sub-compliance-history{margin:0;padding:8px 14px 14px;border-top:1px solid var(--line)}
 :root[data-theme="dark"] .subcontractor-card,
 :root[data-theme="dark"] .compliance-form,
-:root[data-theme="dark"] .guest-link-row{background:var(--panel);border-color:var(--line);color:var(--ink)}
+:root[data-theme="dark"] .guest-link-row,
+:root[data-theme="dark"] .subcontractor-secondary{background:var(--panel);border-color:var(--line);color:var(--ink)}
 :root[data-theme="dark"] .compliance-status.clear{background:#1d3328;color:#a9dfc7}
 :root[data-theme="dark"] .compliance-status.watch{background:#49351c;color:#ffd28c}
 :root[data-theme="dark"] .compliance-status.blocked{background:#482724;color:#ffb5ae}
