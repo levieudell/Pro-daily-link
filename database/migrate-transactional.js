@@ -6,10 +6,29 @@ const { canonicalHash } = require('./transactional-repository');
 
 supabase.loadLocalEnv(path.resolve(__dirname, '..'));
 
+function parseArgs(argv = process.argv.slice(2)) {
+  const apply = argv.includes('--apply');
+  const all = argv.includes('--all');
+  const companyIndex = argv.indexOf('--company-id');
+  const companyId = companyIndex >= 0 ? String(argv[companyIndex + 1] || '').trim() : '';
+  if (companyIndex >= 0 && !companyId) throw new Error('--company-id requires a company UUID.');
+  if (apply && !companyId && !all) throw new Error('Refusing an unscoped migration. Use --company-id <uuid> for a controlled tenant migration, or --all only after cohort approval.');
+  if (companyId && all) throw new Error('Choose either --company-id or --all, not both.');
+  return { apply, all, companyId };
+}
+
+function selectSnapshots(snapshots, companyId) {
+  const eligible = snapshots.filter(snapshot => snapshot?.company?.id && !snapshot.platform && !snapshot.company.archivedDuplicate);
+  if (!companyId) return eligible;
+  const selected = eligible.filter(snapshot => String(snapshot.company.id) === companyId);
+  if (!selected.length) throw new Error(`Company snapshot not found: ${companyId}`);
+  return selected;
+}
+
 async function main() {
   if (!supabase.configured()) throw new Error('Supabase configuration is missing.');
-  const apply = process.argv.includes('--apply');
-  const snapshots = (await supabase.listCompanySnapshots()).filter(snapshot => snapshot?.company?.id && !snapshot.platform && !snapshot.company.archivedDuplicate);
+  const { apply, companyId } = parseArgs();
+  const snapshots = selectSnapshots(await supabase.listCompanySnapshots(), companyId);
   const summary = snapshots.map(snapshot => ({ id: snapshot.company.id, name: snapshot.company.name, revision: Number(snapshot.company.persistence?.revision || 0), hash: canonicalHash(snapshot), records: Object.values(snapshot).filter(Array.isArray).reduce((total, rows) => total + rows.length, 0) }));
   if (!apply) {
     console.log(JSON.stringify({ mode: 'preview', companies: summary }, null, 2));
@@ -28,6 +47,7 @@ async function main() {
   console.log(JSON.stringify({ mode: 'applied', companies: results }, null, 2));
 }
 
-main().catch(error => { console.error(error.message); process.exitCode = 1; });
+if (require.main === module) main().catch(error => { console.error(error.message); process.exitCode = 1; });
 
+module.exports = { parseArgs, selectSnapshots };
 
