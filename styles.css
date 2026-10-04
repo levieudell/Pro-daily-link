@@ -424,3 +424,12 @@ button,.project-card,.customer-list-item,.report-list-item{-webkit-tap-highlight
 .company-period-row{display:flex;align-items:center;flex-wrap:wrap;gap:10px;padding:14px 0;border-bottom:1px solid var(--line)}
 .company-period-row>div{flex:1;min-width:180px}.company-period-row small{display:block;margin-top:4px;color:var(--muted)}
 @media(max-width:760px){.company-settings-tabs{display:grid;grid-template-columns:1fr 1fr;gap:6px}.company-settings-tabs button{padding:10px 6px}.company-period-row button{min-height:44px}}
+
+/* Readable mobile controls prevent small inherited labels from shrinking focused fields. */
+@media(max-width:760px){
+  #pay-period-form input,#pay-period-form select,#pay-period-form textarea,
+  #timecards-page .time-date-filters input,#timecards-page .time-date-filters select,
+  #timecards-page #pay-period-select{font-size:max(16px,1rem);min-width:0;max-width:100%}
+  #pay-period-form .time-date-filters{grid-template-columns:repeat(2,minmax(0,1fr))}
+}
+@media(max-width:400px){#pay-period-form .time-date-filters{grid-template-columns:1fr}}

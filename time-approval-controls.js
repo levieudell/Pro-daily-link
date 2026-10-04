@@ -71,7 +71,7 @@ else {
   function payMessage(message){const host=$('#pay-period-message');if(host){host.textContent=message;host.hidden=false}}
   function openPayForm(edit){
     if(!payConfigure||payBusy)return;const p=edit?payList.find(p=>p.id===paySelected):null;if(edit&&!p)return;
-    payEditing=p?.id||null;$('#pay-period-label').value=p?.label||'';$('#pay-period-from').value=p?.from||'';$('#pay-period-to').value=p?.to||'';$('#pay-period-reason').value='';$('#pay-period-reason-label').hidden=!p;$('#pay-period-reason').required=Boolean(p);$('#pay-period-form-error').hidden=true;$('#pay-period-zone').textContent=(p?.timeZone||company?.timezone||'America/Los_Angeles')+' · Dates include both boundaries. Overnight time belongs to its clock-in day.';$('#pay-period-dialog').showModal();$('#pay-period-label').focus();
+    payEditing=p?.id||null;$('#pay-period-label').value=p?.label||'';$('#pay-period-from').value=p?.from||'';$('#pay-period-to').value=p?.to||'';$('#pay-period-reason').value='';$('#pay-period-reason-label').hidden=!p;$('#pay-period-reason').required=Boolean(p);$('#pay-period-form-error').hidden=true;$('#pay-period-zone').textContent=(p?.timeZone||company?.timezone||'America/Los_Angeles')+' · Dates include both boundaries. Overnight time belongs to its clock-in day.';$('#pay-period-dialog').showModal();$('#pay-period-label').focus({preventScroll:true});
   }
   async function downloadPayExport(id){
     const context=timeContext(),period=paySelected,tenant=signedInCompanyId();
