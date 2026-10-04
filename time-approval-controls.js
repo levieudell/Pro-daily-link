@@ -1,0 +1,114 @@
+'use strict';
+// Office time is grouped by person. Existing row actions and server authorization remain authoritative.
+function timePeople(cards,members,approved,search=''){
+  const people=new Map();
+  for(const card of cards){
+    if(card.deletedAt)continue;
+    const id=String(card.memberId),name=String(members.find(m=>String(m.id)===id)?.name||'Crew member');
+    if(!name.toLowerCase().includes(search.trim().toLowerCase()))continue;
+    const person=people.get(id)||{id,name,hours:0,submitted:0,draft:0,approved:0,running:0,incomplete:0,cards:[]};
+    person.cards.push(card);const hours=Number(card.hours);if(Number.isFinite(hours)&&hours>=0)person.hours+=hours;
+    if(approved(card))person.approved++;else if(!card.outAt)person.running++;else if(String(card.status).toLowerCase()==='submitted'){if(timeCardComplete(card))person.submitted++;else person.incomplete++}else person.draft++;
+    people.set(id,person);
+  }
+  return [...people.values()].sort((a,b)=>a.name.localeCompare(b.name));
+}
+function timeCardComplete(card){return Boolean(timePeriodDate({inAt:card.inAt},'UTC')&&timePeriodDate({inAt:card.outAt},'UTC')&&Number.isFinite(Date.parse(card.inAt))&&Date.parse(card.outAt)>Date.parse(card.inAt)&&card.hours!=null&&typeof card.hours!=='boolean'&&String(card.hours).trim()!==''&&Number.isFinite(Number(card.hours))&&Number(card.hours)>=0)}
+function timePeriodDate(card,zone){if(typeof card.inAt!=='string'||!/^\d{4}-\d{2}-\d{2}T.*(?:Z|[+-]\d{2}:\d{2})$/i.test(card.inAt)||!Number.isFinite(Date.parse(card.inAt)))return '';const parts=new Intl.DateTimeFormat('en-US',{timeZone:zone,year:'numeric',month:'2-digit',day:'2-digit'}).formatToParts(new Date(card.inAt));return ['year','month','day'].map(type=>parts.find(p=>p.type===type).value).join('-')}
+if(typeof module!=='undefined'&&module.exports)module.exports={timePeople,timeCardComplete,timePeriodDate};
+else {
+  let timePerson=null,timeIdentity='',timeFilterKey='',payIdentity='',paySequence=0,paySelected='',payList=[],paySummary=null,payConfigure=false,payEditing=null,payBusy=false;
+  function timeContext(){return JSON.stringify([signedInCompanyId(),currentUser?.id,currentUser?.role,currentRole,currentUser?.permissions,company?.features])}
+  function clearTimeSelection(){const all=$('#timecard-check-all');if(all){all.checked=false;all.indeterminate=false}$$('[data-timecard-pick]').forEach(box=>box.checked=false);updateTimeCardSelection()}
+  function resetPayContext(){paySequence++;paySelected='';payList=[];paySummary=null;payConfigure=false;payEditing=null;payBusy=false;const dialog=$('#pay-period-dialog');if(dialog?.open)dialog.close();for(const id of ['pay-period-label','pay-period-from','pay-period-to','pay-period-reason'])$('#'+id).value='';$('#pay-period-save').disabled=false;$('#company-pay-period-list').innerHTML='';$('#pay-period-zone').textContent='';$('#pay-period-form-error').textContent='';$('#pay-period-panel').innerHTML='';$('#pay-period-panel').hidden=true}
+  const originalTimeFilter=filteredTimeCards;
+  filteredTimeCards=function(){
+    const period=payList.find(p=>p.id===paySelected);if(!period||!timeCardOffice())return originalTimeFilter();
+    const filters=timeCardFilters();return timeCards.filter(card=>!card.deletedAt).map(card=>({...card,date:timePeriodDate(card,period.timeZone)})).filter(card=>card.date&&(!filters.from||card.date>=filters.from)&&(!filters.to||card.date<=filters.to)&&(filters.projectId==='all'||String(card.projectId)===filters.projectId)&&(filters.memberId==='all'||String(card.memberId)===filters.memberId)&&(filters.status==='all'||(filters.status==='approved'?timeCardApproved(card):String(card.status).toLowerCase()===filters.status)));
+  };
+  const priorTimeRender=renderTimeCards;
+  renderTimeCards=function(){
+    const identity=timeContext();
+    if(identity!==timeIdentity){timePerson=null;timeIdentity=identity;$('#time-person-search').value='';$('#time-more-filters').open=false;$('#time-person-list').innerHTML='';$('#time-person-name').textContent='';for(const id of ['timecard-from','timecard-to'])$('#'+id).value='';for(const id of ['timecard-job','timecard-person','timecard-status'])$('#'+id).value='all';resetPayContext()}
+    const filterKey=JSON.stringify(timeCardFilters())+'|'+($('#time-person-search')?.value||'');
+    if(filterKey!==timeFilterKey){timePerson=null;timeFilterKey=filterKey}
+    priorTimeRender();
+    const office=timeCardOffice()&&timeCardsOn(),list=$('#time-person-list'),heading=$('#time-person-heading'),panel=$('#timecard-entry-panel');
+    list.hidden=!office;heading.hidden=true;panel.hidden=false;
+    if(office){
+      const people=timePeople(filteredTimeCards(),team,timeCardApproved,$('#time-person-search').value),person=people.find(p=>p.id===timePerson);
+      if(!person)timePerson=null;
+      list.hidden=Boolean(person);heading.hidden=!person;panel.hidden=!person;
+      $('#timecard-office-actions').hidden=!person||!canManageTime();$('#timecard-filter-total').hidden=!person;
+      if(person){$('#time-person-name').textContent=person.name+' · '+person.hours.toFixed(2).replace(/\.00$/,'')+' hours';$('#timecard-rows').innerHTML=person.cards.map(card=>timeCardRowMarkup(card,true,canManageTime())).join('');$$('[data-timecard-pick], [data-timecard-approve]').forEach(box=>{const card=person.cards.find(c=>String(c.id)===(box.dataset.timecardPick||box.dataset.timecardApprove));if(!card||!timeCardComplete(card))box.disabled=true})}
+      else {$('#timecard-rows').innerHTML='';list.innerHTML=people.length?people.map(p=>`<button type="button" class="time-person-summary" data-time-person="${escapeHtml(p.id)}"><strong>${escapeHtml(p.name)}</strong><span>${p.hours.toFixed(2).replace(/\.00$/,'')} hours</span><small>${p.submitted} need approval · ${p.draft} draft · ${p.approved} approved${p.running?' · '+p.running+' running':''}${p.incomplete?' · '+p.incomplete+' incomplete':''}</small><span aria-hidden="true">›</span></button>`).join(''):'<p class="input-help">No people with time for these filters.</p>'}
+    }else if(currentRole!=='field'){$('#timecard-rows').innerHTML='';list.innerHTML='';panel.hidden=true;$('#timecard-office-actions').hidden=true;$('#timecard-filter-total').hidden=true}
+    clearTimeSelection();
+    if(timeContext()!==payIdentity){payIdentity=timeContext();resetPayContext()}
+    $('#pay-period-panel').hidden=!office;
+    if(office)void refreshPayPeriods();
+  };
+  function drawPayPanel(){
+    const selected=payList.find(p=>p.id===paySelected),s=paySummary,host=$('#pay-period-panel'),e=escapeHtml;
+    host.innerHTML=`<div class="pay-period-tools"><label>Company pay period<select id="pay-period-select"><option value="">Choose custom dates</option>${payList.map(p=>`<option value="${e(p.id)}" ${p.id===paySelected?'selected':''}>${e(p.label)} · ${e(p.from)} – ${e(p.to)}</option>`).join('')}</select></label>${payConfigure?'<button type="button" class="secondary" data-pay-settings>Manage pay periods</button>':''}${payConfigure&&selected&&!selected.exportCount?'<button type="button" class="secondary" data-pay-edit>Edit dates</button>':''}</div>${s?`<details class="pay-period-summary"><summary>${s.approvedHours} ${payConfigure?'company':'assigned'} approved hours · ${s.ready?'Ready to end period':'Needs review'}</summary><p class="input-help">${e(s.period.timeZone)}. ${e(s.datePolicy)}</p><p>${Object.entries(s.review).map(([key,count])=>`${count} ${e(({missingScheduledEntries:'missing scheduled entries',undated:'undated entries'})[key]||key)}`).join(' · ')}</p>${s.missingEntries?.length?'<p>Missing scheduled time:</p>'+s.missingEntries.map(m=>`<p>${e(m.person)} · ${e(m.date)} · ${e(m.project)}</p>`).join(''):''}${s.people.map(p=>`<p>${e(p.name)} <strong>${p.hours} approved hours</strong></p>`).join('')}${payConfigure?`<div class="pay-period-tools"><button type="button" class="primary" data-pay-capture ${!s.ready||payBusy?'disabled':''}>${s.latestExport?'Create corrected export':'End period & export'}</button>${s.latestExport?`<button type="button" class="secondary" data-pay-download="${e(s.latestExport.id)}">Download fixed v${s.latestExport.version}</button><small>${s.latestExport.changed?'Time changed since this fixed export.':'Fixed export matches current approved time.'}</small><button type="button" class="secondary" data-pay-history>Previous exports</button>`:''}</div>`:'<p class="input-help">Assigned time only. Company administrator creates fixed exports.</p>'}<div id="pay-period-history"></div></details>`:'<p class="input-help">Set explicit start and end dates for your company. No weekly or biweekly schedule is assumed.</p>'}<p id="pay-period-message" class="form-message" role="alert" hidden></p>`;
+  }
+  function drawPaySettings(){
+    const host=$('#company-pay-period-list'),allowed=timeCardOffice()&&timeCardsOn()&&(currentUser?.role==='owner'||currentUser?.role==='admin'&&currentUser?.permissions?.manageTime===true);if(!allowed||!payConfigure){host.innerHTML='';return}
+    host.innerHTML=`<button type="button" class="primary" data-pay-new>New custom period</button><p class="input-help">Company timezone: ${escapeHtml(company?.timezone||'America/Los_Angeles')}. Each period keeps the timezone it was created with.</p>${payList.length?payList.map(p=>`<article class="company-period-row"><div><strong>${escapeHtml(p.label)}</strong><small>${escapeHtml(p.from)} through ${escapeHtml(p.to)} · ${escapeHtml(p.timeZone)}${p.exportCount?' · Fixed exports: '+p.exportCount:''}</small></div><button type="button" class="secondary" data-pay-use="${escapeHtml(p.id)}">Review time</button>${!p.exportCount?`<button type="button" class="secondary" data-pay-setting-edit="${escapeHtml(p.id)}">Edit dates</button>`:''}</article>`).join(''):'<p>No pay periods yet. Create your company’s first date range.</p>'}`;
+  }
+  window.PDLPayPeriods={refresh:refreshPayPeriods};
+  function choosePayPeriod(id){paySelected=id;const p=payList.find(p=>p.id===id);$('#timecard-from').value=p?.from||'';$('#timecard-to').value=p?.to||'';for(const id of ['timecard-job','timecard-person','timecard-status'])$('#'+id).value='all';$('#time-person-search').value='';renderTimeCards()}
+  async function refreshPayPeriods(){
+    const context=timeContext(),sequence=++paySequence,selection=paySelected;
+    paySummary=null;drawPayPanel();
+    try{
+      const result=await api('/api/pay-periods');if(context!==timeContext()||sequence!==paySequence)return;
+      payList=result.periods;payConfigure=result.canConfigure;paySummary=null;
+      if(selection&&payList.some(p=>p.id===selection)){const summary=await api('/api/pay-periods/'+selection+'/summary');if(context!==timeContext()||sequence!==paySequence)return;paySummary=summary}else paySelected='';
+      drawPayPanel();drawPaySettings();
+    }catch(error){if(context===timeContext()&&sequence===paySequence){drawPayPanel();payMessage(error.message)}}
+  }
+  function payMessage(message){const host=$('#pay-period-message');if(host){host.textContent=message;host.hidden=false}}
+  function openPayForm(edit){
+    if(!payConfigure||payBusy)return;const p=edit?payList.find(p=>p.id===paySelected):null;if(edit&&!p)return;
+    payEditing=p?.id||null;$('#pay-period-label').value=p?.label||'';$('#pay-period-from').value=p?.from||'';$('#pay-period-to').value=p?.to||'';$('#pay-period-reason').value='';$('#pay-period-reason-label').hidden=!p;$('#pay-period-reason').required=Boolean(p);$('#pay-period-form-error').hidden=true;$('#pay-period-zone').textContent=(p?.timeZone||company?.timezone||'America/Los_Angeles')+' · Dates include both boundaries. Overnight time belongs to its clock-in day.';$('#pay-period-dialog').showModal();$('#pay-period-label').focus();
+  }
+  async function downloadPayExport(id){
+    const context=timeContext(),period=paySelected,tenant=signedInCompanyId();
+    const response=await fetch('/api/pay-periods/'+encodeURIComponent(period)+'/exports/'+encodeURIComponent(id)+'.csv',{credentials:'same-origin',headers:{'X-PDL-Company':tenant},cache:'no-store'});
+    if(!response.ok)throw Error('Export could not be downloaded');const blob=await response.blob();if(context!==timeContext()||period!==paySelected)return;
+    const url=URL.createObjectURL(blob),link=document.createElement('a');link.href=url;link.download='pay-period-'+period+'-'+id+'.csv';link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
+  }
+  $('#pay-period-form').onsubmit=async event=>{
+    event.preventDefault();if(payBusy||!payConfigure)return;
+    const from=$('#pay-period-from').value,to=$('#pay-period-to').value,error=$('#pay-period-form-error');if(from>to){error.textContent='End date must be on or after start date.';error.hidden=false;return}
+    const context=timeContext(),editing=payEditing;payBusy=true;$('#pay-period-save').disabled=true;
+    try{const p=await api('/api/pay-periods'+(editing?'/'+editing:''),{method:editing?'PATCH':'POST',body:JSON.stringify({label:$('#pay-period-label').value,from,to,...(editing?{reason:$('#pay-period-reason').value}:{})})});if(context!==timeContext())return;payList=[...payList.filter(row=>row.id!==p.id),p];$('#pay-period-dialog').close();choosePayPeriod(p.id)}
+    catch(err){if(context===timeContext()){error.textContent=err.message;error.hidden=false}}
+    finally{if(context===timeContext()){payBusy=false;$('#pay-period-save').disabled=false}}
+  };
+  $('#pay-period-close').onclick=()=>$('#pay-period-dialog').close();
+  $('#time-person-back').onclick=()=>{timePerson=null;renderTimeCards()};
+  $('#time-person-search').oninput=()=>renderTimeCards();
+  $('#time-filter-reset').onclick=()=>{for(const id of ['timecard-job','timecard-person','timecard-status'])$('#'+id).value='all';for(const id of ['timecard-from','timecard-to','time-person-search'])$('#'+id).value='';paySelected='';$('#time-more-filters').open=false;renderTimeCards()};
+  document.addEventListener('change',event=>{
+    if(event.target.id==='pay-period-select'){choosePayPeriod(event.target.value)}
+    else if(['timecard-from','timecard-to'].includes(event.target.id)){const p=payList.find(p=>p.id===paySelected);if(p&&(p.from!==$('#timecard-from').value||p.to!==$('#timecard-to').value)){paySelected='';void refreshPayPeriods()}}
+  });
+  document.addEventListener('click',async event=>{
+    const actionContext=timeContext();
+    const person=event.target.closest('[data-time-person]');if(person){timePerson=person.dataset.timePerson;renderTimeCards();$('#time-person-back').focus();return}
+    const use=event.target.closest('[data-pay-use]'),editSetting=event.target.closest('[data-pay-setting-edit]');if(use){showPage('timecards');choosePayPeriod(use.dataset.payUse);return}if(editSetting){paySelected=editSetting.dataset.paySettingEdit;openPayForm(true);return}
+    if(event.target.closest('[data-pay-new]')){openPayForm(false);return}if(event.target.closest('[data-pay-edit]')){openPayForm(true);return}
+    const download=event.target.closest('[data-pay-download]');
+    try{
+      if(download){await downloadPayExport(download.dataset.payDownload);return}
+      if(event.target.closest('[data-pay-history]')){const context=timeContext(),period=paySelected,rows=await api('/api/pay-periods/'+period+'/exports');if(context!==timeContext()||period!==paySelected)return;$('#pay-period-history').innerHTML=rows.map(r=>`<p><button type="button" class="secondary" data-pay-download="${escapeHtml(r.id)}">Download v${r.version}</button> ${escapeHtml(r.createdAt)} ${escapeHtml(r.reason)}</p>`).join('');return}
+      if(event.target.closest('[data-pay-capture]')){
+        if(payBusy||!payConfigure||!paySummary?.ready||paySummary.period.id!==paySelected)return;const context=timeContext(),period=paySelected,latest=paySummary.latestExport;let reason='';if(latest){reason=prompt('Why is a corrected fixed export needed?')?.trim();if(!reason)return}
+        payBusy=true;drawPayPanel();
+        try{const record=await api('/api/pay-periods/'+period+'/exports',{method:'POST',body:JSON.stringify(latest?{supersedesId:latest.id,reason}:{})});if(context!==timeContext()||period!==paySelected)return;await downloadPayExport(record.id)}finally{if(context===timeContext()){payBusy=false;await refreshPayPeriods()}}
+      }
+    }catch(error){if(actionContext===timeContext())payMessage(error.message)}
+  });
+}
