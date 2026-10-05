@@ -452,4 +452,4 @@ button,.project-card,.customer-list-item,.report-list-item{-webkit-tap-highlight
 #time-off-error{padding:10px;border:1px solid #c66854;border-radius:7px;background:#fff0ed;color:#842e1c;font-size:13px;line-height:1.4}
 #time-off-zone{line-height:1.5;margin:0 0 12px}
 .time-off-row strong{overflow-wrap:anywhere}
-@media(max-width:640px){#time-off-modal input,#time-off-modal select{font-size:16px;min-height:44px}#time-off-modal .modal-actions button{min-height:44px}.time-off-row>div:only-child{display:grid}}
+@media(max-width:640px){#time-off-modal input,#time-off-modal select{font-size:16px;min-height:44px}#time-off-modal .modal-actions button{min-height:44px}.time-off-row>div:only-child{display:grid;grid-auto-flow:row;grid-template-columns:minmax(0,1fr)}}
