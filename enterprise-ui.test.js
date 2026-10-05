@@ -1,0 +1,24 @@
+'use strict';
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const ui = require('./enterprise-ui');
+const { input, COMPANY } = require('./fixtures/enterprise-billing');
+const quote = { ...input(), id: '33333333-3333-4333-8333-333333333333', companyId: COMPANY,
+  companyName: '<img src=x onerror=alert(1)>', revision: 1, status: 'offered', expiresAt: '2099-01-01T00:00:00.000Z', scope: '<script>alert(1)</script> & scope', cancellationPolicy: 'Cancel\nwith review', refundPolicy: 'No invented promise' };
+assert.equal(ui.parseAmount('1234.56'), 123456); assert.equal(ui.parseAmount('0.50'), 50);
+for (const value of ['1e3', '-20', '0.001', '', '1,000']) assert.throws(() => ui.parseAmount(value));
+const owner = ui.quoteHtml(quote, { enabled: true });
+assert.ok(!owner.includes('<img')); assert.ok(!owner.includes('<script>')); assert.ok(owner.includes('&lt;script&gt;'));
+assert.ok(owner.includes('data-action="checkout"')); assert.ok(!owner.includes('data-action="issue"')); assert.ok(owner.includes('No automatic renewal'));
+assert.ok(ui.quoteHtml(quote, { enabled: false }).includes('disabled'));
+assert.ok(!ui.quoteHtml({ ...quote, status: 'paid' }, { enabled: true }).includes('data-action="checkout"'));
+assert.ok(!ui.quoteHtml({ ...quote, expiresAt: '2000-01-01' }, { enabled: true }).includes('data-action="checkout"'));
+assert.ok(ui.quoteHtml({ ...quote, status: 'draft' }, { platform: true }).includes('data-action="issue"'));
+assert.ok(!ui.quoteHtml(quote, { review: true }).includes('data-action='));
+const source = fs.readFileSync('enterprise-ui.js', 'utf8'), html = fs.readFileSync('enterprise.html', 'utf8');
+assert.ok(source.includes('if (ticket !== sequence) return'), 'ignore old company response');
+assert.ok(source.includes('if (pending || !selected || !'), 'prevent repeated payment/issue/cancel clicks');
+assert.ok(source.includes("addEventListener('cancel', event => { if (pending) event.preventDefault()"), 'do not dismiss an in-flight approval');
+assert.ok(html.includes('aria-live="polite"')); assert.ok(html.includes('name="annual" required'));
+assert.ok(html.includes('name="refundPolicy" required')); assert.ok(html.includes('name="cancellationPolicy" required'));
+console.log('Enterprise UI checks passed: escaped commercial text, explicit review, correct actions, double-submit/interruption guards, and exact decimal entry. Real-browser visual QA remains a separate release gate.');

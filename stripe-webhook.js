@@ -1,4 +1,5 @@
 const Stripe = require('stripe');
+const standardResubscription = require('./standard-resubscription');
 
 const EVENTS = new Set([
   'checkout.session.completed',
@@ -47,7 +48,8 @@ function verifyEvent(payload, signature, env = process.env) {
 
 const idOf = value => typeof value === 'string' ? value : value?.id;
 
-async function processEvent(event, { stripeRequest, withCompany, applySubscription, persist }) {
+async function processEvent(event, { stripeRequest, withCompany, applySubscription, persist, processEnterprise }) {
+  if (processEnterprise && await processEnterprise(event)) return { received: true };
   if (!EVENTS.has(event.type)) return { received: true, ignored: true };
   const object = event.data.object;
   const details = object.parent?.subscription_details || object.subscription_details;
@@ -71,6 +73,8 @@ async function processEvent(event, { stripeRequest, withCompany, applySubscripti
     if (db.company.stripeCustomerId && db.company.stripeCustomerId !== idOf(subscription.customer)) {
       throw failure('Stripe customer mismatch', 400);
     }
+    if (standardResubscription.isRetired(db.company, subscriptionId) ||
+        (db.company.stripeResubscription?.retiredCheckoutAttempts || []).includes(subscription.metadata?.checkout_attempt)) return;
     if (db.company.stripeSubscriptionId && db.company.stripeSubscriptionId !== subscriptionId) {
       // Events for a superseded subscription must not cancel the current one.
       return;

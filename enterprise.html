@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Enterprise annual quotes · Pro Daily Link</title><link rel="stylesheet" href="enterprise-ui.css"></head>
+<body><header><a href="/app" id="back-link">← Back to workspace</a><span>Pro Daily Link</span></header><main>
+<p class="eyebrow">ENTERPRISE BILLING</p><h1>Annual quotes</h1><p class="intro">An agreed annual amount, paid upfront. Every term is reviewed yearly. There is no automatic renewal.</p>
+<p id="message" role="status" aria-live="polite"></p>
+<section id="platform-tools" hidden><label>Company<select id="company-select"><option value="">Choose a company</option></select></label>
+<details id="draft-details"><summary>Create a private quote draft</summary>
+<form id="quote-form"><p>Enter the terms you have chosen for this company. A draft stays private and does not charge anyone or change workspace access.</p>
+<div class="grid"><label>Annual total (including any applicable tax)<input name="amount" required type="number" min="0.50" max="999999.99" step="0.01" inputmode="decimal"></label>
+<label>Currency<select name="currency" required><option value="">Choose currency</option><option value="usd">USD</option><option value="cad">CAD</option><option value="eur">EUR</option><option value="gbp">GBP</option><option value="aud">AUD</option></select></label>
+<label>Active-user limit<input name="users" required type="number" min="1" max="1000000" step="1"></label><label class="check"><input type="checkbox" name="unlimitedUsers"> Unlimited active users</label>
+<label>Active-project limit<input name="projects" required type="number" min="1" max="1000000" step="1"></label><label class="check"><input type="checkbox" name="unlimitedProjects"> Unlimited active projects</label>
+<label>Time cards<select name="timeCards" required><option value="">Choose</option><option value="true">Included</option><option value="false">Not included</option></select></label>
+<label>Forms &amp; safety templates<select name="templates" required><option value="">Choose</option><option value="true">Included</option><option value="false">Not included</option></select></label>
+<label>Tax treatment<select name="taxTreatment" required><option value="">Choose</option><option value="included">Any applicable tax is included in total</option><option value="not_applicable">Tax is not applicable</option></select></label>
+<label>Quote expires (your local time)<input name="expiresAt" type="datetime-local" required></label></div>
+<label>Scope &amp; included service<textarea name="scope" required maxlength="2000" rows="3"></textarea></label>
+<label>Cancellation policy<textarea name="cancellationPolicy" required maxlength="2000" rows="3"></textarea></label>
+<label>Refund policy<textarea name="refundPolicy" required maxlength="2000" rows="3"></textarea></label>
+<label class="check"><input type="checkbox" name="annual" required> This draft is one annual term starting at verified payment, paid upfront, with manual yearly review and no automatic renewal.</label>
+<div class="actions"><button type="submit">Save private draft</button></div></form></details></section>
+<section aria-label="Quotes"><div class="section-heading"><h2 id="company-name">Your quotes</h2><button type="button" id="refresh">Refresh status</button></div><div id="quotes"><p>Loading…</p></div></section>
+</main><dialog id="review-dialog"><form method="dialog"><div class="dialog-head"><h2 id="review-title">Review quote</h2><button value="cancel" aria-label="Close quote review">×</button></div><div id="review-content"></div><label class="check"><input id="review-accepted" type="checkbox"> <span id="review-accept-label"></span></label><p id="review-error" role="alert"></p><div class="actions"><button value="cancel" class="secondary">Back</button><button type="button" id="review-submit" disabled>Continue</button></div></form></dialog>
+<script src="enterprise-ui.js"></script></body></html>
