@@ -433,3 +433,5 @@ button,.project-card,.customer-list-item,.report-list-item{-webkit-tap-highlight
   #pay-period-form .time-date-filters{grid-template-columns:repeat(2,minmax(0,1fr))}
 }
 @media(max-width:400px){#pay-period-form .time-date-filters{grid-template-columns:1fr}}
+
+.schedule-time-off{display:block;margin:5px 0;padding:9px;border:1px solid #d7b780;border-radius:7px;background:#fff3dc;color:#624114;font-size:12px;line-height:1.4;text-align:left}.schedule-time-off strong,.schedule-time-off small{display:block}.schedule-leave-conflict{border-color:#c66854;background:#fff0ed;color:#842e1c}.schedule-month-day .schedule-time-off{padding:5px;font-size:11px}
