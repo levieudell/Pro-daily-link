@@ -87,16 +87,21 @@ document.querySelectorAll('[data-implementation]').forEach(link=>link.addEventLi
     if(demoStatus)demoStatus.textContent=`Tell us about your team. We’ll confirm the ${name} scope before anything is scheduled or billed.`;
   });
 }));
+let demoRequestId='',demoRequestBody='';
 demoForm?.addEventListener('submit',async event=>{
   event.preventDefault();
   const button=demoForm.querySelector('button[type="submit"]');
+  if(button.disabled)return;
   const payload=Object.fromEntries(new FormData(demoForm).entries());
+  const requestBody=JSON.stringify(payload);
+  if(!demoRequestId||requestBody!==demoRequestBody){demoRequestId=globalThis.crypto?.randomUUID?.()||`demo-${Date.now()}-${Math.random().toString(36).slice(2)}`;demoRequestBody=requestBody}
+  payload.requestId=demoRequestId;
   button.disabled=true;button.textContent='Sending…';demoStatus.className='form-status';demoStatus.textContent='Sending your request…';
   try{
     const response=await fetch('/api/demo-requests',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
     const result=await response.json();
     if(!response.ok)throw new Error(result.error||'We could not send your request.');
-    demoForm.reset();demoStatus.className='form-status success';demoStatus.textContent='Your demo request is in. We’ll contact you shortly to confirm the time.';
+    demoForm.reset();demoRequestId='';demoRequestBody='';demoStatus.className='form-status success';demoStatus.textContent='Your demo request is in. We’ll contact you shortly to confirm the time.';
   }catch(error){demoStatus.className='form-status error';demoStatus.textContent=error.message||'We could not send your request. Please try again.'}
   finally{button.disabled=false;button.textContent='Request my demo'}
 });
