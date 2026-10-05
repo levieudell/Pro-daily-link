@@ -73,3 +73,7 @@ This tab requires an active signed-in account. Owners and admins can use it on a
 - `PATCH /api/projects/:id/notes-todos/:itemId` accepts the current `revision` plus `text` and/or to-do `completed` status.
 
 Run `npm run check` and `npm test` for syntax, synthetic API/UI, security, persistence, and existing workflow regressions. The notes UI tests use a DOM fixture, not a real mobile browser.
+
+## Time off by day or appointment
+
+Field users can choose **All day** or **Specific hours** when requesting time off. Specific hours cover one company-calendar day with start/end times; multi-day leave remains all-day. The office and schedules show the exact hours, and approved leave blocks only overlapping work. Adjacent shifts remain available. Existing all-day requests and private leave reasons are preserved. See [behavior, verification and recovery](docs/PARTIAL-DAY-TIME-OFF-2026-10-05.md).
