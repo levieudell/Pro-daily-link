@@ -2,3 +2,8 @@
 @media(max-width:760px){.project-notes-head{display:block}.project-notes-tools{margin-top:12px}.project-notes-pane button,.project-note-history summary,.project-completed-todos>summary{min-height:44px}.project-notes-pane textarea{font-size:max(16px,1rem);min-width:0;max-width:100%}.project-note-card{grid-template-columns:minmax(0,1fr);padding:12px}.project-note-actions{grid-row:2}.project-notes-editor{padding:12px}.project-notes-tools button{flex:1;white-space:nowrap}}
 
 .project-notes-editor>.project-notes-conflict{display:block;padding:12px;border:1px solid var(--line);border-radius:6px}.project-notes-editor>.project-notes-conflict[hidden]{display:none}.project-notes-conflict p{white-space:pre-wrap;overflow-wrap:anywhere;line-height:1.5}.project-notes-conflict button{margin-top:10px}
+
+/* Shared financial/ticket panels belong to the existing project views, not Notes. */
+#project-detail-content.project-notes-active>.tm-summary,
+#project-detail-content.project-notes-active>.project-ticket-section,
+#project-detail-content.project-notes-active>.project-notes-shared-rates{display:none}
