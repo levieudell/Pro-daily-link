@@ -61,3 +61,15 @@ To enable genuine AI report extraction, copy `.env.example` to `.env`, provide a
 The repository includes `render.yaml` for a Render web service. Secrets are entered in Render's environment settings and must never be committed. Set `PDL_SUPABASE_ENABLED=1` to use Supabase private storage and health checks. The included Blueprint runs with authentication enforcement disabled for a controlled product demo; do not use that setting for a public customer launch.
 
 This is a connected MVP. Public production launch still requires completing the PostgreSQL repository cutover, backup/restore validation, billing, and monitoring.
+
+## Project Notes & To-dos
+
+Open a project and choose **Notes & To-dos** to save a short plain-text update or an actionable to-do. Mark to-dos complete or reopen them; completed items stay available. Each item records its author, timestamps, and before/after edit history. There are no automatic deadlines or assignments.
+
+This tab requires an active signed-in account. Owners and admins can use it on any company project; project managers and field users use their existing project access. Guest links do not expose notes. Data is saved in the existing tenant snapshot/transactional persistence and backups, with no schema migration required. Edit revisions prevent silent overwrites, and create request IDs make network retries safe.
+
+- `GET /api/projects/:id/notes-todos` returns the scoped item list.
+- `POST /api/projects/:id/notes-todos` accepts `kind` (`note` or `todo`), `text` (up to 5,000 characters), and a unique `requestId`.
+- `PATCH /api/projects/:id/notes-todos/:itemId` accepts the current `revision` plus `text` and/or to-do `completed` status.
+
+Run `npm run check` and `npm test` for syntax, synthetic API/UI, security, persistence, and existing workflow regressions. The notes UI tests use a DOM fixture, not a real mobile browser.

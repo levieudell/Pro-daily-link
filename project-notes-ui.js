@@ -79,8 +79,16 @@ else {
   loadRole=async function(...args){leaveProject();return previousLoadRole(...args)};
   const previousShowPage=showPage;
   showPage=function(...args){if(active)leaveProject();return previousShowPage(...args)};
-  $('#project-detail-modal')?.addEventListener('close',clear);
-  $('#project-detail-modal')?.addEventListener('cancel',clear);
+  const projectDialog=$('#project-detail-modal');
+  if(projectDialog){
+    // Native close events are queued. Invalidate at initiation so an old close
+    // event cannot abort a project opened before that queued event arrives.
+    const nativeClose=projectDialog.close;
+    projectDialog.close=function(...args){clear();return nativeClose.apply(this,args)};
+    projectDialog.addEventListener('cancel',clear);
+    projectDialog.addEventListener('submit',event=>{if(event.target?.method==='dialog')clear()});
+    projectDialog.addEventListener('close',()=>{if(!projectDialog.open&&active?.pane)clear()});
+  }
   document.addEventListener('click',event=>{if(event.target.closest('#logout-button,#profile-logout-button,#subscription-lock-logout'))leaveProject()},{capture:true});
   window.addEventListener('pagehide',clear);
   window.addEventListener('popstate',leaveProject);
