@@ -17,5 +17,15 @@
     for(const date of dates)for(const id of memberIds)if(onDate(rows,id,date)){if(!conflictMemberIds.includes(Number(id)))conflictMemberIds.push(Number(id));if(!conflictDates.includes(date))conflictDates.push(date)}
     return {conflictMemberIds,conflictDates:conflictDates.sort()};
   }
-  return {validDate,approved,onDate,conflicts};
+  function summarize(rows,members,days){
+    const dates=[...new Set((days||[]).map(day=>typeof day==='string'?day:day.date).filter(validDate))].sort();
+    return (members||[]).flatMap(member=>{
+      const absent=dates.filter(date=>onDate(rows,member.id,date));
+      if(!absent.length)return [];
+      const ranges=[];
+      for(const date of absent){const last=ranges.at(-1);if(last&&Date.parse(`${date}T12:00:00Z`)-Date.parse(`${last.endDate}T12:00:00Z`)===86400000)last.endDate=date;else ranges.push({startDate:date,endDate:date})}
+      return [{memberId:Number(member.id),name:String(member.name||'Team member'),ranges}];
+    });
+  }
+  return {validDate,approved,onDate,conflicts,summarize};
 });
