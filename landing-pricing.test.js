@@ -67,6 +67,7 @@ function validateLanding(html) {
     const benefits = direct(direct(card, 'ul')[0], 'li').map(text);
     assert.equal(benefits[0], plan.users);
     assert.equal(benefits[1], plan.projects);
+    if (plan.name === 'Starter') assert.equal(benefits.at(-1), 'Subcontractor guest links');
     const links = direct(card, 'a');
     assert.equal(links.length, 1);
     assert.equal(attr(links[0], 'href'), plan.href);
