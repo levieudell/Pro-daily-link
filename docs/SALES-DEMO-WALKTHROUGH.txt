@@ -1,0 +1,54 @@
+PRO DAILY LINK SALES DEMO
+DEMO | Alder Ridge Builders
+Prepared October 5, 2026. All operating names, locations, work, approvals and history are fictional.
+
+STATUS
+The dataset is validated against the actual PDL application APIs in an isolated local test. It is not installed in a live tenant. This package creates no login, password, session, permission grant, Stripe record, payment, email, invitation, notification or remote write. Its tenant ID is a fixture identifier, not proof of an existing account.
+
+FIVE-MINUTE WALKTHROUGH
+0:00–0:30 | Set the context
+“This is Alder Ridge Builders, a fictional contractor with concrete, framing and interiors crews. We have four weeks of history so you can see what changes over time.”
+Start in Projects or choose This month on Overview. On Monday October 5, This week has no approved work yet; the visible schedule is intentional. For the full historical story use September 7 through October 2 in Production insights.
+
+0:30–1:45 | Compare the plan with field production
+Open Projects → DEMO Cedar Grove Clinic → Estimate & actual.
+Slab: 13,200 of 18,000 SF complete; 480 of 720 budget hours used. Installed work earns 528 budget hours, so efficiency is 110%.
+Open DEMO Juniper Townhomes. Approved framing: 11,340 of 20,000 SF using 456 of 720 budget hours. Efficiency is 89.53%. Explain that labor is running ahead of installed work. Open the header-delivery report and its Notes & To-dos to show the recovery action.
+The third project has 8,025 SF approved using 304 hours and 105.59% efficiency.
+Efficiency compares earned budget hours with actual approved labor. It is not percent complete or profit margin.
+
+1:45–2:45 | Show field-to-office review
+Open Daily Reports. There are 60 reports across four weeks: 58 approved and 2 needing review on October 2.
+Open the Juniper report: 660 SF framing, three people, 24 labor hours, signature, notes, next step and recorded submission history. Pending reports do not enter approved production totals.
+After reviewing, approve the two pending dailies. Juniper becomes 12,000 SF / 480 hours / 90% efficiency. Harbor becomes 8,500 SF / 320 hours / 106.25% efficiency.
+These actions change the demo dataset. Use a verified reset process or a separate prepared copy for another demonstration; do not imply the package automatically resets itself.
+
+2:45–4:00 | Trace time and fixed period records
+Open Time cards and the September 28–October 4 period. It has 280 approved hours, four submitted cards (32 hours), and one draft card (8 hours). No scheduled historical entries are missing.
+Review the draft for DEMO Finley Hart on October 2 and submit it. Review and approve the five outstanding cards. The period then contains 320 approved hours and is ready to end and export.
+Show one of the previous three closed weekly periods. Each has 320 approved hours with a fixed version-1 CSV export. The synthetic exports match their source records and are unchanged.
+An hours export is an audit artifact, not a payroll payment or payroll-system integration.
+
+4:00–5:00 | Plan the next shift
+Open Schedule for October 5–9: three crews, eight people, three jobs.
+Open Juniper → Notes & To-dos: header staging is the specific follow-up prompted by the production trend. Show the completed clinic inspection task and one open framing task.
+Close: “The point is to connect the estimate, the daily field record, review, approved time and the next schedule decision.”
+
+CONTENTS
+synthetic-demo.json: complete credential-free fixture in the existing tenant schema
+summary.json: checked counts, project arithmetic and period summaries
+manifest.json: fixture identity, synthetic warning and snapshot digest
+sales-demo-data.js: deterministic generator (requires existing PDL pay-periods.js and reporting-exports.js)
+sales-demo-install.js: pure, non-persisting guard for preparing a newly created empty demo tenant; preserves its existing owner and sessions unchanged
+sales-demo-data.test.js: isolated validation, including real authenticated local API tests
+prepare-sales-demo.js: offline package writer; place under scripts/ in the PDL repo before running
+
+SECURE LIVE ACCESS PATH
+1. First verify whether the owner already has authorized ordinary access to a separately owned demo workspace. Do not reset Northstar, Sample Builders or an internal test account without verifying their purpose and ownership.
+2. If none exists, the owner creates a separate company named exactly DEMO | Alder Ridge Builders using normal signup and enters their own password. The owner must accept the applicable linked terms. No credentials are included here.
+3. After the exact tenant ID and empty state are verified, an authorized platform-owner operation must install the fixture inside normal tenant concurrency, persistence and backup controls. The included preparation function rejects nonempty tenants, billing links, multiple users, ID mismatch, or an already seeded fixture. It performs no write by itself. The guarded Prepare sales demo button is included in the reviewed initializer release; it becomes available only after that release is deployed.
+4. Keep the tenant marked demo=true, billingExempt=true, planPrice=0, with no Stripe customer or subscription link. Preserve the owner's existing login. Do not copy owner credentials to another account or manufacture support access.
+5. Verify the live app with that owner, counts and totals against summary.json, then verify persistence after reload. Only then share its actual app URL as ready. Browser, live access and production persistence remain unverified by this package.
+
+RECOVERY
+A new empty demo tenant is preferred. Retain the pre-seed empty tenant snapshot using the product's authorized backup process, and apply only within the exact tenant's write queue. No live-state restore command is provided here because overwriting data needs verified target, ownership and recovery controls.
