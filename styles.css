@@ -446,6 +446,28 @@ button,.project-card,.customer-list-item,.report-list-item{-webkit-tap-highlight
 .schedule-unavailable-summary li strong,.schedule-unavailable-summary li span{min-width:0;max-width:100%;overflow-wrap:anywhere}
 .schedule-unavailable-summary li span{font-size:12px}
 .schedule-unavailable-summary p{margin:8px 0 0;font-size:12px;line-height:1.45}
+/* Quick access to the office's existing workflows, without another menu. */
+.office-workspace-tools{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px;margin-bottom:22px}
+.office-tool{display:flex;align-items:center;gap:10px;min-width:0;min-height:78px;padding:14px;text-align:left;border:1px solid var(--line);border-radius:10px;background:var(--panel);color:var(--ink);box-shadow:var(--shadow)}
+.office-tool:hover{border-color:var(--green)}
+.office-tool:focus-visible{outline:3px solid var(--green);outline-offset:3px}
+.office-tool>span:nth-child(2){display:grid;gap:4px;min-width:0}
+.office-tool strong{font-size:13px}.office-tool small{font-size:11px;line-height:1.4;color:var(--muted)}
+.office-tool-icon{font-size:21px;color:var(--green);flex:0 0 24px;text-align:center}
+.office-tool-arrow{margin-left:auto;color:var(--muted)}
+.pay-review-card{margin-top:16px;padding-top:16px;border-top:1px solid var(--line)}
+.pay-review-heading{display:flex;justify-content:space-between;gap:12px;align-items:center;flex-wrap:wrap}
+.pay-review-heading small{display:block;color:var(--muted);font-size:10px;font-weight:700;letter-spacing:.06em}
+.pay-review-heading strong{display:block;font-size:26px;margin-top:4px}.pay-review-heading strong span{font-size:12px;font-weight:400;color:var(--muted)}
+.pay-review-status{padding:7px 10px;border:1px solid var(--line);border-radius:20px;font-size:12px}.pay-review-status.ready{color:#1e6a50}.pay-review-status.needs-review{color:#8a5200}
+:root[data-theme="dark"] .pay-review-status.ready,:root[data-theme="dark"] .office-tool-icon{color:#8ce5b6}
+:root[data-theme="dark"] .pay-review-status.needs-review{color:#efbd6c}
+:root[data-theme="dark"] .office-tool:focus-visible{outline-color:#91b6ff}
+.pay-review-counts{display:flex;gap:6px;flex-wrap:wrap;margin:12px 0}.pay-review-counts span{border:1px solid var(--line);border-radius:6px;padding:5px 8px;font-size:12px;color:var(--muted)}
+.pay-period-summary summary{cursor:pointer;min-height:44px;padding:12px 0;font-size:13px;font-weight:700}
+#timecards-page .pay-export-actions{margin-top:12px}#timecards-page .pay-export-actions button{min-height:44px}
+#pay-period-panel{scroll-margin-top:92px}
+@media(max-width:600px){.office-workspace-tools{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin-bottom:16px}.office-tool{align-items:flex-start;padding:12px 10px;gap:7px;min-height:92px}.office-tool-icon{flex-basis:18px;font-size:18px}.office-tool-arrow{display:none}.office-tool strong{font-size:12px}.office-tool small{font-size:10px}}
 
 /* Appointment-sized time off uses the same company-local clock as scheduling. */
 #time-off-modal [hidden]{display:none!important}
