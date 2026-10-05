@@ -68,7 +68,7 @@ Create a Sentry Node project and add `SENTRY_DSN`. The server integration is alr
 
 ### Backup restoration
 
-Run `npm run backup:restore-drill` with the Supabase variables configured. The drill creates and downloads a private backup, verifies its SHA-256 hash, compares every record count, and reconstructs an isolated copy under a new company ID without overwriting live tenant data.
+The existing `npm run backup:restore-drill` checks a local snapshot copy and, when explicitly run with Supabase configured, creates/downloads a private snapshot and verifies its bytes. It does not restore a new tenant, attachments or application workflows. Obtain approval for the production tenant scope and an isolated destination before a real restore, then follow [DATA-RECOVERY.md](docs/DATA-RECOVERY.md). The public health receipt records only completed single-tenant snapshot verification; see [the evidence contract and remaining gates](docs/BACKUP-VERIFICATION-2026-10-05.md).
 
 ## Final launch checks
 

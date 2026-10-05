@@ -11,6 +11,8 @@
 
 ## Restore drill
 
+The included `database/restore-drill.js` verifies a local byte copy and optionally uploads/downloads one private snapshot. It does not complete the isolated application/attachment restoration below. Public health also reports only single-tenant snapshot verification, not restored or independent recovery; see [backup evidence semantics](BACKUP-VERIFICATION-2026-10-05.md).
+
 1. Select a backup without altering production.
 2. Download it into an isolated temporary directory.
 3. Verify its recorded SHA-256 hash.
