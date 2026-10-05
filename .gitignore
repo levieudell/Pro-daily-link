@@ -10,3 +10,5 @@ node_modules/
 .load-test-data/
 .restore-drill/
 .gitdata/
+
+.backup-verification/
