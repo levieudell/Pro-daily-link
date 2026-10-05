@@ -9,7 +9,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Oswald:wght@500;600;700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="styles.css?v=20261005-partial-day-leave-b" />
+  <link rel="stylesheet" href="styles.css?v=20261005-office-recovery" />
   <link rel="stylesheet" href="estimate-mobile.css" />
   <link rel="stylesheet" href="project-notes-ui.css?v=20261005-notes-focus" />
   <link rel="manifest" href="manifest.webmanifest" />
@@ -89,6 +89,8 @@
       <section class="page active" id="dashboard-page">
         <div class="page-heading"><div><p class="eyebrow">TODAY</p><h1>Welcome back.</h1><p>Here’s what’s happening across your jobs today.</p></div><button class="secondary" id="export-button">⇩ Export summary</button></div>
 
+        <nav class="office-workspace-tools" id="office-workspace-tools" aria-label="Office shortcuts" hidden></nav>
+
         <div class="alert"><span>!</span><div><strong>3 daily reports need attention</strong><p>Two are missing production quantities and one has a potential delay.</p></div><button data-page-link="reports">Review reports →</button></div>
         <section class="setup-checklist" id="setup-checklist" hidden>
           <div class="setup-checklist-copy"><p class="eyebrow">SELF-GUIDED SETUP</p><h2>Setup checklist</h2><p>Setup checklist, Help Center, templates, and standard support are included. Finish these three steps in the workspace.</p></div>
@@ -166,13 +168,13 @@
         <nav class="time-workspace-tabs" aria-label="Time tools"><button type="button" class="active" data-time-workspace="overview">Live overview</button><button type="button" data-time-workspace="approvals">Time-card approval</button><button type="button" data-time-workspace="timeoff">Time off</button></nav>
         <div class="time-overview office-only" id="time-overview"><article><small>CLOCKED IN NOW</small><strong id="time-open-count">0</strong></article><article><small>WAITING APPROVAL</small><strong id="time-submitted-count">0</strong></article><article><small>PENDING TIME OFF</small><strong id="time-off-pending-count">0</strong></article><article><small>APPROVED HOURS</small><strong id="time-approved-hours">0h</strong></article></div>
         <article class="panel live-time-panel"><div class="panel-header"><div><h2>Clocked in now</h2><p>Live punches update automatically while this page is open. <span id="time-overview-updated">Checking now…</span></p></div><div class="live-time-controls"><button type="button" class="secondary small" id="time-overview-refresh">Refresh</button><span class="live-time-status"><i></i> Live</span></div></div><div id="clocked-in-list" class="clocked-in-list"></div></article>
-        <div class="time-overview-actions"><button class="secondary" type="button" data-page-link="schedule">Open schedule</button><button class="secondary" type="button" data-page-link="timecards">Open time-card approval</button><button class="secondary" type="button" data-page-link="reports">Open daily reports</button></div>
+        <div class="time-overview-actions"><button class="secondary" type="button" data-page-link="schedule">Open schedule</button><button class="secondary" type="button" data-page-link="timecards">Open time-card approval</button><button class="secondary" type="button" data-page-link="reports">Open daily reports</button><button class="secondary" type="button" data-office-payreports hidden>Pay-period reports</button></div>
       </section>
 
       <section class="page" id="timecards-page">
         <div class="page-heading"><div><p class="eyebrow">LABOR APPROVAL</p><h1>Time</h1><p>Review each person’s hours, then approve submitted time.</p></div><div><button class="primary office-only" id="timecard-add" type="button">＋ Add time card</button><button class="primary field-only" id="company-clock" type="button">Clock company time</button><button class="secondary" id="timecard-export" type="button">CSV export</button></div></div>
         <nav class="time-workspace-tabs office-only" aria-label="Time tools"><button type="button" data-time-workspace="overview">Live overview</button><button type="button" class="active" data-time-workspace="approvals">Time-card approval</button><button type="button" data-time-workspace="timeoff">Time off</button></nav>
-        <section id="pay-period-panel" class="panel" hidden aria-label="Company pay periods"></section>
+        <section id="pay-period-panel" class="panel" tabindex="-1" hidden aria-label="Company pay periods"></section>
         <div class="panel time-compact-filters" id="timecards-filters"><div class="time-date-filters"><label>From<input id="timecard-from" type="date"></label><label>To<input id="timecard-to" type="date"></label><label>Find a person<input id="time-person-search" type="search" placeholder="Search names" autocomplete="off"></label></div><details id="time-more-filters"><summary>More filters</summary><div class="time-date-filters"><label>Job<select id="timecard-job"><option value="all">All jobs</option></select></label><label>Person<select id="timecard-person"><option value="all">All people</option></select></label><label>Status<select id="timecard-status"><option value="all">All statuses</option><option value="draft">Draft</option><option value="submitted">Submitted</option><option value="approved">Approved</option></select></label><button type="button" class="secondary" id="time-filter-reset">Reset filters</button></div></details></div>
         <div id="time-person-list" aria-label="People and hours" hidden></div>
         <div id="time-person-heading" hidden><button type="button" class="secondary" id="time-person-back">Back to people</button><h2 id="time-person-name"></h2></div>
@@ -448,8 +450,9 @@
   <script src="schedule-availability.js?v=20261005-partial-day-leave"></script>
   <script src="app.js?v=20261005-partial-day-leave"></script>
   <script src="estimate-mobile.js"></script>
-  <script src="time-approval-controls.js?v=20261004-pay-period-zoom"></script>
+  <script src="time-approval-controls.js?v=20261005-office-recovery"></script>
   <script src="company-settings-tabs.js?v=20261004-pay-periods"></script>
+  <script src="office-workspace.js?v=20261005-office-recovery"></script>
   <script src="reporting-controls.js?v=20261005-project-notes"></script>
   <script src="project-notes-ui.js?v=20261005-notes-focus"></script>
 </body>

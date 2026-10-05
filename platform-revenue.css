@@ -1,0 +1,64 @@
+/* Owner-only, read-only Stripe reporting. All rules are scoped to this panel. */
+.platform-revenue[hidden]{display:none!important}
+.platform-revenue{min-width:0;margin-bottom:18px;padding:22px;background:#fff;border:1px solid #d7d4cc;border-radius:12px;color:#111416}
+.platform-revenue *{min-width:0}
+.platform-revenue h2{margin:4px 0 7px;font-size:23px}
+.platform-revenue h3{margin:0 0 10px;font-size:18px}
+.platform-revenue h4{margin:0 0 12px;font-size:15px;overflow-wrap:anywhere}
+.platform-revenue h5{margin:14px 0 9px;font-size:13px}
+.platform-revenue p{line-height:1.55}
+.platform-revenue .revenue-heading p{margin:0}
+.platform-revenue .revenue-eyebrow{color:#744008;font-size:10px;font-weight:700;letter-spacing:.09em}
+.platform-revenue .revenue-filters{display:flex;flex-wrap:wrap;align-items:end;gap:12px;margin-top:16px}
+.platform-revenue .revenue-filters label{margin:0;flex:1 1 180px;max-width:245px;font-size:12px;color:#39454b}
+.platform-revenue .revenue-filters input{min-height:44px;max-width:100%;font-size:16px}
+.platform-revenue .revenue-filters button{min-height:44px}
+.platform-revenue .revenue-note{font-size:12px;line-height:1.6;color:#536068}
+.platform-revenue .revenue-status{min-height:1.6em;font-size:13px;margin:12px 0 0;color:#39454b}
+.platform-revenue .revenue-status.is-error{color:#a21c13;font-weight:700}
+.platform-revenue .revenue-snapshot{display:flex;align-items:center;flex-wrap:wrap;gap:9px 16px;font-size:12px;color:#536068;padding:14px 0}
+.platform-revenue .revenue-mode{display:inline-block;padding:5px 9px;border-radius:6px;background:#e9f5ed;color:#17663e}
+.platform-revenue .revenue-mode-caution{background:#fff1d6;color:#714c00}
+.platform-revenue .revenue-caution{padding:11px 13px;border:1px solid #e8ca82;background:#fff9e9;border-radius:8px;color:#694a12;font-size:13px}
+.platform-revenue .revenue-section{padding-top:20px;margin-top:20px;border-top:1px solid #e5e5df}
+.platform-revenue .revenue-section>p{margin:7px 0 12px}
+.platform-revenue .revenue-currency-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,290px),1fr));gap:12px}
+.platform-revenue .revenue-currency-card{border:1px solid #dfe2dc;border-radius:9px;padding:16px;background:#fafbf9}
+.platform-revenue dl{margin:0}
+.platform-revenue .revenue-definition{display:flex;justify-content:space-between;align-items:baseline;gap:12px;font-size:12px;line-height:1.5;margin:9px 0}
+.platform-revenue dt{color:#536068;flex:1 1 55%}
+.platform-revenue dd{margin:0;text-align:right;font-variant-numeric:tabular-nums;overflow-wrap:anywhere}
+.platform-revenue .revenue-total{border-top:1px solid #dfe2dc;padding-top:11px;margin-top:12px;font-weight:700;font-size:14px}
+.platform-revenue .revenue-total dt{color:#27342d}
+.platform-revenue .revenue-empty{padding:17px 14px;background:#f6f7f3;border:1px dashed #cdd2ca;border-radius:8px;color:#536068;font-size:13px}
+.platform-revenue .revenue-failed-attempts{color:#39454b}
+.platform-revenue .revenue-refund-statuses{display:grid;grid-template-columns:repeat(auto-fit,minmax(135px,1fr));gap:8px}
+.platform-revenue .revenue-refund-statuses .revenue-definition{padding:11px 12px;margin:0;border:1px solid #e3e5e0;border-radius:7px}
+.platform-revenue .revenue-refund-statuses dd{font-weight:700}
+.platform-revenue .revenue-company{border:1px solid #dfe2dc;border-radius:10px;padding:16px;margin-top:12px}
+.platform-revenue .revenue-company-heading{display:flex;align-items:baseline;justify-content:space-between;flex-wrap:wrap;gap:7px 16px}
+.platform-revenue .revenue-company-heading h4{margin:0}
+.platform-revenue .revenue-company-link{font-size:11px;color:#536068;background:#f0f2ed;padding:4px 7px;border-radius:5px}
+.platform-revenue .revenue-company>.revenue-note:last-child{margin-bottom:0}
+.platform-revenue .revenue-table-scroll{max-width:100%;overflow-x:auto;border:1px solid #dfe2dc;border-radius:8px;overscroll-behavior-x:contain}
+.platform-revenue .revenue-table{border-collapse:collapse;width:100%;font-size:12px;text-align:left}
+.platform-revenue .revenue-table caption{text-align:left;padding:11px 12px;color:#536068;font-size:11px;background:#fafbf9}
+.platform-revenue .revenue-table th{background:#f0f2ed;color:#39454b;font-size:11px}
+.platform-revenue .revenue-table th,.platform-revenue .revenue-table td{padding:11px 12px;border-bottom:1px solid #e5e7e1;vertical-align:top;overflow-wrap:anywhere}
+.platform-revenue .revenue-table th:nth-child(1),.platform-revenue .revenue-table td:nth-child(1){min-width:160px;font-variant-numeric:tabular-nums}
+.platform-revenue .revenue-table th:nth-child(2),.platform-revenue .revenue-table td:nth-child(2){min-width:130px}
+.platform-revenue .revenue-table th:nth-child(4),.platform-revenue .revenue-table td:nth-child(4){text-align:right;min-width:115px;font-variant-numeric:tabular-nums}
+.platform-revenue .revenue-table tr:last-child td{border-bottom:0}
+.platform-revenue .revenue-warnings{padding-left:20px;color:#694a12;font-size:12px;line-height:1.65;overflow-wrap:anywhere}
+.platform-revenue :is(button,input,[tabindex]):focus-visible{outline:3px solid #bc4b0d;outline-offset:3px}
+@media(max-width:560px){
+  .platform-revenue{padding:16px 12px}
+  .platform-revenue h2{font-size:21px}
+  .platform-revenue .revenue-filters{display:grid;grid-template-columns:minmax(0,1fr)}
+  .platform-revenue .revenue-filters label{max-width:none}
+  .platform-revenue .revenue-filters button{width:100%}
+  .platform-revenue .revenue-currency-card,.platform-revenue .revenue-company{padding:13px 10px}
+  .platform-revenue .revenue-definition{gap:9px;font-size:12px}
+  .platform-revenue .revenue-total{font-size:13px}
+  .platform-revenue .revenue-snapshot{align-items:flex-start;flex-direction:column;gap:8px}
+}
