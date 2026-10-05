@@ -435,3 +435,14 @@ button,.project-card,.customer-list-item,.report-list-item{-webkit-tap-highlight
 @media(max-width:400px){#pay-period-form .time-date-filters{grid-template-columns:1fr}}
 
 .schedule-time-off{display:block;margin:5px 0;padding:9px;border:1px solid #d7b780;border-radius:7px;background:#fff3dc;color:#624114;font-size:12px;line-height:1.4;text-align:left}.schedule-time-off strong,.schedule-time-off small{display:block}.schedule-leave-conflict{border-color:#c66854;background:#fff0ed;color:#842e1c}.schedule-month-day .schedule-time-off{padding:5px;font-size:11px}
+
+/* Keep approved absences visible before the phone agenda, including later days. */
+.schedule-unavailable-summary{min-width:0;padding:14px;border:1px solid #d7b780;border-radius:10px;background:#fff8e9;color:#624114}
+.schedule-unavailable-heading{display:flex;align-items:baseline;justify-content:space-between;gap:10px;flex-wrap:wrap}
+#schedule-page .schedule-unavailable-heading h3{margin:0;padding:0;border:0;font-size:15px;line-height:1.4}
+.schedule-unavailable-heading>span{font-size:12px;font-weight:700;white-space:nowrap}
+.schedule-unavailable-summary ul{list-style:none;margin:8px 0 0;padding:0}
+.schedule-unavailable-summary li{display:flex;justify-content:space-between;align-items:baseline;flex-wrap:wrap;gap:3px 12px;padding:8px 0;border-top:1px solid #e8d7b8;font-size:13px;line-height:1.45}
+.schedule-unavailable-summary li strong,.schedule-unavailable-summary li span{min-width:0;max-width:100%;overflow-wrap:anywhere}
+.schedule-unavailable-summary li span{font-size:12px}
+.schedule-unavailable-summary p{margin:8px 0 0;font-size:12px;line-height:1.45}

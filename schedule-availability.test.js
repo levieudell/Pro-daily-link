@@ -12,6 +12,12 @@ assert.equal(availability.onDate(rows,2,'2026-11-04'),false);
 assert.deepEqual(availability.approved([leave('bad',1,'2026-02-30'),leave('back',1,'2026-11-02','2026-10-30')],[1]),[]);
 assert.equal(availability.validDate('2028-02-29'),true);
 assert.deepEqual(availability.conflicts(rows,[1,2],['2026-10-10','2026-11-01']),{conflictMemberIds:[1,2],conflictDates:['2026-10-10','2026-11-01']});
+const selectedDates=['2026-10-30','2026-10-31','2026-11-01','2026-11-02','2026-11-03','2026-11-04','2026-11-05'];
+const scopedMembers=[{id:2,name:'Range Worker'}],splitRows=[{memberId:2,startDate:'2026-10-29',endDate:'2026-11-01'},{memberId:2,startDate:'2026-10-31',endDate:'2026-11-01'},{memberId:2,startDate:'2026-11-03',endDate:'2026-11-08'},{memberId:99,startDate:'2026-10-30',endDate:'2026-11-05'}],unchanged=JSON.stringify({splitRows,scopedMembers,selectedDates});
+assert.deepEqual(availability.summarize(splitRows,scopedMembers,selectedDates),[{memberId:2,name:'Range Worker',ranges:[{startDate:'2026-10-30',endDate:'2026-11-01'},{startDate:'2026-11-03',endDate:'2026-11-05'}]}],'summary clips to selected range, deduplicates overlap, keeps separate absences and excludes out-of-scope people');
+assert.equal(JSON.stringify({splitRows,scopedMembers,selectedDates}),unchanged,'mobile summary is read-only');
+assert.deepEqual(availability.summarize(rows,[{id:1,name:'Worker'}],['2026-10-11','2026-10-12']),[],'pending and declined days do not enter the summary');
+for(const dates of [['2026-03-07','2026-03-08','2026-03-09'],['2026-12-31','2027-01-01'],['2028-02-28','2028-02-29','2028-03-01']])assert.deepEqual(availability.summarize([{memberId:1,startDate:dates[0],endDate:dates.at(-1)}],[{id:'1',name:'Date Worker'}],dates.map(date=>({date}))).at(0).ranges,[{startDate:dates[0],endDate:dates.at(-1)}],'calendar ranges stay consecutive across DST/year/leap boundaries');
 const root=fs.mkdtempSync(path.join(os.tmpdir(),'pdl-leave-test-'));
 process.env.PDL_DB_FILE=path.join(root,'db.json');process.env.PDL_PLATFORM_FILE=path.join(root,'platform.json');process.env.PDL_REQUIRE_AUTH='1';process.env.PDL_SUPABASE_ENABLED='0';process.env.PDL_EMAIL_DEV_MODE='1';delete process.env.RESEND_API_KEY;delete process.env.SENTRY_DSN;
 function fixture(id){
