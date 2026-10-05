@@ -446,3 +446,10 @@ button,.project-card,.customer-list-item,.report-list-item{-webkit-tap-highlight
 .schedule-unavailable-summary li strong,.schedule-unavailable-summary li span{min-width:0;max-width:100%;overflow-wrap:anywhere}
 .schedule-unavailable-summary li span{font-size:12px}
 .schedule-unavailable-summary p{margin:8px 0 0;font-size:12px;line-height:1.45}
+
+/* Appointment-sized time off uses the same company-local clock as scheduling. */
+#time-off-modal [hidden]{display:none!important}
+#time-off-error{padding:10px;border:1px solid #c66854;border-radius:7px;background:#fff0ed;color:#842e1c;font-size:13px;line-height:1.4}
+#time-off-zone{line-height:1.5;margin:0 0 12px}
+.time-off-row strong{overflow-wrap:anywhere}
+@media(max-width:640px){#time-off-modal input,#time-off-modal select{font-size:16px;min-height:44px}#time-off-modal .modal-actions button{min-height:44px}.time-off-row>div:only-child{display:grid}}
