@@ -250,7 +250,7 @@ server.listen(4201, async () => {
     const fieldApprove = await request(`/api/time-cards/${marcus.id}/approve`, {method: 'POST', headers: fieldAuth, body: '{}'});
     assert.equal(fieldApprove.response.status, 403);
     const fieldEdit = await request(`/api/time-cards/${marcus.id}`, {method: 'PATCH', headers: fieldAuth, body: JSON.stringify({inAt: '2026-09-29T15:00:00.000Z', outAt: '2026-09-29T16:10:00.000Z'})});
-    assert.equal(fieldEdit.response.status, 403);
+    assert.equal(fieldEdit.response.status, 409, 'Field edits require a fresh revision; office approval remains protected');
     const fieldOtherSubmit = await request(`/api/time-cards/${jamal.id}/submit`, {method: 'POST', headers: fieldAuth, body: '{}'});
     assert.equal(fieldOtherSubmit.response.status, 404);
     const fieldCsv = await request('/api/time-cards.csv', {headers: fieldAuth});
