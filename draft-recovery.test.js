@@ -10,7 +10,7 @@ assert.match(app,/openReport\(saved\|\|null\)/,'both existing drafts and new rep
 assert.match(app,/reportRecoverySnapshot\(\)/,'the complete in-progress report state must be captured');
 assert.match(app,/restoreRecoveredReportFields\(draft\)/,'dates, detail fields, labor, and production must be restored');
 assert.match(app,/Reattach .*photo/,'non-restorable browser file selections must be disclosed');
-assert.match(app,/clearActiveReportRecovery\(recoveryKey\)/,'successful saves must clear recovered browser data');
+assert.ok(app.includes('clearActiveReportRecovery(`report-${saved.id}`)'), 'confirmed core saves clear recovered browser data');
 assert.match(app,/levi\\\+qa-/,'known QA audit records must be hidden from the customer-facing activity log');
 assert.doesNotMatch(app,/\#autosave-status'\)\.textContent='Draft saved just now'(?=[^\n]*rememberActiveReport)/,'the recovery layer must not claim that device-only notes are a server draft');
 
