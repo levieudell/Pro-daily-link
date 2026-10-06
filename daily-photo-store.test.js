@@ -1,0 +1,20 @@
+'use strict';
+const assert=require('node:assert/strict');
+const {indexedDB}=require('fake-indexeddb');
+const {File}=require('node:buffer');
+const {PhotoStore}=require('./daily-photo-store');
+(async()=>{
+ const first=new PhotoStore(indexedDB),file=new File(['synthetic photo bytes'],'fictional.jpg',{type:'image/jpeg',lastModified:1234});
+ const key='synthetic-tenant:synthetic-user:end:1',row={file,name:file.name,type:file.type,lastModified:file.lastModified,uploadId:'aaaaaaaa-aaaa-4aaa-aaaa-aaaaaaaaaaaa'};
+ await first.put(key,[row]);
+ const refreshed=new PhotoStore(indexedDB),recovered=await refreshed.get(key);
+ assert.equal(recovered.length,1);assert.equal(recovered[0].name,'fictional.jpg');assert.equal(await recovered[0].file.text(),'synthetic photo bytes');assert.equal(recovered[0].uploadId,row.uploadId);
+ assert.deepEqual(await refreshed.get('different-tenant:synthetic-user:end:1'),[]);
+ assert.deepEqual(await refreshed.get('synthetic-tenant:different-user:end:1'),[]);
+ const pending=first.put(key,[row]);const removed=first.remove(key);await Promise.all([pending,removed]);assert.deepEqual(await first.get(key),[],'serialized removal cannot race older saves');
+ await assert.rejects(first.put(key,Array(9).fill(row)),/up to 8/);
+ await assert.rejects(first.put(key,[{file:new File(['x'],'script.svg',{type:'image/svg+xml'})}]),/JPEG/);
+ await assert.rejects(new PhotoStore(null).get(key),/unavailable/);
+ (await first.open()).close();(await refreshed.open()).close();
+ console.log('Daily photo recovery passed: real IndexedDB transactions, refresh restores bytes/identity, tenant/user isolation, ordering, limits and unavailable storage.');
+})().catch(error=>{console.error(error);process.exitCode=1});
