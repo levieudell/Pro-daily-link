@@ -10,6 +10,7 @@ const { stableUuid } = require('./database/migrate-json');
 const Sentry = require('@sentry/node');
 const stripeWebhook = require('./stripe-webhook');
 const founderBilling = require('./founder-billing');
+const employeeAccess = require('./employee-access');
 const safeCsvCell = require('./csv-cell');
 const csvCell = value => safeCsvCell(value, { quoteAll: false });
 const { isPublicFile } = require('./public-file-policy');
@@ -835,6 +836,33 @@ async function api(req,res,url){
   if(req.method==='POST'&&url.pathname==='/api/auth/logout'){const db=readDb(),token=bearer(req)||cookie(req,'pdl_session'),tokenHash=token&&crypto.createHash('sha256').update(token).digest('hex');db.sessions=(db.sessions||[]).filter(row=>row.tokenHash!==tokenHash);writeDb(db);const secure=process.env.NODE_ENV==='production'?'; Secure':'';return jsonHeaders(res,200,{ok:true},{'Set-Cookie':[`pdl_session=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0${secure}`,`pdl_company=; SameSite=Strict; Path=/; Max-Age=0${secure}`]})}
   if(process.env.PDL_REQUIRE_AUTH==='1'&&!url.pathname.startsWith('/api/guest/')){const db=readDb(),token=bearer(req)||cookie(req,'pdl_session'),tokenHash=token&&crypto.createHash('sha256').update(token).digest('hex'),session=(db.sessions||[]).find(row=>row.tokenHash===tokenHash&&new Date(row.expiresAt)>new Date()),storedUser=session&&(db.users||[]).find(row=>row.id===session.userId&&row.status==='Active'),user=storedUser?.role==='office'?{...storedUser,role:'admin'}:storedUser;if(!session||!user)return json(res,401,{error:'Authentication required'});if(session.companyId!==db.company.id)return json(res,404,{error:'Resource not found'});req.auth={session,user,companyId:session.companyId};const access=accountAccess(db.company),accessRoute=url.pathname==='/api/account-access'||url.pathname.startsWith('/api/billing');if(access.locked&&!accessRoute)return json(res,402,{error:access.reason,code:'subscription_required',access});const ownerRoute=url.pathname==='/api/users'||/^\/api\/users\//.test(url.pathname);if(ownerRoute&&user.role!=='owner')return json(res,403,{error:'Account owner permission required'});const officeRoute=['/api/production','/api/insights','/api/exceptions','/api/action-center','/api/changes','/api/catalog','/api/estimate-imports'].some(route=>url.pathname.startsWith(route))||url.pathname.includes('/approve')||url.pathname.includes('/disposition');if(officeRoute&&!['owner','admin','project_manager'].includes(user.role))return json(res,403,{error:'Office permission required'})}
   if(await handleProjectNotes(req,res,url))return;
+  const employeeDetail = url.pathname.match(/^\/api\/team\/(\d+)(\/account)?$/);
+  if(employeeDetail && (req.method === 'GET' && !employeeDetail[2] || req.method === 'POST' && employeeDetail[2])) {
+    const input = req.method === 'POST' ? await body(req) : {}, db = readDb();
+    // Re-read the actor after the body arrives; never trust permissions from an open dialog.
+    const actor = (db.users || []).find(user => user.id === req.auth?.user?.id && user.status === 'Active');
+    if(!actor || actor.companyId && actor.companyId !== db.company.id) return json(res,403,{error:'Current account permission required'});
+    const member = (db.team || []).find(person => Number(person.id) === Number(employeeDetail[1]) && (!person.companyId || person.companyId === db.company.id));
+    const office = ['owner','admin'].includes(actor.role), self = (db.team || []).find(person => Number(person.id) === Number(actor.memberId));
+    const visible = office || actor.role === 'project_manager' && managerScope(db,actor).memberIds.has(Number(member?.id)) || fieldRole(actor) && self && self.crew === member?.crew;
+    if(!member || !visible) return json(res,404,{error:'Employee not found'});
+    const account = employeeAccess.linkedAccount(db,member);
+    if(req.method === 'GET') return json(res,200,{
+      employee: Object.fromEntries(['id','name','role','crew','email','phone','hours','site'].map(key => [key,member[key] ?? ''])),
+      account: account ? {status:account.status,...(office?{id:account.id,email:account.email,role:account.role,mustSetPassword:account.mustSetPassword}:{} )} : null,
+      accessRoles: employeeAccess.accessRoles(actor),
+      emailConflict: office && Boolean(member.email) && (db.users || []).some(user => String(user.email || '').trim().toLowerCase() === String(member.email).trim().toLowerCase() && Number(user.memberId) !== Number(member.id))
+    });
+    const prepared = employeeAccess.prepareEmployeeAccount(db,actor,member,input,billingPlan(db.company));
+    if(prepared.error) return json(res,prepared.status,{error:prepared.error});
+    const temporaryPassword = crypto.randomBytes(6).toString('base64url'), credential = credentialHash(temporaryPassword), at = new Date().toISOString();
+    db.users ||= [];
+    const user = {...prepared.row,id:nextId(db.users),setupHash:credential.hash,setupSalt:credential.salt,setupExpiresAt:new Date(Date.now()+72*3600000).toISOString(),createdAt:at};
+    db.users.push(user); db.auditLog ||= [];
+    db.auditLog.push({id:crypto.randomUUID(),type:'employee_account_created',memberId:member.id,userId:user.id,actor:actor.name,detail:`${member.name}: ${user.role} app access created`,at});
+    writeDb(db);
+    return json(res,201,{account:{id:user.id,email:user.email,role:user.role,status:user.status,mustSetPassword:true},temporaryPassword});
+  }
   if(process.env.PDL_REQUIRE_AUTH==='1'&&(subcontractorCreate||subcontractorUpdate||subcontractorProfile||subcontractorReminder||subcontractorArchive)&&!['owner','admin'].includes(req.auth?.user?.role))return json(res,403,{error:'Account Owner or Admin permission required'});
   if(process.env.PDL_REQUIRE_AUTH==='1'&&(subcontractorLinkCreate||subcontractorLinkRevoke)&&!['owner','admin','project_manager'].includes(req.auth?.user?.role))return json(res,403,{error:'Office permission required'});
   if(subcontractorProfile){
