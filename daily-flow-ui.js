@@ -47,6 +47,7 @@ function rememberEndDay(){
   const id=Number($('#end-day-id').value);if(!id)return;
   try{const prior=readEndDay(id)||{};localStorage.setItem(dailyEndKey(id),JSON.stringify({...prior,analysisPending:prior.analysisPending!==false,notes:$('#end-day-notes').value,next:$('#end-day-next').value,tags:$('#end-day-photo-tags').value,updatedAt:new Date().toISOString()}));localStorage.setItem(dailyEndMarkerKey(),String(id))}catch(error){notify('End Day notes could not be saved on this device. Keep this tab open until clock-out is confirmed.')}
 }
+function readEndMarker(){try{return Number(localStorage.getItem(dailyEndMarkerKey()))}catch{return 0}}
 function readEndDay(id){try{return JSON.parse(localStorage.getItem(dailyEndKey(id))||'null')}catch{return null}}
 const openEndDayBeforeRecovery=openEndDay;
 openEndDay=function(id){
@@ -115,7 +116,7 @@ openReport=function(report){dailyReviewCleanup?.();dailyReviewGeneration++;repor
 $('#report-photos').addEventListener('change',()=>stageDailyPhotos($('#report-photos'),dailyReportPhotoKey()));
 for(const id of ['report-project','report-date'])$('#'+id).addEventListener('change',()=>{dailyReviewGeneration++;reportAnalyzeSequence++;void restoreDailyPhotos($('#report-photos'),dailyReportPhotoKey())});
 $('#report-modal').addEventListener('close',()=>{dailyReviewCleanup?.();dailyReviewGeneration++;reportAnalyzeSequence++});
-$('#report-modal').addEventListener('input',()=>{if($('#report-modal').dataset.analyzing)return;const id=Number(localStorage.getItem(dailyEndMarkerKey())),saved=readEndDay(id);if(saved&&Number(saved.reportId)===Number(editingReportId)){try{localStorage.setItem(dailyEndKey(id),JSON.stringify({...saved,reviewEdited:true}))}catch{}}});
+$('#report-modal').addEventListener('input',()=>{if($('#report-modal').dataset.analyzing)return;const id=readEndMarker(),saved=readEndDay(id);if(saved&&Number(saved.reportId)===Number(editingReportId)){try{localStorage.setItem(dailyEndKey(id),JSON.stringify({...saved,reviewEdited:true}))}catch{}}});
 const saveDailyBeforePhotoRecovery=saveDailyReport;
 saveDailyReport=async function(status){
   if(dailyReportBusy)return;dailyReportBusy=true;const input=$('#report-photos'),key=dailyReportPhotoKey();input.disabled=true;
@@ -128,7 +129,7 @@ saveDailyReport=async function(status){
   }}finally{dailyReportBusy=false;input.disabled=false}
 };
 const startFreshBeforePhotoRecovery=$('#report-start-fresh').onclick;
-$('#report-start-fresh').onclick=async function(){const input=$('#report-photos'),key=dailyReportPhotoKey();dailyReviewGeneration++;reportAnalyzeSequence++;input.dataset.recoveryGeneration=String(Number(input.dataset.recoveryGeneration||0)+1);await dailyPhotoPending.get(key)?.catch(()=>{});await clearDailyPhotos(input,key).catch(photoRecoveryWarning);setRecoveredFiles(input,[]);const id=Number(localStorage.getItem(dailyEndMarkerKey())),saved=readEndDay(id);if(saved&&Number(saved.reportId)===Number(editingReportId)){await clearDailyPhotos($('#end-day-photos'),dailyPhotoKey('end',id)).catch(photoRecoveryWarning);localStorage.removeItem(dailyEndKey(id));localStorage.removeItem(dailyEndMarkerKey())}startFreshBeforePhotoRecovery?.call(this)};
+$('#report-start-fresh').onclick=async function(){const input=$('#report-photos'),key=dailyReportPhotoKey();dailyReviewGeneration++;reportAnalyzeSequence++;input.dataset.recoveryGeneration=String(Number(input.dataset.recoveryGeneration||0)+1);await dailyPhotoPending.get(key)?.catch(()=>{});await clearDailyPhotos(input,key).catch(photoRecoveryWarning);setRecoveredFiles(input,[]);const id=readEndMarker(),saved=readEndDay(id);if(saved&&Number(saved.reportId)===Number(editingReportId)){await clearDailyPhotos($('#end-day-photos'),dailyPhotoKey('end',id)).catch(photoRecoveryWarning);localStorage.removeItem(dailyEndKey(id));localStorage.removeItem(dailyEndMarkerKey())}startFreshBeforePhotoRecovery?.call(this)};
 for(const id of ['logout-button','profile-logout-button']){const button=$('#'+id),previous=button.onclick;button.onclick=async function(){dailyReviewCleanup?.();dailyReviewGeneration++;reportAnalyzeSequence++;dailyInstructionSequence++;for(const key of ['report-photos','end-day-photos','office-photos']){const input=$('#'+key);input.dataset.recoveryGeneration=String(Number(input.dataset.recoveryGeneration||0)+1);delete input.dataset.recoveryKey;setRecoveredFiles(input,[]);photoRecoveryList(input,'',[])}dailyPhotoMemory.clear();await previous?.call(this)}}
 
 const openProjectPhotoBeforeRecovery=openProjectPhoto;
@@ -158,4 +159,4 @@ async function renderDailyInstructions(){
 const renderMyDayBeforeInstructions=renderMyDay;
 renderMyDay=function(){const result=renderMyDayBeforeInstructions();void renderDailyInstructions();return result};
 const loadRoleBeforeDailyRecovery=loadRole;
-loadRole=async function(role){const result=await loadRoleBeforeDailyRecovery(role);const id=Number(localStorage.getItem(dailyEndMarkerKey()));if(id){const workday=workdays.find(day=>Number(day.id)===id);if(workday?.status==='active'&&!$('#report-modal').open)openEndDay(id);else if(workday?.status==='complete'){const report=reports.find(row=>Number(row.id)===Number(workday.reportId));if(report&&(!$('#report-modal').open||Number(editingReportId)===Number(report.id)))await openEndedDayReview({workday,report,alreadyEnded:true})}}return result};
+loadRole=async function(role){const scope=dailyScope(),result=await loadRoleBeforeDailyRecovery(role);if(dailyScope()!==scope)return result;const id=readEndMarker();if(id){const workday=workdays.find(day=>Number(day.id)===id);if(workday?.status==='active'&&!$('#report-modal').open)openEndDay(id);else if(workday?.status==='complete'){const report=reports.find(row=>Number(row.id)===Number(workday.reportId));if(report&&(!$('#report-modal').open||Number(editingReportId)===Number(report.id)))await openEndedDayReview({workday,report,alreadyEnded:true})}}return result};
