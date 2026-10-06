@@ -119,8 +119,9 @@ $('#report-modal').addEventListener('close',()=>{dailyReviewCleanup?.();dailyRev
 $('#report-modal').addEventListener('input',()=>{if($('#report-modal').dataset.analyzing)return;const id=readEndMarker(),saved=readEndDay(id);if(saved&&Number(saved.reportId)===Number(editingReportId)){try{localStorage.setItem(dailyEndKey(id),JSON.stringify({...saved,reviewEdited:true}))}catch{}}});
 const saveDailyBeforePhotoRecovery=saveDailyReport;
 saveDailyReport=async function(status){
-  if(dailyReportBusy)return;dailyReportBusy=true;const input=$('#report-photos'),key=dailyReportPhotoKey();input.disabled=true;
+  if(dailyReportBusy)return;dailyReportBusy=true;const scope=dailyScope(),generation=dailyReviewGeneration,input=$('#report-photos'),key=dailyReportPhotoKey();input.disabled=true;
   try{await dailyPhotoReady(input,key);
+  if(dailyScope()!==scope||dailyReviewGeneration!==generation)return;
   await saveDailyBeforePhotoRecovery(status);if(dailyScope()!==scope||dailyReviewGeneration!==generation&&$('#report-modal').open)return;
   if(!$('#report-modal').open){try{await clearDailyPhotos(input,key)}catch(error){photoRecoveryWarning(error)}}
   else if(editingReportId&&dailyReportPhotoKey()!==key){
