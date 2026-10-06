@@ -1,0 +1,13 @@
+'use strict';
+const fs=require('node:fs'),os=require('node:os'),path=require('node:path');
+const directory=fs.mkdtempSync(path.join(os.tmpdir(),'pdl-daily-browser-'));
+const db=JSON.parse(fs.readFileSync(path.join(__dirname,'../data/db.json'),'utf8'));
+db.company={id:'33333333-3333-4333-8333-333333333333',name:'Synthetic daily workflow QA',demo:true,timezone:'America/Los_Angeles',features:{timeCards:true}};
+db.projects=[{id:101,name:'Synthetic pipe project',code:'QA',site:'Synthetic site',status:'Active',progress:0,production:0,budget:'$0',crew:'QA Crew',customer:'Synthetic customer',customerId:1,estimateItems:[]}];
+db.customers=[{id:1,name:'Synthetic customer'}];db.team=[{id:11,name:'Synthetic worker',initials:'QA',crew:'QA Crew',role:'Field team member',hours:0}];
+for(const collection of ['users','sessions','reports','photos','workdays','timeCards','assignments','changes','catalog','auditLog','subcontractors','subcontractorLinks','projectPlans','projectNotesTodos','projectTickets'])db[collection]=[];
+const date=new Date().toLocaleDateString('en-CA',{timeZone:'America/Los_Angeles'});db.assignments=[{id:1,projectId:101,memberIds:[11],crew:'QA Crew',date,start:'07:00',end:'16:00',activity:'Synthetic pipe installation'}];
+fs.writeFileSync(path.join(directory,'db.json'),JSON.stringify(db));fs.writeFileSync(path.join(directory,'platform.json'),JSON.stringify({users:[],sessions:[]}));
+Object.assign(process.env,{PDL_DB_FILE:path.join(directory,'db.json'),PDL_PLATFORM_FILE:path.join(directory,'platform.json'),PDL_SUPABASE_ENABLED:'0',PDL_TRANSACTIONAL_DB:'off',PDL_REQUIRE_AUTH:'0',PDL_EMAIL_DEV_MODE:'1'});
+for(const name of ['SENTRY_DSN','RESEND_API_KEY','OPENAI_API_KEY','STRIPE_SECRET_KEY','STRIPE_WEBHOOK_SECRET'])delete process.env[name];
+const server=require('../server').server;server.listen(4276,'127.0.0.1',()=>console.log('Synthetic browser fixture: http://127.0.0.1:4276/app'));
