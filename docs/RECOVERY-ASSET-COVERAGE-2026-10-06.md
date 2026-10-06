@@ -20,6 +20,8 @@ This is local synthetic evidence with mocked provider transport. It does not est
 
 ## Remaining estimate-source lifecycle issue
 
+The follow-on storage/retention-only candidate is documented in `ESTIMATE-SOURCE-RETENTION-2026-10-06.md`. In that candidate, new uploads use private storage and approved proposals retain source references. Source-PDF reading remains denied; the original findings below describe the pre-repair baseline and the still-separate access-policy work.
+
 The current estimate-import analysis route and PDF estimate-proposal route still write source PDFs to local `uploads/estimates` files. The protected file reader does not recognize those reference families, and approving a proposal removes its source-file reference when converting it into an estimate item. The new portable guard catches references that remain present, but cannot recover a reference that was already removed.
 
 A separate reviewed change must define source-file retention through approval and explicit authorized read scope before converting these uploads to private cloud storage. It should test new imports/proposals, approval, original PDF readability, company/project isolation, pricing visibility, upload/save failures, backup inclusion and legacy handling. Do not silently widen field or project-manager access, migrate historical data, or delete files as part of this patch.
