@@ -391,7 +391,8 @@
       <label>Project / job site<select id="assignment-project"></select></label>
       <div class="two-col"><label>First day<input id="assignment-date" type="date" required /></label><label>Through date <small>Optional for multiple days</small><input id="assignment-end-date" type="date" /></label></div>
       <label class="inline-check"><input id="assignment-include-weekends" type="checkbox" /> Include Saturdays and Sundays in this date range</label>
-      <label>Work activity<input id="assignment-activity" placeholder="Concrete pour, framing…" /></label>
+      <label>Today’s instructions / work activity<input id="assignment-activity" placeholder="Concrete pour, framing…" /></label>
+      <label><input type="checkbox" id="assignment-carry-next" checked /> Show previous daily next steps as dated reference</label>
       <div class="two-col"><label>Start time<input id="assignment-start" type="time" value="07:00" required /></label><label>End time<input id="assignment-end" type="time" value="15:30" required /></label></div>
       <div id="assignment-warning" class="form-warning"></div>
       <div class="modal-actions"><button value="cancel" class="secondary">Cancel</button><button type="button" class="primary" id="save-assignment">Assign to site</button></div>
@@ -448,12 +449,14 @@
   <script src="i18n.js?v=20260930a"></script>
   <script src="csv-cell.js?v=20261004-security"></script>
   <script src="schedule-availability.js?v=20261005-partial-day-leave"></script>
-  <script src="app.js?v=20261005-partial-day-leave"></script>
+  <script src="app.js?v=20261006-daily-flow"></script>
   <script src="estimate-mobile.js"></script>
   <script src="time-approval-controls.js?v=20261005-office-recovery"></script>
   <script src="company-settings-tabs.js?v=20261004-pay-periods"></script>
   <script src="office-workspace.js?v=20261005-office-recovery"></script>
   <script src="reporting-controls.js?v=20261005-project-notes"></script>
   <script src="project-notes-ui.js?v=20261005-notes-focus"></script>
+  <script src="daily-photo-store.js?v=20261006-daily-flow"></script>
+  <script src="daily-flow-ui.js?v=20261006-daily-flow"></script>
 </body>
 </html>

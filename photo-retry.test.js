@@ -12,7 +12,7 @@ const calls=[];let uploadFails=true,recoveryId;
 const draftStorage=new Map([['scoped-project-1','Synthetic report with photo'],['pdl-draft-0','Unattributed legacy draft']]);
 const context={$:node,$$:()=>[],timeCardsOn:()=>false,editingReportId:null,reportLaborTotals:()=>({crew:0,allocated:0,balanced:true}),noteLaborUnassigned:()=>0,templatesOn:()=>false,
   projects:[{id:1}],reports:[],photos:[],extractedDraft:null,currentUser:{name:'QA'},activeNoteLaborEvidence:null,
-  dailyTemplatePayload:()=>({}),api:async(route,options)=>{calls.push({route,method:options.method});return{id:10,project:0,status:'Needs review',notes:'Synthetic report with photo'}},
+  dailyTemplatePayload:()=>({}),api:async(route,options)=>{calls.push({route,method:options.method,status:JSON.parse(options.body).status});return{id:10,project:0,status:JSON.parse(options.body).status,notes:'Synthetic report with photo'}},
   uploadPhotos:async()=>{if(uploadFails)throw new Error('Synthetic upload failure');return[{id:1,reportId:10}]},
   offlineReportDraftKey:()=>context.editingReportId?`report-${context.editingReportId}`:'project-1',offlineReportStorageKey:key=>'scoped-'+key,
   rememberActiveReport:()=>{recoveryId=context.editingReportId;draftStorage.set('scoped-report-'+recoveryId,'Synthetic report with photo')},
@@ -28,7 +28,7 @@ vm.createContext(context);vm.runInContext(save,context);
   assert.equal(draftStorage.has('scoped-report-10'),true);
   assert.equal(node('#report-photos').files.length,1,'failed upload retains current browser file selection');
   uploadFails=false;await context.saveDailyReport('Needs review');
-  assert.deepEqual(calls,[{route:'/api/reports',method:'POST'},{route:'/api/reports/10',method:'PATCH'}],'retry updates the persisted report rather than submitting a duplicate');
+  assert.deepEqual(calls,[{route:'/api/reports',method:'POST',status:'Draft'},{route:'/api/reports/10',method:'PATCH',status:'Draft'},{route:'/api/reports/10',method:'PATCH',status:'Needs review'}],'retry updates one draft and submits only after photos succeed');
   assert.equal(context.reports.length,1);assert.equal(context.photos.length,1);assert.equal(node('#report-modal').closed,true);
   assert.equal(context.editingReportId,null);
   assert.equal(draftStorage.size,1,'successful retry does not leave a stale scoped project or report draft');
