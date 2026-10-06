@@ -29,22 +29,36 @@ async function run(){
   assert.equal((await request('POST','/api/team/1/account',1,{role:'field',email:'OWNER@example.invalid '})).status,409);
   assert.equal((await request('POST','/api/team/1/account',1,{role:'project_manager',projectIds:[999]})).status,400);
   assert.equal((await request('POST','/api/team/999/account',1,{role:'field'})).status,404);
+  // Exercise the actual endpoint's plan cap, including simultaneous attempts for the last seat.
+  const beforeSeats=read(),fullSeats=read();fullSeats.company.plan='starter';
+  while(fullSeats.users.length<10)fullSeats.users.push({id:fullSeats.users.length+1,companyId,name:'Synthetic occupied seat',email:'seat'+fullSeats.users.length+'@example.invalid',role:'field',status:'Active'});
+  write(fullSeats);const fullBefore=read();
+  assert.equal((await request('POST','/api/team/1/account',1,{role:'field'})).status,409);assert.deepEqual(read(),fullBefore);
+  fullSeats.users.pop();write(fullSeats);
+  const lastSeat=await Promise.all([request('POST','/api/team/1/account',1,{role:'field'}),request('POST','/api/team/2/account',1,{role:'field',email:'last-seat@example.invalid'})]);
+  assert.deepEqual(lastSeat.map(row=>row.status).sort(),[201,409]);assert.equal(read().users.filter(user=>user.status==='Active').length,10);assert.deepEqual(read().team,beforeSeats.team);
+  write(beforeSeats);
   const employeeBefore=read().team;
   const parallel=await Promise.all([request('POST','/api/team/1/account',2,{role:'field'}),request('POST','/api/team/1/account',2,{role:'foreman'})]);
   assert.deepEqual(parallel.map(row=>row.status).sort(),[201,409]);result=parallel.find(row=>row.status===201);assert(result.data.temporaryPassword);assert(!JSON.stringify(result.data).includes('setupHash'));
   let db=read();assert.equal(db.users.filter(user=>user.memberId===1).length,1);assert.deepEqual(db.team,employeeBefore);assert.equal(db.users.at(-1).companyId,companyId);assert.equal(db.users.at(-1).permissions.manageTime,undefined);assert.equal(db.auditLog.at(-1).type,'employee_account_created');
+  const password=result.data.temporaryPassword,newUser=db.users.at(-1);assert(!JSON.stringify(db).includes(password),'plaintext temporary credential is not persisted');assert(newUser.setupHash);assert(newUser.setupSalt);assert.equal(newUser.mustSetPassword,true);assert(Math.abs(Date.parse(newUser.setupExpiresAt)-Date.now()-72*3600000)<10000);
+  const summary=await request('GET','/api/team/1');assert.deepEqual(Object.keys(summary.data.account).sort(),['email','id','mustSetPassword','role','status']);assert(!JSON.stringify(summary.data).includes(password));
   const accountId=result.data.account.id;
   result=await request('GET','/api/team/1',4);assert.deepEqual(result.data.account,{status:'Active'});
   db=read();db.users.find(user=>user.id===accountId).status='Deactivated';write(db);
   assert.equal((await request('POST','/api/team/1/account',1,{role:'field'})).status,409);assert.equal((await request('GET','/api/team/1')).data.account.status,'Deactivated');
   // An open dialog does not authorize a later request after the actor is demoted.
+  await request('GET','/api/team/2',2);db=read();db.users.find(user=>user.id===2).status='Deactivated';write(db);const deactivatedBefore=read();
+  assert.equal((await request('POST','/api/team/2/account',2,{role:'field',email:'new@example.invalid'})).status,401);assert.deepEqual(read(),deactivatedBefore);
+  db=read();db.users.find(user=>user.id===2).status='Active';write(db);
   await request('GET','/api/team/2',2);db=read();db.users.find(user=>user.id===2).role='project_manager';write(db);
   assert.equal((await request('POST','/api/team/2/account',2,{role:'field',email:'new@example.invalid'})).status,403);
   db=read();db.users.find(user=>user.id===1).emailVerifiedAt=null;db.company.emailVerificationRequiredAt='2026-01-01';write(db);
   assert.equal((await request('POST','/api/team/2/account',1,{role:'field',email:'new@example.invalid'})).status,403);
   db=read();db.users.find(user=>user.id===1).emailVerifiedAt='2026-01-01';write(db);
-  result=await request('POST','/api/team/2/account',1,{role:'project_manager',email:'manager2@example.invalid',projectIds:[1],assignedCrews:['QA'],permissions:{manageTime:true,approveDailies:true}});assert.equal(result.status,201);
-  db=read();const manager=db.users.find(user=>user.memberId===2);assert.equal(manager.permissions.manageTime,false);assert.equal(manager.permissions.approveDailies,false);assert.deepEqual(manager.projectIds,[1]);assert.deepEqual(db.team,employeeBefore);
+  result=await request('POST','/api/team/2/account',1,{role:'project_manager',email:'manager2@example.invalid',companyId:otherId,memberId:3,projectIds:[1],assignedCrews:['QA'],permissions:{manageTime:true,approveDailies:true}});assert.equal(result.status,201);
+  db=read();const manager=db.users.find(user=>user.memberId===2);assert.equal(manager.companyId,companyId);assert.equal(manager.permissions.manageTime,false);assert.equal(manager.permissions.approveDailies,false);assert.deepEqual(manager.projectIds,[1]);assert.deepEqual(db.team,employeeBefore);
   // Tenant lookup never links an account or employee from another workspace.
   assert.equal((await request('GET','/api/team/1',1,undefined,otherId)).data.account,null);
   const mismatch=await fetch(base+'/api/team/1',{headers:{'X-PDL-Company':otherId,Authorization:'Bearer '+token(1)}});assert.equal(mismatch.status,401);
