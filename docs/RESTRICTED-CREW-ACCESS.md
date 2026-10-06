@@ -1,0 +1,27 @@
+# Restricted crew access (held preview)
+
+This extension is based on PR60 head `14818caae4c506a8cca69962191181d0b26d99ed`. It does not change PR58, PR60, main, existing accounts, or the default Field operations role. No real account was created or changed.
+
+## Explicit account choice
+
+Employee detail creation and Account Owner user editing offer two field modes: **Field operations** (existing schedule, time, and dailies) and **Crew member** (own time, assigned schedule, viewing/uploading assigned-job photos; no dailies). New field access requires an explicit UI choice. The restricted mode is stored as `role: 'field', fieldAccessMode: 'time_schedule_photos'`. The server validates the combination, preserves the mode on unrelated edits, clears it on promotion, and audits mode changes. Manager permissions and existing field defaults remain unchanged. Owner/admin employee provisioning still uses existing duplicate, tenant, billing-seat, verified-email, durable employee-link, and temporary-password safeguards. No invitation or credential was issued to a real person.
+
+## Server authority
+
+The existing field workspace expands through historical workdays and reports and exposes daily reports, crew, plans, tickets, and templates. A dedicated restricted workspace instead includes only the employee, basic assigned-job identifiers/name/location, the employee's assignment rows, and a minimal photo projection. Assignment rows remaining in the company schedule determine job access; removing those assignments or archiving a job revokes photo access. Historical reports/workdays alone never confer access. Daily notes, previous daily instructions, photo captions/tags/report linkage, estimates, prices, other employee details, plans, tickets, templates, and reports are excluded.
+
+An exact method/path allowlist runs before downstream tenant handlers. Daily read/create/edit/submit/approve, AI extraction, report labor suggestions, daily instructions, project editing, financial/reporting exports, other-crew access, and ordinary workday start/end/photo routes are denied. Local/cloud photo downloads require an actual photo record on an assigned job; a guessed tenant object key or plan URL grants no access. Cloud downloads recheck access after provider awaits. Separate `/api/crew/photos` supports assigned-job viewing and image upload without accepting any report/workday linkage.
+
+Photo batches validate image type/size, tenant employee assignment, and stable upload identities before mutation. Retries reuse existing immutable objects/records; different bytes/job/linkage conflict. The client retains selected files on upload failure and suppresses duplicate/stale preparation and responses. Closing or changing account/tenant before byte preparation completes prevents writes. New unlinked storage objects after a rejected/failed upload remain inaccessible through application download authorization; this does not claim provider ACL, full storage recovery, or cleanup certification.
+
+## Time integrity
+
+Restricted clock-in creates only the signed-in employee's time card on an assigned job, using server time. It creates no workday or daily draft. Clock-out closes only that employee's card, accounts for recorded breaks, rejects overlap/invalid times/closed periods, and returns the saved result on retry. Existing solo workdays can complete without creating a daily; existing shared active workdays remain blocked for office review. Corrections/submissions reuse own-card authorization, revisions, approval/export/pay-period locks, overlap checks, and correction audit history. Existing internal synchronization of that employee's corrected hours into an already linked Draft remains intact for office time integrity; it returns no daily content and grants no daily access.
+
+The tenant queue protects in-process changes. Fresh authorization checks and a full disk-snapshot fingerprint reject external changes during body/storage preparation with 409 rather than overwrite new locks, exports, assignments, workday state, or other company changes. Existing transactional persistence revision checks remain in place.
+
+## Validation and release hold
+
+`restricted-field-access.test.js` exercises the actual server with isolated synthetic tenants, denied routes, minimal projections, tenant/file isolation, standard-field behavior, employee provisioning/mode edits, own corrections/locks/revisions, clock duplicate/overlap/shared/solo cases, separate photo retries, revoked assignments, and stale asynchronous uploads. Actual slow HTTP body tests preserve external closed-pay-period writes exactly with 409 for correction and clock-in. An actual fresh-snapshot guard probe rejects an export added during asynchronous photo storage with zero linked records/writes. `crew-field-ui.test.js` exercises actual UI handlers for safe text/images, separate clocks/photos, retained retry identities, duplicate submissions, and stale tenant/dialog responses. A separate reviewer independently reproduced and verified the stale-lock correction.
+
+All 67 inherited regression commands are retained, plus these two suites (69 total), with three added syntax checks (32 total). Exact-head Linux CI is required on the published draft. Browser/device QA remains pending and no shared browser was used. Storage/private-bucket/backup/restore/independent-copy release gates remain unmet. No merge/deployment, production writes, real employee access, real invitations/credentials, or paid upgrades are authorized by this preview. This feature is not live.
