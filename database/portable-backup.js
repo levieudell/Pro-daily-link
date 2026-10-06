@@ -21,29 +21,39 @@ function parseArgs(argv = process.argv.slice(2)) {
 function collectStorageReferences(snapshot) {
   const companyId = databaseCompanyId(snapshot?.company?.id);
   const references = [];
-  const add = (bucket, objectKey, source) => {
-    if (!bucket || !objectKey) return;
+  const add = (bucket, objectKey, source, url) => {
+    if (!bucket || !objectKey) {
+      if (url || bucket || objectKey) throw new Error(`Incomplete recovery set: ${source} has no complete private-storage reference. Preserve its original file and migrate it before creating a portable backup.`);
+      return;
+    }
     const key = String(objectKey).replaceAll('\\', '/').replace(/^\/+/, '');
     if (key.includes('../') || !key.startsWith(`${companyId}/`)) throw new Error(`Unsafe or cross-tenant storage key in ${source}: ${key}`);
     references.push({ bucket: String(bucket), objectKey: key, source });
   };
-  add(snapshot.company?.logo?.bucket, snapshot.company?.logo?.objectKey, 'company.logo');
-  for (const row of snapshot.photos || []) add(row.storageBucket, row.storageKey, `photos:${row.id}`);
-  for (const row of snapshot.projectPlans || []) add(row.storageBucket, row.storageKey, `projectPlans:${row.id}`);
-  for (const row of snapshot.projectTickets || []) add(row.bucket, row.objectKey, `projectTickets:${row.id}`);
+  add(snapshot.company?.logo?.bucket, snapshot.company?.logo?.objectKey, 'company.logo', snapshot.company?.logo?.url);
+  for (const row of snapshot.photos || []) add(row.storageBucket, row.storageKey, `photos:${row.id}`, row.url);
+  for (const row of snapshot.projectPlans || []) add(row.storageBucket, row.storageKey, `projectPlans:${row.id}`, row.url);
+  for (const row of snapshot.projectTickets || []) add(row.bucket, row.objectKey, `projectTickets:${row.id}`, row.url);
+  for (const row of snapshot.estimateImports || []) add(row.storageBucket, row.storageKey, `estimateImports:${row.id}`, row.url);
+  for (const project of snapshot.projects || []) for (const row of project.estimateProposals || []) {
+    const file = row.sourceFile;
+    if (file) add(file.bucket || file.storageBucket, file.objectKey || file.storageKey, `estimateProposals:${project.id}:${row.id}`, file.url);
+  }
   const unique = new Map(references.map(reference => [`${reference.bucket}/${reference.objectKey}`, reference]));
   return [...unique.values()].sort((a, b) => `${a.bucket}/${a.objectKey}`.localeCompare(`${b.bucket}/${b.objectKey}`));
 }
 
 async function createPortableBackup({ snapshot, destination, download = supabase.download, now = new Date() }) {
   const companyId = databaseCompanyId(snapshot?.company?.id);
+  // Refuse an incomplete set before writing a snapshot or a success manifest.
+  const references = collectStorageReferences(snapshot);
   const stamp = now.toISOString().replace(/[:.]/g, '-');
   const directory = path.resolve(destination, `${companyId}-${stamp}`);
   fs.mkdirSync(path.join(directory, 'objects'), { recursive: true });
   const snapshotBytes = Buffer.from(JSON.stringify(snapshot));
   fs.writeFileSync(path.join(directory, 'snapshot.json'), snapshotBytes, { flag: 'wx' });
   const objects = [];
-  for (const [index, reference] of collectStorageReferences(snapshot).entries()) {
+  for (const [index, reference] of references.entries()) {
     const response = await download(reference.bucket, reference.objectKey);
     const bytes = Buffer.from(await response.arrayBuffer());
     const hash = digest(bytes);

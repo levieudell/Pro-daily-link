@@ -20,10 +20,26 @@ assert.throws(() => parseArgs([]), /single synthetic or approved tenant/);
 assert.throws(() => parseArgs(['--company-id', id]), /independent destination/);
 assert.equal(collectStorageReferences(snapshot).length, 4);
 assert.throws(() => collectStorageReferences({ company: { id }, photos: [{ id: 9, storageBucket: 'project-photos', storageKey: 'another-tenant/photo.jpg' }] }), /cross-tenant/);
+for (const fixture of [
+  { company: { id, logo: { url: '/uploads/company-logos/legacy.png' } } },
+  { company: { id }, photos: [{ id: 9, url: '/uploads/legacy.jpg' }] },
+  { company: { id }, projectPlans: [{ id: 9, url: '/api/local-files/plans/legacy.pdf' }] },
+  { company: { id }, projectTickets: [{ id: 9, url: '/uploads/project-tickets/legacy.pdf' }] },
+  { company: { id }, estimateImports: [{ id: 9, url: '/uploads/estimates/legacy.pdf' }] },
+  { company: { id }, projects: [{ id: 1, estimateProposals: [{ id: 9, sourceFile: { url: '/uploads/estimates/legacy.pdf' } }] }] },
+  { company: { id }, photos: [{ id: 9, storageBucket: 'project-photos' }] },
+  { company: { id }, photos: [{ id: 9, storageKey: `${id}/photo.jpg` }] }
+]) assert.throws(() => collectStorageReferences(fixture), /Incomplete recovery set/);
 
 (async () => {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'pdl-portable-backup-test-'));
   try {
+    const incompleteDestination = path.join(directory, 'incomplete');
+    const legacy = { company: { id }, photos: [{ id: 9, url: '/uploads/legacy.jpg' }] };
+    const before = JSON.stringify(legacy);
+    await assert.rejects(createPortableBackup({ snapshot: legacy, destination: incompleteDestination, download: async () => assert.fail('No download for an incomplete recovery set') }), /Incomplete recovery set/);
+    assert.equal(fs.existsSync(incompleteDestination), false, 'No misleading backup or success manifest is created');
+    assert.equal(JSON.stringify(legacy), before, 'Legacy records remain available for explicit recovery');
     const bytesByKey = new Map([
       [`company-logos/${id}/logo.png`, Buffer.from('logo')],
       [`project-photos/${id}/photo.jpg`, Buffer.from('photo')],
