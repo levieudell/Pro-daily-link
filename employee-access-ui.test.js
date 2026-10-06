@@ -19,5 +19,10 @@ function harness(){
   h=harness();h.context.response=async()=>({employee:{id:1,name:'QA'},account:{status:'Deactivated',role:'field'},accessRoles:['field']});await h.context.openEmployeeDetail(1);assert(h.element('#employee-detail-content').textContent.includes('Deactivated'));assert(!h.element('#employee-detail-content').innerHTML.includes('employee-grant-access'));
   h=harness();h.context.response=async()=>({employee:{id:1,name:'QA'},account:null,accessRoles:['field'],emailConflict:true});await h.context.openEmployeeDetail(1);assert(h.element('#employee-detail-content').textContent.includes('already uses'));
   h=harness();let firstResolve;h.context.response=()=>new Promise(done=>{firstResolve=done});const first=h.context.openEmployeeDetail(1);h.context.response=async()=>({employee:{id:2,name:'Second'},account:null,accessRoles:[]});await h.context.openEmployeeDetail(2);firstResolve({employee:{id:1,name:'First'},account:null,accessRoles:[]});await first;assert.equal(h.element('#employee-detail-title').textContent,'Second','stale detail response ignored');
+  h=harness();h.context.configureUserFields=()=>{};h.context.team=[{id:1,name:'Linked employee',crew:'QA'},{id:2,name:'Other employee',crew:'QA'}];
+  vm.runInContext(source.slice(source.indexOf('function openUserModal('),source.indexOf('async function updateUserStatus(')),h.context);
+  h.context.openUserModal({id:7,name:'Office account',employeeId:1,memberId:null,role:'admin'});
+  assert(h.element('#user-field-member').innerHTML.includes('value="1" selected'));assert(!h.element('#user-field-member').innerHTML.includes('Other employee'),'durable account identity cannot silently move in edit form');
+  h.context.openUserModal();assert(h.element('#user-field-member').innerHTML.includes('Other employee'),'existing generic creation choices remain available');
   console.log('Employee detail UI behavior passed: explicit role, duplicate submits, scope, credentials, existing accounts, conflict and stale responses.');
 })().catch(error=>{console.error(error);process.exitCode=1});

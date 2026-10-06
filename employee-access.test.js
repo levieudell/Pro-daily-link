@@ -19,6 +19,10 @@ async function run(){
   base='http://127.0.0.1:'+child.address().port;
   let result=await request('GET','/api/team/1');assert.equal(result.status,200);assert.equal(result.data.employee.phone,'5551234567');assert.deepEqual(result.data.accessRoles,['admin','project_manager','foreman','field']);assert.equal(result.data.account,null);
   result=await request('GET','/api/team/1',2);assert(!result.data.accessRoles.includes('admin'));
+  let legacy=read();legacy.users.find(user=>user.id===2).role='office';write(legacy);
+  result=await request('GET','/api/team/1',2);assert.equal(result.status,200);assert.deepEqual(result.data.accessRoles,['project_manager','foreman','field']);
+  assert.equal((await request('POST','/api/team/1/account',2,{role:'admin'})).status,403);
+  legacy=read();legacy.users.find(user=>user.id===2).role='admin';write(legacy);
   assert.equal((await request('GET','/api/team/3',3)).status,404);
   assert.equal((await request('GET','/api/team/3',4)).status,404);
   assert.equal((await request('GET','/api/team/1',4)).status,200);
@@ -59,6 +63,27 @@ async function run(){
   db=read();db.users.find(user=>user.id===1).emailVerifiedAt='2026-01-01';write(db);
   result=await request('POST','/api/team/2/account',1,{role:'project_manager',email:'manager2@example.invalid',companyId:otherId,memberId:3,projectIds:[1],assignedCrews:['QA'],permissions:{manageTime:true,approveDailies:true}});assert.equal(result.status,201);
   db=read();const manager=db.users.find(user=>user.memberId===2);assert.equal(manager.companyId,companyId);assert.equal(manager.permissions.manageTime,false);assert.equal(manager.permissions.approveDailies,false);assert.deepEqual(manager.projectIds,[1]);assert.deepEqual(db.team,employeeBefore);
+  // Routine office account edits must not lose the employee identity or permit duplicate access.
+  assert.equal(manager.employeeId,2);
+  assert.equal((await request('PATCH','/api/users/'+manager.id,1,{name:'Edited manager'})).status,200);
+  assert.equal(read().users.find(user=>user.id===manager.id).memberId,null);
+  assert.equal((await request('GET','/api/team/2')).data.account.id,manager.id);
+  assert.equal((await request('POST','/api/team/2/account',1,{role:'field',email:'duplicate-other@example.invalid'})).status,409);
+  const beforeReassign=read();
+  assert.equal((await request('PATCH','/api/users/'+manager.id,1,{role:'field',memberId:3})).status,409);assert.deepEqual(read(),beforeReassign);
+  assert.equal((await request('PATCH','/api/users/'+manager.id,1,{role:'field',memberId:2})).status,200);
+  assert.equal((await request('GET','/api/team/2')).data.account.id,manager.id);
+  assert.equal((await request('PATCH','/api/users/'+manager.id,1,{role:'admin',status:'Deactivated'})).status,200);
+  assert.equal((await request('GET','/api/team/2')).data.account.status,'Deactivated');
+  assert.equal((await request('POST','/api/team/2/account',1,{role:'field',email:'duplicate-other@example.invalid'})).status,409);
+  assert.deepEqual(read().team,employeeBefore);
+  // Preserve pre-feature field-member linkage on promotion to an office role.
+  const existingField=read().users.find(user=>user.id===4);assert.equal(existingField.employeeId,undefined);
+  assert.equal((await request('PATCH','/api/users/4',1,{role:'admin'})).status,200);
+  assert.equal(read().users.find(user=>user.id===4).employeeId,9);
+  assert.equal((await request('GET','/api/team/9')).data.account.id,4);
+  assert.equal((await request('POST','/api/team/9/account',1,{role:'field',email:'duplicate-legacy@example.invalid'})).status,409);
+  assert.equal((await request('PATCH','/api/users/4',1,{role:'field',memberId:9})).status,200);
   // Tenant lookup never links an account or employee from another workspace.
   assert.equal((await request('GET','/api/team/1',1,undefined,otherId)).data.account,null);
   const mismatch=await fetch(base+'/api/team/1',{headers:{'X-PDL-Company':otherId,Authorization:'Bearer '+token(1)}});assert.equal(mismatch.status,401);
