@@ -17,6 +17,8 @@ async function expect(status,...args){const result=await request(...args);assert
  for(const asset of ['/daily-photo-store.js','/daily-flow-ui.js'])assert.equal((await fetch(base+asset)).status,200);
  assert.equal((await fetch(base+'/daily-flow-policy.js')).status,404);
  assert.equal((await expect(200,'GET','/api/projects/101/day-instructions?date=2026-10-06')).previousNext.text,'Bring guards');
+ const assignmentEdit={edit:true,projectId:101,memberIds:[11],date:'2026-10-06',start:'07:00',end:'15:00',activity:'Synthetic work',carryPreviousNext:false};
+ await expect(200,'PATCH','/api/assignments/1',1,assignmentEdit);assert.equal((await expect(200,'GET','/api/projects/101/day-instructions?date=2026-10-06')).previousNext,null,'PM override enforced at API');await expect(200,'PATCH','/api/assignments/1',1,{...assignmentEdit,carryPreviousNext:true});assert.equal((await expect(200,'GET','/api/projects/101/day-instructions?date=2026-10-07')).previousNext,null,'unassigned date excluded');
  await expect(404,'GET','/api/projects/102/day-instructions?date=2026-10-06');
  await expect(404,'GET','/api/projects/101/day-instructions?date=2026-10-06',3);
  const day=await expect(201,'POST','/api/workdays/start',2,{projectId:101,memberIds:[11]});
@@ -25,9 +27,11 @@ async function expect(status,...args){const result=await request(...args);assert
  assert.equal(end.workday.status,'complete');assert.equal(end.report.status,'Draft');assert.match(end.report.safety,/unguarded opening/);
  const retry=await expect(200,'POST',`/api/workdays/${day.id}/end`,2,{notes:'Changed retry must not replace saved notes'});
  assert.equal(retry.alreadyEnded,true);assert.equal(retry.report.id,end.report.id);assert.equal(retry.workday.endedAt,end.workday.endedAt);assert.equal(retry.report.notes,end.report.notes);
+ const concurrent=await Promise.all([expect(200,'POST',`/api/workdays/${day.id}/end`,2,{notes:'Concurrent retry A'}),expect(200,'POST',`/api/workdays/${day.id}/end`,2,{notes:'Concurrent retry B'})]);assert.equal(concurrent[0].report.id,concurrent[1].report.id);assert.equal(concurrent[0].workday.endedAt,end.workday.endedAt);
  const cards=await expect(200,'GET','/api/time-cards',2);assert.ok(cards.some(card=>Number(card.workdayId)===Number(day.id)&&card.outAt),'clock closes independently of photos');
  const extracted=await expect(200,'POST','/api/ai/extract',2,{notes:'Safety concern: unguarded opening. Tomorrow bring guards.'});assert.match(extracted.safety,/unguarded opening/);assert.match(extracted.next,/bring guards/i);
  const photo={files:[{name:'synthetic.png',type:'image/png',data:'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a4x8AAAAASUVORK5CYII=',uploadId:crypto.randomUUID()}],projectId:101,source:'field',reportId:end.report.id,workdayId:day.id,phase:'end'};
+ await expect(400,'POST','/api/photos',2,{...photo,workdayId:999});
  const first=await expect(201,'POST','/api/photos',2,photo),second=await expect(201,'POST','/api/photos',2,photo);assert.equal(first.length,1);assert.equal(second[0].id,first[0].id,'lost photo response retry is idempotent');
  await expect(409,'POST','/api/photos',2,{...photo,files:[{...photo.files[0],data:'data:image/png;base64,Y2hhbmdlZA=='}]});
  await expect(400,'POST','/api/photos',2,{...photo,files:Array(9).fill(photo.files[0])});

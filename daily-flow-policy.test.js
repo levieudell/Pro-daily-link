@@ -21,3 +21,6 @@ assert.equal(canEndWorkday(db,{role:'project_manager',permissions:{manageTime:fa
 assert.equal(canEndWorkday(db,{role:'project_manager',permissions:{manageTime:true}},day,()=>false),false);
 assert.equal(canEndWorkday(db,{role:'owner'},day,()=>false),true);
 console.log('Daily flow policy passed: explicit safety, dated submitted sources, no resurrection, project boundaries and clock-out authorization.');
+
+assert.equal(require('./daily-flow-policy').positiveSafety('No incidents today.'),'');
+assert.match(require('./daily-flow-policy').positiveSafety('No incidents today. Safety concern: unguarded opening.'),/unguarded opening/);

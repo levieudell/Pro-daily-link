@@ -29,3 +29,5 @@ function canEndWorkday(db, user, workday, managerAllowed) {
 }
 
 module.exports = { explicitSafety, previousNextSteps, canEndWorkday };
+function positiveSafety(notes){return explicitSafety(notes).split(/(?<=[.!?])\s+|\n/).filter(text=>! /^(?:no (?:safety (?:incidents?|issues?|observations?)|incidents?|injuries|hazards?))(?: today)?[.!\s]*$/i.test(text.trim())).join(' ')}
+module.exports.positiveSafety=positiveSafety;

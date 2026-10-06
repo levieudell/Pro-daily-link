@@ -302,6 +302,22 @@ async function saveAsset(db,bucket,filename,bytes,contentType,localDirectory='up
   if(supabase.configured())return supabase.upload(bucket,`${tenantUuid(db)}/${Date.now()}-${crypto.randomUUID()}-${filename.replace(/[^a-zA-Z0-9._-]/g,'_')}`,bytes,contentType);
   const directory=path.join(ROOT,localDirectory);fs.mkdirSync(directory,{recursive:true});const localName=`${Date.now()}-${crypto.randomUUID()}-${filename.replace(/[^a-zA-Z0-9._-]/g,'_')}`;fs.writeFileSync(path.join(directory,localName),bytes);return{bucket:null,objectKey:null,url:`/${localDirectory.replaceAll('\\','/')}/${localName}`};
 }
+async function saveDailyPhotoAsset(db,owner,uploadId,ext,bytes,contentType){
+  if(!uploadId)return saveAsset(db,'project-photos',`photo.${ext}`,bytes,contentType);
+  // Immutable identity and content keep multi-file retries from orphaning another
+  // object if storage succeeds but the report snapshot or response fails.
+  const digest=crypto.createHash('sha256').update(bytes).digest('hex'),name=`daily-${tenantUuid(db)}-${String(owner).replace(/[^a-zA-Z0-9_-]/g,'_')}-${uploadId}-${digest}.${ext}`;
+  if(supabase.configured()){
+    const objectKey=`${tenantUuid(db)}/${name}`;
+    try{return await supabase.upload('project-photos',objectKey,bytes,contentType)}catch(error){
+      try{const stored=Buffer.from(await (await supabase.download('project-photos',objectKey)).arrayBuffer());if(stored.equals(bytes))return{bucket:'project-photos',objectKey,url:`/api/files/project-photos/${objectKey.split('/').map(encodeURIComponent).join('/')}`}}catch{}
+      throw error;
+    }
+  }
+  const directory=path.join(ROOT,'uploads'),file=path.join(directory,name);fs.mkdirSync(directory,{recursive:true});
+  try{fs.writeFileSync(file,bytes,{flag:'wx'})}catch(error){if(error.code!=='EEXIST'||!fs.readFileSync(file).equals(bytes))throw error}
+  return{bucket:null,objectKey:null,url:`/uploads/${name}`};
+}
 function credentialHash(value,salt=crypto.randomBytes(16).toString('hex')){return{salt,hash:crypto.scryptSync(value,salt,64).toString('hex')}}
 function pdfText(buffer){const source=buffer.toString('latin1'),chunks=[];for(const match of source.matchAll(/stream\r?\n([\s\S]*?)\r?\nendstream/g)){let bytes=Buffer.from(match[1],'latin1');try{bytes=zlib.inflateSync(bytes)}catch{}const text=bytes.toString('latin1');for(const literal of text.matchAll(/\(([^()]*(?:\\.[^()]*)*)\)\s*Tj/g))chunks.push(literal[1].replace(/\\([()\\])/g,'$1'));for(const array of text.matchAll(/\[([\s\S]*?)\]\s*TJ/g))for(const literal of array[1].matchAll(/\(([^()]*)\)/g))chunks.push(literal[1])}return chunks.join(' ').replace(/\s+/g,' ').trim()}
 function estimateDraft(text){const units='EA|SF|LF|CY|SY|TON|HR|DAY|LS',lines=[];for(const match of text.matchAll(new RegExp(`([A-Za-z][A-Za-z0-9 ,/&().'-]{3,80}?)\\s+(\\d+(?:,\\d{3})*(?:\\.\\d+)?)\\s+(${units})\\s+(?:\\$?([\\d,]+(?:\\.\\d{2})?))?`,'gi'))){const quantity=Number(match[2].replaceAll(',','')),amount=match[4]?Number(match[4].replaceAll(',','')):null;lines.push({description:match[1].trim(),quantity,unit:match[3].toUpperCase(),amount,confidence:amount==null?'medium':'high'})}const totals=[...text.matchAll(/(?:total|estimate total)\s*\$?([\d,]+(?:\.\d{2})?)/gi)],documentTotal=totals.length?Number(totals.at(-1)[1].replaceAll(',','')):null,lineTotal=lines.reduce((sum,line)=>sum+(line.amount||0),0);return{lines,documentTotal,lineTotal,reconciled:documentTotal!=null&&Math.abs(documentTotal-lineTotal)<.01,requiresOcr:text.length<40}}
@@ -506,11 +522,12 @@ function finishAiExtract(parsed,notes){
   result.laborEvidence=laborEvidence&&laborEvidence.total>0?laborEvidence:null;
   applyNextBackstop(result,notes);
   holdupBackstop(result,notes);
-  const sourceSafety=dailyFlow.explicitSafety(notes);
-  if(sourceSafety&&!String(result.safety||'').includes(sourceSafety))result.safety=[result.safety,`Source safety note: ${sourceSafety}`].filter(Boolean).join('\n');
+  const sourceSafety=dailyFlow.explicitSafety(notes),sourcePositive=dailyFlow.positiveSafety(notes);
+  if(sourcePositive&&!String(result.safety||'').includes(sourcePositive))result.safety=[result.safety,`Source safety note: ${sourcePositive}`].filter(Boolean).join('\n');
+  else if(sourceSafety&&!String(result.safety||'').trim())result.safety=sourceSafety;
   for(const field of ['materials','equipment','delays','safety','issue'])if(/^needs confirmation[.!\s]*$/i.test(String(result[field]||'').trim()))result[field]='';
   const safetyText=String(result.safety||'').trim();
-  const noSafetyClaim=/^(?:no safety (?:incidents?|issues?|observations?)|no incidents?)(?: today)?[.!\s]*$/i.test(safetyText);
+  const noSafetyClaim=/^(?:no safety (?:incidents?|issues?|observations?)|no (?:incidents?|injuries|hazards?))(?: today)?[.!\s]*$/i.test(safetyText);
   result.safetyItems=safetyText&&!noSafetyClaim?[{observation:safetyText,location:'',company:'',notified:'',action:'',owner:'',dueDate:'',status:'open',verification:''}]:[];
   result.noSafetyObservations=noSafetyClaim;
   result.safetyTalk=/\b(?:toolbox|tailgate|safety)\s+(?:talk|meeting|discussion)\b/i.test(notes)?String(notes).slice(0,500):'';
@@ -1030,8 +1047,11 @@ async function api(req,res,url){
     const allowed={'image/jpeg':'jpg','image/png':'png','image/webp':'webp'},created=[];db.photos ||= [];
     if(input.files.length>8||input.files.some(file=>!allowed[file.type]||!/^data:[^;]+;base64,[A-Za-z0-9+/=]+$/.test(String(file.data||''))||Buffer.from(String(file.data).split(',')[1]||'','base64').length>6000000))return json(res,400,{error:'Choose up to 8 valid photos, each 6 MB or smaller'});
     const uploadOwner=String(req.auth?.user?.id||'local-demo');
-    const workday=(db.workdays||[]).find(row=>Number(row.id)===Number(input.workdayId)),workdayMemberIds=workday?.memberIds||[],workdayMember=workdayMemberIds.length===1?(db.team||[]).find(row=>Number(row.id)===Number(workdayMemberIds[0])):null,uploader=req.auth?.user?.name||workdayMember?.name||'Team member';
-    for(const file of input.files){const uploadId=typeof file.uploadId==='string'&&/^[0-9a-f-]{36}$/.test(file.uploadId)?file.uploadId:null,prior=uploadId&&db.photos.find(row=>row.uploadId===uploadId&&row.uploadOwner===uploadOwner);if(prior){if(prior.uploadDigest&&prior.uploadDigest!==crypto.createHash('sha256').update(Buffer.from(String(file.data).split(',')[1],'base64')).digest('hex'))return json(res,409,{error:'This photo retry has different contents'});if(Number(prior.project)!==projectIndex||Number(prior.reportId||0)!==Number(input.reportId||0)||Number(prior.workdayId||0)!==Number(input.workdayId||0))return json(res,409,{error:'This photo retry belongs to a different work record'});created.push(prior);continue}const ext=allowed[file.type];const match=String(file.data||'').match(/^data:[^;]+;base64,(.+)$/);if(!ext||!match)continue;const bytes=Buffer.from(match[1],'base64');if(bytes.length>6_000_000)continue;const stored=await saveAsset(db,'project-photos',`photo.${ext}`,bytes,file.type),createdAt=new Date().toISOString(),tags=[...new Set((Array.isArray(input.tags)?input.tags:String(input.tags||'').split(',')).map(tag=>String(tag).trim().toLowerCase()).filter(Boolean))].slice(0,12);const photo={id:nextId(db.photos),...(uploadId?{uploadId,uploadOwner,uploadDigest:crypto.createHash('sha256').update(bytes).digest('hex')}:{}),project:Number(input.project),reportId:input.reportId||null,workdayId:input.workdayId||null,phase:input.phase||null,source:input.source,caption:String(input.caption||'').slice(0,500),tags,capturedAt:file.lastModified?new Date(file.lastModified).toISOString():createdAt,uploader,createdAt,url:stored.url,storageBucket:stored.bucket,storageKey:stored.objectKey};db.photos.push(photo);created.push(photo)}
+    const workday=(db.workdays||[]).find(row=>Number(row.id)===Number(input.workdayId));
+    if(input.workdayId&&(!workday||Number(workday.projectId)!==Number(db.projects[projectIndex].id)||linkedReport&&Number(linkedReport.workdayId)!==Number(workday.id)))return json(res,400,{error:'The photo workday must match this project and report'});
+    if(workday&&process.env.PDL_REQUIRE_AUTH==='1'&&fieldRole(req.auth?.user)&&!(workday.memberIds||[]).map(Number).includes(Number(req.auth.user.memberId)))return json(res,403,{error:'You can only add photos to your own workday'});
+    const workdayMemberIds=workday?.memberIds||[],workdayMember=workdayMemberIds.length===1?(db.team||[]).find(row=>Number(row.id)===Number(workdayMemberIds[0])):null,uploader=req.auth?.user?.name||workdayMember?.name||'Team member';
+    for(const file of input.files){const uploadId=typeof file.uploadId==='string'&&/^[0-9a-f-]{36}$/.test(file.uploadId)?file.uploadId:null,prior=uploadId&&db.photos.find(row=>row.uploadId===uploadId&&row.uploadOwner===uploadOwner);if(prior){if(prior.uploadDigest&&prior.uploadDigest!==crypto.createHash('sha256').update(Buffer.from(String(file.data).split(',')[1],'base64')).digest('hex'))return json(res,409,{error:'This photo retry has different contents'});if(Number(prior.project)!==projectIndex||Number(prior.reportId||0)!==Number(input.reportId||0)||Number(prior.workdayId||0)!==Number(input.workdayId||0))return json(res,409,{error:'This photo retry belongs to a different work record'});created.push(prior);continue}const ext=allowed[file.type];const match=String(file.data||'').match(/^data:[^;]+;base64,(.+)$/);if(!ext||!match)continue;const bytes=Buffer.from(match[1],'base64');if(bytes.length>6_000_000)continue;const stored=await saveDailyPhotoAsset(db,uploadOwner,uploadId,ext,bytes,file.type),createdAt=new Date().toISOString(),tags=[...new Set((Array.isArray(input.tags)?input.tags:String(input.tags||'').split(',')).map(tag=>String(tag).trim().toLowerCase()).filter(Boolean))].slice(0,12);const photo={id:nextId(db.photos),...(uploadId?{uploadId,uploadOwner,uploadDigest:crypto.createHash('sha256').update(bytes).digest('hex')}:{}),project:Number(input.project),reportId:input.reportId||null,workdayId:input.workdayId||null,phase:input.phase||null,source:input.source,caption:String(input.caption||'').slice(0,500),tags,capturedAt:file.lastModified?new Date(file.lastModified).toISOString():createdAt,uploader,createdAt,url:stored.url,storageBucket:stored.bucket,storageKey:stored.objectKey};db.photos.push(photo);created.push(photo)}
     if(!created.length)return json(res,400,{error:'No valid photos were uploaded'});writeDb(db);return json(res,201,created);
   }
   const projectPlansRoute=url.pathname.match(/^\/api\/projects\/(\d+)\/plans$/);
@@ -1160,7 +1180,8 @@ async function api(req,res,url){
     const allowed=user&&(['owner','admin'].includes(user.role)||user.role==='project_manager'&&managerScope(db,user).projectIds.has(projectId)||fieldRole(user)&&fieldProjectIds(db,(db.team||[]).find(row=>Number(row.id)===Number(user.memberId))||{id:0}).allowedIds.has(projectId));
     if(!allowed||!project)return json(res,404,{error:'Project not found'});
     if(!scheduleAvailability.validDate(date))return json(res,400,{error:'Choose a valid date'});
-    return json(res,200,{projectId,date,previousNext:dailyFlow.previousNextSteps(db,projectId,date)});
+    const enabled=!fieldRole(user)||(db.assignments||[]).some(row=>Number(row.projectId)===projectId&&row.date===date&&(row.memberIds||[]).map(Number).includes(Number(user.memberId))&&row.carryPreviousNext!==false);
+    return json(res,200,{projectId,date,previousNext:enabled?dailyFlow.previousNextSteps(db,projectId,date):null});
   }
   const endWorkday=url.pathname.match(/^\/api\/workdays\/(\d+)\/end$/);
   if(req.method==='POST'&&endWorkday){
