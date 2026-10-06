@@ -14,7 +14,7 @@ The reviewed acceptance service is srv-db1noks9v7es738ebdd0 at https://pdl-paid-
 
 Generated an offline, credential-free demo review package dated 2026-10-06: 3 projects, 8 employees, 60 reports, 160 time cards and 75 assignments. This is fictional review data, never a production account or a database import instruction.
 
-Expanded onboarding HTTP acceptance to include a crew account, a 14-day no-card trial, crew labor in the first daily, draft deduplication, approval/export, restart and password-recovery preservation. Provider delivery and browser UX remain separate gates.
+Expanded onboarding HTTP acceptance to include a crew account, a 14-day no-card trial, crew labor in the first daily, draft deduplication, approval/export, HTTP listener reopen in the same application process and password-recovery preservation. Provider delivery and browser UX remain separate gates.
 
 Windows returns synthesized file modes (0666 instead of requested 0600). Two test assertions now retain strict POSIX mode checks on non-Windows platforms. All backup contents, private HTTP denial, tenant/auth preservation and failure/retry assertions remain enabled. No runtime permissions or security controls changed. This does not certify Windows ACL privacy.
 
@@ -36,5 +36,10 @@ Commercial readiness remains unproven until these external gates pass.
 
 ## Final local validation
 
-2026-10-06, Node 20.19.6 on Windows: full npm test passed on main plus this test delta and on ba8c802 acceptance candidate plus this same delta. npm run check passed on both source trees. Three changed tests passed node --check. git diff --check passed. Required Linux exact-head CI remains pending until publication. No runtime files changed.
+2026-10-06, Node 20.19.6 on Windows: full npm test passed on main plus this test delta and on ba8c802 acceptance candidate plus this same delta. npm run check passed on both source trees. Three changed tests passed node --check. git diff --check passed. Original head 8809c0137a7d9ab2b815b4b866967aef4778c46b passed both Linux workflows. Independent-review corrections require new exact-head CI. No runtime files changed.
+
+
+## Independent review corrections
+
+A separate native reviewer inspected the PR delta, offline demo and acceptance matrix. It found overbroad restart wording and missing crew-labor read-back assertions. These are corrected: the onboarding test asserts approved production labor8 and saved member/production-entry labor8 after HTTP listener reopen. This does not certify a cold application restart. The independent focused onboarding rerun passed. POSIX guards and offline-data assertions passed independently. The reviewer's unchanged backup child-process test was blocked by its Windows sandbox (status=null); the process assertion remains enabled and the author runs the complete suite with approved child-process execution. No runtime/security regression was found. New exact-head CI is required for these corrections.
 

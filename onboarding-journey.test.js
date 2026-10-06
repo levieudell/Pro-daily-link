@@ -34,11 +34,11 @@ function client(){const jar=new Map();return async(route,method='GET',input)=>{
     const draftAgain=await owner('/api/reports','POST',{projectId:project.data.id,dateIso:'2026-10-04',status:'Draft',notes:'Synthetic saved draft',signature:'QA',laborEntries:[{memberId:crew.data.id,name:'Synthetic Crew',hours:8}],productionEntries:[{estimateItemId:item.data.id,description:'Synthetic scope',unit:'SF',quantity:10,laborHours:8}],extracted:{summary:'Synthetic work'}});assert.equal(draftAgain.status,200);assert.equal(draftAgain.data.id,report.data.id,'server draft upsert preserves identity');
     assert.equal((await owner('/api/reports/'+report.data.id,'PATCH',{status:'Needs review',notes:'Synthetic submitted work',productionEntries:[{estimateItemId:item.data.id,description:'Synthetic scope',unit:'SF',quantity:10,laborHours:8}],laborEntries:[{memberId:crew.data.id,name:'Synthetic Crew',hours:8}]})).status,200);
     assert.equal((await owner('/api/reports/'+report.data.id+'/approve','PATCH',{})).status,200);
-    const totals=await owner('/api/production');assert.equal(totals.status,200);assert.equal(totals.data.projects[0].items[0].actualQuantity,10);
+    const totals=await owner('/api/production');assert.equal(totals.status,200);assert.equal(totals.data.projects[0].items[0].actualQuantity,10);assert.equal(totals.data.projects[0].items[0].actualLaborHours,8,'approved production preserves crew labor');
     const captured=await owner('/api/reporting-exports','POST',{projectId:project.data.id,from:'2026-10-01',to:'2026-10-31'});assert.equal(captured.status,201);
     await new Promise(resolve=>server.close(resolve));await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));base='http://127.0.0.1:'+server.address().port;
-    const restored=await owner('/api/state');assert.equal(restored.status,200);assert.equal(restored.data.reports.length,1);assert.equal(restored.data.reports[0].status,'Approved');
-    assert.deepEqual((await owner('/api/reporting-exports/'+captured.data.id)).data,captured.data,'capture survives server restart');
+    const restored=await owner('/api/state');assert.equal(restored.status,200);assert.equal(restored.data.reports.length,1);assert.equal(restored.data.reports[0].status,'Approved');assert.deepEqual(restored.data.reports[0].laborEntries.map(entry=>({memberId:entry.memberId,hours:entry.hours})),[{memberId:crew.data.id,hours:8}],'listener reopen preserves saved crew labor');assert.equal(restored.data.reports[0].productionEntries[0].laborHours,8);
+    assert.deepEqual((await owner('/api/reporting-exports/'+captured.data.id)).data,captured.data,'capture survives HTTP listener reopen');
     const foreign=await other('/api/signup','POST',{companyName:'Other synthetic tenant',ownerName:'Other Owner',email:'other-owner@example.invalid',password,legalAccepted:true,onboardingPreference:'self'});assert.equal(foreign.status,201);
     assert.equal((await other('/api/state')).data.projects.length,0);assert.equal((await other('/api/reporting-exports/'+captured.data.id)).status,404);
     const reset=await owner('/api/auth/forgot','POST',{email});assert.equal(reset.status,200);assert.ok(reset.data.previewToken);
@@ -47,8 +47,8 @@ function client(){const jar=new Map();return async(route,method='GET',input)=>{
     assert.equal((await owner('/api/auth/reset','POST',{email,token:reset.data.previewToken,password:replacement})).status,401,'reset token is single use');
     assert.equal((await owner('/api/auth/login','POST',{email,password})).status,401,'old password denied');
     assert.equal((await owner('/api/auth/login','POST',{email,password:replacement})).status,200);
-    assert.equal((await owner('/api/state')).data.team.some(member=>member.id===crew.data.id),true,'crew survives recovery and login');
+    assert.equal((await owner('/api/state')).data.team.some(member=>member.id===crew.data.id),true,'crew remains after password recovery and login');
     assert.equal((await owner('/api/auth/logout','POST',{})).status,200);assert.equal((await owner('/api/auth/me')).status,401);
-    console.log('Local onboarding journey passed: cookie signup, DEV token verification/reset, team account, no-card trial, project/scope, draft upsert, approval/totals/export, restart persistence and second-tenant denial. No provider delivery or browser UX certified.');
+    console.log('Local onboarding journey passed: cookie signup, DEV token verification/reset, team account, no-card trial, project/scope, draft upsert, approval/totals/export, HTTP listener reopen and second-tenant denial. No provider delivery or browser UX certified.');
   }finally{await new Promise(resolve=>server.close(resolve));fs.rmSync(temp,{recursive:true,force:true})}
 })().catch(error=>{console.error(error);process.exitCode=1;server.close()});
