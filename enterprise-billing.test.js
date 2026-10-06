@@ -141,3 +141,192 @@ test('an early webhook for an uncertain checkout returns a retryable error', asy
   await assert.rejects(f.process(), error => error.statusCode === 503);
   assert.equal(f.db.company.plan, 'starter');
 });
+
+async function paidRefundFixture(refunded = 0) {
+  const f = fixture(); f.approve(); await f.pay(); f.paid(); await f.process();
+  const term = { paidAt: f.quote.paidAt, startsAt: f.quote.startsAt, endsAt: f.quote.endsAt };
+  f.session().payment_intent.latest_charge.amount_refunded = refunded;
+  if (refunded) await f.process(f.event('refund.updated', { id: 're_synthetic', payment_intent: 'pi_synthetic', status: 'pending' }, 'evt_pending_refund'));
+  f.clock(epoch + 86400000);
+  return { f, term };
+}
+const failedRefundEvent = (f, extra = {}) => f.event('refund.failed', {
+  id: 're_synthetic', charge: 'ch_synthetic', payment_intent: 'pi_synthetic', status: 'failed', ...extra
+}, 'evt_failed_refund');
+const assertTerm = (f, term) => assert.deepEqual({ paidAt: f.quote.paidAt, startsAt: f.quote.startsAt, endsAt: f.quote.endsAt }, term);
+
+test('failed refund reaches the webhook reconciliation path and restores only the original verified term', async () => {
+  const webhook = require('./stripe-webhook');
+  for (const priorRefund of [1, input().totalAmount]) {
+    for (const throughCharge of [false, true]) {
+      const { f, term } = await paidRefundFixture(priorRefund);
+      assert.equal(enterprise.access(f.db.company, epoch).locked, true);
+      f.session().payment_intent.latest_charge.amount_refunded = 0;
+      const event = failedRefundEvent(f, throughCharge ? { payment_intent: null } : {});
+      const result = await webhook.processEvent(event, { processEnterprise: e => f.process(e) });
+      assert.deepEqual(result, { received: true });
+      assert.equal(f.quote.status, 'paid'); assert.equal(enterprise.access(f.db.company, epoch + 86400000).locked, false);
+      assertTerm(f, term); assert.ok(f.quote.webhookEvents.includes(event.id));
+    }
+  }
+});
+
+test('stale failed-refund payload cannot clear a current refund or unresolved dispute', async () => {
+  for (const state of [{ refunded: 1, status: 'payment_review' }, { refunded: input().totalAmount, status: 'refunded' },
+    { disputed: true, disputeStatus: 'under_review', status: 'payment_review' }, { disputed: true, disputeStatus: 'lost', status: 'payment_review' }]) {
+    const { f, term } = await paidRefundFixture(input().totalAmount);
+    Object.assign(f.session().payment_intent.latest_charge, { amount_refunded: state.refunded || 0, disputed: Boolean(state.disputed) });
+    if (state.disputed) f.disputes.push({ status: state.disputeStatus });
+    assert.equal(await f.process(failedRefundEvent(f, { amount: 0 })), true);
+    assert.equal(f.quote.status, state.status); assert.equal(enterprise.access(f.db.company, epoch).locked, true); assertTerm(f, term);
+  }
+});
+
+test('failed refund can recover with a current won or closed-warning dispute without renewing the term', async () => {
+  for (const status of ['won', 'warning_closed']) {
+    const { f, term } = await paidRefundFixture(input().totalAmount);
+    Object.assign(f.session().payment_intent.latest_charge, { amount_refunded: 0, disputed: true });
+    f.disputes.push({ status });
+    assert.equal(await f.process(failedRefundEvent(f)), true);
+    assert.equal(f.quote.status, 'paid'); assert.equal(enterprise.access(f.db.company, epoch).locked, false); assertTerm(f, term);
+  }
+});
+
+test('failed refund duplicates and out-of-order deliveries re-read current state and re-save after a storage retry', async () => {
+  const { f, term } = await paidRefundFixture(input().totalAmount);
+  const charge = f.session().payment_intent.latest_charge;
+  const oldRefund = f.event('refund.updated', { payment_intent: 'pi_synthetic', status: 'pending' }, 'evt_old_refund');
+  const event = failedRefundEvent(f);
+  charge.amount_refunded = 0; await f.process(event);
+  const before = f.saves(); f.failSave(true); await assert.rejects(f.process(event), /storage/);
+  f.failSave(false); await f.process(event); assert.equal(f.saves(), before + 2);
+  assert.equal(f.quote.webhookEvents.filter(id => id === event.id).length, 1);
+  await f.process(oldRefund); assert.equal(f.quote.status, 'paid');
+  charge.amount_refunded = f.quote.totalAmount; await f.process(event);
+  assert.equal(f.quote.status, 'refunded'); assert.equal(enterprise.access(f.db.company, epoch).locked, true); assertTerm(f, term);
+});
+
+test('incomplete or malformed authoritative refund/dispute fields cannot activate, restore, or revoke access', async () => {
+  const invalid = [
+    c => delete c.amount_refunded, c => c.amount_refunded = null, c => c.amount_refunded = NaN,
+    c => c.amount_refunded = -1, c => c.amount_refunded = input().totalAmount + 1,
+    c => c.amount_refunded = Infinity, c => c.amount_refunded = 0.5,
+    c => c.amount_refunded = '0', c => c.amount_refunded = false,
+    c => delete c.disputed, c => c.disputed = null, c => c.disputed = 'false', c => c.disputed = 0
+  ];
+  for (const startingState of ['unpaid', 'paid', 'refunded', 'payment_review']) {
+    for (const mutate of invalid) {
+      const f = fixture(); f.approve(); await f.pay(); f.paid();
+      if (startingState !== 'unpaid') {
+        await f.process();
+        if (startingState !== 'paid') {
+          f.session().payment_intent.latest_charge.amount_refunded = startingState === 'refunded' ? f.quote.totalAmount : 1;
+          await f.process();
+        }
+      }
+      const before = structuredClone(f.db.company), saves = f.saves();
+      Object.assign(f.session().payment_intent.latest_charge, { amount_refunded: 0, disputed: false });
+      mutate(f.session().payment_intent.latest_charge);
+      await assert.rejects(f.process(f.event('refund.updated', { payment_intent: 'pi_synthetic' }, 'evt_incomplete_refund')), e => e.statusCode === 503);
+      // An initially unseen PaymentIntent may be bound before validation; no access, dates or verification markers may change.
+      if (startingState === 'unpaid') before.enterpriseQuotes[0].paymentIntentId = 'pi_synthetic';
+      assert.deepEqual(f.db.company, before); assert.equal(f.saves(), saves);
+    }
+  }
+});
+
+test('incomplete dispute-list evidence does not clear a locked term', async () => {
+  for (const result of [{ data: [{ status: 'won' }] }, { data: [{ status: 'won' }], has_more: null },
+    { data: [{ status: 'won' }], has_more: 'false' }, { data: null, has_more: false }]) {
+    const { f } = await paidRefundFixture(input().totalAmount);
+    Object.assign(f.session().payment_intent.latest_charge, { amount_refunded: 0, disputed: true });
+    f.client.disputes.list = async () => result;
+    const before = structuredClone(f.db.company), saves = f.saves();
+    await assert.rejects(f.process(failedRefundEvent(f)), e => e.statusCode === 503);
+    assert.deepEqual(f.db.company, before); assert.equal(f.saves(), saves);
+  }
+});
+
+test('failed-refund provider failures preserve current access and retry without refund-write privileges', async () => {
+  for (const priorRefund of [0, input().totalAmount]) {
+    for (const resource of ['checkout', 'paymentIntents', 'charges', 'disputes']) {
+      const { f } = await paidRefundFixture(priorRefund);
+      Object.assign(f.session().payment_intent.latest_charge, { amount_refunded: 0, disputed: resource === 'disputes' });
+      f.disputes.push({ status: 'won' });
+      const api = resource === 'checkout' ? f.client.checkout.sessions : f.client[resource];
+      const method = resource === 'disputes' ? 'list' : 'retrieve', original = api[method];
+      api[method] = async () => { throw new Error('Synthetic provider outage'); };
+      const event = failedRefundEvent(f, resource === 'charges' ? { payment_intent: null } : {});
+      const before = structuredClone(f.db.company), saves = f.saves();
+      await assert.rejects(f.process(event), /provider outage/);
+      assert.deepEqual(f.db.company, before); assert.equal(f.saves(), saves);
+      api[method] = original; assert.equal(await f.process(event), true); assert.equal(f.quote.status, 'paid');
+      assert.equal(f.client.refunds, undefined);
+    }
+  }
+});
+
+test('failed refund retains canonical session, tenant, digest, mode, amount, currency, customer and payment bindings', async () => {
+  for (const mutate of [s => s.id = 'cs_forged', s => s.client_reference_id = OTHER,
+    s => s.metadata.company_id = OTHER, s => s.metadata.terms_digest = 'forged', s => s.livemode = true,
+    s => s.mode = 'subscription', s => s.amount_total--, s => s.currency = 'eur', s => s.customer = 'cus_wrong',
+    s => s.payment_intent.customer = 'cus_wrong', s => s.payment_intent.id = 'pi_wrong',
+    s => s.payment_intent.metadata.quote_id = OTHER, s => s.payment_intent.metadata.terms_digest = 'forged',
+    s => s.payment_intent.amount_received--, s => s.payment_intent.latest_charge.paid = false,
+    s => s.payment_intent.latest_charge.payment_intent = 'pi_wrong']) {
+    const { f } = await paidRefundFixture(input().totalAmount);
+    const originalPi = structuredClone(f.session().payment_intent);
+    f.client.paymentIntents.retrieve = async () => originalPi;
+    f.session().payment_intent.latest_charge.amount_refunded = 0;
+    const before = structuredClone(f.db.company); mutate(f.session());
+    await assert.rejects(f.process(failedRefundEvent(f))); assert.deepEqual(f.db.company, before);
+  }
+  const { f } = await paidRefundFixture(input().totalAmount);
+  const wrongPi = structuredClone(f.session().payment_intent); wrongPi.id = 'pi_wrong';
+  f.client.paymentIntents.retrieve = async () => wrongPi;
+  await assert.rejects(f.process(failedRefundEvent(f, { payment_intent: 'pi_wrong' })), /saved checkout/);
+  assert.equal(f.quote.status, 'refunded');
+});
+
+test('Enterprise failed-refund event is additive to the seven standard events', () => {
+  const standard = require('./stripe-webhook').EVENTS;
+  const extra = [...enterprise.EVENTS].filter(type => !standard.has(type));
+  assert.equal(extra.length, 8); assert.ok(extra.includes('refund.failed'));
+  assert.equal(new Set([...standard, ...enterprise.EVENTS]).size, 15);
+});
+
+test('malformed or unknown dispute rows preserve paid and locked states with a retryable error', async () => {
+  const malformed = [{}, null, undefined, [], 1, 'won', { status: null }, { status: undefined },
+    { status: '' }, { status: 'unknown_future_status' }, { status: 0 }, { status: ['won'] }];
+  for (const startingState of ['paid', 'payment_review', 'refunded']) {
+    for (const row of malformed) {
+      const { f, term } = await paidRefundFixture(startingState === 'refunded' ? input().totalAmount : 0);
+      f.session().payment_intent.latest_charge.disputed = true;
+      f.disputes.push({ status: startingState === 'paid' ? 'won' : 'under_review' });
+      await f.process(f.event('charge.dispute.updated', { payment_intent: 'pi_synthetic' }, 'evt_verified_dispute'));
+      assert.equal(f.quote.status, startingState);
+      const before = structuredClone(f.db.company), saves = f.saves();
+      f.clock(epoch + 2 * 86400000);
+      f.session().payment_intent.latest_charge.amount_refunded = 0;
+      f.client.disputes.list = async () => ({ data: [{ status: 'won' }, row], has_more: false });
+      await assert.rejects(f.process(failedRefundEvent(f)), e => e.statusCode === 503);
+      assert.deepEqual(f.db.company, before); assert.equal(f.saves(), saves); assertTerm(f, term);
+    }
+  }
+});
+
+test('documented dispute statuses, pagination and empty lists retain the existing access policy', async () => {
+  for (const status of ['warning_needs_response', 'warning_under_review', 'warning_closed',
+    'needs_response', 'under_review', 'won', 'lost', 'prevented']) {
+    const { f, term } = await paidRefundFixture(input().totalAmount);
+    Object.assign(f.session().payment_intent.latest_charge, { amount_refunded: 0, disputed: true });
+    f.disputes.push({ status }); await f.process(failedRefundEvent(f));
+    assert.equal(f.quote.status, ['won', 'warning_closed'].includes(status) ? 'paid' : 'payment_review'); assertTerm(f, term);
+  }
+  for (const result of [{ data: [], has_more: false }, { data: [{ status: 'won' }], has_more: true }]) {
+    const { f, term } = await paidRefundFixture();
+    f.session().payment_intent.latest_charge.disputed = true;
+    f.client.disputes.list = async () => result; await f.process(failedRefundEvent(f));
+    assert.equal(f.quote.status, 'payment_review'); assertTerm(f, term);
+  }
+});

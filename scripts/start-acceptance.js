@@ -5,10 +5,17 @@ const path = require('node:path');
 const crypto = require('node:crypto');
 
 const ROOT = path.resolve(__dirname, '..');
-const CANDIDATE = 'dc15e21d0fe3ce7def793296de9df43bdd0a0031';
+const CANDIDATE = 'c187882db188e67382c551a9d4b064df32a6c1b9';
 const EXPECTED_STRIPE_ACCOUNT = 'acct_1SqHF1FsPiiIUxge';
 const ROOT_TENANT = '00000000-0000-4000-8000-000000000001';
 const MARKER = '.pdl-acceptance.json';
+const ENTERPRISE_OPT_IN = 'test-only';
+const OWNER_OPT_IN = 'synthetic-test-owner';
+const APPROVED_SERVICE = 'srv-db1noks9v7es738ebdd0';
+const APPROVED_ORIGIN = 'https://pdl-paid-acceptance-20261005.onrender.com';
+const OWNER_MARKER = 'pdl-enterprise-acceptance-owner-v1';
+const OWNER_IDENTITY_FILE = '.pdl-acceptance-owner.json';
+const OWNER = Object.freeze({ id: 1, name: 'PDL Enterprise Acceptance Owner', email: 'enterprise-test-owner@example.invalid', role: 'platform_owner', status: 'Active', mustSetPassword: false, acceptanceFixture: OWNER_MARKER });
 // Non-secret IDs independently read back from the intended sandbox account.
 const PRICES = Object.freeze({
   STRIPE_PRICE_STARTER: 'price_1UN8pAFsPiiIUxgeaaE3jemv',
@@ -20,7 +27,7 @@ const PRICES = Object.freeze({
 });
 const PRICE_KEYS = Object.keys(PRICES);
 const FORCED = Object.freeze({ PDL_REQUIRE_AUTH: '1', PDL_SUPABASE_ENABLED: '0', PDL_TRANSACTIONAL_DB: 'off', PDL_FOUNDER_ENABLED: '0', PDL_ENTERPRISE_CHECKOUT_ENABLED: '0', PDL_EMAIL_DEV_MODE: '0' });
-const ALLOWED_PDL = new Set([...Object.keys(FORCED), 'PDL_PUBLIC_URL', 'PDL_ACCEPTANCE_DATA_DIR', 'PDL_ACCEPTANCE_ALLOW_LOOPBACK', 'PDL_ACCEPTANCE_PUBLIC_URL', 'PDL_ACCEPTANCE_STRIPE_ACCOUNT_ID']);
+const ALLOWED_PDL = new Set([...Object.keys(FORCED), 'PDL_PUBLIC_URL', 'PDL_ACCEPTANCE_DATA_DIR', 'PDL_ACCEPTANCE_ALLOW_LOOPBACK', 'PDL_ACCEPTANCE_PUBLIC_URL', 'PDL_ACCEPTANCE_STRIPE_ACCOUNT_ID', 'PDL_ACCEPTANCE_ENTERPRISE', 'PDL_ACCEPTANCE_PLATFORM_OWNER', 'PDL_ACCEPTANCE_PLATFORM_PASSWORD']);
 const ALLOWED_STRIPE = new Set(['STRIPE_SECRET_KEY', 'STRIPE_WEBHOOK_SECRET', ...PRICE_KEYS]);
 const BLOCKED = /^(?:SUPABASE_|RESEND_|OPENAI_|SENTRY_|ANTHROPIC_|SMTP_|MAILGUN_|SENDGRID_|POSTMARK_|DATABASE_|PG(?:HOST|PORT|USER|PASSWORD|DATABASE|SERVICE|PASSFILE|SSLMODE)|DOTENV_CONFIG_|NODE_OPTIONS$|NODE_PATH$)/;
 class AcceptanceError extends Error {}
@@ -55,6 +62,16 @@ function validateConfig(env = process.env, root = ROOT) {
   if (local && (present(env.RENDER_EXTERNAL_URL) || env.RENDER === 'true')) reject('Loopback mode cannot run as a Render service.');
   if (!local && present(env.PDL_ACCEPTANCE_PUBLIC_URL)) reject('Hosted acceptance must derive its origin from RENDER_EXTERNAL_URL.');
   const publicUrl = origin(local ? env.PDL_ACCEPTANCE_PUBLIC_URL : env.RENDER_EXTERNAL_URL, local);
+  const enterprise = env.PDL_ACCEPTANCE_ENTERPRISE === ENTERPRISE_OPT_IN;
+  const owner = env.PDL_ACCEPTANCE_PLATFORM_OWNER === OWNER_OPT_IN;
+  const passwordProvided = Object.hasOwn(env, 'PDL_ACCEPTANCE_PLATFORM_PASSWORD');
+  if ((Object.hasOwn(env, 'PDL_ACCEPTANCE_ENTERPRISE') && !enterprise) || (Object.hasOwn(env, 'PDL_ACCEPTANCE_PLATFORM_OWNER') && !owner) || enterprise !== owner) reject('Enterprise acceptance requires both exact explicit opt-ins, or neither.');
+  if (passwordProvided && !owner) reject('A platform fixture password requires both Enterprise acceptance opt-ins.');
+  if (passwordProvided && (typeof env.PDL_ACCEPTANCE_PLATFORM_PASSWORD !== 'string' || env.PDL_ACCEPTANCE_PLATFORM_PASSWORD.length < 12)) reject('The private acceptance owner password must contain at least 12 characters.');
+  if (passwordProvided && (/^\s*(?:(?:sk|rk|pk)_(?:test|live)_|whsec_)/i.test(env.PDL_ACCEPTANCE_PLATFORM_PASSWORD) || env.PDL_ACCEPTANCE_PLATFORM_PASSWORD === env.STRIPE_SECRET_KEY || env.PDL_ACCEPTANCE_PLATFORM_PASSWORD === env.STRIPE_WEBHOOK_SECRET)) reject('The acceptance owner password must be unique and must not reuse a provider credential.');
+  // Render documents RENDER_SERVICE_ID as its service identifier. These checks
+  // bind this fixture to the reviewed deployment, not to any arbitrary Render URL.
+  if (enterprise && (local || env.RENDER !== 'true' || env.RENDER_SERVICE_ID !== APPROVED_SERVICE || env.RENDER_EXTERNAL_URL !== APPROVED_ORIGIN || publicUrl !== APPROVED_ORIGIN || (present(env.RENDER_EXTERNAL_HOSTNAME) && env.RENDER_EXTERNAL_HOSTNAME !== new URL(APPROVED_ORIGIN).hostname) || (present(env.RENDER_SERVICE_TYPE) && env.RENDER_SERVICE_TYPE !== 'web'))) reject('Enterprise acceptance is restricted to the approved Render service and origin.');
   if (present(env.PDL_PUBLIC_URL) && env.PDL_PUBLIC_URL !== publicUrl) reject('Inherited public URL does not match the acceptance origin.');
   if (present(env.PDL_ACCEPTANCE_STRIPE_ACCOUNT_ID) && env.PDL_ACCEPTANCE_STRIPE_ACCOUNT_ID !== EXPECTED_STRIPE_ACCOUNT) reject('Acceptance Stripe account metadata does not match the intended sandbox.');
   const key = env.STRIPE_SECRET_KEY || '';
@@ -75,7 +92,7 @@ function validateConfig(env = process.env, root = ROOT) {
     const keep = path.join(uploads, '.gitkeep');
     if (exists(keep) && (!fs.lstatSync(keep).isFile() || !['', '\n'].includes(fs.readFileSync(keep, 'utf8')))) reject('Unexpected upload placeholder.');
   }
-  return { root, directory, publicUrl, port, local, keyPresent: Boolean(key), webhookPresent: Boolean(env.STRIPE_WEBHOOK_SECRET), expectedAccount: EXPECTED_STRIPE_ACCOUNT, candidate: CANDIDATE };
+  return { root, directory, publicUrl, port, local, enterprise, passwordProvided, keyPresent: Boolean(key), webhookPresent: Boolean(env.STRIPE_WEBHOOK_SECRET), expectedAccount: EXPECTED_STRIPE_ACCOUNT, candidate: CANDIDATE };
 }
 function assertPrivateTree(file) {
   const stat = fs.lstatSync(file);
@@ -91,7 +108,43 @@ function writeMissing(file, value) {
   try { fs.writeFileSync(file, JSON.stringify(value, null, 2) + '\n', { flag: 'wx', mode: 0o600 }); }
   catch (error) { if (error.code !== 'EEXIST') throw error; }
 }
-function prepareStorage(config) {
+function preparePlatformOwner(config, platform, password, identityFile) {
+  if (!Array.isArray(platform.users) || !Array.isArray(platform.sessions)) reject('Acceptance platform users and sessions must be explicit arrays.');
+  const marked = Object.hasOwn(platform, 'acceptancePlatformOwner');
+  if (!config.enterprise) {
+    if (marked || exists(identityFile) || platform.users.length || platform.sessions.length) reject('Privileged platform state requires the explicit Enterprise fixture opt-ins; no data was erased.');
+    return false;
+  }
+  const marker = { format: OWNER_MARKER, serviceId: APPROVED_SERVICE, publicUrl: APPROVED_ORIGIN, candidate: CANDIDATE };
+  const identity = user => ({ ...marker, credentialDigest: crypto.createHash('sha256').update(user.passwordSalt + '\n' + user.passwordHash).digest('hex') });
+  if (!marked) {
+    if (platform.users.length || platform.sessions.length) reject('Refusing to adopt existing platform users or sessions as an acceptance owner.');
+    if (exists(identityFile)) reject('Incomplete acceptance owner initialization requires explicit review; it will not be reset.');
+    if (!config.passwordProvided || typeof password !== 'string' || password.length < 12) reject('Initial acceptance owner setup requires a privately entered password of at least 12 characters.');
+    const salt = crypto.randomBytes(16).toString('hex');
+    const hash = crypto.scryptSync(password, salt, 64).toString('hex');
+    platform.users = [{ ...OWNER, passwordSalt: salt, passwordHash: hash }];
+    platform.acceptancePlatformOwner = marker;
+    // Private, separate identity evidence detects changed credentials even when
+    // the owner has removed the environment password. Exclusive creation also
+    // prevents concurrent initializers from replacing each other's credentials.
+    try { fs.writeFileSync(identityFile, JSON.stringify(identity(platform.users[0])) + '\n', { flag: 'wx', mode: 0o600 }); }
+    catch { reject('Acceptance owner identity could not be saved safely.'); }
+    return true;
+  }
+  if (JSON.stringify(platform.acceptancePlatformOwner) !== JSON.stringify(marker) || platform.users.length !== 1) reject('The existing platform fixture identity conflicts with the approved acceptance owner.');
+  const user = platform.users[0];
+  const keys = [...Object.keys(OWNER), 'passwordSalt', 'passwordHash'];
+  if (!user || Object.keys(user).length !== keys.length || Object.keys(user).some(key => !keys.includes(key)) || Object.entries(OWNER).some(([key, value]) => user[key] !== value) || !/^[0-9a-f]{32}$/.test(user.passwordSalt) || !/^[0-9a-f]{128}$/.test(user.passwordHash)) reject('The existing acceptance owner was changed; it will not be adopted, reset, or re-enabled.');
+  let recordedIdentity;
+  try { recordedIdentity = JSON.parse(fs.readFileSync(identityFile, 'utf8')); }
+  catch { reject('Acceptance owner identity evidence is missing or invalid.'); }
+  if (JSON.stringify(recordedIdentity) !== JSON.stringify(identity(user))) reject('Acceptance owner credentials or identity evidence changed; no credentials were reset.');
+  if (platform.sessions.some(session => !session || session.userId !== OWNER.id || !/^[0-9a-f]{64}$/.test(session.tokenHash) || typeof session.id !== 'string' || !Number.isFinite(Date.parse(session.createdAt)) || !Number.isFinite(Date.parse(session.expiresAt)) || Object.keys(session).some(key => !['id', 'userId', 'tokenHash', 'createdAt', 'expiresAt'].includes(key)))) reject('The acceptance platform contains conflicting session state.');
+  if (config.passwordProvided && (typeof password !== 'string' || password.length < 12 || !crypto.timingSafeEqual(crypto.scryptSync(password, user.passwordSalt, 64), Buffer.from(user.passwordHash, 'hex')))) reject('The supplied acceptance password does not match the existing fixture; no credentials were changed.');
+  return false;
+}
+function prepareStorage(config, password) {
   const dir = config.directory;
   const marker = { format: 'pdl-isolated-acceptance-v1', candidate: CANDIDATE, root: fs.realpathSync(config.root), publicUrl: config.publicUrl, expectedStripeAccount: EXPECTED_STRIPE_ACCOUNT };
   if (!exists(dir)) fs.mkdirSync(dir, { mode: 0o700 });
@@ -108,14 +161,29 @@ function prepareStorage(config) {
   let db, platform;
   try { db = JSON.parse(fs.readFileSync(dbFile, 'utf8')); platform = JSON.parse(fs.readFileSync(platformFile, 'utf8')); } catch { reject('Acceptance state is invalid; it will not be overwritten.'); }
   if (db.acceptanceOnly !== true || db.company?.id !== ROOT_TENANT || platform.acceptanceOnly !== true) reject('State is not marked as synthetic acceptance data.');
+  if (!Array.isArray(db.users) || db.users.length || !Array.isArray(db.sessions) || db.sessions.length) reject('The synthetic acceptance root must remain without users or sessions.');
+  if (preparePlatformOwner(config, platform, password, path.join(dir, OWNER_IDENTITY_FILE))) {
+    // Exclusive temporary write plus rename avoids a half-written password row.
+    // Existing unrelated platform data is retained. Never seed a session/token.
+    const temp = platformFile + '.owner-init';
+    try {
+      fs.writeFileSync(temp, JSON.stringify(platform, null, 2) + '\n', { flag: 'wx', mode: 0o600 });
+      fs.renameSync(temp, platformFile);
+    } catch { reject('Acceptance owner state could not be saved safely.'); }
+  }
   assertPrivateTree(dir);
   return { dbFile, platformFile };
 }
 function start() {
-  const config = validateConfig();
+  let password = process.env.PDL_ACCEPTANCE_PLATFORM_PASSWORD;
+  let config;
+  try { config = validateConfig(); }
+  finally { delete process.env.PDL_ACCEPTANCE_PLATFORM_PASSWORD; }
   process.umask(0o077);
-  const storage = prepareStorage(config);
-  Object.assign(process.env, FORCED, PRICES, { NODE_ENV: config.local ? 'development' : 'production', PDL_PUBLIC_URL: config.publicUrl, PDL_DB_FILE: storage.dbFile, PDL_PLATFORM_FILE: storage.platformFile, PDL_ACCEPTANCE_STRIPE_ACCOUNT_ID: EXPECTED_STRIPE_ACCOUNT });
+  let storage;
+  try { storage = prepareStorage(config, password); }
+  finally { password = undefined; }
+  Object.assign(process.env, FORCED, PRICES, { NODE_ENV: config.local ? 'development' : 'production', PDL_PUBLIC_URL: config.publicUrl, PDL_DB_FILE: storage.dbFile, PDL_PLATFORM_FILE: storage.platformFile, PDL_ACCEPTANCE_STRIPE_ACCOUNT_ID: EXPECTED_STRIPE_ACCOUNT, PDL_ENTERPRISE_CHECKOUT_ENABLED: config.enterprise ? '1' : '0' });
   const { server } = require(path.join(ROOT, 'server'));
   server.prependListener('request', (req, res) => {
     res.setHeader('X-PDL-Acceptance', 'isolated-synthetic');
@@ -139,4 +207,4 @@ if (require.main === module) {
     process.exitCode = 1;
   }
 }
-module.exports = { start, PRICES, CANDIDATE, EXPECTED_STRIPE_ACCOUNT, ROOT_TENANT, PRICE_KEYS, FORCED, validateConfig, prepareStorage, seedRoot };
+module.exports = { start, PRICES, CANDIDATE, EXPECTED_STRIPE_ACCOUNT, ROOT_TENANT, PRICE_KEYS, FORCED, ENTERPRISE_OPT_IN, OWNER_OPT_IN, APPROVED_SERVICE, APPROVED_ORIGIN, OWNER, OWNER_IDENTITY_FILE, validateConfig, prepareStorage, seedRoot };

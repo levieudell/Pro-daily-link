@@ -5,7 +5,9 @@ const Stripe = require('stripe');
 const OFFER = 'pdl-enterprise-annual-v1';
 const EVENTS = new Set(['checkout.session.completed', 'checkout.session.async_payment_succeeded',
   'checkout.session.async_payment_failed', 'checkout.session.expired', 'charge.refunded',
-  'charge.dispute.created', 'charge.dispute.updated', 'charge.dispute.closed', 'refund.updated']);
+  'charge.dispute.created', 'charge.dispute.updated', 'charge.dispute.closed', 'refund.updated', 'refund.failed']);
+const DISPUTE_STATUSES = new Set(['warning_needs_response', 'warning_under_review', 'warning_closed',
+  'needs_response', 'under_review', 'won', 'lost', 'prevented']);
 const idOf = value => typeof value === 'string' ? value : value?.id;
 const fail = (message, statusCode = 400) => Object.assign(new Error(message), { statusCode });
 const iso = now => new Date(now).toISOString();
@@ -219,10 +221,14 @@ function createService({ client, persist, env = process.env, now = () => Date.no
     else if (session.status === 'complete' && session.payment_status !== 'paid' && !quote.paidAt && quote.status !== 'cancelled') quote.status = event.type === 'checkout.session.async_payment_failed' ? 'payment_failed' : 'processing';
     if (session.status === 'complete' && session.payment_status === 'paid') {
       if (!idOf(session.customer) || idOf(pi?.customer)!==idOf(session.customer) || !pi || pi.status !== 'succeeded' || pi.amount_received !== quote.totalAmount || !charge || typeof charge !== 'object' || charge.payment_intent !== pi.id || charge.amount !== quote.totalAmount || charge.currency !== quote.currency || charge.paid !== true || charge.livemode !== session.livemode || !Number.isFinite(charge.created)) throw fail('Waiting for verified Enterprise payment details.', 503);
-      const refunded = Number(charge.amount_refunded || 0);
+      const refunded = charge.amount_refunded;
+      // Missing or malformed provider evidence is not a verified zero refund/no dispute.
+      if (!Number.isSafeInteger(refunded) || refunded < 0 || refunded > quote.totalAmount || typeof charge.disputed !== 'boolean') throw fail('Waiting for verified Enterprise refund and dispute details.', 503);
       let disputed = charge.disputed === true;
       if (disputed) {
         const disputes = await stripe().disputes.list({ charge: charge.id, limit: 100 });
+        if (!disputes || !Array.isArray(disputes.data) || typeof disputes.has_more !== 'boolean') throw fail('Waiting for verified Enterprise dispute details.', 503);
+        if (disputes.data.some(row => !row || typeof row !== 'object' || Array.isArray(row) || !DISPUTE_STATUSES.has(row.status))) throw fail('Waiting for verified Enterprise dispute details.', 503);
         disputed = disputes.has_more || !disputes.data?.length || disputes.data.some(row => row.status !== 'won' && row.status !== 'warning_closed');
       }
       quote.paidAt ||= iso(now()); quote.startsAt ||= quote.paidAt; quote.endsAt ||= annualEnd(quote.startsAt);
