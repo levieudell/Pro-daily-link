@@ -18,6 +18,8 @@ Only package.json conflicted in merges for PR56, PR57, and PR58. Preserve the un
 
 A separate reviewer reproduced two blocking daily-save gaps: the photo wrapper referenced undeclared scope/generation after successful save, skipping staged-photo cleanup; and photo/time-card preparation waits could enter a save after user/tenant/form replacement. Capture scope/generation and revalidate before delegating writes in the photo wrapper, original core save, and late labor wrapper. Regressions exercise actual functions: successful save cleanup, new-draft identity migration, unconfirmed upload retention, and user/tenant/form changes during asynchronous preparation. Independent probes and focused daily-flow/storage/employee/navigation/pull-refresh/onboarding tests passed, with no remaining concrete finding in the reviewed changes.
 
+The reviewer then reproduced a related recovery-deletion gap: closing the dialog during pending time-card lookup correctly aborted the core with zero writes, but a later wrapper deleted unsaved note bytes and the active marker based only on dialog closure. Remove that redundant closed-dialog cleanup; successful core persistence already performs explicit recovery cleanup. Actual core/wrapper/storage-helper regression now verifies aborted close preserves exact notes and marker, and the wrapper preserves confirmed core completion. Update the older source-contract assertion to check confirmed core cleanup rather than require the unsafe wrapper cleanup.
+
 ## Dependencies and minimal release order
 
 No module/symbol or hard runtime dependency on PR52, PR53, or PR54 was found for this preview. They are deliberately excluded.

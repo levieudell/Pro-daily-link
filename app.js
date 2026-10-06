@@ -1039,9 +1039,9 @@ $('#report-modal').addEventListener('close',()=>{
 });
 const saveDailyReportBeforeRecovery=saveDailyReport;
 saveDailyReport=async function(status){
-  const recoveryKey=offlineReportDraftKey();
-  await saveDailyReportBeforeRecovery(status);
-  if(!$('#report-modal').open)clearActiveReportRecovery(recoveryKey)
+  // The core clears recovery only after confirmed persistence. Dialog closure
+  // can also mean cancellation or replacement while preparation is pending.
+  return saveDailyReportBeforeRecovery(status)
 };
 function restoreRecoveredReportFields(draft){
   if(draft.dateIso)$('#report-date').value=draft.dateIso;
