@@ -71,6 +71,10 @@ function run() {
   assert.equal(byName('revenue-only').lines[0].quantity,null); assert.equal(byName('revenue-only').lines[0].amount,1917);
   assert.equal(byName('headerless-two-prices').lines[0].amount,null); assert.match(byName('headerless-two-prices').reviewWarnings.join(' '),/rightmost price/);
   assert.equal(parser.estimateDraft('').requiresOcr, true);
+  const turf=parser.estimateDraft(parser.pdfText(makePdf(['SYNTHETIC DOCUMENT ONLY','Description Quantity Unit Amount','Synthetic turf installation 10 SF $100.00','Total $100.00'])));
+  assert.equal(turf.lines.length,1,'a scope description starting with Synthetic is not a document header');
+  assert.equal(turf.lines[0].description,'Synthetic turf installation');
+  assert.equal(turf.lines[0].quantity,10);assert.equal(turf.lines[0].amount,100);assert.equal(turf.reconciled,true);
   const literal = Buffer.from('%PDF-1.4\nstream\nBT (Deck framing 100 SF $5000.00) Tj (Total $5000.00) Tj ET\nendstream\n%%EOF');
   assert.equal(parser.estimateDraft(parser.pdfText(literal)).lines[0].description, 'Deck framing');
   const scan = fs.readFileSync(path.join(__dirname,'test-fixtures','estimates','synthetic-scanned-estimate.pdf'));

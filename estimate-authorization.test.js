@@ -29,7 +29,8 @@ fs.writeFileSync(dbFile,JSON.stringify(db));fs.writeFileSync(process.env.PDL_PLA
 const realFetch=global.fetch;let base='',providerCalls=0;
 global.fetch=(url,options)=>{if(!base||!String(url).startsWith(base+'/')){providerCalls++;throw Error('External provider calls forbidden in authorization tests')}return realFetch(url,options)};
 const {server}=require('./server');
-const pdf='data:application/pdf;base64,'+Buffer.from('%PDF-1.4\nstream\nBT (Synthetic item 10 EA $100.00) Tj ET\nendstream\n%%EOF').toString('base64');
+const {makePdf}=require('./estimate-pdf.test');
+const pdf='data:application/pdf;base64,'+makePdf(['Description Quantity Unit Amount','Synthetic scope 10 SF $100.00','Total $100.00']).toString('base64');
 const scan='data:application/pdf;base64,'+Buffer.from('%PDF-1.4\n%%EOF').toString('base64');
 const line={description:'Synthetic item',quantity:10,unit:'EA',amount:100,budgetHours:20};
 const proposal={name:'Synthetic submitted scope',plannedQuantity:2,unit:'EA'};

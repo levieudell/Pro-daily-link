@@ -122,8 +122,8 @@ saveDailyReport=async function(status){
   if(dailyReportBusy)return;dailyReportBusy=true;const scope=dailyScope(),generation=dailyReviewGeneration,input=$('#report-photos'),key=dailyReportPhotoKey();input.disabled=true;
   try{await dailyPhotoReady(input,key);
   if(dailyScope()!==scope||dailyReviewGeneration!==generation)return;
-  await saveDailyBeforePhotoRecovery(status);if(dailyScope()!==scope||dailyReviewGeneration!==generation&&$('#report-modal').open)return;
-  if(!$('#report-modal').open){try{await clearDailyPhotos(input,key)}catch(error){photoRecoveryWarning(error)}}
+  const outcome=await saveDailyBeforePhotoRecovery(status);if(dailyScope()!==scope||dailyReviewGeneration!==generation&&$('#report-modal').open)return;
+  if(outcome?.saved===true){try{await clearDailyPhotos(input,key)}catch(error){photoRecoveryWarning(error)}}
   else if(editingReportId&&dailyReportPhotoKey()!==key){
     const newKey=dailyReportPhotoKey(),rows=dailyPhotoMemory.get(key)||photoRows(input.files);dailyPhotoMemory.set(newKey,rows);input.dataset.recoveryKey=newKey;
     try{await dailyPhotoStore.put(newKey,rows);await dailyPhotoStore.remove(key);dailyPhotoMemory.delete(key)}catch(error){photoRecoveryWarning(error)}
@@ -139,8 +139,9 @@ function rememberProgressPhotoNotes(){const key=$('#office-photos').dataset.reco
 openProjectPhoto=function(index,options={}){const result=openProjectPhotoBeforeRecovery(index,options),key=dailyPhotoKey('progress',`${projects[index]?.id}:${options.workdayId||''}:date-${companyTodayIso()}`);try{const saved=JSON.parse(localStorage.getItem(progressPhotoNotesKey(key))||'null');if(saved){$('#photo-caption').value=saved.caption||'';$('#photo-tags').value=saved.tags||''}}catch{}void restoreDailyPhotos($('#office-photos'),key);return result};
 for(const id of ['photo-caption','photo-tags'])$('#'+id).addEventListener('input',rememberProgressPhotoNotes);
 $('#office-photos').addEventListener('change',()=>stageDailyPhotos($('#office-photos'),$('#office-photos').dataset.recoveryKey));
+$('#photo-modal').addEventListener('close',()=>{const input=$('#office-photos');input.dataset.recoveryGeneration=String(Number(input.dataset.recoveryGeneration||0)+1)});
 const saveProgressPhotosBeforeRecovery=$('#save-photos').onclick;
-$('#save-photos').onclick=async function(){if(dailyProgressBusy)return;dailyProgressBusy=true;const input=$('#office-photos'),key=input.dataset.recoveryKey;input.disabled=true;rememberProgressPhotoNotes();try{await dailyPhotoReady(input,key);await saveProgressPhotosBeforeRecovery();if(!$('#photo-modal').open){await clearDailyPhotos(input,key).catch(photoRecoveryWarning);localStorage.removeItem(progressPhotoNotesKey(key))}}finally{dailyProgressBusy=false;input.disabled=false}};
+$('#save-photos').onclick=async function(){if(dailyProgressBusy)return;dailyProgressBusy=true;const input=$('#office-photos'),key=input.dataset.recoveryKey,scope=dailyScope(),generation=Number(input.dataset.recoveryGeneration||0),current=()=>dailyScope()===scope&&input.dataset.recoveryKey===key&&Number(input.dataset.recoveryGeneration||0)===generation&&$('#photo-modal').open;input.disabled=true;rememberProgressPhotoNotes();try{await dailyPhotoReady(input,key);if(!current())return;const outcome=await saveProgressPhotosBeforeRecovery();if(dailyScope()!==scope||input.dataset.recoveryKey!==key)return;if(outcome?.saved===true){await clearDailyPhotos(input,key).catch(photoRecoveryWarning);localStorage.removeItem(progressPhotoNotesKey(key))}}finally{dailyProgressBusy=false;input.disabled=false}};
 
 const openAssignmentBeforeCarryControl=openAssignment;
 openAssignment=function(prefill={}){const result=openAssignmentBeforeCarryControl(prefill);if(canManageSchedule())$('#assignment-carry-next').checked=prefill.assignment?.carryPreviousNext!==false;return result};

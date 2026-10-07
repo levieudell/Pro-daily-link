@@ -15,9 +15,9 @@ const known=markup({description:'Work',quantity:1,unit:'EA',amount:0,budgetHours
 const handlerSource=source.find(line=>line.startsWith("$('#approve-estimate-import').onclick="));
 const controls=new Map(),get=selector=>{if(!controls.has(selector))controls.set(selector,{});return controls.get(selector)};
 for(let index=0;index<2;index++)for(const [field,value] of Object.entries({description:'Scope '+index,quantity:'10',unit:'SF',amount:index?'':'100',catalog:'',hours:index?'18':'0'}))get(`[data-import-${field}="${index}"]`).value=value;
-get('[data-import-include="0"]').checked=false;get('[data-import-include="1"]').checked=true;get('#estimate-import-project').value='1';get('#estimate-import-modal').close=()=>{};
+get('[data-import-include="0"]').checked=false;get('[data-import-include="1"]').checked=true;get('#estimate-import-project').value='1';get('#estimate-import-modal').close=()=>{};get('#estimate-import-modal').open=true;
 let captured,pending,calls=0;const project={id:1,estimateItems:[]};const api=async(route,options)=>{calls++;captured={route,...JSON.parse(options.body)};if(pending)await pending;return {items:[]}};
-const handler=new Function('$','api','projects','notify','estimateImportDraft',handlerSource+"\nreturn $('#approve-estimate-import').onclick;")(get,api,[project],()=>{},{id:7,lines:[{},{}]});
+const handler=new Function('$','api','projects','notify','estimateImportDraft','estimateImportSequence',handlerSource+"\nreturn $('#approve-estimate-import').onclick;")(get,api,[project],()=>{},{id:7,lines:[{},{}]},1);
 handler().then(async()=>{
   assert.equal(captured.lines.length,1);assert.equal(captured.lines[0].description,'Scope 1');assert.equal(captured.lines[0].amount,null);assert.equal(captured.lines[0].budgetHours,18);
   get('[data-import-hours="1"]').value='';await handler();assert.equal(captured.lines[0].budgetHours,null);
@@ -27,7 +27,7 @@ handler().then(async()=>{
   get('#estimate-pdf').files=[{name:'synthetic-failure.pdf'}]; get('#approve-estimate-import').style={};
   const analyzeSource=source.find(line=>line.startsWith("$('#analyze-estimate').onclick="));
   const failedDraft={requiresAiReview:true,lines:[],reviewWarnings:[],ocrWarning:'<img src=x onerror=alert(1)>',documentTotal:null,lineTotal:0,reconciled:false};
-  const analyze=new Function('$','api','projects','notify','estimateImportDraft','fileAsData','importLineMarkup','bindImportReview','escapeHtml','estimateImportProjectId',analyzeSource+"\nreturn $('#analyze-estimate').onclick;")(get,async()=>failedDraft,[project],()=>{},null,async()=>'',markup,()=>{},new Function(escapeSource+';return escapeHtml;')(),1);
+  const analyze=new Function('$','api','projects','notify','estimateImportDraft','fileAsData','importLineMarkup','bindImportReview','escapeHtml','estimateImportProjectId','estimateImportSequence',analyzeSource+"\nreturn $('#analyze-estimate').onclick;")(get,async()=>failedDraft,[project],()=>{},null,async()=>'',markup,()=>{},new Function(escapeSource+';return escapeHtml;')(),1,1);
   await analyze();
   const failureHtml=get('#estimate-import-review').innerHTML; assert.ok(failureHtml.includes('&lt;img')); const failureTree=parse5.parseFragment(failureHtml); const unsafe=[];function check(node){if(node.tagName==='img')unsafe.push(node);for(const child of node.childNodes||[])check(child)}check(failureTree);assert.equal(unsafe.length,0);
   console.log('Estimate review DOM/submission: unknown versus zero, inclusion, explicit hours, document and assisted-failure escaping passed');

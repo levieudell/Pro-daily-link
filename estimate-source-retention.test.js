@@ -132,9 +132,10 @@ global.fetch = async (input, options = {}) => {
   throw new Error('Unexpected synthetic request: ' + method + ' ' + url.pathname);
 };
 const { server } = require('./server');
-const pdf = text => Buffer.from(`%PDF-1.4\nstream\nBT (${text}) Tj ET\nendstream\n%%EOF`);
-const importBytes = pdf('Synthetic retaining wall 12 SF $120.00 Total $120.00');
-const proposalBytes = pdf('Synthetic base framing 10 SF $100.00 Synthetic finish panels 8 EA $80.00 Total $180.00');
+const {makePdf}=require('./estimate-pdf.test');
+const pdf = rows => makePdf(['Description Quantity Unit Amount', ...rows]);
+const importBytes = pdf(['Synthetic retaining wall 12 SF $120.00','Total $120.00']);
+const proposalBytes = pdf(['Synthetic base framing 10 SF $100.00','Synthetic finish panels 8 EA $80.00','Total $180.00']);
 const importPayload = { filename: 'synthetic-import.pdf', data: 'data:application/pdf;base64,' + importBytes.toString('base64') };
 const proposalPayload = { filename: 'synthetic-field-multiline.pdf', data: 'data:application/pdf;base64,' + proposalBytes.toString('base64') };
 const readDb = () => JSON.parse(fs.readFileSync(dbFile, 'utf8'));

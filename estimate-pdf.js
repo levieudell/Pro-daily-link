@@ -67,7 +67,7 @@ function estimateDraft(text) {
       if (!header.valid) warn('Unsupported or ambiguous column order or cost labels. Review these lines manually; selling amounts were not guessed.');
       pending = []; continue;
     }
-    if (/^(?:synthetic\b|estimate\b|quote\b|customer\b|bill\s+to\b|ship\s+to\b|date\b|address\b|subtotal\b|tax\b|discount\b|deposit\b|balance\b|thank\b|terms\b|page\s+\d)/i.test(row)) { pending = []; continue; }
+    if (/^synthetic document only$/i.test(row) || /^(?:estimate\b|quote\b|customer\b|bill\s+to\b|ship\s+to\b|date\b|address\b|subtotal\b|tax\b|discount\b|deposit\b|balance\b|thank\b|terms\b|page\s+\d)/i.test(row)) { pending = []; continue; }
     // Labor on a sales document must never silently become a work quantity or
     // labor budget. Catalog rates and the editable hours review remain authoritative.
     if (/^(?:estimated\s+)?(?:labor|labour)(?:\s+hours)?\s*:?\s*\d+(?:\.\d+)?\s*(?:HR|HRS|HOURS)?$/i.test(row)) { warn('Labor information was not converted to budget hours. Review hours separately.'); pending = []; continue; }
