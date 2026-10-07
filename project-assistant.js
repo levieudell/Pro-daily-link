@@ -2,6 +2,8 @@
 
 const crypto = require('node:crypto');
 const availability = require('./schedule-availability');
+const { expandBatch } = require('./project-assistant-batch');
+const { proposeBatchWithAI } = require('./project-assistant-batch-proposal');
 const { createAssignmentRows } = require('./assignment-records');
 const { textValue, createProjectNoteRecord } = require('./project-notes');
 const ROLES = new Set(['owner', 'admin', 'project_manager']);
@@ -31,7 +33,7 @@ function allowed(db, user, projectId, memberId, action = 'schedule') {
   if (user.role !== 'project_manager') return true;
   const crews = new Set((user.assignedCrews || []).map(name => String(name).trim().toLowerCase()).filter(Boolean));
   const member = (db.team || []).find(row => Number(row.id) === memberId);
-  return (action !== 'schedule' || user.permissions?.scheduleCrews === true) && (user.projectIds || []).map(Number).includes(projectId) &&
+  return (!['schedule', 'schedule_batch'].includes(action) || user.permissions?.scheduleCrews === true) && (user.projectIds || []).map(Number).includes(projectId) &&
     (memberId == null || member && crews.has(String(member.crew || '').trim().toLowerCase()));
 }
 function activeProject(db, projectId) { return (db.projects || []).find(row => Number(row.id) === projectId && !row.archived && !['Completed', 'Cancelled'].includes(row.status)); }
@@ -39,19 +41,20 @@ function membersFor(db, user, projectId) { return (db.team || []).filter(row => 
 function minimalContext(db, user, projectId) {
   return { project: { id: projectId, name: activeProject(db, projectId).name }, timezone: validZone(db.company.timezone) ? db.company.timezone : '',
     members: membersFor(db, user, projectId).map(row => ({ id: Number(row.id), name: String(row.name), crew: String(row.crew || '') })),
-    aiAvailable: Boolean(process.env.OPENAI_API_KEY), capabilities: { schedule: allowed(db, user, projectId), note: true, todo: true }, limits: 'One person/day scheduling with instructions, project notes and to-dos. No notification blast or public sharing.' };
+    aiAvailable: Boolean(process.env.OPENAI_API_KEY), capabilities: { schedule: allowed(db, user, projectId), note: true, todo: true }, limits: 'Single-day or atomic batch scheduling: at most 31 calendar days, 10 people, 100 person/day combinations; explicit weekdays. Project notes and to-dos. No email, notification blast or public sharing.' };
 }
 function fingerprint(db, user, projectId, input) {
-  const memberId = input.memberId;
+  const memberIds = input.action === 'schedule_batch' ? input.memberIds : [input.memberId];
   return hash({ companyId: db.company.id, timezone: db.company.timezone || null,
     actor: { id: user.id, role: user.role, permissions: user.permissions, projectIds: user.projectIds, assignedCrews: user.assignedCrews },
-    project: activeProject(db, projectId), member: (db.team || []).find(row => Number(row.id) === memberId),
-    projectNotes: input.action !== 'schedule' ? (db.projectNotesTodos || []).filter(row => Number(row.projectId) === projectId && row.companyId === db.company.id) : undefined,
-    assignments: (db.assignments || []).filter(row => (row.memberIds || []).map(Number).includes(memberId)),
-    leave: (db.timeOffRequests || []).filter(row => Number(row.memberId) === memberId),
-    workdays: (db.workdays || []).filter(row => (row.memberIds || []).map(Number).includes(memberId)) });
+    project: activeProject(db, projectId), members: (db.team || []).filter(row => memberIds.includes(Number(row.id))),
+    projectNotes: !['schedule', 'schedule_batch'].includes(input.action) ? (db.projectNotesTodos || []).filter(row => Number(row.projectId) === projectId && row.companyId === db.company.id) : undefined,
+    assignments: (db.assignments || []).filter(row => (row.memberIds || []).map(Number).some(id => memberIds.includes(id))),
+    leave: (db.timeOffRequests || []).filter(row => memberIds.includes(Number(row.memberId))),
+    workdays: (db.workdays || []).filter(row => (row.memberIds || []).map(Number).some(id => memberIds.includes(id))) });
 }
 function validate(db, user, projectId, input, now) {
+  if (input?.action === 'schedule_batch') return validateBatch(db, user, projectId, input, now);
   if (input?.action === 'note' || input?.action === 'todo') return validateNote(db, user, projectId, input, now);
   if (invalidObject(input, FIELDS)) return { status: 400, error: 'Review only the supported assignment fields.' };
   if (input.action != null && input.action !== 'schedule') return { status: 400, error: 'Choose scheduling, project note, or project to-do.' };
@@ -73,6 +76,18 @@ function validate(db, user, projectId, input, now) {
   for (const row of availability.approved(db.timeOffRequests, [input.memberId])) if (availability.onDate([row], input.memberId, input.date, input.start, input.end)) conflicts.push({ type: 'leave', date: input.date, message: 'Approved time off overlaps these hours.' });
   if (input.date === today.date && (db.workdays || []).some(row => row.status === 'active' && (row.memberIds || []).map(Number).includes(input.memberId))) conflicts.push({ type: 'workday', date: input.date, message: 'This person has an active workday. Review it in the manual schedule first.' });
   return { input: { ...input, action: 'schedule', activity: input.activity.trim(), instructions: input.instructions.trim() }, conflicts };
+}
+function validateBatch(db, user, projectId, input, now) {
+  const expanded = expandBatch(input);
+  if (expanded.error) return { status: 400, error: expanded.error };
+  const conflicts = [];
+  for (const memberId of expanded.input.memberIds) for (const date of expanded.dates) {
+    const checked = validate(db, user, projectId, { action: 'schedule', memberId, date, start: input.start, end: input.end, activity: input.activity, instructions: input.instructions, timezone: input.timezone }, now);
+    if (checked.error) return { ...checked, error: `${date}: ${checked.error}` };
+    const member = (db.team || []).find(row => Number(row.id) === memberId);
+    conflicts.push(...checked.conflicts.map(row => ({ ...row, memberId, memberName: member.name })));
+  }
+  return { input: { ...expanded.input, activity: input.activity.trim(), instructions: input.instructions.trim() }, dates: expanded.dates, personDays: expanded.personDays, conflicts };
 }
 function validateNote(db, user, projectId, input, now) {
   if (invalidObject(input, ['action', 'text', 'deadline', 'dueDate', 'timezone']) || !allowed(db, user, projectId, null, input.action)) return { status: 400, error: 'Review only the supported project note or to-do fields.' };
@@ -117,8 +132,13 @@ async function proposeWithAI(context, text, fetchImpl = fetch, action = 'schedul
   return { source: 'ai', draft, message: `Nothing has been saved. ${matches.length > 1 ? 'More than one person has that name; choose the correct person. ' : ''}${missing.length ? 'Please supply or choose: ' + missing.map(key => ({memberId:'person',date:'exact date',start:'start time',end:'end time',activity:'task',instructions:'daily instructions'}[key])).join(', ') + '. Use an exact date and 24-hour times.' : 'Review every suggested field, then preview.'}` };
 }
 
-function createProjectAssistantHandler({ readDb, writeDb, body, json, authenticatedUser, accountAccess = () => ({ locked: false }), now = () => new Date(), propose = proposeWithAI, signingKey = crypto.randomBytes(32) }) {
-  const savedResult = receipt => ({ saved: true, repeated: true, ...(receipt.resourceKind && receipt.resourceKind !== 'schedule' ? { itemId: receipt.itemId, kind: receipt.resourceKind } : { assignmentId: receipt.assignmentId }) });
+function createProjectAssistantHandler({ readDb, writeDb, body, json, authenticatedUser, accountAccess = () => ({ locked: false }), now = () => new Date(), propose = proposeWithAI, proposeBatch = proposeBatchWithAI, signingKey = crypto.randomBytes(32) }) {
+  const savedResult = receipt => ({ saved: true, repeated: true, ...(receipt.resourceKind === 'schedule_batch' ? { kind: 'schedule_batch', assignmentIds: receipt.assignmentIds } : receipt.resourceKind && receipt.resourceKind !== 'schedule' ? { itemId: receipt.itemId, kind: receipt.resourceKind } : { assignmentId: receipt.assignmentId }) });
+  function scheduleAccess(db, user, projectId, input, kind) {
+    if (!['schedule', 'schedule_batch'].includes(kind)) return allowed(db, user, projectId, null, kind);
+    const ids = kind === 'schedule_batch' ? input.memberIds : [input.memberId], availableIds = new Set(membersFor(db, user, projectId).map(row => Number(row.id)));
+    return Array.isArray(ids) && ids.length > 0 && ids.every(id => allowed(db, user, projectId, id, kind) && availableIds.has(id));
+  }
   function sign(value) { const payload = Buffer.from(JSON.stringify(value)).toString('base64url'); return payload + '.' + crypto.createHmac('sha256', signingKey).update(payload).digest('base64url'); }
   function verify(token) {
     if (typeof token !== 'string' || token.length > MAX_TOKEN_LENGTH) return null;
@@ -142,15 +162,15 @@ function createProjectAssistantHandler({ readDb, writeDb, body, json, authentica
     if (req.method !== 'POST' || action === 'context') return reply(405, { error: 'Method not allowed.' });
     const input = await body(req);
     if (action === 'chat') {
-      if (invalidObject(input, ['text', 'action']) || input.action != null && !['schedule', 'note', 'todo'].includes(input.action) || typeof input.text !== 'string' || !input.text.trim() || input.text.length > 6000) return reply(400, { error: 'Choose a supported action and describe the request using 6,000 characters or fewer.' });
-      try { return reply(200, await propose(context, input.text, undefined, input.action || 'schedule')); }
+      if (invalidObject(input, ['text', 'action']) || input.action != null && !['schedule', 'schedule_batch', 'note', 'todo'].includes(input.action) || typeof input.text !== 'string' || !input.text.trim() || input.text.length > 6000) return reply(400, { error: 'Choose a supported action and describe the request using 6,000 characters or fewer.' });
+      try { return reply(200, await (input.action === 'schedule_batch' ? proposeBatch(context, input.text) : propose(context, input.text, undefined, input.action || 'schedule'))); }
       catch { return reply(200, { source: 'form', draft: {}, message: 'AI could not make a suggestion. Complete the fields and preview. Nothing has been saved.' }); }
     }
     if (action === 'preview') {
       const checked = validate(db, user, projectId, input, now());
       if (checked.error) return reply(checked.status, { error: checked.error });
       const proposal = { ...checked.input, projectId, projectName: context.project.name,
-        ...(checked.input.action === 'schedule' ? { memberName: context.members.find(row => row.id === input.memberId).name, notification: 'In-app notification only; no email will be sent.' } : { visibility: 'Authorized project team using existing project access, including project managers and assigned crew/field users.', notification: 'No notifications or public sharing.', assignee: 'Unassigned', completed: false }) };
+        ...(checked.input.action === 'schedule_batch' ? { members: context.members.filter(row => checked.input.memberIds.includes(row.id)), dates: checked.dates, personDays: checked.personDays, atomic: true, notification: 'One in-app notification per person/date; no email. All dates and people save together or none do.' } : checked.input.action === 'schedule' ? { memberName: context.members.find(row => row.id === input.memberId).name, notification: 'In-app notification only; no email will be sent.' } : { visibility: 'Authorized project team using existing project access, including project managers and assigned crew/field users.', notification: 'No notifications or public sharing.', assignee: 'Unassigned', completed: false }) };
       const version = fingerprint(db, user, projectId, checked.input);
       const token = checked.conflicts.length ? null : sign({ id: crypto.randomUUID(), companyId: db.company.id, userId: user.id, projectId, version, input: checked.input, expiresAt: +now() + 10 * 60000 });
       return reply(200, { proposal, conflicts: checked.conflicts, version, token });
@@ -161,20 +181,24 @@ function createProjectAssistantHandler({ readDb, writeDb, body, json, authentica
       // Receipts authenticate an exact retry even after a server restart rotates
       // the ephemeral preview signing key. Revalidate current crew permission.
       const kind = existingReceipt.resourceKind || 'schedule';
-      if (!allowed(db, user, projectId, existingReceipt.memberId, kind) || kind === 'schedule' && !membersFor(db, user, projectId).some(row => Number(row.id) === existingReceipt.memberId)) return reply(403, { error: 'Your project or crew access changed.' });
+      if (!scheduleAccess(db, user, projectId, existingReceipt, kind)) return reply(403, { error: 'Your project or crew access changed.' });
       return reply(200, savedResult(existingReceipt));
     }
     const token = verify(input.token);
     if (!token || token.companyId !== db.company.id || token.userId !== user.id || token.projectId !== projectId || token.version !== input.version) return reply(409, { error: 'The preview is invalid. Build and review a fresh preview.', code: 'ASSISTANT_STALE' });
     const kind = token.input.action || 'schedule';
-    if (!allowed(db, user, projectId, token.input.memberId, kind) || kind === 'schedule' && !membersFor(db, user, projectId).some(row => Number(row.id) === token.input.memberId)) return reply(403, { error: 'Your project or crew access changed. Nothing was saved.' });
+    if (!scheduleAccess(db, user, projectId, token.input, kind)) return reply(403, { error: 'Your project or crew access changed. Nothing was saved.' });
     const previous = (db.assistantConfirmations || []).find(row => row.id === token.id && row.companyId === db.company.id && row.userId === user.id);
     if (previous) return reply(200, savedResult(previous));
     if (token.expiresAt <= +now() || token.version !== fingerprint(db, user, projectId, token.input)) return reply(409, { error: 'The project, person, or schedule changed, or this preview expired. Review a fresh preview.', code: 'ASSISTANT_STALE' });
     const checked = validate(db, user, projectId, token.input, now());
     if (checked.error || checked.conflicts.length) return reply(409, { error: checked.error || 'Availability changed. Review a fresh preview.', conflicts: checked.conflicts || [], code: 'ASSISTANT_STALE' });
     const at = now().toISOString(), receipt = { id: token.id, tokenHash: hash(input.token), version: token.version, companyId: db.company.id, userId: user.id, projectId, resourceKind: kind, at };
-    if (kind === 'schedule') {
+    if (kind === 'schedule_batch') {
+      const rows = createAssignmentRows(db, { ...checked.input, projectId }, checked.dates, at);
+      rows.forEach(row => { row.createdByUserId = user.id; row.source = 'project_assistant'; });
+      db.assignments ||= []; db.assignments.push(...rows); receipt.memberIds = checked.input.memberIds; receipt.assignmentIds = rows.map(row => row.id);
+    } else if (kind === 'schedule') {
       const assignment = createAssignmentRows(db, { ...checked.input, projectId, memberIds: [checked.input.memberId] }, [checked.input.date], at)[0];
       assignment.createdByUserId = user.id; assignment.source = 'project_assistant';
       db.assignments ||= []; db.assignments.push(assignment); receipt.memberId = checked.input.memberId; receipt.assignmentId = assignment.id;

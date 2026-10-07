@@ -8,3 +8,5 @@
 [data-assistant-review]{border:1px solid #d8b396;border-radius:10px;background:#fff8f0;color:#17211c;padding:16px;margin:16px 0}[data-assistant-review] dl{display:grid;grid-template-columns:120px 1fr;gap:9px}[data-assistant-review] dt{font-weight:700}[data-assistant-review] dd{margin:0;overflow-wrap:anywhere}.assistant-instructions,.assignment-daily-instructions{white-space:pre-wrap;overflow-wrap:anywhere}.assignment-daily-instructions{padding:12px;border-left:3px solid #ff751f;background:#fff8f0;color:#17211c}
 @media(max-width:600px){.project-assistant-launcher{bottom:calc(88px + env(safe-area-inset-bottom));width:56px;height:56px}.project-assistant-dialog{padding:16px}.assistant-grid{grid-template-columns:1fr 1fr}[data-assistant-review] dl{grid-template-columns:1fr;gap:4px}[data-assistant-review] dd{margin-bottom:9px}.assistant-actions button{flex:1 1 160px}}
 @media(prefers-reduced-motion:reduce){.project-assistant-launcher,.project-assistant-dialog{animation:none;transition:none;scroll-behavior:auto}}
+
+.assistant-batch-list{padding-left:22px;overflow-wrap:anywhere}.assistant-batch-list li{margin:6px 0}
