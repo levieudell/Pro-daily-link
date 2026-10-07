@@ -68,7 +68,7 @@
       canContinue:()=>dialog.open&&identity===workspaceIdentity()&&permitted(getWorkspace())&&!uncertain&&!saving,
       getContext:()=>authorizedContext||{project:{name:''},timezone:''},getDraft:()=>chatState.context?chatState.draft:{action:'chat'},
       nextSlot:()=>chatState.slot||(!chatState.ready?'project':null),nextQuestion:()=>chatState.ready?'Say preview these changes to hear the exact proposal, or change and a field name.':chatState.question(),
-      answerTurn:async(text,isVoiceCurrent)=>processMessage(text,isVoiceCurrent,false),onPrompt:text=>addTurn('Assistant',text),
+      answerTurn:async(text,isVoiceCurrent)=>processMessage(text,isVoiceCurrent,false),canClarifyYes:()=>chatState.canAcceptYes,onPrompt:text=>addTurn('Assistant',text),
       onCancelSession:command=>{if(command==='cancel conversation')reset();},
       setDraft:patch=>{sequence++;invalidate();for(const [key,value] of Object.entries(patch)){
         const name=key==='text'?'noteText':(['start','end'].includes(key)&&node('action').value==='schedule_batch'?'batch'+key[0].toUpperCase()+key.slice(1):key);
@@ -81,7 +81,7 @@
       onTurn:(speaker,text)=>{if(speaker==='You')addTurn(speaker,text);},
       onStatus:(text,active)=>{node('converse-status').textContent=active?(guided.reading?'Speaking. Microphone off.':'Listening for one answer.'):text;node('converse').textContent=active?'Stop microphone':'Talk';node('converse').setAttribute('aria-label',active?'Stop microphone':'Talk to project assistant');node('converse').setAttribute('aria-pressed',String(active));}});
     function addTurn(speaker,text){const turn=document.createElement('p');turn.textContent=speaker+': '+text;node('conversation').append(turn);node('prompt').hidden=true;while(node('conversation').children.length>40)node('conversation').children[0].remove();node('conversation').scrollTop=node('conversation').scrollHeight;}
-    function clearPendingChat(){if(!chatState.context){chatState.reset();projectId=null;authorizedContext=null;node('project').value='';node('work').hidden=true;}}
+    function clearPendingChat(){chatState.cancelContextAnswer();if(!chatState.context){chatState.reset();projectId=null;authorizedContext=null;node('project').value='';node('work').hidden=true;}}
     function pauseForBackground(){stopSpeech();if(busy&&!saving&&!uncertain){sequence++;invalidate();clearPendingChat();setBusy(false);message('Request paused. Nothing saved. Send it again or request a fresh preview.');}}
     function writeDraft(){const draft=chatState.draft;if(draft.action)node('action').value=draft.action;
       for(const name of fieldNames)if(name!=='timezone')node(name).value=draft[name]??'';

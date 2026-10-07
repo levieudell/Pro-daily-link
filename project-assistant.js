@@ -38,8 +38,9 @@ function allowed(db, user, projectId, memberId, action = 'schedule') {
 }
 function activeProject(db, projectId) { return (db.projects || []).find(row => Number(row.id) === projectId && !row.archived && !['Completed', 'Cancelled'].includes(row.status)); }
 function membersFor(db, user, projectId) { return (db.team || []).filter(row => !row.archived && !row.archivedAt && row.status !== 'Inactive' && allowed(db, user, projectId, Number(row.id))); }
-function minimalContext(db, user, projectId) {
+function minimalContext(db, user, projectId, now = new Date()) {
   return { project: { id: projectId, name: activeProject(db, projectId).name }, timezone: validZone(db.company.timezone) ? db.company.timezone : '',
+    today: validZone(db.company.timezone) ? wallParts(now, db.company.timezone).date : '',
     members: membersFor(db, user, projectId).map(row => ({ id: Number(row.id), name: String(row.name), crew: String(row.crew || '') })),
     aiAvailable: Boolean(process.env.OPENAI_API_KEY), capabilities: { schedule: allowed(db, user, projectId), note: true, todo: true }, limits: 'Single-day or atomic batch scheduling: at most 31 calendar days, 10 people, 100 person/day combinations; explicit weekdays. Project notes and to-dos. No email, notification blast or public sharing.' };
 }
@@ -157,7 +158,7 @@ function createProjectAssistantHandler({ readDb, writeDb, body, json, authentica
     if (access.locked) return reply(402, { error: access.reason || 'Company access is unavailable.' });
     if (!ROLES.has(user.role)) return reply(403, { error: 'Project manager, admin, or owner permission required.' });
     if (!activeProject(db, projectId) || !allowed(db, user, projectId, null, 'note')) return reply(404, { error: 'Project not available.' });
-    const context = minimalContext(db, user, projectId);
+    const context = minimalContext(db, user, projectId, now());
     if (action === 'context' && req.method === 'GET') return reply(200, context);
     if (req.method !== 'POST' || action === 'context') return reply(405, { error: 'Method not allowed.' });
     const input = await body(req);
