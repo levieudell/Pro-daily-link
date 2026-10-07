@@ -75,6 +75,14 @@ function harness(options={}){
   return{context,document,calls,opens,renderBase,query:selector=>document.querySelector(selector),all:selector=>document.querySelectorAll(selector),respond(method,value){queues[method].push(value)},defer(method){const request=deferred();queues[method].push(request.promise);return request},async open(id=1){const result=await context.openProject(id);await flush();return result},click(selector){const node=document.querySelector(selector);assert.ok(node,'Missing synthetic control '+selector);node.click();return node},keydown(selector,key,extra={}){const node=document.querySelector(selector);assert.ok(node,'Missing synthetic key target '+selector);return document.dispatch('keydown',node,{key,...extra})},fireWindow(type,extra={}){for(const fn of windowListeners[type]||[])fn({type,...extra})}};
 }
 
+test('effective notes permissions gate create, edit and completion independently',async()=>{
+  const h=harness({items:[item({kind:'todo'})]});h.respond('GET',{items:[item({kind:'todo'})],permissions:{view:true,create:false,edit:false,complete:true}});await h.open();
+  assert.equal(h.query('[data-note-new="note"]').disabled,true);assert.equal(h.query('[data-note-edit]'),null);assert.ok(h.query('[data-note-toggle]'));const before=h.calls.length;h.click('[data-note-new="note"]');assert.equal(h.calls.length,before);
+  h.respond('GET',{items:[item({kind:'todo'})],permissions:{view:true,create:true,edit:true,complete:false}});h.click('[data-notes-refresh]');await flush();assert.equal(h.query('[data-note-toggle]'),null);assert.equal(h.query('[data-note-new="note"]').disabled,false);assert.ok(h.query('[data-note-edit]'));
+});
+test('revoked viewing clears delivered items and editor on reload',async()=>{
+  const h=harness({items:[item()]});await h.open();h.click('[data-note-edit]');h.query('[data-notes-text]').value='Local draft';h.respond('GET',Object.assign(new Error('Notes viewing disabled'),{status:403}));h.click('[data-notes-refresh]');await flush();assert.equal(h.all('[data-note-card]').length,0);assert.equal(h.query('[data-notes-editor]').hidden,true);assert.equal(h.query('[data-notes-text]').value,'');assert.equal(h.query('[data-note-new="note"]').disabled,true);
+});
 test('plain-text render escapes every note and history surface without mutating input',()=>{
   const attack='<img src=x onerror="attack()"> & <script>bad()</script>\'"',record=item({id:attack,text:attack,createdBy:attack,updatedBy:attack,revision:2,history:[{action:attack,by:attack,at:attack,before:{text:attack+' before'},after:{text:attack+' after',completed:true}}]}),before=clone(record),markup=projectNoteCard(record),document=fixtureDocument();document.body.innerHTML=markup;
   assert.equal(projectNoteEscape(null),'');assert.equal(projectNoteEscape(0),'0');assert.equal(projectNoteEscape('&<>"\''),'&amp;&lt;&gt;&quot;&#39;');assert.equal(projectNoteTime('not-a-date'),'Unknown time');assert.deepEqual(record,before);
