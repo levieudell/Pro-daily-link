@@ -18,10 +18,12 @@ async function prepareCheckout(company, request, env = process.env) {
   const retired = new Set(company.retiredStripeSubscriptionIds || []);
   let customer = company.stripeCustomerId;
   let previous = company.pendingCheckout;
-  let recovering = false;
+  let recovering = false, originalFreePeriod = company.stripeFreePeriod;
   const check = async id => {
     const subscription = verifySubscription(await request('/subscriptions/' + encodeURIComponent(id), null, 'GET'), id, { ...company, stripeCustomerId: customer }, env);
     if (!terminal(subscription)) throw fail('Use Manage billing for an existing subscription.');
+    const freeEnd = anchoredFreePeriod(subscription, company);
+    if (freeEnd) originalFreePeriod = { subscriptionId: subscription.id, end: freeEnd };
     retired.add(id); customer ||= idOf(subscription.customer); recovering = true;
   };
   if (company.stripeSubscriptionId) await check(company.stripeSubscriptionId);
@@ -46,6 +48,8 @@ async function prepareCheckout(company, request, env = process.env) {
     for (const subscription of list.data) {
       verifySubscription(subscription, subscription.id, { ...company, stripeCustomerId: customer }, env);
       if (!terminal(subscription)) throw fail('Use Manage billing for an existing subscription.');
+      const freeEnd = anchoredFreePeriod(subscription, company);
+      if (freeEnd) originalFreePeriod = { subscriptionId: subscription.id, end: freeEnd };
       retired.add(subscription.id); recovering = true;
     }
   }
@@ -56,6 +60,7 @@ async function prepareCheckout(company, request, env = process.env) {
     company.retiredStripeSubscriptionIds = [...retired];
     company.stripeCustomerId = customer;
     company.stripeTrialUsed = true;
+    if (originalFreePeriod) company.stripeFreePeriod = originalFreePeriod;
     delete company.stripeSubscriptionId;
   }
   return previous;
@@ -63,14 +68,29 @@ async function prepareCheckout(company, request, env = process.env) {
 
 function trialParameters(company, founder, now = Date.now()) {
   const end = Date.parse(company.trialEndsAt);
-  if (founder || company.stripeTrialUsed || !Number.isFinite(end) || end <= now) return {};
-  // Checkout requires >=48h at creation. Expire before that boundary, with
-  // one minute of margin and Checkout's minimum 30-minute session lifetime.
-  const expires = Math.min(Math.floor(now / 1000) + 86400, Math.floor(end / 1000) - 48 * 3600 - 60);
-  if (expires < Math.floor(now / 1000) + 1800) {
-    throw fail('Your remaining free trial is preserved. Checkout opens when your trial ends; please return then to choose a paid plan.');
-  }
-  return { 'subscription_data[trial_end]': Math.floor(end / 1000), expires_at: expires };
+  const originalFreePeriod = company.stripeFreePeriod?.end === Math.ceil(end / 1000);
+  if (founder || company.stripeTrialUsed && !originalFreePeriod || !Number.isFinite(end) || end <= now) return {};
+  // Hosted Checkout supports a future billing anchor with no initial proration.
+  // Keep the original deadline even in the final seconds; never reset the trial.
+  const anchor = Math.ceil(end / 1000);
+  if (anchor <= Math.floor(now / 1000)) return {};
+  return { 'subscription_data[billing_cycle_anchor]': anchor,
+    'subscription_data[proration_behavior]': 'none', payment_method_collection: 'always',
+    'subscription_data[metadata][original_trial_end]': String(anchor),
+    expires_at: Math.floor(now / 1000) + 86400 };
+}
+
+function anchoredFreePeriod(subscription, company, now = Date.now()) {
+  const end = Number(subscription.metadata?.original_trial_end);
+  return Number.isSafeInteger(end) && end > now / 1000 &&
+    subscription.billing_cycle_anchor === end && subscription.metadata?.company_id === String(company.id) &&
+    Math.ceil(Date.parse(company.trialEndsAt) / 1000) === end ? end : null;
+}
+
+function remainingAnchoredTrial(company, now = Date.now()) {
+  const period = company.stripeFreePeriod;
+  return company.subscriptionStatus === 'Active' && period?.subscriptionId === company.stripeSubscriptionId &&
+    period.end === Math.ceil(Date.parse(company.trialEndsAt) / 1000) && period.end > now / 1000 && Date.parse(company.trialEndsAt) > now;
 }
 
 function projectCapacityError(db, limit) {
@@ -78,4 +98,4 @@ function projectCapacityError(db, limit) {
     ? `Your plan includes ${limit} active projects. Archive a project or manage your plan.` : null;
 }
 
-module.exports = { prepareCheckout, trialParameters, projectCapacityError, verifySubscription };
+module.exports = { prepareCheckout, trialParameters, projectCapacityError, verifySubscription, anchoredFreePeriod, remainingAnchoredTrial };

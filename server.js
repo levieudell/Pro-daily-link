@@ -182,7 +182,7 @@ function companyTime24(company,date=new Date()){const timezone=company?.timezone
 function trialDaysRemaining(company){if(!company.trialEndsAt)return 0;return Math.max(0,Math.ceil((new Date(company.trialEndsAt)-new Date())/86400000))}
 function billingPlan(company){return BILLING_PLANS[company.plan]||BILLING_PLANS.pro}
 function billingOwnerAllowed(req){return process.env.PDL_REQUIRE_AUTH!=='1'||req.auth?.user.role==='owner'}
-function accountAccess(company){const days=trialDaysRemaining(company),demo=Boolean(company.demo||company.id==='northstar'),exempt=Boolean(company.billingExempt),accountType=['standard','early_adopter','legacy'].includes(company.accountType)?company.accountType:'standard',status=demo?'Demo':exempt?(accountType==='legacy'?'Legacy':'Complimentary'):company.subscriptionStatus||(company.trialEndsAt?(days>0?'Trial':'Trial ended'):'Pilot'),locked=!exempt&&!['Active','Pilot','Demo','Legacy','Complimentary'].includes(status)&&!(status==='Trial'&&days>0),reason=status==='Trial ended'?'Your 14-day free trial has ended. Choose a plan to continue using Pro Daily Link.':status==='Past due'?'Your subscription payment needs attention. Update the payment method to restore access.':status==='Paused'?'This subscription is paused. The Account Owner can restore it from billing.':status==='Cancelled'?'This subscription is cancelled. Choose a plan to restore access.':status==='Incomplete'?'Finish setting up billing to access the workspace.':locked?'Choose a plan to restore workspace access.':'';return{status,locked,reason,daysRemaining:days,demo,exempt,accountType}}
+function accountAccess(company){const days=trialDaysRemaining(company),demo=Boolean(company.demo||company.id==='northstar'),exempt=Boolean(company.billingExempt),accountType=['standard','early_adopter','legacy'].includes(company.accountType)?company.accountType:'standard',status=demo?'Demo':exempt?(accountType==='legacy'?'Legacy':'Complimentary'):(subscriptionCheckout.remainingAnchoredTrial(company)?'Trial':company.subscriptionStatus)||(company.trialEndsAt?(days>0?'Trial':'Trial ended'):'Pilot'),locked=!exempt&&!['Active','Pilot','Demo','Legacy','Complimentary'].includes(status)&&!(status==='Trial'&&days>0),reason=status==='Trial ended'?'Your 14-day free trial has ended. Choose a plan to continue using Pro Daily Link.':status==='Past due'?'Your subscription payment needs attention. Update the payment method to restore access.':status==='Paused'?'This subscription is paused. The Account Owner can restore it from billing.':status==='Cancelled'?'This subscription is cancelled. Choose a plan to restore access.':status==='Incomplete'?'Finish setting up billing to access the workspace.':locked?'Choose a plan to restore workspace access.':'';return{status,locked,reason,daysRemaining:days,demo,exempt,accountType}}
 function billingSummary(db){
   const base=billingPlan(db.company),access=accountAccess(db.company),founder=founderBilling.isFounder(db.company);
   const planId=BILLING_PLANS[db.company.plan]?db.company.plan:'pro',protectedPrice=founder&&(!db.company.founder.protectedUntil||new Date(db.company.founder.protectedUntil)>new Date());
@@ -203,8 +203,11 @@ async function applyStripeSubscription(db,subscription){
   db.company.stripeTrialUsed=true;
   db.company.stripeCustomerId=typeof subscription.customer==='string'?subscription.customer:subscription.customer?.id;
   db.company.subscriptionStatus=({active:'Active',trialing:'Trial',past_due:'Past due',unpaid:'Past due',paused:'Paused',canceled:'Cancelled',incomplete:'Incomplete',incomplete_expired:'Cancelled'})[subscription.status]||subscription.status;
+  const freeEnd=info.founder?null:subscriptionCheckout.anchoredFreePeriod(subscription,db.company);
+  if(freeEnd)db.company.stripeFreePeriod={subscriptionId:subscription.id,end:freeEnd};else delete db.company.stripeFreePeriod;
   if(info.founder && subscription.status==='trialing')db.company.subscriptionStatus='Incomplete';
   db.company.nextBillingAt=(subscription.current_period_end||subscription.items?.data?.[0]?.current_period_end)?new Date((subscription.current_period_end||subscription.items.data[0].current_period_end)*1000).toISOString():null;
+  if(freeEnd&&subscription.status==='active')db.company.nextBillingAt=new Date(freeEnd*1000).toISOString();
   if(info.founder && subscription.status==='active' && db.company.founder.assistedSetup){
     const platform=readPlatform();platform.onboardingOrders ||= [];
     const id='assisted-setup-'+subscription.id;
@@ -922,29 +925,34 @@ async function api(req,res,url){
     try{
       const publicUrl=String(process.env.PDL_PUBLIC_URL||'').replace(/\/$/,'');
       if(!publicUrl||!process.env.STRIPE_WEBHOOK_SECRET)throw founderBilling.fail('Billing is not connected yet.',503);
+      const checkoutLive=/^(sk|rk)_live_/.test(process.env.STRIPE_SECRET_KEY||'');
       const previous=await subscriptionCheckout.prepareCheckout(db.company,stripeRequest);
       const choice=founderBilling.checkout(db.company,input);
       await founderBilling.validatePrice(stripeRequest,choice.priceId,choice.founder?choice.amount:choice.cycle==='annual'?plan.annualPrice:plan.price,choice.cycle);
       if(choice.setup)await founderBilling.validatePrice(stripeRequest,process.env.STRIPE_PRICE_ASSISTED_SETUP,499,null);
-      const trialParams=subscriptionCheckout.trialParameters(db.company,choice.founder);
+      let trialParams=subscriptionCheckout.trialParameters(db.company,choice.founder);
+      const savedAnchor=Number(previous?.params?.['subscription_data[billing_cycle_anchor]']);
+      if(previous?.id&&savedAnchor&&savedAnchor===Math.ceil(Date.parse(db.company.trialEndsAt)/1000)&&!choice.founder&&!db.company.stripeTrialUsed)trialParams=Object.fromEntries(['subscription_data[billing_cycle_anchor]','subscription_data[proration_behavior]','subscription_data[metadata][original_trial_end]','payment_method_collection'].map(key=>[key,previous.params[key]]));
       if(previous?.id){
         const existing=previous.session;
-        const sameTrial=Number(previous.params?.['subscription_data[trial_end]']||0)===Number(trialParams['subscription_data[trial_end]']||0);
+        const sameTrial=['subscription_data[billing_cycle_anchor]','subscription_data[proration_behavior]','subscription_data[metadata][original_trial_end]','payment_method_collection'].every(key=>String(previous.params?.[key]||'')===String(trialParams[key]||''))&&previous.params?.['line_items[0][price]']===choice.priceId;
         if(existing.status==='open'&&previous.plan===input.plan&&previous.cycle===choice.cycle&&sameTrial){writeDb(db);return json(res,200,{url:existing.url})}
         if(existing.status==='open')await stripeRequest('/checkout/sessions/'+encodeURIComponent(previous.id)+'/expire',{});
+        trialParams=subscriptionCheckout.trialParameters(db.company,choice.founder);
       }
       if(previous?.status==='creating'&&(previous.plan!==input.plan||previous.cycle!==choice.cycle))throw founderBilling.fail('Retry the previous plan and billing period first so checkout can be recovered safely.',409);
       const params={mode:'subscription',payment_method_types:'card','payment_method_types[0]':'card','line_items[0][price]':choice.priceId,'line_items[0][quantity]':1,success_url:publicUrl+'/app?tenant='+encodeURIComponent(db.company.id)+'&billing=success&session_id={CHECKOUT_SESSION_ID}',cancel_url:publicUrl+'/app?tenant='+encodeURIComponent(db.company.id)+'&billing=cancelled',client_reference_id:db.company.id,'metadata[company_id]':db.company.id,'subscription_data[metadata][company_id]':db.company.id,'subscription_data[metadata][plan]':input.plan,'subscription_data[metadata][billing_cycle]':choice.cycle};
       delete params.payment_method_types;
       Object.assign(params,trialParams);
+      if(trialParams['subscription_data[billing_cycle_anchor]'])params['custom_text[submit][message]']='Your original free trial ends '+db.company.trialEndsAt+'. No charge before then. Your selected subscription starts billing at that deadline; completing checkout after it requires payment.';
       if(choice.founder){params['subscription_data[metadata][offer]']='founder';params['custom_text[submit][message]']='Founder pricing applies for 24 months from first payment. We will contact you before it ends to review renewal options. No automatic regular-price increase. No free trial.';}
       if(choice.setup){params['line_items[1][price]']=process.env.STRIPE_PRICE_ASSISTED_SETUP;params['line_items[1][quantity]']=1;}
       if(db.company.stripeCustomerId)params.customer=db.company.stripeCustomerId;else params.customer_email=(db.users||[]).find(row=>row.role==='owner'&&row.status==='Active')?.email;
-      if(previous?.status==='creating'&&(!previous.params||!previous.createdAt||!Number.isFinite(Date.parse(previous.createdAt))||Date.now()-Date.parse(previous.createdAt)>=23*3600000||previous.params['line_items[0][price]']!==choice.priceId||previous.params.expires_at&&Number(previous.params.expires_at)*1000<=Date.now()))throw founderBilling.fail('The previous checkout needs support review before another attempt can be opened.',409);
+      if(previous?.status==='creating'&&(previous.livemode!==checkoutLive||!previous.params||!previous.createdAt||!Number.isFinite(Date.parse(previous.createdAt))||Date.now()-Date.parse(previous.createdAt)>=23*3600000||previous.params['line_items[0][price]']!==choice.priceId||previous.params.expires_at&&Number(previous.params.expires_at)*1000<=Date.now()||previous.params['subscription_data[billing_cycle_anchor]']&&Number(previous.params['subscription_data[billing_cycle_anchor]'])*1000<=Date.now()))throw founderBilling.fail('The previous checkout needs support review before another attempt can be opened.',409);
       const attempt=previous?.status==='creating'?previous.attempt:crypto.randomUUID(),checkoutParams=previous?.status==='creating'?previous.params:params,createdAt=previous?.status==='creating'?previous.createdAt:new Date().toISOString();
-      db.company.pendingCheckout={attempt,params:checkoutParams,createdAt,plan:input.plan,cycle:choice.cycle,status:'creating'};writeDb(db);
+      db.company.pendingCheckout={attempt,livemode:checkoutLive,params:checkoutParams,createdAt,plan:input.plan,cycle:choice.cycle,status:'creating'};writeDb(db);
       const session=await stripeRequest('/checkout/sessions',checkoutParams,'POST','checkout-'+db.company.id+'-'+attempt);
-      db.company.pendingCheckout={attempt,id:session.id,params:checkoutParams,createdAt,plan:input.plan,cycle:choice.cycle,status:'open'};writeDb(db);
+      db.company.pendingCheckout={attempt,livemode:checkoutLive,id:session.id,params:checkoutParams,createdAt,plan:input.plan,cycle:choice.cycle,status:'open'};writeDb(db);
       return json(res,200,{url:session.url});
     }catch(error){return json(res,error.statusCode||502,{error:error.statusCode?error.message:'Checkout could not be opened. Please try again or contact support.'})}
   }

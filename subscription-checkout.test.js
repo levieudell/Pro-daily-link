@@ -44,7 +44,7 @@ global.fetch = async (url, options = {}) => {
     let session = attempts.get(key);
     if (session) assert.deepEqual(session.params, params, 'provider retry parameters must be byte-equivalent');
     else {
-      if (params['subscription_data[trial_end]']) assert.ok(Number(params['subscription_data[trial_end]']) * 1000 - Date.now() >= 48 * 3600000);
+      if (params['subscription_data[billing_cycle_anchor]']) assert.ok(Number(params['subscription_data[billing_cycle_anchor]']) * 1000 - Date.now() > 0);
       session = { id: 'cs_mock_' + (++created), client_reference_id: params.client_reference_id, livemode: false,
         status: 'open', customer: params.customer || null, url: 'https://checkout.example.invalid/' + created, params };
       attempts.set(key, session); sessions.set(session.id, session);
@@ -103,7 +103,7 @@ async function webhook(subscription, suffix) {
       const c = await signup(plan), end = c.read().company.trialEndsAt;
       const result = await c.request('/api/billing/checkout', 'POST', { plan, billingCycle });
       assert.equal(result.status, 200); const pending = c.read().company.pendingCheckout;
-      assert.equal(Number(pending.params['subscription_data[trial_end]']), Math.floor(Date.parse(end) / 1000));
+      assert.equal(Number(pending.params['subscription_data[billing_cycle_anchor]']), Math.ceil(Date.parse(end) / 1000));
       assert.equal(c.read().company.trialEndsAt, end); assert.equal((await c.request('/api/billing')).data.status, 'Trial');
       assert.equal(pending.params['line_items[0][price]'], `price_${plan}_${billingCycle}`);
     }
@@ -118,6 +118,12 @@ async function webhook(subscription, suffix) {
     process.env.STRIPE_PRICE_STARTER = 'price_rebound';
     assert.equal((await c.request('/api/billing/checkout', 'POST', { plan: 'starter' })).status, 409, 'changed configured price cannot replay different provider parameters');
     process.env.STRIPE_PRICE_STARTER = 'price_starter_monthly';
+    process.env.STRIPE_SECRET_KEY='sk_live_synthetic';
+    assert.equal((await c.request('/api/billing/checkout','POST',{plan:'starter'})).status,503,'ambiguous checkout never replays in another provider mode');
+    prices.price_starter_monthly.livemode=true;
+    assert.equal((await c.request('/api/billing/checkout','POST',{plan:'starter'})).status,409,'stored creation attempt is bound to its provider mode');
+    prices.price_starter_monthly.livemode=false;
+    process.env.STRIPE_SECRET_KEY='sk_test_synthetic';
     assert.equal((await c.request('/api/billing/checkout', 'POST', { plan: 'growth' })).status, 409);
     const recovered = await Promise.all(Array.from({ length: 4 }, () => c.request('/api/billing/checkout', 'POST', { plan: 'starter' })));
     assert.ok(recovered.every(r => r.status === 200 && r.data.url === recovered[0].data.url));
@@ -129,23 +135,89 @@ async function webhook(subscription, suffix) {
     session.status = 'expired';
     assert.equal((await c.request('/api/billing/checkout', 'POST', { plan: 'growth' })).status, 200);
     const changed = c.read().company.pendingCheckout;
-    assert.equal(changed.plan, 'growth'); assert.equal(changed.params['subscription_data[trial_end]'], Math.floor(Date.parse(end) / 1000));
-    const trialing = providerSubscription(c, 'trialing', 'sub_mock_trialing', 'price_growth_monthly');
+    assert.equal(changed.plan, 'growth'); assert.equal(changed.params['subscription_data[billing_cycle_anchor]'], Math.ceil(Date.parse(end) / 1000));
+    const trialing = providerSubscription(c, 'active', 'sub_mock_trialing', 'price_growth_monthly');
+    Object.assign(trialing,{billing_cycle_anchor:Math.ceil(Date.parse(end)/1000),metadata:{company_id:c.id,original_trial_end:String(Math.ceil(Date.parse(end)/1000))}});
     session = sessions.get(changed.id); Object.assign(session, { status: 'complete', customer: trialing.customer, subscription: trialing.id });
     assert.equal((await c.request('/api/billing/confirm?session_id=' + session.id)).status, 200);
-    assert.equal(c.read().company.subscriptionStatus, 'Trial'); assert.equal(c.read().company.plan, 'growth');
+    assert.equal(c.read().company.subscriptionStatus, 'Active'); assert.equal((await c.request('/api/billing')).data.status,'Trial'); assert.equal(c.read().company.plan, 'growth');
     assert.equal(c.read().company.trialEndsAt, end, 'provider trial confirmation keeps original local deadline');
 
-    const near = await signup(); near.mutate(db => { db.company.trialEndsAt = new Date(Date.now() + 36 * 3600000).toISOString(); });
-    const nearEnd = near.read().company.trialEndsAt, count = created;
-    const blocked = await near.request('/api/billing/checkout', 'POST', { plan: 'starter' });
-    assert.equal(blocked.status, 409); assert.match(blocked.data.error, /remaining free trial is preserved/);
-    assert.equal(near.read().company.trialEndsAt, nearEnd); assert.equal(created, count);
-    near.mutate(db => { db.company.trialEndsAt = new Date(Date.now() - 1000).toISOString(); });
-    assert.equal((await near.request('/api/billing/checkout', 'POST', { plan: 'starter' })).status, 200);
-    assert.equal(near.read().company.pendingCheckout.params['subscription_data[trial_end]'], undefined);
-    assert.deepEqual(policy.trialParameters({ trialEndsAt: end, stripeTrialUsed: true }, false), {});
-    assert.deepEqual(policy.trialParameters({ trialEndsAt: end }, true), {});
+    // Final 48h and the last seconds use the same no-proration anchor.
+    for (const remaining of [48*3600000,36*3600000,1000]) {
+      const near=await signup(); near.mutate(db=>{db.company.trialEndsAt=new Date(Date.now()+remaining).toISOString()});
+      const nearEnd=near.read().company.trialEndsAt;
+      assert.equal((await near.request('/api/billing/checkout','POST',{plan:'starter'})).status,200);
+      const p=near.read().company.pendingCheckout;
+      assert.equal(p.params['subscription_data[billing_cycle_anchor]'],Math.ceil(Date.parse(nearEnd)/1000));
+      assert.equal(p.params['subscription_data[proration_behavior]'],'none');
+      assert.equal(p.params.payment_method_collection,'always');
+      assert.equal(p.params['subscription_data[trial_end]'],undefined);
+      assert.equal(near.read().company.trialEndsAt,nearEnd);
+    }
+    const near=await signup(); near.mutate(db=>{db.company.trialEndsAt=new Date(Date.now()-1000).toISOString()});
+    assert.equal((await near.request('/api/billing/checkout','POST',{plan:'starter'})).status,200);
+    assert.equal(near.read().company.pendingCheckout.params['subscription_data[billing_cycle_anchor]'],undefined);
+    assert.deepEqual(policy.trialParameters({trialEndsAt:end,stripeTrialUsed:true},false),{});
+    assert.deepEqual(policy.trialParameters({trialEndsAt:end},true),{});
+    // Active can show a free period; adverse provider states always win.
+    for(const status of ['past_due','unpaid','paused','canceled','incomplete']) {
+      trialing.status=status;
+      assert.equal((await webhook(trialing,'adverse_'+status)).status,200);
+      const b=(await c.request('/api/billing')).data;
+      assert.notEqual(b.status,'Trial'); assert.equal(b.locked,true);
+    }
+    trialing.status='active';
+    assert.equal((await webhook(trialing,'restored_active')).status,200);
+    assert.equal((await c.request('/api/account-access')).data.status,'Trial');
+    // The original deadline elapses dynamically without waiting for a webhook.
+    assert.equal(policy.remainingAnchoredTrial(c.read().company,Date.parse(end)+1),false);
+    assert.equal(policy.anchoredFreePeriod(trialing,c.read().company,Date.parse(end)+1000),null);
+
+    // Cancellation of the original anchored free period never forfeits its deadline.
+    trialing.status='canceled'; await webhook(trialing,'initial_trial_cancel');
+    assert.equal((await c.request('/api/billing/checkout','POST',{plan:'starter'})).status,200);
+    assert.equal(c.read().company.pendingCheckout.params['subscription_data[billing_cycle_anchor]'],Math.ceil(Date.parse(end)/1000));
+    assert.equal(c.read().company.trialEndsAt,end);
+    // Missed confirmation/webhook still recovers provider-verified original free eligibility.
+    const missed=await signup(); assert.equal((await missed.request('/api/billing/checkout','POST',{plan:'starter'})).status,200);
+    const missedPending=missed.read().company.pendingCheckout, missedSub=providerSubscription(missed,'canceled');
+    Object.assign(missedSub,{billing_cycle_anchor:missedPending.params['subscription_data[billing_cycle_anchor]'],metadata:{company_id:missed.id,original_trial_end:missedPending.params['subscription_data[metadata][original_trial_end]']}});
+    Object.assign(sessions.get(missedPending.id),{status:'complete',customer:missedSub.customer,subscription:missedSub.id});
+    assert.equal(missed.read().company.stripeFreePeriod,undefined);
+    assert.equal((await missed.request('/api/billing/checkout','POST',{plan:'growth'})).status,200);
+    assert.equal(missed.read().company.pendingCheckout.params['subscription_data[billing_cycle_anchor]'],missedPending.params['subscription_data[billing_cycle_anchor]']);
+    assert.equal(missed.read().company.pendingCheckout.params['subscription_data[proration_behavior]'],'none');
+    // Known open checkout is reused after deadline; a new plan starts normal billing then.
+    const crossing=await signup(); crossing.mutate(db=>{db.company.trialEndsAt=new Date(Date.now()+1000).toISOString()});
+    assert.equal((await crossing.request('/api/billing/checkout','POST',{plan:'starter'})).status,200);
+    const crossingSession=crossing.read().company.pendingCheckout.id;
+    await new Promise(resolve=>setTimeout(resolve,1100));
+    assert.equal((await crossing.request('/api/billing/checkout','POST',{plan:'starter'})).status,200);
+    assert.equal(crossing.read().company.pendingCheckout.id,crossingSession);
+    assert.equal((await crossing.request('/api/billing/checkout','POST',{plan:'growth'})).status,200);
+    assert.equal(sessions.get(crossingSession).status,'expired');
+    assert.equal(crossing.read().company.pendingCheckout.params['subscription_data[billing_cycle_anchor]'],undefined);
+    // Completing the selected anchored checkout after its deadline activates normally.
+    const completed=await signup(); completed.mutate(db=>{db.company.trialEndsAt=new Date(Date.now()+1000).toISOString()});
+    assert.equal((await completed.request('/api/billing/checkout','POST',{plan:'starter'})).status,200);
+    const completePending=completed.read().company.pendingCheckout, completeSub=providerSubscription(completed,'active');
+    Object.assign(completeSub,{billing_cycle_anchor:completePending.params['subscription_data[billing_cycle_anchor]'],metadata:{company_id:completed.id,original_trial_end:completePending.params['subscription_data[metadata][original_trial_end]']}});
+    await new Promise(resolve=>setTimeout(resolve,2100));
+    Object.assign(sessions.get(completePending.id),{status:'complete',customer:completeSub.customer,subscription:completeSub.id});
+    assert.equal((await completed.request('/api/billing/confirm?session_id='+completePending.id)).status,200);
+    assert.equal((await completed.request('/api/billing')).data.status,'Active');
+    completeSub.status='canceled'; await webhook(completeSub,'canceled_after_deadline');
+    assert.equal((await completed.request('/api/billing/checkout','POST',{plan:'starter'})).status,200);
+    assert.equal(completed.read().company.pendingCheckout.params['subscription_data[billing_cycle_anchor]'],undefined);
+    // An unresolved creation crossing its anchor fails closed, without a new charge attempt.
+    const ambiguous=await signup(); ambiguous.mutate(db=>{db.company.trialEndsAt=new Date(Date.now()+1000).toISOString()});
+    failAfterCreate=true; assert.equal((await ambiguous.request('/api/billing/checkout','POST',{plan:'starter'})).status,502);
+    const ambiguousAttempt=ambiguous.read().company.pendingCheckout.attempt, callsBefore=calls.length;
+    await new Promise(resolve=>setTimeout(resolve,2100));
+    assert.equal((await ambiguous.request('/api/billing/checkout','POST',{plan:'starter'})).status,409);
+    assert.equal(ambiguous.read().company.pendingCheckout.attempt,ambiguousAttempt);
+    assert.equal(calls.slice(callsBefore).filter(call=>call.pathname==='/checkout/sessions').length,0);
 
     // Provider authority, retained customer, retired session, and duplicate guard.
     const returning = await signup(), old = providerSubscription(returning, 'canceled');
@@ -169,7 +241,7 @@ async function webhook(subscription, suffix) {
     const retry = await Promise.all([1, 2, 3].map(() => returning.request('/api/billing/checkout', 'POST', { plan: 'starter' })));
     assert.ok(retry.every(r => r.status === 200 && r.data.url === retry[0].data.url)); assert.equal(created, recoveredCount + 1);
     assert.equal(returning.read().company.stripeCustomerId, old.customer); assert.equal(returning.read().company.stripeSubscriptionId, undefined);
-    assert.equal(returning.read().company.pendingCheckout.params['subscription_data[trial_end]'], undefined, 'never grant returning subscriber another trial');
+    assert.equal(returning.read().company.pendingCheckout.params['subscription_data[billing_cycle_anchor]'], undefined, 'never grant returning subscriber another trial');
     assert.ok(returning.read().company.retiredStripeSubscriptionIds.includes(old.id));
     assert.equal((await webhook(old, 'old_before_new')).status, 200); assert.equal(returning.read().company.stripeSubscriptionId, undefined);
     assert.equal((await returning.request('/api/billing/confirm?session_id=' + oldSession.id)).status, 409);
