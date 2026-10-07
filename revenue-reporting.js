@@ -128,6 +128,9 @@ function createRevenueReporter({ getSecret = () => process.env.STRIPE_SECRET_KEY
     for (const subscription of subscriptions) {
       lifecycle.check(); if (!['active', 'past_due'].includes(subscription.status)) continue;
       if (subscription.trial_end && subscription.trial_end > snapshot.valueOf() / 1000) continue;
+      // Anchored Checkout's initial free period is active at Stripe, but is not paid MRR.
+      const freeEnd = Number(subscription.metadata?.original_trial_end);
+      if (Number.isSafeInteger(freeEnd) && freeEnd > snapshot.valueOf() / 1000 && subscription.billing_cycle_anchor === freeEnd) continue;
       const company = resolveCompany(subscription.customer, subscription.id);
       const items = subscription.items?.has_more ? await list((params, options) => client.subscriptionItems.list(params, options), { subscription: subscription.id }) : subscription.items?.data;
       if (!Array.isArray(items)) throw new ReportError('invalid_data');

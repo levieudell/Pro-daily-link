@@ -71,6 +71,7 @@ async function processEvent(event, { stripeRequest, withCompany, applySubscripti
     if (db.company.stripeCustomerId && db.company.stripeCustomerId !== idOf(subscription.customer)) {
       throw failure('Stripe customer mismatch', 400);
     }
+    if ((db.company.retiredStripeSubscriptionIds || []).includes(subscriptionId)) return;
     if (db.company.stripeSubscriptionId && db.company.stripeSubscriptionId !== subscriptionId) {
       // Events for a superseded subscription must not cancel the current one.
       return;
