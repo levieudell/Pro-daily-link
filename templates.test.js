@@ -48,6 +48,7 @@ server.listen(4203, async () => {
       const $ = () => globalThis.__customHost;
       const projects = [0,1,2,3].map(id => ({id: id+10})), company = {id:'synthetic-tenant'}, currentUser = {id:1};
       function signedInCompanyId(){return company.id}
+      ${appJs.split('\n').find(line=>line.startsWith('function reportWorkSuggestions('))}
       ${appJs.slice(appJs.indexOf('function offlineReportStorageKey'), appJs.indexOf('function collectCustomFields'))}
       return {readOfflineDraft, writeOfflineDraft, storageKey:offlineReportStorageKey, setTemplatesOn(value){templatesOnFlag = value}};
     `);
