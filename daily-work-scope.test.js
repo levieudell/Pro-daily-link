@@ -38,4 +38,35 @@ const savedChoice={description:'FLOORING',estimateItemId:'line-floor',needsScope
 assert.equal(scopeProposal(groundReviewSuggestions(propose('We tiled the bathroom walls.'),'We tiled the bathroom walls.')[0],floor).mode,'custom');
 assert.equal(classify('Installed bathroom wall tile.',[]).mode,'custom');
 assert.equal(classify('Installed bathroom floor tile.').laborHours,undefined,'Scope matching has no labor calculation');
+// Same conservative policy across trades; this is not a wall-tile special case.
+const nonTile=[
+  ['Painted kitchen walls.','Kitchen wall painting'],
+  ['Repaired plumbing pipes.','Plumbing'],
+  ['Poured 2.5 CY concrete.','Concrete placement'],
+  ['Framed basement walls.','Basement wall framing'],
+  ['Patched drywall.','Drywall'],
+  ['Finished roofing.','Roofing'],
+  ['Excavated the kitchen trench.','Excavation'],
+  ['Replaced electrical outlets.','Electrical'],
+  ['Installed 20 LF basement trim.','Basement trim'],
+  ['Cleaned the garage.','General cleaning'],
+  ['Measured the kitchen.','Site measuring']
+];
+for(const [description,name] of nonTile){
+  const extracted=propose(description);assert.equal(extracted.length,1,description+' survives no-provider extraction');assert.equal(extracted[0].laborHours,0);assert.equal(classify(description).mode,'custom',description+' differs from FLOORING');
+  const item={id:'trade-line',name,unit:'EA'};assert.equal(classify(description,[item]).estimateItemId,'trade-line',description+' has a genuine estimate match');
+  const provider=normalize([{description:name,evidence:description,laborHours:0}],description)[0];assert.equal(provider.scopeUnverified,false);assert.equal(scopeProposal(provider,floor).mode,'custom');
+}
+assert.equal(propose('Poured 2.5 CY concrete.')[0].quantity,2.5);assert.equal(propose('Installed 20 LF basement trim.')[0].quantity,20);
+for(const note of ['We will paint the kitchen walls.','We did not repair plumbing pipes.','Tomorrow replaced electrical outlets.','Not patched drywall.','I have not painted 20 SF of kitchen walls.','I have not replaced three units of electrical equipment.','Painting is planned for tomorrow.','Repairing is scheduled for tomorrow.'])assert.equal(propose(note).length,0,note+' stays excluded');
+for(const [description,items] of [
+  ['Installed plumbing and electrical.',floor],
+  ['Patched drywall in the kitchen and bathroom.',floor],
+  ['Painted kitchen walls.',[{id:1,name:'Kitchen wall painting'},{id:2,name:'Kitchen wall painting allowance'}]],
+  ['Repaired the railing.',floor],
+  ['Worked on the kitchen.',floor],
+  ['Patched drywall.',[{id:1,name:'Miscellaneous allowance'}]]
+])assert.equal(classify(description,items).mode,'review',description+' needs a human choice');
+assert.equal(classify('Patched drywall.',[]).mode,'custom','Known work with no estimate lines is custom');
+const unknown=propose('Replaced three units of door hardware.')[0];assert(unknown);assert.equal(classify(unknown.description).mode,'review');assert.equal(scopeProposal({...unknown,custom:true},floor).mode,'custom','Every proposal permits explicit manual Custom selection');assert.equal(unknown.quantity,3);assert.equal(unknown.laborHours,0);
 console.log('Daily work scope: wall/floor/activity/material/location ambiguity, grounded provider rename, saved selections and bounded metadata passed.');
