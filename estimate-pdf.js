@@ -101,7 +101,7 @@ function estimateDraft(text) {
       if (!unit) warn('Some lines have no unit in the PDF. Enter and verify each missing unit before approving.');
       if (amountMismatch) warn('Quantity × rate does not match a line amount. Verify the PDF and amount before approving.');
       if (amount == null) warn('Some selling line amounts are unknown. Review amounts separately from unit rates.');
-      lines.push({ description, quantity, unit, unitPrice: rate, amount, confidence: !header || quantity == null || !unit || amount == null || amountMismatch ? 'medium' : 'high' });
+      lines.push({ description, quantity, unit, unitPrice: rate, amount, budgetHours: null, confidence: !header || quantity == null || !unit || amount == null || amountMismatch ? 'medium' : 'high' });
     } else if (/\d|\$/.test(row)) {
       warn('Some estimate text could not be extracted safely. Compare all lines with the PDF before approving.'); pending = [];
     } else {

@@ -55,7 +55,7 @@ function run() {
   assert.equal(byName('positioned-cells').lines[0].unit, '');
   assert.match(byName('qty-rate-amount').reviewWarnings.join(' '), /no unit/);
   assert.equal(byName('explicit-unit').lines[0].unit, 'SF');
-  assert.equal(byName('unit-rate-amount-labor').lines[0].budgetHours, undefined);
+  assert.equal(byName('unit-rate-amount-labor').lines[0].budgetHours, null);
   assert.match(byName('unit-rate-amount-labor').reviewWarnings.join(' '), /Labor information/);
   assert.equal(byName('wrapped-description').lines[0].description, 'Concrete slab at rear entrance');
   for (const name of ['ambiguous-without-columns', 'ambiguous-extra-amounts', 'wrapped-numbered-description']) { assert.equal(byName(name).lines.length, 0, name); assert.ok(byName(name).reviewWarnings.length, name); }
@@ -66,7 +66,7 @@ function run() {
   assert.equal(byName('hidden-rate').lines[0].quantity, 100); assert.equal(byName('hidden-rate').lines[0].amount, 5000);
   for (const name of ['reordered-columns', 'builder-cost', 'non-finite-quantity']) { assert.equal(byName(name).lines.length, 0, name); assert.ok(byName(name).reviewWarnings.length, name); }
   assert.equal(byName('not-included').lines.length, 1); assert.equal(byName('not-included').lineTotal, 5000); assert.match(byName('not-included').reviewWarnings.join(' '), /excluded/);
-  assert.equal(byName('priced-labor-scope').lines.length, 1); assert.equal(byName('priced-labor-scope').lines[0].budgetHours, undefined);
+  assert.equal(byName('priced-labor-scope').lines.length, 1); assert.equal(byName('priced-labor-scope').lines[0].budgetHours, null);
   assert.equal(byName('desktop-markup').lines.length,0); assert.match(byName('desktop-markup').reviewWarnings.join(' '),/cost labels/);
   assert.equal(byName('revenue-only').lines[0].quantity,null); assert.equal(byName('revenue-only').lines[0].amount,1917);
   assert.equal(byName('headerless-two-prices').lines[0].amount,null); assert.match(byName('headerless-two-prices').reviewWarnings.join(' '),/rightmost price/);
