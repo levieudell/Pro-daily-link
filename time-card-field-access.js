@@ -80,4 +80,4 @@ function syncDraftReport(db, card) {
   return true;
 }
 
-module.exports = { activeWorkday, completeOwnWorkday, syncDraftReport, access, lockedPeriod, revision, status, validBreaks };
+module.exports = { activeWorkday, canCompleteWorkday, completeOwnWorkday, syncDraftReport, access, lockedPeriod, revision, status, validBreaks };

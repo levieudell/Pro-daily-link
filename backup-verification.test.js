@@ -83,7 +83,8 @@ async function verify(input = snapshot, extra = {}) {
     assert.equal(backup.publicStatus(directory, otherId).fresh, false, 'one tenant cannot establish coverage for another');
     assert.equal(backup.backupDue(directory, companyId), false);
     assert.equal(receipt().verification.sourceRevision, 7);
-    assert.equal(fs.statSync(backup.receiptFile(directory, companyId)).mode & 0o777, 0o600);
+    // Windows reports synthesized mode bits; Linux CI retains POSIX permission coverage.
+    if (process.platform !== 'win32') assert.equal(fs.statSync(backup.receiptFile(directory, companyId)).mode & 0o777, 0o600);
     const publicText = JSON.stringify(backup.publicStatus(directory, companyId));
     for (const secret of [companyId, snapshot.company.name, 'Private synthetic note', receipt().verification.sha256, receipt().verification.objectKey]) {
       assert.equal(publicText.includes(secret), false, 'public health must not disclose receipt details');
