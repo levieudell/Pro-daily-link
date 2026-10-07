@@ -42,10 +42,10 @@ const health=new Function('productionData',source.slice(healthStart,healthEnd).j
 assert.match(health({id:1,status:'On track'}).reason,/Add both planned/,'Unknown budget prevents a misleading aggregate labor risk comparison');
 
 const dashboardSource=source.find(line=>line.startsWith('function dashboardProduction('));
-const date=new Date();date.setHours(0,0,0,0);const day=date.toISOString().slice(0,10);
+class FixtureDate extends Date{constructor(...args){super(...(args.length?args:['2026-10-07T18:00:00Z']))}}const day='2026-10-06';
 const daily=[{status:'Approved',dateIso:day,project:0,productionEntries:[{estimateItemId:1,quantity:10,laborHours:3},{estimateItemId:2,quantity:10,laborHours:4}],laborEntries:[]}];
 const scopes=[{estimateItems:[{id:1,plannedQuantity:100,budgetHours:18},{id:2,plannedQuantity:100,budgetHours:null}]}];
-const dashboard=new Function('reports','projects',dashboardSource+';return dashboardProduction;')(daily,scopes);
+const dashboard=new Function('reports','projects','Date',dashboardSource+';return dashboardProduction;')(daily,scopes,FixtureDate);
 const period=dashboard();assert.equal(period.efficiency,null);assert.equal(period.groups.reduce((sum,row)=>sum+row.actual,0),7);
 const chartSource=source.find(line=>line.startsWith('function renderChart('));
 const chartControls=new Map();const chartGet=selector=>{if(!chartControls.has(selector))chartControls.set(selector,{classList:{add(){},remove(){}}});return chartControls.get(selector)};
