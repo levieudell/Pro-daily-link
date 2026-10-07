@@ -68,5 +68,8 @@ for(const [description,items] of [
   ['Patched drywall.',[{id:1,name:'Miscellaneous allowance'}]]
 ])assert.equal(classify(description,items).mode,'review',description+' needs a human choice');
 assert.equal(classify('Patched drywall.',[]).mode,'custom','Known work with no estimate lines is custom');
+assert.equal(classify('Repaired plumbing pipes.',[{id:1,name:'New plumbing installation'}]).mode,'review','Trade alone does not establish repair coverage in a new installation');
+assert.equal(classify('Patched drywall.',[{id:1,name:'New drywall construction'}]).mode,'review');
+assert.equal(classify('Repaired plumbing pipes.',[{id:1,name:'New plumbing installation and repairs'}]).estimateItemId,1,'Explicit repair coverage is compatible');
 const unknown=propose('Replaced three units of door hardware.')[0];assert(unknown);assert.equal(classify(unknown.description).mode,'review');assert.equal(scopeProposal({...unknown,custom:true},floor).mode,'custom','Every proposal permits explicit manual Custom selection');assert.equal(unknown.quantity,3);assert.equal(unknown.laborHours,0);
 console.log('Daily work scope: wall/floor/activity/material/location ambiguity, grounded provider rename, saved selections and bounded metadata passed.');

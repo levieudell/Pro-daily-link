@@ -77,7 +77,8 @@
     if(has(/\bbasement\b/))levels.push('basement');
     if(has(/\bupstairs\b/)&&!levels.some(level=>level==='second'||level==='third'))levels.push('upper');
     if(has(/\bdownstairs\b/)&&!levels.some(level=>level==='main'||level==='basement'))levels.push('lower');
-    return {categories,materials,surfaces,rooms,levels};
+    const repairWork=has(/\b(?:repair(?:s|ed|ing)?|patch(?:ed|ing)?|fix(?:ed|ing)?)\b/),newInstallation=has(/\bnew\b[^.;]{0,100}\b(?:installation|construction)\b/);
+    return {categories,materials,surfaces,rooms,levels,repairWork,newInstallation};
   }
   function scopeProposal(suggestion,items){
     const direct=(items||[]).find(item=>suggestion.estimateItemId!=null&&String(item.id)===String(suggestion.estimateItemId));
@@ -90,6 +91,9 @@
     const results=items.map(item=>{const target=scopeFacts(item.name);
       if(target.categories.length!==1)return {item,state:'unclear'};
       if(source.categories[0]!==target.categories[0])return {item,state:'different'};
+      // A shared trade does not prove repair work belongs to an explicitly new
+      // installation contract. Keep that decision with the person reviewing it.
+      if(source.repairWork&&target.newInstallation&&!target.repairWork)return {item,state:'unclear'};
       for(const key of ['materials','surfaces','rooms']){
         if(source[key].length&&target[key].length&&!source[key].some(value=>target[key].includes(value)))return {item,state:'different'};
       }
