@@ -37,9 +37,9 @@ Edit/cancel discards client preview authority. Late responses are ignored after 
 - `node project-assistant-ui.test.js` passed: no automatic popup/requests, typed follow-ups, escaped content, edit/cancel, late responses, dictation fallback and cancellation, role changes, unknown-save retry, confirmation timeout, and unbounded post-save refresh recovery.
 - `node project-notes-deadline.test.js` and the existing notes UI fixtures passed: shared record builder, legacy shapes, ISO/null date validation, original-request replay, revision/history preservation, and escaped deadline display.
 - Independent reviewer found no remaining blockers after fixes for timezone consistency, AI queue blocking, upcoming instructions, bounded confirmation/refresh, note-context minimization, overlapping saves, blank crew scope, and maximum Unicode token length. They independently ran unit/UI tests and `git diff --check` without source edits or external calls.
-- Synthetic full-app desktop/mobile QA and exact Linux CI are recorded separately with the draft's exact commit. All browser QA uses a new headless profile, localhost fixtures and blocked external routes. No shared browser or production records are used.
+- Synthetic full-app desktop/mobile QA is recorded separately. Exact Linux CI remains pending explicit approval to push this draft to the public repository. All browser QA uses a new headless profile, localhost fixtures and blocked external routes. No shared browser or production records are used.
 
-Local `npm test` reaches a pre-existing Windows incompatibility in `sales-demo-route.test.js`: POSIX mode `0600` is asserted, while Windows reports `0666`. Do not alter that security check to accommodate this feature; the repository's Ubuntu CI is the full-suite gate.
+Local `npm test` reaches pre-existing Windows incompatibilities in `sales-demo-route.test.js` and `backup-verification.test.js`: POSIX mode `0600` is asserted, while Windows reports `0666`. A collected run passed the other 63 test commands after preserving the existing manual-route tenant-mismatch response. Do not alter that security check to accommodate this feature; the repository's Ubuntu CI is the full-suite gate.
 
 ## Capability limits and remaining release checks
 
