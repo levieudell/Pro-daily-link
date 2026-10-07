@@ -101,6 +101,12 @@ function question(state, context) {
   const questions = { memberId: 'Who should I schedule? Use their full name.', memberIds: 'Which people should I schedule? Use full names separated by and.', date: 'What date should they work? Include the year or say tomorrow.', startDate: 'What exact start date should I use?', endDate: 'What exact end date should I use?', weekdays: 'Which weekdays should they work? Include each intended day.', start: 'What start time? Include AM or PM.', end: 'What end time? Include AM or PM.', activity: 'What task should they work on?', instructions: 'What daily instructions should they receive?', text: 'What exact text should I add?', deadline: 'When is the to-do due? Say no deadline or a date.', dueDate: 'What exact due date should I use?' };
   return field ? questions[field] : 'Everything is ready for the exact preview. Nothing has been saved.';
 }
+function reconcile(state, context) {
+  applyFields(state, context);
+  if (state.pending) state.pending.choices = state.pending.choices.filter(ids => ids.every(id => (state.pending.kind === 'project' ? context.projects : context.members).some(row => row.id === id)));
+  if (state.pending && !state.pending.choices.length) state.pending = null;
+  state.question = question(state, context);
+}
 
 function createIntentService({ budget, contextFor, refresh, now = () => new Date(), adapter = (payload, signal) => interpretOpenAI(payload, fetch, signal), enabled = () => process.env.PDL_ASSISTANT_AI_ENABLED === '1', signingKey = () => process.env.OPENAI_API_KEY, active = () => true }) {
   const failure = message => ({ source: 'form', message: message || 'AI interpretation is unavailable. Continue with typed/manual details. Nothing has been saved.' });
@@ -138,7 +144,13 @@ function createIntentService({ budget, contextFor, refresh, now = () => new Date
           if (ids.some(id => !Number.isSafeInteger(id) || !context.members.some(row => row.id === id)) || Object.entries(manual).some(([key,value]) => !['memberId','memberIds','weekdays'].includes(key) && !safeText(value))) throw Error('Review your authorized manual details.');
           state.draft = manual; state.mentions = {}; state.anchors = {}; state.pending = null;
         }
+        // Generated labels must use fresh access before either clarification or provider input.
+        const oldChoices = state.pending ? copy(state.pending) : null;
+        reconcile(state, context);
         const text = input.text.trim(), control = names.normalize(text);
+        if (oldChoices && /^(yes|yeah|option [1-5]|[1-5])$/.test(control) && digest(oldChoices) !== digest(state.pending)) {
+          return {source:'ai',state:sign(state),draft:copy(state.draft),projectId:state.projectId,message:'The available choices changed. '+state.question,ready:false,pending:Boolean(state.pending),canAcceptYes:state.pending?.choices.length===1,context:state.projectId?context:undefined};
+        }
         let selection = null;
         const edit = control.match(/^(?:change|edit) (project|person|people|date|start date|end date|start time|end time|task|daily instructions|text|deadline|weekdays)$/);
         if (edit) {
@@ -165,11 +177,14 @@ function createIntentService({ budget, contextFor, refresh, now = () => new Date
           if (receipt.duplicate) {
             if (!receipt.result?.state) return failure('That turn already ran or its outcome is uncertain. No automatic retry was sent. Use manual details or submit a new explicit turn.');
             const saved = verify(receipt.result.state, actor), currentContext = await scopedContext(saved.projectId, actorContext);
-            applyFields(saved, currentContext);
-            if (saved.pending) saved.pending.choices = saved.pending.choices.filter(ids => ids.every(id => (saved.pending.kind === 'project' ? currentContext.projects : currentContext.members).some(row => row.id === id)));
-            if (saved.pending && !saved.pending.choices.length) saved.pending = null;
+            reconcile(saved, currentContext);
             return { ...receipt.result, state: sign(saved), draft: saved.draft, context: saved.projectId ? currentContext : undefined, message: question(saved, currentContext), pending: Boolean(saved.pending), canAcceptYes: saved.pending?.choices.length === 1, ready: Boolean(saved.projectId && saved.draft.action && !saved.pending && !conversation.missingSlot(saved.draft) && (!ACTIONS.slice(0,2).includes(saved.draft.action) || currentContext.capabilities?.schedule !== false)) };
           }
+          checkpoint();
+          const dispatchActor = await bounded(refresh(actorContext));checkpoint();
+          if (digest(dispatchActor) !== actor) throw Error('Your access changed before interpretation.');
+          const dispatchContext = await scopedContext(state.projectId, actorContext);
+          if (digest(dispatchContext) !== digest(context)) throw Error('The authorized context changed before interpretation.');
           checkpoint();
           const result = await bounded(adapter(payload, AbortSignal.timeout(Math.min(20000, deadline - Date.now())))), changes = safeChanges(result.changes, text);checkpoint();
           const fresh = await bounded(refresh(actorContext));checkpoint();
