@@ -397,6 +397,10 @@ button,.project-card,.customer-list-item,.report-list-item{-webkit-tap-highlight
 #timecards-page .timecard-record td{padding:10px 8px}
 #pay-period-dialog{max-width:540px;width:calc(100% - 32px)}
 #pay-period-form{display:grid;gap:14px;padding:20px}
+#pay-period-form .modal-heading{display:flex;align-items:center;justify-content:space-between;gap:12px}
+#pay-period-form .modal-heading h2,#pay-period-form .input-help{margin:0}
+#pay-period-calendar{display:grid;gap:12px}
+#pay-period-preview{margin:0;padding:10px;border:1px solid var(--line);border-radius:8px;overflow-wrap:anywhere}
 #pay-period-form .time-date-filters{display:grid;grid-template-columns:1fr 1fr;gap:12px}
 @media(max-width:760px){
   #timecards-page .time-date-filters{grid-template-columns:1fr 1fr;gap:10px}
@@ -411,7 +415,7 @@ button,.project-card,.customer-list-item,.report-list-item{-webkit-tap-highlight
   #timecards-page .timecard-record td:before{display:block;font-size:10px;margin-bottom:2px}
   #timecards-page .timecard-record td[data-label="Person"],#timecards-page .timecard-record td[data-label="Job code"],#timecards-page .timecard-record td[data-label="Approved by"]{display:none}
   #timecards-page .timecard-record td[data-label="Actions"],#timecards-page .timecard-record td[data-label="Status"]{grid-column:1/-1}
-  #timecards-page button,#timecards-page select,#timecards-page input,#pay-period-form button,#pay-period-form input{min-height:44px}
+  #timecards-page button,#timecards-page select,#timecards-page input,#pay-period-form button,#pay-period-form input,#pay-period-form select{min-height:44px}
   #timecards-page .timecard-record input[type="checkbox"]{min-width:44px}
   #timecards-page .timecard-next-step{display:none}
   #timecards-page .timecard-history td{padding:0 10px}
