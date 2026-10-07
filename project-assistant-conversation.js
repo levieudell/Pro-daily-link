@@ -78,7 +78,7 @@
   // callback. The sole request seam is the existing read-only server preview.
   function createConversation({document, window, SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition,
     canContinue, getContext, getDraft, setDraft, preview, onCancelPreview, onInterrupted = () => {}, onStatus, onTurn = () => {},
-    nextSlot, nextQuestion, answerTurn, onPrompt = () => {}, onCancelSession = () => {},
+    nextSlot, nextQuestion, answerTurn, canClarifyYes = () => false, onPrompt = () => {}, onCancelSession = () => {},
     maxMs = 300000, maxTurns = 20, setTimer = setTimeout, clearTimer = clearTimeout}) {
     let active = false, generation = 0, recognition = null, totalTimer = null, listenTimer = null, turns = 0, characters = 0, asked = null, reading = false, awaitingPreview = false, exactReading = false,answering=false;
     const allowed = () => active && !document.hidden && (document.hasFocus?.() ?? true) && canContinue();
@@ -121,7 +121,7 @@
       const value = clean(text);
       if (['cancel conversation','stop conversation'].includes(value)) { onCancelPreview();onCancelSession(value); stop('Conversation and preview cancelled. Nothing saved.'); return; }
       if (Number.isFinite(confidence) && confidence < 0.75) { ask('Recognition was uncertain. Please repeat one exact answer. Nothing changed. '); return; }
-      if (['yes','yeah','okay','ok','save','confirm','do it','save it','confirm and save'].includes(value)) { ask('Voice cannot confirm or save. Use the on-screen Confirm button only after reviewing an exact preview. '); return; }
+      if (['yes','yeah','okay','ok','save','confirm','do it','save it','confirm and save'].includes(value) && !(['yes','yeah'].includes(value)&&canClarifyYes())) { ask('Voice cannot confirm or save. Use the on-screen Confirm button only after reviewing an exact preview. '); return; }
       if (answerTurn && value !== 'preview these changes') {
         const version=generation;answering=true;
         try {const result=await answerTurn(text,()=>version===generation&&allowed());if(version!==generation)return;answering=false;if(!allowed()){stop();return;}ask('',result?.message||'');}
