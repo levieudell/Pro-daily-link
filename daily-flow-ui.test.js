@@ -1,4 +1,6 @@
 'use strict';
+function nodeList(rows){return Object.assign({length:rows.length,forEach:fn=>rows.forEach(fn),[Symbol.iterator]:()=>rows[Symbol.iterator]()},Object.fromEntries(rows.map((row,index)=>[index,row])))}
+
 const assert=require('node:assert/strict'),fs=require('node:fs'),vm=require('node:vm');
 const {File}=require('node:buffer'),{indexedDB}=require('fake-indexeddb');
 const {PhotoStore}=require('./daily-photo-store');
@@ -8,7 +10,7 @@ const savedStorage=storage();
 function context(overrides={}){
  const nodes=new Map(),node=key=>{if(!nodes.has(key))nodes.set(key,element());return nodes.get(key)};
  class Transfer{constructor(){this.files=[];this.items={add:file=>this.files.push(file)}}}
- const ctx={$:node,$$:()=>[node('#report-safety'),node('#report-next')],window:{indexedDB},PDLDailyPhotoStore:{PhotoStore},crypto:require('node:crypto').webcrypto,File,DataTransfer:Transfer,document:{createElement:element},localStorage:savedStorage,projects:[{id:101}],company:{id:'fictional-tenant'},currentUser:{id:11,memberId:11},signedInCompanyId:()=>ctx.company.id,currentRole:'office',assignments:[],reports:[],photos:[],workdays:[{id:1,projectId:101,memberIds:[11],status:'active'}],preferredLanguage:'en',editingReportId:null,reportAnalyzeSequence:0,extractedDraft:null,
+ const ctx={$:node,$$:()=>nodeList([node('#report-safety'),node('#report-next')]),window:{indexedDB},PDLDailyPhotoStore:{PhotoStore},crypto:require('node:crypto').webcrypto,File,DataTransfer:Transfer,document:{createElement:element},localStorage:savedStorage,projects:[{id:101}],company:{id:'fictional-tenant'},currentUser:{id:11,memberId:11},signedInCompanyId:()=>ctx.company.id,currentRole:'office',assignments:[],reports:[],photos:[],workdays:[{id:1,projectId:101,memberIds:[11],status:'active'}],preferredLanguage:'en',editingReportId:null,reportAnalyzeSequence:0,extractedDraft:null,
   notify:message=>ctx.messages.push(message),messages:[],rememberActiveReport:()=>{},renderWorkdays:()=>ctx.events.push('render-clock'),renderMyDay:()=>{},renderReports:()=>{},showPage:()=>{},showReportMessage:message=>ctx.messages.push(message),events:[],
   encodeFiles:async files=>Array.from(files).map(file=>({name:file.name,type:file.type})),
   openEndDay:id=>{node('#end-day-id').value=id;node('#end-day-notes').value='';node('#end-day-next').value='';node('#end-day-modal').open=true},
