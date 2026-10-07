@@ -64,6 +64,8 @@ This is a connected MVP. Public production launch still requires completing the 
 
 ## Project Notes & To-dos
 
+The optional PM/admin/owner project assistant draft adds typed requests and supported-device dictation for a new single-person/day assignment with instructions, project notes, and open/unassigned to-dos. Each action requires an exact project/details preview and explicit confirmation. Scheduling retains PM crew permissions; notes use existing project-team visibility. Due-today is the exact company-calendar date. No email, public sharing, or background save is added. See [scope, safety and verification](docs/PROJECT-ASSISTANT-DRAFT-2026-10-07.md). This feature is draft-only and has no production release authority. A separate [multi-day scheduling and foreground voice prototype extension](docs/PROJECT-ASSISTANT-MULTIDAY-VOICE-DRAFT-2026-10-07.md) adds explicit weekday/person batches with all-or-none confirmation; saving by voice remains unavailable.
+
 Open a project and choose **Notes & To-dos** to save a short plain-text update or an actionable to-do. Mark to-dos complete or reopen them; completed items stay available. Each item records its author, timestamps, and before/after edit history. There are no automatic deadlines or assignments.
 
 This tab requires an active signed-in account. Owners and admins can use it on any company project; project managers and field users use their existing project access. Guest links do not expose notes. Data is saved in the existing tenant snapshot/transactional persistence and backups, with no schema migration required. Edit revisions prevent silent overwrites, and create request IDs make network retries safe.
@@ -77,3 +79,5 @@ Run `npm run check` and `npm test` for syntax, synthetic API/UI, security, persi
 ## Time off by day or appointment
 
 Field users can choose **All day** or **Specific hours** when requesting time off. Specific hours cover one company-calendar day with start/end times; multi-day leave remains all-day. The office and schedules show the exact hours, and approved leave blocks only overlapping work. Adjacent shifts remain available. Existing all-day requests and private leave reasons are preserved. See [behavior, verification and recovery](docs/PARTIAL-DAY-TIME-OFF-2026-10-05.md).
+
+The [current-main assistant release candidate](docs/PROJECT-ASSISTANT-CURRENT-MAIN-CANDIDATE-2026-10-07.md) combines both drafts with main `26d5ca10`, preserves PR78 features, and records combined verification, the separate effective-role integration boundary, and minimal device acceptance. Foreground voice still requires on-screen confirmation. No merge or deployment is authorized by the candidate.
