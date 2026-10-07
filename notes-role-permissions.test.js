@@ -139,6 +139,10 @@ function slow(base, payload) {
     mutateSynthetic(snapshot => { snapshot.users.find(user => user.id === 3).status = 'Active'; snapshot.users.find(user => user.id === 3).role = 'field'; });
     assert.equal((await request(a, notes, 'GET', undefined, 3)).status, 403, 'changed base cannot use custom profile');
     mutateSynthetic(snapshot => { snapshot.users.find(user => user.id === 3).role = 'project_manager'; });
+    mutateSynthetic(snapshot => { snapshot.sessions.find(session => session.userId === 3).companyId = '22222222-2222-4222-8222-222222222222'; });
+    assert.equal((await request(a, '/api/auth/me', 'GET', undefined, 3)).status, 404, 'cross-tenant session has no public actor projection');
+    assert.equal((await request(b, notes, 'GET', undefined, 3)).status, 404, 'cross-tenant session has no notes actor');
+    mutateSynthetic(snapshot => { snapshot.sessions.find(session => session.userId === 3).companyId = companyId; });
     const mixed = await request(b, notes + '/' + item.id, 'PATCH', { revision: 1, text: 'No mixed bypass', completed: true }, 2);
     assert.equal(mixed.status, 403, 'mixed text and completion requires both actions');
     assert.equal((await request(a, notes, 'GET', undefined, 3, { 'X-PDL-Company': '22222222-2222-4222-8222-222222222222' })).status, 404);
