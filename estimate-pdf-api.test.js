@@ -5,16 +5,16 @@ const os = require('node:os');
 const path = require('node:path');
 const { makePdf, fixtures } = require('./estimate-pdf.test');
 const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'pdl-estimate-pdf-'));
-Object.assign(process.env, { PDL_DB_FILE: path.join(temp, 'db.json'), PDL_PLATFORM_FILE: path.join(temp, 'platform.json'), PDL_REQUIRE_AUTH: '0', PDL_SUPABASE_ENABLED: '0', PDL_TRANSACTIONAL_DB: 'off', PDL_FOUNDER_ENABLED: '0', PDL_EMAIL_DEV_MODE: '1' });
+Object.assign(process.env, { PDL_DB_FILE: path.join(temp, 'db.json'), PDL_PLATFORM_FILE: path.join(temp, 'platform.json'), PDL_REQUIRE_AUTH: '1', PDL_SUPABASE_ENABLED: '0', PDL_TRANSACTIONAL_DB: 'off', PDL_FOUNDER_ENABLED: '0', PDL_EMAIL_DEV_MODE: '1' });
 for (const key of Object.keys(process.env)) if (/^(OPENAI_|STRIPE_|SENTRY_|RESEND_)/.test(key)) delete process.env[key];
-const seed = require('./sales-demo-data').buildSalesDemo({ asOf: '2026-10-07' }); seed.estimateImports = [];
+const seed = require('./sales-demo-data').buildSalesDemo({ asOf: '2026-10-07' }); seed.estimateImports = []; seed.users=[{id:1,companyId:seed.company.id,name:'Synthetic acceptance owner',role:'owner',status:'Active'}];seed.sessions=[{userId:1,companyId:seed.company.id,tokenHash:require('node:crypto').createHash('sha256').update('estimate-fixture-token').digest('hex'),expiresAt:new Date(Date.now()+3600000).toISOString()}];
 fs.writeFileSync(process.env.PDL_DB_FILE, JSON.stringify(seed)); fs.writeFileSync(process.env.PDL_PLATFORM_FILE, JSON.stringify({ users: [], sessions: [] }));
 const nativeFetch = global.fetch;
 global.fetch = (url, ...args) => { assert.equal(new URL(String(url)).hostname, '127.0.0.1', 'No external AI or other provider calls allowed'); return nativeFetch(url, ...args); };
 const { server } = require('./server');
 server.listen(0, '127.0.0.1', async () => {
   const base = `http://127.0.0.1:${server.address().port}`;
-  const request = async (route, body) => { const response = await fetch(base + route, body ? { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) } : {}); return { status: response.status, data: await response.json() }; };
+  const request = async (route, body) => { const response = await fetch(base + route, body ? { method: 'POST', headers: { 'Content-Type': 'application/json',Authorization:'Bearer estimate-fixture-token' }, body: JSON.stringify(body) } : {headers:{Authorization:'Bearer estimate-fixture-token'}}); return { status: response.status, data: await response.json() }; };
   const items = async () => (await request('/api/state')).data.projects[0].estimateItems;
   try {
     const originalCount = (await items()).length;
@@ -38,8 +38,29 @@ server.listen(0, '127.0.0.1', async () => {
     const approved = await request(`/api/estimate-imports/${drafts[1].id}/approve`, { projectId: seed.projects[0].id, lines: [{ ...drafts[1].lines[0], description: 'Concrete slab reviewed', unit: 'SF', budgetHours: 16 }] });
     assert.equal(approved.status, 200); assert.equal(approved.data.items[0].plannedQuantity, 100); assert.equal(approved.data.items[0].unit, 'SF'); assert.equal(approved.data.items[0].cost, 5000); assert.equal(approved.data.items[0].budgetHours, 16);
     const saved = (await items()).find(item => item.sourceImportId === drafts[1].id); assert.deepEqual(saved, approved.data.items[0]);
-    assert.match(drafts[2].reviewWarnings.join(' '), /Labor information/); assert.equal(drafts[2].lines[0].budgetHours, undefined);
-    const noHours = await request(`/api/estimate-imports/${drafts[2].id}/approve`, { projectId: seed.projects[0].id, lines: drafts[2].lines }); assert.equal(noHours.status, 200); assert.equal(noHours.data.items[0].budgetHours, 0, 'Sales rate and PDF labor annotation must not invent a work budget');
+    assert.match(drafts[2].reviewWarnings.join(' '), /Labor information/); assert.equal(drafts[2].lines[0].budgetHours, null);
+    const noHours = await request(`/api/estimate-imports/${drafts[2].id}/approve`, { projectId: seed.projects[0].id, lines: drafts[2].lines }); assert.equal(noHours.status, 200); assert.equal(noHours.data.items[0].budgetHours, null, 'Sales rate and PDF labor annotation must not invent a work budget');
+    // Real save/reload boundaries: explicit unknown must not trigger a catalog default.
+    const catalog = await request('/api/catalog',{name:'Unknown budget fixture',unit:'SF',targetHoursPerUnit:2});
+    const budgetItems=[];
+    for(const hours of [null,0,18]){
+      const result=await request(`/api/estimate-imports/${drafts[0].id}/approve`,{projectId:seed.projects[0].id,lines:[{...drafts[0].lines[0],catalogItemId:catalog.data.id,budgetHours:hours}]});
+      assert.equal(result.status,200); assert.equal(result.data.items[0].budgetHours,hours); budgetItems.push(result.data.items[0]);
+      assert.equal((await items()).find(item=>item.id===result.data.items[0].id).budgetHours,hours);
+    }
+    const legacyLine={...drafts[0].lines[0],catalogItemId:catalog.data.id};delete legacyLine.budgetHours;
+    const omitted=await request(`/api/estimate-imports/${drafts[0].id}/approve`,{projectId:seed.projects[0].id,lines:[legacyLine]}); assert.equal(omitted.data.items[0].budgetHours,200,'Legacy omitted field retains catalog calculation');
+    const projectId=seed.projects[0].id;
+    for(const hours of [null,0,18]){
+      const created=await request(`/api/projects/${projectId}/estimate-items`,{name:'Manual hours fixture',plannedQuantity:10,unit:'SF',budgetHours:hours}); assert.equal(created.status,201);assert.equal(created.data.budgetHours,hours);
+      const response=await fetch(base+`/api/projects/${projectId}/estimate-items/${created.data.id}`,{method:'PATCH',headers:{'Content-Type':'application/json',Authorization:'Bearer estimate-fixture-token'},body:JSON.stringify({budgetHours:null})});assert.equal(response.status,200);assert.equal((await response.json()).budgetHours,null);
+      assert.equal((await items()).find(item=>item.id===created.data.id).budgetHours,null);
+    }
+    const production=(await request('/api/production')).data.projects.find(row=>row.projectId===projectId).items;
+    for(const item of budgetItems){const metric=production.find(row=>row.estimateItemId===item.id);assert.equal(metric.budgetHours,item.budgetHours);assert.equal(metric.laborPercent,item.budgetHours==null?null:0)}
+    const fresh=JSON.parse(fs.readFileSync(process.env.PDL_DB_FILE,'utf8')); fresh.reports.push({id:99999,project:0,status:'Approved',dateIso:'2026-10-07',laborEntries:[],productionEntries:budgetItems.map(item=>({estimateItemId:item.id,quantity:10,laborHours:3}))});fs.writeFileSync(process.env.PDL_DB_FILE,JSON.stringify(fresh));
+    const insights=(await request('/api/insights')).data.records.filter(row=>row.reportId===99999);
+    for(const item of budgetItems)assert.equal(insights.find(row=>row.estimateItemId===item.id).targetHoursPerUnit,item.budgetHours==null?null:item.budgetHours/100);
     const sample = fs.readFileSync(path.join(__dirname,'test-fixtures','estimates','smartsheet-painting-public.pdf'));
     const unsupported = await request('/api/estimate-imports/analyze',{filename:'public-painting.pdf',data:'data:application/pdf;base64,'+sample.toString('base64')}); assert.equal(unsupported.data.lines.length,0); assert.equal(unsupported.data.requiresAiReview,true);
     const scan = fs.readFileSync(path.join(__dirname,'test-fixtures','estimates','synthetic-scanned-estimate.pdf'));
