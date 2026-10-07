@@ -36,7 +36,8 @@ global.fetch = async (url, options = {}) => {
   if (pathname === '/subscriptions') return reply({ data: [...subscriptions.values()].filter(s => s.customer === target.searchParams.get('customer')), has_more: historyMore });
   if (pathname.startsWith('/subscriptions/')) {
     const subscription = subscriptions.get(pathname.split('/').pop());
-    return reply(corruptSubscription ? { ...subscription, metadata: { company_id: 'wrong' } } : subscription);
+    return reply(corruptSubscription === 'mode' ? { ...subscription, livemode: true }
+      : corruptSubscription ? { ...subscription, metadata: { company_id: 'wrong' } } : subscription);
   }
   if (pathname === '/checkout/sessions') {
     const key = options.headers['Idempotency-Key'];
@@ -113,6 +114,10 @@ async function webhook(subscription, suffix) {
     failAfterCreate = true; const before = created;
     assert.equal((await c.request('/api/billing/checkout', 'POST', { plan: 'starter' })).status, 502);
     const attempt = c.read().company.pendingCheckout.attempt;
+    prices.price_rebound = { ...prices.price_starter_monthly, id: 'price_rebound' };
+    process.env.STRIPE_PRICE_STARTER = 'price_rebound';
+    assert.equal((await c.request('/api/billing/checkout', 'POST', { plan: 'starter' })).status, 409, 'changed configured price cannot replay different provider parameters');
+    process.env.STRIPE_PRICE_STARTER = 'price_starter_monthly';
     assert.equal((await c.request('/api/billing/checkout', 'POST', { plan: 'growth' })).status, 409);
     const recovered = await Promise.all(Array.from({ length: 4 }, () => c.request('/api/billing/checkout', 'POST', { plan: 'starter' })));
     assert.ok(recovered.every(r => r.status === 200 && r.data.url === recovered[0].data.url));
@@ -125,6 +130,11 @@ async function webhook(subscription, suffix) {
     assert.equal((await c.request('/api/billing/checkout', 'POST', { plan: 'growth' })).status, 200);
     const changed = c.read().company.pendingCheckout;
     assert.equal(changed.plan, 'growth'); assert.equal(changed.params['subscription_data[trial_end]'], Math.floor(Date.parse(end) / 1000));
+    const trialing = providerSubscription(c, 'trialing', 'sub_mock_trialing', 'price_growth_monthly');
+    session = sessions.get(changed.id); Object.assign(session, { status: 'complete', customer: trialing.customer, subscription: trialing.id });
+    assert.equal((await c.request('/api/billing/confirm?session_id=' + session.id)).status, 200);
+    assert.equal(c.read().company.subscriptionStatus, 'Trial'); assert.equal(c.read().company.plan, 'growth');
+    assert.equal(c.read().company.trialEndsAt, end, 'provider trial confirmation keeps original local deadline');
 
     const near = await signup(); near.mutate(db => { db.company.trialEndsAt = new Date(Date.now() + 36 * 3600000).toISOString(); });
     const nearEnd = near.read().company.trialEndsAt, count = created;
@@ -147,6 +157,9 @@ async function webhook(subscription, suffix) {
     const billing = (await returning.request('/api/billing')).data;
     assert.equal(billing.hasSubscription, false); assert.equal(billing.hasBillingCustomer, true);
     corruptSubscription = true;
+    assert.equal((await returning.request('/api/billing/checkout', 'POST', { plan: 'starter' })).status, 503);
+    assert.equal(returning.read().company.stripeSubscriptionId, old.id); corruptSubscription = false;
+    corruptSubscription = 'mode';
     assert.equal((await returning.request('/api/billing/checkout', 'POST', { plan: 'starter' })).status, 503);
     assert.equal(returning.read().company.stripeSubscriptionId, old.id); corruptSubscription = false;
     providerOutage = true; assert.equal((await returning.request('/api/billing/checkout', 'POST', { plan: 'starter' })).status, 502);
