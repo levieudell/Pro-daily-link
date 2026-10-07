@@ -475,3 +475,5 @@ button,.project-card,.customer-list-item,.report-list-item{-webkit-tap-highlight
 #time-off-zone{line-height:1.5;margin:0 0 12px}
 .time-off-row strong{overflow-wrap:anywhere}
 @media(max-width:640px){#time-off-modal input,#time-off-modal select{font-size:16px;min-height:44px}#time-off-modal .modal-actions button{min-height:44px}.time-off-row>div:only-child{display:grid;grid-auto-flow:row;grid-template-columns:minmax(0,1fr)}}
+
+.work-scope-actions,.work-proposal-note{grid-column:1/-1}.work-scope-actions button{min-height:44px;border:1px solid #c5d8fb;background:#eef4ff;color:#1769e0;border-radius:8px;padding:8px 12px;font-size:12px;font-weight:700}.work-proposal-note{line-height:1.5;color:var(--muted)}
