@@ -15,6 +15,26 @@ function timePeople(cards,members,approved,search=''){
 }
 function timeCardComplete(card){return Boolean(timePeriodDate({inAt:card.inAt},'UTC')&&timePeriodDate({inAt:card.outAt},'UTC')&&Number.isFinite(Date.parse(card.inAt))&&Date.parse(card.outAt)>Date.parse(card.inAt)&&card.hours!=null&&typeof card.hours!=='boolean'&&String(card.hours).trim()!==''&&Number.isFinite(Number(card.hours))&&Number(card.hours)>=0)}
 function timePeriodDate(card,zone){if(typeof card.inAt!=='string'||!/^\d{4}-\d{2}-\d{2}T.*(?:Z|[+-]\d{2}:\d{2})$/i.test(card.inAt)||!Number.isFinite(Date.parse(card.inAt)))return '';const parts=new Intl.DateTimeFormat('en-US',{timeZone:zone,year:'numeric',month:'2-digit',day:'2-digit'}).formatToParts(new Date(card.inAt));return ['year','month','day'].map(type=>parts.find(p=>p.type===type).value).join('-')}
+// Date-only arithmetic uses UTC as a calendar, never the browser's timezone or elapsed local hours.
+function payCalendarDate(value){return typeof value==='string'&&/^\d{4}-\d{2}-\d{2}$/.test(value)&&Number.isFinite(Date.parse(value))&&new Date(value).toISOString().slice(0,10)===value}
+function payPresetRange(preset,{start='',month='',cutoff=15,half='first'}={}){
+  if(preset==='weekly'||preset==='biweekly'){
+    if(!payCalendarDate(start))return null;
+    const end=new Date(start);end.setUTCDate(end.getUTCDate()+(preset==='weekly'?6:13));const to=end.toISOString().slice(0,10);
+    return payCalendarDate(to)?{from:start,to}:null;
+  }
+  if(!['monthly','semimonthly'].includes(preset)||!/^\d{4}-\d{2}$/.test(month)||!payCalendarDate(month+'-01'))return null;
+  const last=new Date(month+'-01');last.setUTCMonth(last.getUTCMonth()+1);last.setUTCDate(0);const to=last.toISOString().slice(0,10);
+  if(preset==='monthly')return{from:month+'-01',to};
+  const day=Number(cutoff);if(!Number.isInteger(day)||day<1||day>27||!['first','second'].includes(half))return null;
+  const date=d=>month+'-'+String(d).padStart(2,'0');return half==='first'?{from:date(1),to:date(day)}:{from:date(day+1),to};
+}
+function payRangePreview(from,to,timeZone){
+  if(!payCalendarDate(from)||!payCalendarDate(to))return 'Choose valid start and end dates to preview this period.';
+  if(from>to)return 'End date must be on or after start date.';
+  const days=Math.round((Date.parse(to)-Date.parse(from))/86400000)+1;
+  return `${from} through ${to} (${days} ${days===1?'day':'days'}, inclusive) · ${timeZone}`;
+}
 function payPeriodReviewMarkup(summary,canConfigure,busy=false){
   if(!summary)return '';
   const e=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -22,12 +42,12 @@ function payPeriodReviewMarkup(summary,canConfigure,busy=false){
   const review=Object.entries(summary.review||{}).filter(([,count])=>Number(count)>0).map(([key,count])=>`<span>${e(count)} ${e(labels[key]||key)}</span>`).join('');
   return `<section class="pay-review-card" aria-label="Pay-period review"><div class="pay-review-heading"><div><small>APPROVED HOURS</small><strong>${e(summary.approvedHours)} <span>${canConfigure?'company':'assigned'} total</span></strong></div><b class="pay-review-status ${summary.ready?'ready':'needs-review'}">${summary.ready?(canConfigure?'Ready to export':'Assigned checks clear'):'Needs review'}</b></div><p class="input-help">${e(summary.period.from)} through ${e(summary.period.to)} · ${e(summary.period.timeZone)}</p><div class="pay-review-counts">${review||'<span>All period checks are clear.</span>'}</div><details class="pay-period-summary"><summary>Review breakdown</summary><p class="input-help">${e(summary.datePolicy)}</p>${summary.missingEntries?.length?'<p><strong>Missing scheduled time</strong></p>'+summary.missingEntries.map(m=>`<p>${e(m.person)} · ${e(m.date)} · ${e(m.project)}</p>`).join(''):''}${summary.people.map(p=>`<p>${e(p.name)} <strong>${e(p.hours)} approved hours</strong></p>`).join('')}</details>${canConfigure?`<div class="pay-period-tools pay-export-actions"><button type="button" class="primary" data-pay-capture ${!summary.ready||busy?'disabled':''}>${summary.latestExport?'Create corrected export':'End period & export'}</button>${summary.latestExport?`<button type="button" class="secondary" data-pay-download="${e(summary.latestExport.id)}">Download fixed v${e(summary.latestExport.version)}</button><button type="button" class="secondary" data-pay-history>Previous exports</button>`:''}</div><p class="input-help">${!summary.ready?'Resolve the review items above before creating a fixed export. ':''}${summary.latestExport?(summary.latestExport.changed?'Time changed since the latest fixed export.':'The latest fixed export matches current approved time.'):'Exports contain approved hours for payroll handoff; they do not calculate pay.'}</p>`:'<p class="input-help">Assigned time only. A company administrator creates fixed exports.</p>'}<div id="pay-period-history"></div></section>`;
 }
-if(typeof module!=='undefined'&&module.exports)module.exports={timePeople,timeCardComplete,timePeriodDate,payPeriodReviewMarkup};
+if(typeof module!=='undefined'&&module.exports)module.exports={timePeople,timeCardComplete,timePeriodDate,payPeriodReviewMarkup,payCalendarDate,payPresetRange,payRangePreview};
 else {
-  let timePerson=null,timeIdentity='',timeFilterKey='',payIdentity='',paySequence=0,paySelected='',payList=[],paySummary=null,payConfigure=false,payEditing=null,payBusy=false;
+  let timePerson=null,timeIdentity='',timeFilterKey='',payIdentity='',paySequence=0,paySelected='',payList=[],paySummary=null,payConfigure=false,payEditing=null,payBusy=false,payFormZone='';
   function timeContext(){return JSON.stringify([signedInCompanyId(),currentUser?.id,currentUser?.role,currentRole,currentUser?.permissions,company?.features])}
   function clearTimeSelection(){const all=$('#timecard-check-all');if(all){all.checked=false;all.indeterminate=false}$$('[data-timecard-pick]').forEach(box=>box.checked=false);updateTimeCardSelection()}
-  function resetPayContext(){paySequence++;paySelected='';payList=[];paySummary=null;payConfigure=false;payEditing=null;payBusy=false;const dialog=$('#pay-period-dialog');if(dialog?.open)dialog.close();for(const id of ['pay-period-label','pay-period-from','pay-period-to','pay-period-reason'])$('#'+id).value='';$('#pay-period-save').disabled=false;$('#company-pay-period-list').innerHTML='';$('#pay-period-zone').textContent='';$('#pay-period-form-error').textContent='';$('#pay-period-panel').innerHTML='';$('#pay-period-panel').hidden=true}
+  function resetPayContext(){paySequence++;paySelected='';payList=[];paySummary=null;payConfigure=false;payEditing=null;payBusy=false;payFormZone='';const dialog=$('#pay-period-dialog');if(dialog?.open)dialog.close();for(const id of ['pay-period-label','pay-period-from','pay-period-to','pay-period-reason'])$('#'+id).value='';resetPayPreset();$('#pay-period-save').disabled=false;$('#company-pay-period-list').innerHTML='';$('#pay-period-zone').textContent='';$('#pay-period-form-error').textContent='';$('#pay-period-panel').innerHTML='';$('#pay-period-panel').hidden=true}
   const originalTimeFilter=filteredTimeCards;
   filteredTimeCards=function(){
     const period=payList.find(p=>p.id===paySelected);if(!period||!timeCardOffice())return originalTimeFilter();
@@ -61,7 +81,7 @@ else {
   }
   function drawPaySettings(){
     const host=$('#company-pay-period-list'),allowed=timeCardOffice()&&timeCardsOn()&&(currentUser?.role==='owner'||currentUser?.role==='admin'&&currentUser?.permissions?.manageTime===true);if(!allowed||!payConfigure){host.innerHTML='';return}
-    host.innerHTML=`<button type="button" class="primary" data-pay-new>New custom period</button><p class="input-help">Company timezone: ${escapeHtml(company?.timezone||'America/Los_Angeles')}. Each period keeps the timezone it was created with.</p>${payList.length?payList.map(p=>`<article class="company-period-row"><div><strong>${escapeHtml(p.label)}</strong><small>${escapeHtml(p.from)} through ${escapeHtml(p.to)} · ${escapeHtml(p.timeZone)}${p.exportCount?' · Fixed exports: '+p.exportCount:''}</small></div><button type="button" class="secondary" data-pay-use="${escapeHtml(p.id)}">Review time</button>${!p.exportCount?`<button type="button" class="secondary" data-pay-setting-edit="${escapeHtml(p.id)}">Edit dates</button>`:''}</article>`).join(''):'<p>No pay periods yet. Create your company’s first date range.</p>'}`;
+    host.innerHTML=`<button type="button" class="primary" data-pay-new>New pay period</button><p class="input-help">Company timezone: ${escapeHtml(company?.timezone||'America/Los_Angeles')}. Each period keeps the timezone it was created with.</p>${payList.length?payList.map(p=>`<article class="company-period-row"><div><strong>${escapeHtml(p.label)}</strong><small>${escapeHtml(p.from)} through ${escapeHtml(p.to)} · ${escapeHtml(p.timeZone)}${p.exportCount?' · Fixed exports: '+p.exportCount:''}</small></div><button type="button" class="secondary" data-pay-use="${escapeHtml(p.id)}">Review time</button>${!p.exportCount?`<button type="button" class="secondary" data-pay-setting-edit="${escapeHtml(p.id)}">Edit dates</button>`:''}</article>`).join(''):'<p>No pay periods yet. Create your company’s first date range.</p>'}`;
   }
   window.PDLPayPeriods={refresh:refreshPayPeriods};
   function choosePayPeriod(id){paySelected=id;const p=payList.find(p=>p.id===id);$('#timecard-from').value=p?.from||'';$('#timecard-to').value=p?.to||'';for(const id of ['timecard-job','timecard-person','timecard-status'])$('#'+id).value='all';$('#time-person-search').value='';renderTimeCards()}
@@ -76,9 +96,29 @@ else {
     }catch(error){if(context===timeContext()&&sequence===paySequence){drawPayPanel();payMessage(error.message)}}
   }
   function payMessage(message){const host=$('#pay-period-message');if(host){host.textContent=message;host.hidden=false}}
+  function resetPayPreset(){
+    $('#pay-period-preset').value='custom';$('#pay-period-month').value='';$('#pay-period-cutoff').value='15';$('#pay-period-half').value='first';drawPayPreset();
+  }
+  function drawPayPreset(){
+    const preset=$('#pay-period-preset').value,calendar=['monthly','semimonthly'].includes(preset),split=preset==='semimonthly';
+    $('#pay-period-calendar').hidden=!calendar;$('#pay-period-split').hidden=!split;
+    $('#pay-period-month').required=calendar;$('#pay-period-month').disabled=!calendar;$('#pay-period-cutoff').required=split;$('#pay-period-cutoff').disabled=!split;$('#pay-period-half').disabled=!split;
+    const help={custom:'Enter custom dates. Save creates one period.',weekly:'Enter the start date to fill 7 inclusive days. Edit the end date or choose Custom to adjust the range.',biweekly:'Enter the start date to fill 14 inclusive days. Edit the end date or choose Custom to adjust the range.',monthly:'Choose a calendar month: day 1 through month end. Edit either date to use Custom.',semimonthly:'Choose the month, cutoff (1–27), and half. First: day 1 through cutoff. Second: day after cutoff through month end. Edit either date to use Custom.'};
+    $('#pay-period-preset-help').textContent=help[preset];
+    $('#pay-period-preview').textContent=payRangePreview($('#pay-period-from').value,$('#pay-period-to').value,payFormZone);
+  }
+  function applyPayPreset(){
+    const preset=$('#pay-period-preset').value;
+    if(preset!=='custom'){
+      const range=payPresetRange(preset,{start:$('#pay-period-from').value,month:$('#pay-period-month').value,cutoff:$('#pay-period-cutoff').value,half:$('#pay-period-half').value});
+      if(['monthly','semimonthly'].includes(preset))$('#pay-period-from').value=range?.from||'';
+      $('#pay-period-to').value=range?.to||'';
+    }
+    $('#pay-period-form-error').hidden=true;drawPayPreset();
+  }
   function openPayForm(edit){
-    if(!payConfigure||payBusy)return;const p=edit?payList.find(p=>p.id===paySelected):null;if(edit&&!p)return;
-    payEditing=p?.id||null;$('#pay-period-label').value=p?.label||'';$('#pay-period-from').value=p?.from||'';$('#pay-period-to').value=p?.to||'';$('#pay-period-reason').value='';$('#pay-period-reason-label').hidden=!p;$('#pay-period-reason').required=Boolean(p);$('#pay-period-form-error').hidden=true;$('#pay-period-zone').textContent=(p?.timeZone||company?.timezone||'America/Los_Angeles')+' · Dates include both boundaries. Overnight time belongs to its clock-in day.';$('#pay-period-dialog').showModal();$('#pay-period-label').focus({preventScroll:true});
+    if(!payConfigure||payBusy)return;const p=edit?payList.find(p=>p.id===paySelected):null;if(edit&&(!p||p.exportCount))return;
+    payFormZone=p?.timeZone||company?.timezone||'America/Los_Angeles';$('#pay-period-title').textContent=p?'Edit pay period':'New pay period';payEditing=p?.id||null;$('#pay-period-label').value=p?.label||'';$('#pay-period-from').value=p?.from||'';$('#pay-period-to').value=p?.to||'';$('#pay-period-reason').value='';$('#pay-period-reason-label').hidden=!p;$('#pay-period-reason').required=Boolean(p);$('#pay-period-form-error').hidden=true;$('#pay-period-zone').textContent=(p?.timeZone||company?.timezone||'America/Los_Angeles')+' · Dates include both boundaries. Overnight time belongs to its clock-in day.';resetPayPreset();$('#pay-period-dialog').showModal();$('#pay-period-label').focus({preventScroll:true});
   }
   async function downloadPayExport(id){
     const context=timeContext(),period=paySelected,tenant=signedInCompanyId();
@@ -88,6 +128,7 @@ else {
   }
   $('#pay-period-form').onsubmit=async event=>{
     event.preventDefault();if(payBusy||!payConfigure)return;
+    if(!payCalendarDate($('#pay-period-from').value)||!payCalendarDate($('#pay-period-to').value)){$('#pay-period-form-error').textContent='Choose valid start and end dates.';$('#pay-period-form-error').hidden=false;return}
     const from=$('#pay-period-from').value,to=$('#pay-period-to').value,error=$('#pay-period-form-error');if(from>to){error.textContent='End date must be on or after start date.';error.hidden=false;return}
     const context=timeContext(),editing=payEditing;payBusy=true;$('#pay-period-save').disabled=true;
     try{const p=await api('/api/pay-periods'+(editing?'/'+editing:''),{method:editing?'PATCH':'POST',body:JSON.stringify({label:$('#pay-period-label').value,from,to,...(editing?{reason:$('#pay-period-reason').value}:{})})});if(context!==timeContext())return;payList=[...payList.filter(row=>row.id!==p.id),p];$('#pay-period-dialog').close();choosePayPeriod(p.id)}
@@ -95,10 +136,22 @@ else {
     finally{if(context===timeContext()){payBusy=false;$('#pay-period-save').disabled=false}}
   };
   $('#pay-period-close').onclick=()=>$('#pay-period-dialog').close();
+  function payDateInput(id){
+    if(!['pay-period-from','pay-period-to'].includes(id))return;
+    const preset=$('#pay-period-preset').value;
+    if(id==='pay-period-from'&&['weekly','biweekly'].includes(preset))applyPayPreset();
+    else {$('#pay-period-preset').value='custom';$('#pay-period-form-error').hidden=true;drawPayPreset()}
+  }
+  document.addEventListener('input',event=>{
+    const id=event.target.id;
+    if(['pay-period-month','pay-period-cutoff'].includes(id))applyPayPreset();else payDateInput(id);
+  });
   $('#time-person-back').onclick=()=>{timePerson=null;renderTimeCards()};
   $('#time-person-search').oninput=()=>renderTimeCards();
   $('#time-filter-reset').onclick=()=>{for(const id of ['timecard-job','timecard-person','timecard-status'])$('#'+id).value='all';for(const id of ['timecard-from','timecard-to','time-person-search'])$('#'+id).value='';paySelected='';$('#time-more-filters').open=false;renderTimeCards()};
   document.addEventListener('change',event=>{
+    if(['pay-period-preset','pay-period-month','pay-period-cutoff','pay-period-half'].includes(event.target.id)){applyPayPreset();return}
+    if(['pay-period-from','pay-period-to'].includes(event.target.id)){payDateInput(event.target.id);return}
     if(event.target.id==='pay-period-select'){choosePayPeriod(event.target.value)}
     else if(['timecard-from','timecard-to'].includes(event.target.id)){const p=payList.find(p=>p.id===paySelected);if(p&&(p.from!==$('#timecard-from').value||p.to!==$('#timecard-to').value)){paySelected='';void refreshPayPeriods()}}
   });

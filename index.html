@@ -9,7 +9,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Oswald:wght@500;600;700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="styles.css?v=20261005-office-recovery" />
+  <link rel="stylesheet" href="styles.css?v=20261007-pay-presets-small-custom" />
   <link rel="stylesheet" href="estimate-mobile.css" />
   <link rel="stylesheet" href="project-notes-ui.css?v=20261005-notes-focus" />
   <link rel="manifest" href="manifest.webmanifest" />
@@ -115,7 +115,7 @@
             <div class="chart" id="production-chart"></div>
           </article>
           <article class="panel today-panel">
-            <div class="panel-header"><div><h2>Today’s field activity</h2><p>Tuesday, September 15</p></div><button data-page-link="schedule">Full schedule →</button></div>
+            <div class="panel-header"><div><h2>Today's field activity</h2><p id="activity-date"></p></div><button data-page-link="schedule">Full schedule →</button></div>
             <div id="activity-list"></div>
           </article>
         </div>
@@ -263,7 +263,7 @@
   </form></dialog>
   <dialog id="report-modal">
     <form method="dialog" id="report-form">
-      <div class="modal-header"><div><p class="eyebrow">FIELD REPORT</p><h2 id="report-modal-title">Create daily report</h2></div><button class="close-button" value="cancel">×</button></div>
+      <div class="modal-header"><div><p class="eyebrow">FIELD REPORT</p><h2 id="report-modal-title">Create daily report</h2><p id="report-work-date" class="report-work-date" aria-live="polite"></p></div><button class="close-button" value="cancel">×</button></div>
       <div class="report-steps"><span class="active" data-step-dot="1"><b>1</b> Field notes & photos</span><i></i><span data-step-dot="2"><b>2</b> Production & labor</span></div>
       <div id="report-draft-choice" class="draft-choice" hidden><div><strong>Saved draft found</strong><p id="report-draft-summary"></p></div><div><button type="button" class="secondary" id="report-start-fresh">Start fresh</button><button type="button" class="primary" id="report-resume-draft">Resume draft</button></div></div>
       <div class="report-step active" data-report-step="1">
@@ -444,14 +444,31 @@
   <dialog id="profile-modal"><form method="dialog"><div class="modal-header"><div><p class="eyebrow">YOUR ACCOUNT</p><h2>Profile settings</h2></div><button class="close-button" value="cancel">×</button></div><div class="profile-photo-editor"><span class="avatar" id="profile-preview">LF</span><div><strong>Profile photo</strong><p>Upload a JPG, PNG, or WebP image.</p><input id="profile-photo" type="file" accept="image/jpeg,image/png,image/webp"></div></div><label>Display name<input id="profile-display-name"></label><label>Language preference<select id="profile-language"><option value="en">English</option><option value="es">Español</option></select><small>Used as your default throughout the app.</small></label><label>Appearance<select id="profile-theme"><option value="light">Light</option><option value="dark">Dark</option><option value="system">Use device setting</option></select></label><div class="modal-actions"><button type="button" id="profile-logout-button" style="margin-right:auto;border:0;background:transparent;color:#b44236;font-weight:700;padding:10px 4px">Sign out</button><button value="cancel" class="secondary">Cancel</button><button type="button" class="primary" id="save-profile">Save profile</button></div></form></dialog>
   <dialog id="photo-detail-modal"><form method="dialog"><div class="modal-header"><div><p class="eyebrow">PHOTO RECORD</p><h2>Photo details</h2></div><button class="close-button" value="cancel">×</button></div><div id="photo-detail"></div><div class="modal-actions"><button value="cancel" class="secondary">Close</button></div></form></dialog>
   <div class="toast" id="toast" role="status" aria-live="polite" aria-atomic="true"></div>
-  <dialog id="pay-period-dialog"><form id="pay-period-form"><div class="modal-heading"><h2>Custom pay period</h2><button type="button" class="secondary" id="pay-period-close">Close</button></div><label>Label<input id="pay-period-label" maxlength="120" required></label><div class="time-date-filters"><label>Start date<input id="pay-period-from" type="date" required></label><label>End date<input id="pay-period-to" type="date" required></label></div><p id="pay-period-zone" class="input-help"></p><label id="pay-period-reason-label" hidden>Correction reason<textarea id="pay-period-reason" maxlength="1000"></textarea></label><p id="pay-period-form-error" role="alert" hidden></p><button class="primary" id="pay-period-save" type="submit">Save period</button></form></dialog>
+  <dialog id="pay-period-dialog"><form id="pay-period-form">
+    <div class="modal-heading"><h2 id="pay-period-title">New pay period</h2><button type="button" class="secondary" id="pay-period-close">Cancel</button></div>
+    <label>Label<input id="pay-period-label" maxlength="120" required></label>
+    <label>Date preset<select id="pay-period-preset" aria-describedby="pay-period-preset-help"><option value="weekly">Weekly</option><option value="biweekly">Every 2 weeks (14 days)</option><option value="semimonthly">Twice monthly</option><option value="monthly">Monthly</option><option value="custom" selected>Custom</option></select></label>
+    <p id="pay-period-preset-help" class="input-help">Enter custom dates. Save creates one period.</p>
+    <div id="pay-period-calendar" hidden>
+      <label>Calendar month<input id="pay-period-month" type="month"></label>
+      <div id="pay-period-split" class="time-date-filters" hidden>
+        <label>First half ends on day<input id="pay-period-cutoff" type="number" min="1" max="27" step="1" value="15"></label>
+        <label>Half to create<select id="pay-period-half"><option value="first">First half</option><option value="second">Second half</option></select></label>
+      </div>
+    </div>
+    <div class="time-date-filters"><label>Start date<input id="pay-period-from" type="date" required></label><label>End date<input id="pay-period-to" type="date" required></label></div>
+    <p id="pay-period-preview" class="input-help" role="status" aria-live="polite" aria-atomic="true"></p>
+    <p id="pay-period-zone" class="input-help"></p>
+    <label id="pay-period-reason-label" hidden>Correction reason<textarea id="pay-period-reason" maxlength="1000"></textarea></label><p id="pay-period-form-error" role="alert" hidden></p><button class="primary" id="pay-period-save" type="submit">Save period</button>
+  </form></dialog>
   <script src="i18n.js?v=20260930a"></script>
   <script src="csv-cell.js?v=20261004-security"></script>
   <script src="schedule-availability.js?v=20261005-partial-day-leave"></script>
-<script src="daily-work-extraction.js?v=20261007-work-review"></script>
-  <script src="app.js?v=20261007-work-review"></script>
+<script src="daily-work-extraction.js?v=20261007-work-review-small-custom"></script>
+  <script src="report-labor-review.js?v=20261007-labor-review"></script>
+  <script src="app.js?v=20261007-work-review-small-custom"></script>
   <script src="estimate-mobile.js"></script>
-  <script src="time-approval-controls.js?v=20261005-office-recovery"></script>
+  <script src="time-approval-controls.js?v=20261007-pay-presets"></script>
   <script src="company-settings-tabs.js?v=20261004-pay-periods"></script>
   <script src="office-workspace.js?v=20261005-office-recovery"></script>
   <script src="reporting-controls.js?v=20261005-project-notes"></script>

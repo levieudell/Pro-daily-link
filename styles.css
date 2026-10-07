@@ -397,6 +397,10 @@ button,.project-card,.customer-list-item,.report-list-item{-webkit-tap-highlight
 #timecards-page .timecard-record td{padding:10px 8px}
 #pay-period-dialog{max-width:540px;width:calc(100% - 32px)}
 #pay-period-form{display:grid;gap:14px;padding:20px}
+#pay-period-form .modal-heading{display:flex;align-items:center;justify-content:space-between;gap:12px}
+#pay-period-form .modal-heading h2,#pay-period-form .input-help{margin:0}
+#pay-period-calendar{display:grid;gap:12px}
+#pay-period-preview{margin:0;padding:10px;border:1px solid var(--line);border-radius:8px;overflow-wrap:anywhere}
 #pay-period-form .time-date-filters{display:grid;grid-template-columns:1fr 1fr;gap:12px}
 @media(max-width:760px){
   #timecards-page .time-date-filters{grid-template-columns:1fr 1fr;gap:10px}
@@ -411,7 +415,7 @@ button,.project-card,.customer-list-item,.report-list-item{-webkit-tap-highlight
   #timecards-page .timecard-record td:before{display:block;font-size:10px;margin-bottom:2px}
   #timecards-page .timecard-record td[data-label="Person"],#timecards-page .timecard-record td[data-label="Job code"],#timecards-page .timecard-record td[data-label="Approved by"]{display:none}
   #timecards-page .timecard-record td[data-label="Actions"],#timecards-page .timecard-record td[data-label="Status"]{grid-column:1/-1}
-  #timecards-page button,#timecards-page select,#timecards-page input,#pay-period-form button,#pay-period-form input{min-height:44px}
+  #timecards-page button,#timecards-page select,#timecards-page input,#pay-period-form button,#pay-period-form input,#pay-period-form select{min-height:44px}
   #timecards-page .timecard-record input[type="checkbox"]{min-width:44px}
   #timecards-page .timecard-next-step{display:none}
   #timecards-page .timecard-history td{padding:0 10px}
@@ -475,3 +479,7 @@ button,.project-card,.customer-list-item,.report-list-item{-webkit-tap-highlight
 #time-off-zone{line-height:1.5;margin:0 0 12px}
 .time-off-row strong{overflow-wrap:anywhere}
 @media(max-width:640px){#time-off-modal input,#time-off-modal select{font-size:16px;min-height:44px}#time-off-modal .modal-actions button{min-height:44px}.time-off-row>div:only-child{display:grid;grid-auto-flow:row;grid-template-columns:minmax(0,1fr)}}
+
+.report-work-date{font-size:18px;font-weight:750;line-height:1.4;color:var(--text,#182b38);margin:8px 0 14px;overflow-wrap:anywhere}.report-labor-review{border:1px solid #d39c45;border-radius:8px;padding:12px;background:#fff5df;color:#543814;margin:10px 0;line-height:1.5}.report-labor-review strong{display:block}.report-labor-review p{margin:6px 0 0}.report-gaps .report-labor-review{margin-bottom:0}@media(max-width:640px){.report-work-date{font-size:17px}}
+.activity-report-link{width:100%;border:0;border-top:1px solid #eef1ef;background:transparent;font:inherit;text-align:left;color:inherit;text-decoration:none;min-height:56px;cursor:pointer}.activity-report-link:hover{background:var(--surface,#f7f9f8)}.activity-report-link:focus-visible{outline:3px solid var(--green);outline-offset:-3px}.activity-report-link[aria-busy="true"]{cursor:progress}@media(max-width:480px){.activity-report-link{grid-template-columns:auto minmax(0,1fr);padding:14px 16px}.activity-report-link>.status{grid-column:2;justify-self:start}.activity-report-link strong{overflow-wrap:anywhere}}
+.work-scope-actions,.work-proposal-note{grid-column:1/-1}.work-scope-actions button{min-height:44px;border:1px solid #c5d8fb;background:#eef4ff;color:#1769e0;border-radius:8px;padding:8px 12px;font-size:12px;font-weight:700}.work-proposal-note{line-height:1.5;color:var(--muted)}
