@@ -1,0 +1,13 @@
+.role-policy-matrix { overflow-x: auto; margin: 20px 0; }
+.role-policy-matrix table { width: 100%; border-collapse: collapse; text-align: left; }
+.role-policy-matrix caption { font-weight: 700; text-align: left; margin-bottom: 12px; }
+.role-policy-matrix th, .role-policy-matrix td { padding: 12px; border-bottom: 1px solid #dce2e8; vertical-align: top; }
+#role-restrictions-form fieldset { border: 1px solid #dce2e8; border-radius: 12px; padding: 16px; }
+#role-restrictions-form legend { font-weight: 700; padding: 0 8px; }
+#role-restrictions-form label { margin: 12px 0; display: grid; gap: 6px; }
+#role-restrictions-preview { margin-top: 20px; padding: 16px; border: 2px solid #b88c4d; border-radius: 12px; }
+#role-restrictions-preview label { display: flex; align-items: start; gap: 10px; margin: 16px 0; }
+#role-restrictions-preview input { width: auto; margin-top: 4px; }
+#role-restrictions-status { margin-top: 16px; }
+#role-restrictions-content button { white-space: normal; }
+@media (max-width: 600px) { .role-policy-matrix th, .role-policy-matrix td { padding: 8px; } }
