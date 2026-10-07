@@ -98,6 +98,8 @@ async function webhook(subscription, suffix) {
 (async () => {
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve)); base = 'http://127.0.0.1:' + server.address().port;
   try {
+    assert.equal(policy.remainingAnchoredTrial({subscriptionStatus:'Active'}),false,'legacy active accounts without a provider marker remain compatible');
+    assert.equal(policy.remainingAnchoredTrial({subscriptionStatus:'Active',stripeSubscriptionId:'sub_legacy'}),false);
     // Every standard price and period preserves the same absolute deadline.
     for (const plan of ['starter', 'growth', 'pro']) for (const billingCycle of ['monthly', 'annual']) {
       const c = await signup(plan), end = c.read().company.trialEndsAt;

@@ -89,8 +89,8 @@ function anchoredFreePeriod(subscription, company, now = Date.now()) {
 
 function remainingAnchoredTrial(company, now = Date.now()) {
   const period = company.stripeFreePeriod;
-  return company.subscriptionStatus === 'Active' && period?.subscriptionId === company.stripeSubscriptionId &&
-    period.end === Math.ceil(Date.parse(company.trialEndsAt) / 1000) && period.end > now / 1000 && Date.parse(company.trialEndsAt) > now;
+  return Boolean(period && company.subscriptionStatus === 'Active' && period.subscriptionId === company.stripeSubscriptionId &&
+    period.end === Math.ceil(Date.parse(company.trialEndsAt) / 1000) && period.end > now / 1000 && Date.parse(company.trialEndsAt) > now);
 }
 
 function projectCapacityError(db, limit) {
