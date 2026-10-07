@@ -9,6 +9,7 @@ const changes = values => Object.fromEntries(FIELDS.map(key => [key, values[key]
 const utterances = {
   'Schedule Chloe Andy at market Street tomorrow': { action:'schedule',people:'Chloe Andy',project:'market Street',date:'tomorrow' },
   '8 AM': { start:'8 AM' }, '4 PM': { end:'4 PM' },
+  'Chloe and Andi': { people:'Chloe and Andi' },
   'Frame the west wall': { activity:'Frame the west wall' },
   'Check the layout with the supervisor.': { instructions:'Check the layout with the supervisor.' },
   'Make that tomorrow instead': { date:'tomorrow' },

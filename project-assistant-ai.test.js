@@ -20,6 +20,7 @@ function harness(options = {}) {
 async function main(){
   const h=harness(),before=JSON.stringify(h.db);let r=await h.turn('Schedule Chloe Andy at market Street tomorrow');assert.equal(r.status,200);assert.equal(r.data.source,'ai');assert.match(r.data.message,/Did you mean Chloe.*Andi/);assert.equal(r.data.draft.date,'2026-10-08');assert.equal(h.calls.length,1);
   const firstPayload=JSON.parse(h.calls[0].input);assert.ok(firstPayload.projectNames);assert.equal(firstPayload.memberNames,undefined);assert.equal(h.calls[0].store,false);assert.equal(h.calls[0].service_tier,'default');assert.equal(h.calls[0].tools,undefined);
+  const named=harness();let clarification=await named.turn('Schedule Chloe Andy at market Street tomorrow');clarification=await named.turn('Chloe and Andi',clarification.data.state);assert.doesNotMatch(JSON.parse(named.calls[1].input).lastQuestion,/\(ID \d+\)/,'display-only clarification IDs never enter generated provider context');assert.deepEqual(clarification.data.draft.memberIds,[11,12]);
   r=await h.turn('yes',r.data.state);assert.equal(h.calls.length,1);assert.deepEqual(r.data.draft.memberIds,[11,12]);assert.match(r.data.message,/start time/);
   for(const text of ['8 AM','4 PM','Frame the west wall','Check the layout with the supervisor.'])r=await h.turn(text,r.data.state);
   assert.equal(r.data.ready,true);assert.equal(h.calls.length,5);assert.equal(h.writes,0);assert.equal(JSON.stringify(h.db),before);
