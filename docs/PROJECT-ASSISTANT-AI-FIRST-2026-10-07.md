@@ -1,6 +1,6 @@
 # Bounded AI interpretation draft
 
-Base: released main `fd88c54c52412280995a8a3f61a54fe74e46a9db` (PR87). Separate branch: `codex/project-assistant-ai-first-v1`. Preserve urgent fixes and billing/role releases independently. Default remains disabled; this draft does not deploy, merge, initialize production persistence or change any credentials, settings, schema, grants or subscription.
+Base: released main `cdea7221fe26b1fbd881288bef80f5f9680dd28c` (billing PR85, including PR87). Separate branch: `codex/project-assistant-ai-first-v1`. The billing trial markers, canceled-recovery logic, project caps and checkout-disable containment are preserved. Keep this feature separate from urgent releases. Default remains disabled; this draft does not deploy, merge, initialize production persistence or change any credentials, settings, schema, grants or subscription.
 
 ## Working vertical slice
 
