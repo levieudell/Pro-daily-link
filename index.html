@@ -263,7 +263,7 @@
   </form></dialog>
   <dialog id="report-modal">
     <form method="dialog" id="report-form">
-      <div class="modal-header"><div><p class="eyebrow">FIELD REPORT</p><h2 id="report-modal-title">Create daily report</h2></div><button class="close-button" value="cancel">×</button></div>
+      <div class="modal-header"><div><p class="eyebrow">FIELD REPORT</p><h2 id="report-modal-title">Create daily report</h2><p id="report-work-date" class="report-work-date" aria-live="polite"></p></div><button class="close-button" value="cancel">×</button></div>
       <div class="report-steps"><span class="active" data-step-dot="1"><b>1</b> Field notes & photos</span><i></i><span data-step-dot="2"><b>2</b> Production & labor</span></div>
       <div id="report-draft-choice" class="draft-choice" hidden><div><strong>Saved draft found</strong><p id="report-draft-summary"></p></div><div><button type="button" class="secondary" id="report-start-fresh">Start fresh</button><button type="button" class="primary" id="report-resume-draft">Resume draft</button></div></div>
       <div class="report-step active" data-report-step="1">
@@ -465,7 +465,8 @@
   <script src="csv-cell.js?v=20261004-security"></script>
   <script src="schedule-availability.js?v=20261005-partial-day-leave"></script>
 <script src="daily-work-extraction.js?v=20261007-work-review"></script>
-  <script src="app.js?v=20261007-work-review"></script>
+  <script src="report-labor-review.js?v=20261007-labor-review"></script>
+  <script src="app.js?v=20261007-work-review-labor-review"></script>
   <script src="estimate-mobile.js"></script>
   <script src="time-approval-controls.js?v=20261007-pay-presets"></script>
   <script src="company-settings-tabs.js?v=20261004-pay-periods"></script>

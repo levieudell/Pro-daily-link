@@ -479,3 +479,5 @@ button,.project-card,.customer-list-item,.report-list-item{-webkit-tap-highlight
 #time-off-zone{line-height:1.5;margin:0 0 12px}
 .time-off-row strong{overflow-wrap:anywhere}
 @media(max-width:640px){#time-off-modal input,#time-off-modal select{font-size:16px;min-height:44px}#time-off-modal .modal-actions button{min-height:44px}.time-off-row>div:only-child{display:grid;grid-auto-flow:row;grid-template-columns:minmax(0,1fr)}}
+
+.report-work-date{font-size:18px;font-weight:750;line-height:1.4;color:var(--text,#182b38);margin:8px 0 14px;overflow-wrap:anywhere}.report-labor-review{border:1px solid #d39c45;border-radius:8px;padding:12px;background:#fff5df;color:#543814;margin:10px 0;line-height:1.5}.report-labor-review strong{display:block}.report-labor-review p{margin:6px 0 0}.report-gaps .report-labor-review{margin-bottom:0}@media(max-width:640px){.report-work-date{font-size:17px}}
