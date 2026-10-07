@@ -13,7 +13,7 @@ function node(selector) {
 const selections = CAPABILITIES.map(cap => ({ dataset: { roleCap: cap.key }, value: 'follow' }));
 const caps = policy({}).projectManager;
 const loaded = { valid: true, revision: 0, projectManager: caps, canEdit: true, capabilities: CAPABILITIES, history: [] };
-const context = { currentUser: { id: 1, role: 'owner' }, currentRole: 'office', companyId: 'A', signedInCompanyId() { return context.companyId; }, $: node, $$() { return selections; },
+const context = { currentUser: { id: 1, role: 'owner' }, currentRole: 'office', companyId: 'A', signedInCompanyId() { return context.companyId; }, $: node, $$() { return { [Symbol.iterator]: () => selections[Symbol.iterator]() }; },
   escapeHtml(value) { return String(value).replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[char])); },
   api(url, options) { calls.push({ url, input: options?.body ? JSON.parse(options.body) : undefined }); return new Promise((resolve, reject) => pending.push({ resolve, reject })); },
   renderEverything() {}, loadRole() { context.reloads = (context.reloads || 0) + 1; }, window: { addEventListener(type, fn) { listeners[type] = fn; } }

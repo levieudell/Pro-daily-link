@@ -45,7 +45,7 @@
   }
   async function previewChanges() {
     if (!guard() || !editing() || busy) return;
-    const projectManager = Object.fromEntries($$('[data-role-cap]').map(input => [input.dataset.roleCap, input.value === 'follow']));
+    const projectManager = Object.fromEntries([...$$('[data-role-cap]')].map(input => [input.dataset.roleCap, input.value === 'follow']));
     const reason = $('#role-restrictions-reason').value.trim();
     if (!reason) { message('Enter a reason before previewing.', true); return; }
     const ticket = ++sequence, original = context(); busy = true; preview = null;

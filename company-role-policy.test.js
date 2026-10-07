@@ -52,7 +52,7 @@ function fixture(company) {
   db.assignments = [{ id: 1, projectId: 101, memberIds: [11], date: '2026-10-07', start: '07:00', end: '15:00', activity: 'Synthetic work' }];
   db.reports = [{ id: 1, project: 0, status: 'Needs review', dateIso: '2026-10-07', foreman: db.team[0].name, notes: 'Synthetic report', laborEntries: [{ memberId: 11, hours: 1 }], productionEntries: [], history: [] }];
   db.timeCards = [{ id: 1, projectId: 101, memberId: 11, status: 'submitted', inAt: '2026-10-07T07:00:00Z', outAt: '2026-10-07T08:00:00Z', date: '2026-10-07', hours: 1, breaks: [] }];
-  db.workdays = []; db.photos = []; db.auditLog = []; db.timeOffRequests = []; db.changes = []; db.payPeriods = []; db.subcontractorLinks = [];
+  db.workdays = [{ id: 1, projectId: 101, memberIds: [11], reportId: 1, status: 'completed', startedAt: '2026-10-07T07:00:00Z', endedAt: '2026-10-07T08:00:00Z', startNote: 'Synthetic start', endNotes: db.reports[0].notes }]; db.photos = []; db.auditLog = []; db.timeOffRequests = []; db.changes = []; db.payPeriods = []; db.subcontractorLinks = [];
   return db;
 }
 fs.mkdirSync(path.join(temp, 'tenants'));
@@ -91,6 +91,9 @@ function slowAssignment() {
     assert.equal((await request(route, 'GET', undefined, 1, companyB, { Authorization: 'Bearer ' + token(1, companyA) })).status, 403, 'cross-tenant token');
     for (const malicious of [{ ...input(caps()), role: 'field' }, { ...input(caps()), projectManager: { ...caps(), aiAssistant: true } }, { ...input(caps()), projectManager: { ...caps(), payroll: true } }, { ...input(caps()), revision: '0' }]) assert.equal((await request(route + '/preview', 'POST', malicious)).status, 400);
     const capOff = { ...caps(), scheduleCrews: false };
+    mutate(db => { db.company.emailVerificationRequiredAt = '2026-10-07T00:00:00Z'; });
+    assert.equal((await request(route + '/preview', 'POST', input(capOff))).status, 403, 'owner email verification is required');
+    mutate(db => { delete db.company.emailVerificationRequiredAt; });
     const signed = await preview(capOff);
     assert.deepEqual(read(), initial, 'preview is read-only');
     assert.equal((await request(route, 'PUT', { ...confirm(signed), confirm: false })).status, 400);
@@ -100,6 +103,16 @@ function slowAssignment() {
     mutate(db => { db.users.find(user => user.id === 3).assignedCrews.push('Crew B'); });
     assert.equal((await request(route, 'PUT', confirm(signed))).status, 409, 'scope changed after preview');
     mutate(db => { db.users.find(user => user.id === 3).assignedCrews = ['Crew A']; });
+    assert.equal((await request('/api/state', 'GET', undefined, 3)).data.workdays.length, 1, 'missing policy preserves legacy workdays');
+    mutate(db => { db.company.roleRestrictions = { schemaVersion: 1, revision: 1, projectManager: { ...caps(), viewTime: false, manageTime: false } }; });
+    const dailyOnly = (await request('/api/state', 'GET', undefined, 3)).data;
+    assert.deepEqual(dailyOnly.workdays, [], 'workday timestamps cannot bypass time viewing restriction');
+    assert.equal(dailyOnly.reports.length, 1); assert.equal(Object.hasOwn(dailyOnly, 'timeCards'), false);
+    mutate(db => { db.company.roleRestrictions.projectManager = { ...caps(), viewDailies: false, approveDailies: false }; });
+    const timeOnly = (await request('/api/state', 'GET', undefined, 3)).data;
+    assert.deepEqual(timeOnly.workdays, [], 'workday notes cannot bypass daily viewing restriction');
+    assert.deepEqual(timeOnly.reports, []); assert.equal(timeOnly.timeCards.length, 1);
+    mutate(db => { delete db.company.roleRestrictions; });
     const meBefore = (await request('/api/auth/me', 'GET', undefined, 3)).data;
     assert.equal(meBefore.permissions.scheduleCrews, true);
     const slow = slowAssignment();
@@ -120,7 +133,7 @@ function slowAssignment() {
     assert.equal((await request('/api/projects/101/tm-summary', 'GET', undefined, 3)).status, 403, 'financial boundary unchanged');
     await apply({ ...capOff, viewDailies: false, approveDailies: false, viewTime: false, manageTime: false }, 1);
     const blocked = (await request('/api/state', 'GET', undefined, 3)).data;
-    assert.deepEqual(blocked.reports, []); assert.equal(Object.hasOwn(blocked, 'timeCards'), false);
+    assert.deepEqual(blocked.reports, []); assert.equal(Object.hasOwn(blocked, 'timeCards'), false); assert.deepEqual(blocked.workdays, [], 'completed workdays cannot disclose hidden report or time data');
     assert.equal((await request('/api/reports/1/approve', 'PATCH', {}, 3)).status, 403);
     assert.equal((await request('/api/reports/1', 'PATCH', { notes: 'Tampered' }, 3)).status, 403);
     assert.equal((await request('/api/time-cards/1/approve', 'POST', {}, 3)).status, 404);
