@@ -81,6 +81,10 @@ function slow(base, payload) {
     assert.equal((await request(b, '/api/projects/102/notes-todos', 'GET', undefined, 3)).status, 404);
     next = JSON.parse(JSON.stringify(next)); next.customRoles = [{ id: 'custom_readonly', name: 'Project reader', baseRole: 'project_manager', permissions: { view: true, create: false, edit: false, complete: false } }]; next.assignments = [{ userId: 3, customRoleId: 'custom_readonly' }];
     await change(b, a, next, 1);
+    const addedMember = await request(a, '/api/team', 'POST', { name: 'Synthetic job title', role: 'Crew member', crew: 'C' }, 2);
+    assert.equal(addedMember.status, 201, 'Office team job-title form remains supported after policy activation');
+    assert.equal(addedMember.data.role, 'Crew member');
+    assert.equal(JSON.parse(fs.readFileSync(dbFile)).users.find(user => user.id === 2).role, 'admin', 'team job title never changes app identity');
     assert.equal((await request(b, notes + '/' + item.id, 'PATCH', { revision: 1, text: 'No custom edit' }, 3)).status, 403);
     assert.equal((await request(a, notes + '/' + item.id, 'PATCH', { revision: 1, completed: true }, 3)).status, 403);
     assert.equal((await request(a, notes, 'GET', undefined, 1)).status, 200, 'owner unaffected');

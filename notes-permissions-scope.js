@@ -11,7 +11,9 @@ async function guard({ req, url, db, user, body, projectAllowed, memberAllowed }
   if (mutation && directory) {
     if (!office) fail('Directory and membership administration requires Owner or Admin.');
     const input = await body(req);
-    if (['id', 'companyId', 'role', 'permissions', 'notesCustomRoleId', 'notesRolePolicy', 'ownerId', 'userId'].some(key => Object.hasOwn(input, key))) fail('Protected identity fields cannot be supplied.');
+    const protectedKeys = ['id', 'companyId', 'permissions', 'notesCustomRoleId', 'notesRolePolicy', 'ownerId', 'userId'];
+    if (!/^\/api\/team(?:\/\d+)?$/.test(path)) protectedKeys.push('role'); // Team role is a job title; app identities live in users.
+    if (protectedKeys.some(key => Object.hasOwn(input, key))) fail('Protected identity fields cannot be supplied.');
   }
   const scopedPath = path.match(/^\/api\/projects\/(\d+)\/(?:plans|estimate-proposals|tm-summary)/);
   if (scopedPath && !projectAllowed(db, user, Number(scopedPath[1]))) fail('Assigned project access required.');
