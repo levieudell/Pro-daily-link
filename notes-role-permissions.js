@@ -36,7 +36,7 @@ function validate(value, db) {
   return { schemaVersion: 1, revision: value.revision, roles: rolePermissions, customRoles, assignments, retiredIds: [...retired] };
 }
 function current(db) {
-  if (db.company.notesRolePolicy === undefined) return { ...defaults(), valid: true };
+  if (db.company.notesRolePolicy === undefined) return (db.users || []).some(user => user.notesCustomRoleId != null) ? { ...defaults(), roles: Object.fromEntries(roles.map(role => [role, none()])), valid: false, revision: null } : { ...defaults(), valid: true };
   // Existing assignments can outlive deactivation/role changes. Validate structure
   // using the stored policy's baseline, then check the real actor on each request.
   try {
@@ -56,7 +56,20 @@ function access(db, user) {
   const result = Object.fromEntries(actions.map(key => [key, policy.roles[role][key] && (!custom || custom.permissions[key])]));
   if (!result.view) return none(); return result;
 }
-function impact(db, next) { return (db.users || []).filter(user => user.status === 'Active' && (!user.companyId || user.companyId === db.company.id) && roles.includes(user.role === 'office' ? 'admin' : user.role)).map(user => ({ id: user.id, name: user.name, role: user.role === 'office' ? 'admin' : user.role, before: access(db, user), after: access({ ...db, company: { ...db.company, notesRolePolicy: next } }, { ...user, notesCustomRoleId: next.assignments.find(row => row.userId === user.id)?.customRoleId }) })); }
+function accounts(db, policy) {
+  const selected = new Set(policy.assignments.map(row => row.userId));
+  const rows = (db.users || []).filter(user => user.role !== 'owner' && (!user.companyId || user.companyId === db.company.id) && (selected.has(user.id) || user.notesCustomRoleId != null || user.status === 'Active' && roles.includes(user.role === 'office' ? 'admin' : user.role))).map(user => ({ id: user.id, name: user.name, role: user.role === 'office' ? 'admin' : user.role, status: user.status, eligible: user.status === 'Active' && roles.includes(user.role === 'office' ? 'admin' : user.role) }));
+  for (const id of selected) if (!(db.users || []).some(user => user.id === id)) rows.push({ id, name: 'Removed account ' + id, role: null, status: 'Removed', eligible: false });
+  return rows;
+}
+function profile(policy, id) { const assignment = policy.assignments.find(row => row.userId === id); return assignment ? policy.customRoles.find(row => row.id === assignment.customRoleId)?.name || 'Unavailable profile' : 'Base role only'; }
+function impact(db, next) {
+  const beforePolicy = current(db), projected = { ...db, company: { ...db.company, notesRolePolicy: next } };
+  return accounts(db, beforePolicy).map(row => {
+    const user = (db.users || []).find(item => item.id === row.id), active = user?.status === 'Active';
+    return { ...row, beforeProfile: profile(beforePolicy, row.id), afterProfile: profile(next, row.id), before: active ? access(db, user) : none(), after: active ? access(projected, { ...user, notesCustomRoleId: next.assignments.find(item => item.userId === row.id)?.customRoleId }) : none() };
+  });
+}
 function createHandler({ readDb, writeDb, body, json, authenticatedUser, sessionBinding, storageSupported, accountAccess, signingKey }) {
   const route = '/api/company/notes-role-permissions';
   const fingerprint = db => crypto.createHash('sha256').update(JSON.stringify([db.company.id, db.company.notesRolePolicy, (db.users || []).map(user => [user.id, user.name, user.role, user.status, user.companyId, user.projectIds, user.assignedCrews, user.memberId, user.permissions, user.notesCustomRoleId])])).digest('hex');
@@ -68,7 +81,7 @@ function createHandler({ readDb, writeDb, body, json, authenticatedUser, session
     if (!user || user.mustSetPassword || !['owner', 'admin'].includes(user.role) || hinted && hinted !== db.company.id) return reply(403, { error: 'Active Account Owner or Admin session required.' });
     res.setHeader('Cache-Control', 'private, no-store');
     const policy = current(db), supported = storageSupported();
-    if (req.method === 'GET' && url.pathname === route) return reply(200, { ...policy, canEdit: user.role === 'owner' && supported && policy.valid, storageSupported: supported, users: impact(db, policy), accounts: (db.users || []).filter(row => row.status === 'Active' && (!row.companyId || row.companyId === db.company.id) && roles.includes(row.role === 'office' ? 'admin' : row.role)).map(row => ({ id: row.id, name: row.name, role: row.role === 'office' ? 'admin' : row.role })), history: (db.auditLog || []).filter(row => row.type === 'notes_role_policy_changed').slice(-20).reverse() });
+    if (req.method === 'GET' && url.pathname === route) return reply(200, { ...policy, canEdit: user.role === 'owner' && supported && policy.valid, storageSupported: supported, users: impact(db, policy), accounts: accounts(db, policy), history: (db.auditLog || []).filter(row => row.type === 'notes_role_policy_changed').slice(-20).reverse() });
     if (user.role !== 'owner') return reply(403, { error: 'Only the Account Owner can change notes permissions.' });
     if (!supported) return reply(503, { error: 'This draft requires shared-file admission. Cloud activation needs transactional admission integration.' });
     if (accountAccess(db.company).locked) return reply(402, { error: 'The company account is locked.' });
@@ -100,4 +113,4 @@ function createHandler({ readDb, writeDb, body, json, authenticatedUser, session
     } catch (failure) { if (!failure.statusCode) throw failure; return reply(failure.statusCode, { error: failure.message }); }
   };
 }
-module.exports = { roles, actions, defaults, validate, current, access, impact, createHandler };
+module.exports = { roles, actions, defaults, validate, current, access, impact, accounts, createHandler };
