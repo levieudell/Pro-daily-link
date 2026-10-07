@@ -295,7 +295,7 @@ async function openEmployeeDetail(id,trigger=null){
       if(!email.reportValidity()||!role){warning.textContent='Enter a valid email and choose an app role.';return}
       if(role==='field'&&!$('#employee-field-mode').value){warning.textContent='Choose field operations or restricted crew access.';return}
       employeeAccessPending=true;button.disabled=true;warning.textContent='';
-      try{const result=await api('/api/team/'+id+'/account',{method:'POST',body:JSON.stringify({email:email.value.trim(),role,...(role==='field'?{fieldAccessMode:$('#employee-field-mode').value}:{}),projectIds:$$('#employee-access-projects input:checked').map(input=>Number(input.value)),assignedCrews:$$('#employee-access-crews input:checked').map(input=>input.value)})});
+      try{const result=await api('/api/team/'+id+'/account',{method:'POST',body:JSON.stringify({email:email.value.trim(),role,...(role==='field'?{fieldAccessMode:$('#employee-field-mode').value}:{}),projectIds:[...$$('#employee-access-projects input:checked')].map(input=>Number(input.value)),assignedCrews:[...$$('#employee-access-crews input:checked')].map(input=>input.value)})});
         if(request!==employeeDetailRequest||!dialog.open)return;
         content.textContent='App access created for '+m.name+' ('+(result.account.fieldAccessMode==='time_schedule_photos'?'Crew member — time, schedule & photos; no dailies':result.account.role.replaceAll('_',' '))+'). The employee record was preserved.';
         $('#employee-access-result').innerHTML=temporaryPasswordMarkup(result.temporaryPassword);notify('Employee app access created');

@@ -84,7 +84,7 @@ async function openEndedDayReview(result){
   const scope=dailyScope(),generation=dailyReviewGeneration,reportId=Number(result.report.id),projectId=projects[Number($('#report-project').value)]?.id,date=$('#report-date').value,reportKey=dailyReportPhotoKey();
   const current=()=>dailyScope()===scope&&dailyReviewGeneration===generation&&$('#report-modal').open&&Number(editingReportId)===reportId&&projects[Number($('#report-project').value)]?.id===projectId&&$('#report-date').value===date;
   if(saved){try{localStorage.setItem(dailyEndKey(id),JSON.stringify({...saved,reportId}))}catch{}}
-  const modal=$('#report-modal'),fields=$$('#report-modal input, #report-modal textarea, #report-modal select, #report-modal button:not([value="cancel"]):not([aria-label="Close dialog"])').map(field=>({field,disabled:field.disabled}));
+  const modal=$('#report-modal'),fields=[...$$('#report-modal input, #report-modal textarea, #report-modal select, #report-modal button:not([value="cancel"]):not([aria-label="Close dialog"])')].map(field=>({field,disabled:field.disabled}));
   modal.dataset.analyzing='true';fields.forEach(({field})=>field.disabled=true);
   const cleanup=()=>{delete modal.dataset.analyzing;fields.forEach(({field,disabled})=>field.disabled=disabled);if(dailyReviewCleanup===cleanup)dailyReviewCleanup=null};dailyReviewCleanup=cleanup;
   try{
