@@ -78,7 +78,7 @@ assert.match(styles, /\[data-theme="dark"\] \.schedule-summary article/);
 assert.match(styles, /\[data-theme="dark"\] \.schedule-cell\.person/);
 assert.match(styles, /\[data-theme="dark"\] \.schedule-view-switcher button\.active/);
 assert.match(styles, /\[data-theme="dark"\] table th/);
-assert.match(index, /styles\.css\?v=20261005-office-recovery/);
+assert.match(index, /styles\.css\?v=20261007-pay-presets/);
 assert.match(index, /app\.js\?v=20261007-work-review/);
 assert.ok(index.indexOf('csv-cell.js?') < index.indexOf('app.js?'), 'shared CSV encoder must load before application exporters');
 assert.match(app, /Launch polish for the subcontractor directory/);
