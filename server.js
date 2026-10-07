@@ -916,6 +916,7 @@ async function api(req,res,url){
   }
   if(req.method==='POST'&&url.pathname==='/api/billing/checkout'){
     if(!billingOwnerAllowed(req))return json(res,403,{error:'Account owner permission required'});
+    if(process.env.PDL_CHECKOUT_DISABLED==='1')return json(res,503,{error:'Checkout is temporarily unavailable. Your workspace and existing subscription remain unchanged. Please contact support.'});
     const input=await body(req),db=readDb(),plan=BILLING_PLANS[input.plan];
     if(!plan)return json(res,400,{error:'Choose a valid plan'});
     try{

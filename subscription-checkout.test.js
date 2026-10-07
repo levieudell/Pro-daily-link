@@ -107,6 +107,9 @@ async function webhook(subscription, suffix) {
       assert.equal(pending.params['line_items[0][price]'], `price_${plan}_${billingCycle}`);
     }
     const c = await signup(), end = c.read().company.trialEndsAt;
+    process.env.PDL_CHECKOUT_DISABLED = '1'; const disabledCount = created;
+    assert.equal((await c.request('/api/billing/checkout', 'POST', { plan: 'starter' })).status, 503);
+    assert.equal(created, disabledCount); delete process.env.PDL_CHECKOUT_DISABLED;
     failAfterCreate = true; const before = created;
     assert.equal((await c.request('/api/billing/checkout', 'POST', { plan: 'starter' })).status, 502);
     const attempt = c.read().company.pendingCheckout.attempt;
