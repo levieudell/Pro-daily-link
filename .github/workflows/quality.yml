@@ -29,4 +29,19 @@ jobs:
       - run: npm audit --omit=dev --audit-level=high
       - run: npm run security:scan
 
+  sql-conflicts:
+    name: Test SQL revision conflicts
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Install isolated SQL test runtime
+        run: npm install --prefix "$RUNNER_TEMP/pdl-sql-tests" --ignore-scripts --no-audit --no-fund --no-package-lock @electric-sql/pglite@0.5.8
+      - name: Verify fresh and guarded upgrade SQL
+        env:
+          PDL_SQL_TEST_RUNTIME: ${{ runner.temp }}/pdl-sql-tests
+        run: node revision-conflict-sql.test.cjs
 

@@ -69,7 +69,7 @@ BEGIN
   FOR UPDATE;
 
   IF current_revision <> p_expected_revision THEN
-    RAISE EXCEPTION 'PDL_REVISION_CONFLICT expected=% actual=%', p_expected_revision, current_revision USING ERRCODE = '40001';
+    RAISE EXCEPTION 'PDL_REVISION_CONFLICT expected=% actual=%', p_expected_revision, current_revision USING ERRCODE = 'PT409';
   END IF;
   next_revision := current_revision + 1;
 
@@ -95,4 +95,5 @@ REVOKE ALL ON FUNCTION public.replace_tenant_records(uuid,bigint,jsonb,text,json
 GRANT EXECUTE ON FUNCTION public.replace_tenant_records(uuid,bigint,jsonb,text,jsonb) TO service_role;
 
 COMMIT;
+
 
