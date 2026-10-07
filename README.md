@@ -64,6 +64,8 @@ This is a connected MVP. Public production launch still requires completing the 
 
 ## Project Notes & To-dos
 
+The optional PM/admin/owner project assistant draft adds typed requests and supported-device dictation for a new single-person/day assignment with instructions, project notes, and open/unassigned to-dos. Each action requires an exact project/details preview and explicit confirmation. Scheduling retains PM crew permissions; notes use existing project-team visibility. Due-today is the exact company-calendar date. No email, public sharing, or background save is added. See [scope, safety and verification](docs/PROJECT-ASSISTANT-DRAFT-2026-10-07.md). This feature is draft-only and has no production release authority.
+
 Open a project and choose **Notes & To-dos** to save a short plain-text update or an actionable to-do. Mark to-dos complete or reopen them; completed items stay available. Each item records its author, timestamps, and before/after edit history. There are no automatic deadlines or assignments.
 
 This tab requires an active signed-in account. Owners and admins can use it on any company project; project managers and field users use their existing project access. Guest links do not expose notes. Data is saved in the existing tenant snapshot/transactional persistence and backups, with no schema migration required. Edit revisions prevent silent overwrites, and create request IDs make network retries safe.
