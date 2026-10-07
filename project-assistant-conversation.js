@@ -78,24 +78,26 @@
   // callback. The sole request seam is the existing read-only server preview.
   function createConversation({document, window, SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition,
     canContinue, getContext, getDraft, setDraft, preview, onCancelPreview, onInterrupted = () => {}, onStatus, onTurn = () => {},
+    nextSlot, nextQuestion, answerTurn, onPrompt = () => {}, onCancelSession = () => {},
     maxMs = 300000, maxTurns = 20, setTimer = setTimeout, clearTimer = clearTimeout}) {
-    let active = false, generation = 0, recognition = null, totalTimer = null, listenTimer = null, turns = 0, characters = 0, asked = null, reading = false, awaitingPreview = false, exactReading = false;
+    let active = false, generation = 0, recognition = null, totalTimer = null, listenTimer = null, turns = 0, characters = 0, asked = null, reading = false, awaitingPreview = false, exactReading = false,answering=false;
     const allowed = () => active && !document.hidden && (document.hasFocus?.() ?? true) && canContinue();
     const status = text => onStatus(text, active);
     function stop(reason = 'Conversation stopped. Nothing is saved by voice. Start again or use the fields.') {
-      if (awaitingPreview || exactReading) onInterrupted();
-      awaitingPreview = exactReading = false;
+      const wasActive=active;
+      if (awaitingPreview || exactReading || answering) onInterrupted();
+      awaitingPreview = exactReading = answering = false;
       active = false; reading = false; generation++; asked = null;
       const old = recognition; recognition = null;
       if (totalTimer != null) clearTimer(totalTimer); if (listenTimer != null) clearTimer(listenTimer);
       totalTimer = listenTimer = null;
       try { old?.abort(); } catch {} try { window.speechSynthesis?.cancel(); } catch {}
-      status(reason);
+      if(wasActive)status(reason);
     }
     function speak(text, listenAfter) {
       if (!allowed()) { stop('Conversation stopped because this page or project context changed.'); return; }
       if (text.length > 20000) { stop('The exact preview is too long for speech. Request a fresh preview with the form and review it on screen.'); return; }
-      const version = generation; reading = true; status(text);
+      const version = generation; reading = true; status(text);if(listenAfter)onPrompt(text);
       let utterance;
       try { utterance = new window.SpeechSynthesisUtterance(text); utterance.lang = 'en-US';
         utterance.onend = () => { if (version !== generation) return; reading = false; if (!allowed()) { stop(); return; } if (listenAfter) listen(version); else {exactReading=false;stop('Complete readback finished. Nothing saved by voice. Review the displayed preview and conflicts; use on-screen Confirm only if available and correct.');} };
@@ -103,23 +105,28 @@
         window.speechSynthesis.speak(utterance);
       } catch { stop('Spoken prompts are unavailable. Use the fields and exact preview.'); }
     }
-    function ask(prefix = '') {
+    function ask(prefix = '', override = '') {
       if (!allowed()) { stop(); return; }
       const draft = getDraft(), context = getContext();
-      if (!slots[draft.action]) { stop('Choose a supported action before starting conversation.'); return; }
+      if (!slots[draft.action]&&!nextQuestion) { stop('Choose a supported action before starting conversation.'); return; }
       if (['schedule','schedule_batch'].includes(draft.action) && context.capabilities?.schedule === false) { stop('Scheduling permission is unavailable. Choose a project note or to-do.'); return; }
       if ((['schedule','schedule_batch'].includes(draft.action) || draft.action === 'todo' && draft.deadline && draft.deadline !== 'none') && !context.timezone) { stop('Company timezone is missing. Ask the owner to confirm it in Company settings, then return.'); return; }
-      asked = missingSlot(draft);
-      speak(prefix + (asked ? question(asked, context) : 'The draft fields are complete. Say preview these changes for the exact server preview, change and a field name to correct it, or cancel conversation. Voice never saves.'), true);
+      asked = nextSlot ? nextSlot() : missingSlot(draft);
+      speak(override || prefix + (nextQuestion ? nextQuestion() : asked ? question(asked, context) : 'The draft fields are complete. Say preview these changes for the exact server preview, change and a field name to correct it, or cancel conversation. Voice never saves.'), true);
     }
     async function receive(text, confidence) {
       if (!allowed()) { stop(); return; }
       if (++turns > maxTurns || (characters += text.length) > 6000) { stop('Conversation limit reached. Review the draft fields; start again or type.'); return; }
       onTurn('You', text);
       const value = clean(text);
-      if (['cancel conversation','stop conversation'].includes(value)) { onCancelPreview(); stop('Conversation and preview cancelled. Nothing saved.'); return; }
+      if (['cancel conversation','stop conversation'].includes(value)) { onCancelPreview();onCancelSession(value); stop('Conversation and preview cancelled. Nothing saved.'); return; }
       if (Number.isFinite(confidence) && confidence < 0.75) { ask('Recognition was uncertain. Please repeat one exact answer. Nothing changed. '); return; }
       if (['yes','yeah','okay','ok','save','confirm','do it','save it','confirm and save'].includes(value)) { ask('Voice cannot confirm or save. Use the on-screen Confirm button only after reviewing an exact preview. '); return; }
+      if (answerTurn && value !== 'preview these changes') {
+        const version=generation;answering=true;
+        try {const result=await answerTurn(text,()=>version===generation&&allowed());if(version!==generation)return;answering=false;if(!allowed()){stop();return;}ask('',result?.message||'');}
+        catch {if(version===generation)stop('That request could not finish. Start again or type. Nothing saved.');}return;
+      }
       if (value.startsWith('change ')) {
         const key = (slots[getDraft().action] || []).find(key => labels[key] === value.slice(7));
         if (!key) { ask('That change is ambiguous. Use a displayed field name or cancel and edit the fields. '); return; }
@@ -128,7 +135,7 @@
         setDraft(patch); onCancelPreview(); asked = key; speak(question(key, getContext()), true); return;
       }
       if (value === 'preview these changes') {
-        if (missingSlot(getDraft())) { ask('More details are required before preview. '); return; }
+        if (nextSlot ? nextSlot() : missingSlot(getDraft())) { ask('More details are required before preview. '); return; }
         const version = generation;awaitingPreview=true; status('Checking the exact server preview. Microphone is off.');
         try { const result = await preview(); if (version !== generation) return; if (!allowed()) { stop(); return; }
           if (!result?.text) { stop('Preview could not be completed. Review the displayed message and fields.'); return; }
@@ -168,7 +175,7 @@
       if (!SpeechRecognition || !window.speechSynthesis || !window.SpeechSynthesisUtterance || document.hidden || !(document.hasFocus?.() ?? true) || !canContinue()) { status('Conversation speech is unavailable here. Use typing and the exact preview.'); return false; }
       active = true; generation++; turns = characters = 0; onCancelPreview();
       totalTimer = setTimer(() => stop('Five-minute conversation limit reached. Start again or type.'), maxMs);
-      const context = getContext(); ask(`Project ${context.project?.name || ''}. ${context.timezone ? `Company timezone ${context.timezone}. ` : ''}I will collect draft details one answer at a time. Nothing is saved by voice. `);
+      const context = getContext(); ask(nextQuestion?'':`Project ${context.project?.name || ''}. ${context.timezone ? `Company timezone ${context.timezone}. ` : ''}I will collect draft details one answer at a time. Nothing is saved by voice. `);
       return active;
     }
     document.addEventListener?.('visibilitychange', () => { if (document.hidden) stop('Conversation stopped because the page is hidden.'); });

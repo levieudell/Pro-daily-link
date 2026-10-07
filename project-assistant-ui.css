@@ -10,3 +10,5 @@
 @media(prefers-reduced-motion:reduce){.project-assistant-launcher,.project-assistant-dialog{animation:none;transition:none;scroll-behavior:auto}}
 
 .assistant-batch-list{padding-left:22px;overflow-wrap:anywhere}.assistant-batch-list li{margin:6px 0}
+
+.assistant-prompt{font-size:1.2rem;font-weight:600;margin:20px 0 12px}.assistant-composer{margin-top:12px}.assistant-composer .assistant-message-label{margin:8px 0 5px}.assistant-composer textarea{font-size:max(16px,1rem);min-height:72px;max-height:180px}.assistant-composer-actions{display:flex;gap:8px;margin-top:8px}.assistant-composer-actions button{min-height:44px;flex:1}.assistant-details{margin-top:18px;border-top:1px solid #ddd;padding-top:12px}.assistant-details summary{cursor:pointer;min-height:36px;display:list-item}.assistant-details summary:focus-visible{outline:3px solid #1e88e5;outline-offset:3px}.assistant-conversation{max-height:min(38dvh,360px)}.assistant-plain-preview{white-space:pre-wrap;overflow-wrap:anywhere;margin:0}.assistant-speech-help{font-size:.85rem}[data-assistant-navigation] button{min-height:44px}
