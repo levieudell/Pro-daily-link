@@ -18,16 +18,24 @@
     return `<h3>Review this exact assignment</h3><dl><dt>Project</dt><dd>${escape(row.projectName)}</dd><dt>Person</dt><dd>${escape(row.memberName)}${Number.isSafeInteger(row.memberId) ? ' (ID ' + row.memberId + ')' : ''}</dd><dt>Date and hours</dt><dd>${escape(row.date)} · ${escape(row.start)}–${escape(row.end)} · ${escape(row.timezone)}</dd><dt>Task</dt><dd>${escape(row.activity)}</dd><dt>Daily instructions</dt><dd class="assistant-instructions">${escape(row.instructions)}</dd><dt>Notification</dt><dd>${escape(row.notification)}</dd></dl>${result.conflicts.length ? '<h4>Resolve these conflicts before saving</h4><ul>' + result.conflicts.map(row => `<li>${escape(row.message)} ${escape(row.date)} ${escape(row.start || '')}${row.end ? '–' + escape(row.end) : ''}</li>`).join('') + '</ul>' : '<p>No current conflicts. Availability and access will be checked again when you confirm.</p>'}`;
   }
   function createAssistant({ document, window, getWorkspace, request, onSaved = () => {}, timeoutMs = 25000, SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition }) {
-    async function bounded(task) {
-      const controller = new AbortController(); let timer;
-      try { return await Promise.race([task(controller.signal), new Promise((resolve, reject) => { timer = setTimeout(() => { controller.abort(); reject(new Error('The request timed out.')); }, timeoutMs); })]); }
-      finally { clearTimeout(timer); }
+    const pendingReads = new Set();
+    const abortPending = () => { for (const controller of pendingReads) controller.abort(); };
+    async function bounded(task, cancellable = true) {
+      const controller = new AbortController(); let timer, onAbort;
+      if (cancellable) pendingReads.add(controller);
+      try { return await Promise.race([task(controller.signal), new Promise((resolve, reject) => {
+        onAbort = () => reject(new Error('The request was cancelled.'));
+        controller.signal.addEventListener('abort', onAbort, { once: true });
+        timer = setTimeout(() => { reject(new Error('The request timed out.')); controller.abort(); }, timeoutMs);
+      })]); }
+      finally { clearTimeout(timer); controller.signal.removeEventListener('abort', onAbort); pendingReads.delete(controller); }
     }
-    const boundedRequest = (path, payload) => bounded(signal => request(path, payload, signal));
+    const boundedRequest = (path, payload, cancellable = true) => bounded(signal => request(path, payload, signal), cancellable);
     const launcher = document.createElement('button'); launcher.type = 'button'; launcher.id = 'project-assistant-launcher'; launcher.hidden = true;
     launcher.className = 'project-assistant-launcher'; launcher.setAttribute('aria-label', 'Open project assistant'); launcher.setAttribute('aria-haspopup', 'dialog'); launcher.innerHTML = mascot;
     const dialog = document.createElement('dialog'); dialog.id = 'project-assistant-dialog'; dialog.className = 'project-assistant-dialog'; dialog.setAttribute('aria-labelledby', 'project-assistant-title');
     dialog.innerHTML = `<div class="assistant-heading"><span class="assistant-mascot">${mascot}</span><div><h2 id="project-assistant-title">Project assistant</h2><p>Schedules, notes &amp; to-dos</p></div><button type="button" class="secondary" data-assistant-close aria-label="Close project assistant">Close</button></div>
+      <p class="input-help">When AI interpretation is enabled, Send and Talk share your request, draft, company date/timezone and limited permitted project/team display names with OpenAI. Stored reports, files, billing and customer contacts are excluded. Nothing saves before preview and Confirm.</p>
       <p data-assistant-prompt class="assistant-prompt">What do you need?</p>
       <div data-assistant-conversation class="assistant-conversation" role="log" aria-live="polite" aria-label="Assistant conversation"></div>
       <form data-assistant-chat-form class="assistant-composer"><label for="assistant-message-input" class="assistant-message-label">Message</label><textarea id="assistant-message-input" data-assistant-text rows="2" maxlength="6000" placeholder="For example: Add a note for West Site: the gate opens at 8 AM."></textarea><div class="assistant-composer-actions"><button type="submit" class="primary" data-assistant-send>Send</button><button type="button" class="secondary" data-assistant-converse aria-pressed="false" aria-label="Talk to project assistant">Talk</button></div></form>
@@ -57,6 +65,8 @@
     document.body.append(launcher, dialog);
     const node = name => dialog.querySelector(`[data-assistant-${name}]`), fieldNames = ['memberId', 'date', 'timezone', 'start', 'end', 'activity', 'instructions'], extraNames = ['action', 'noteText', 'deadline', 'dueDate'], batchNames = ['memberIds','startDate','endDate','weekdays','batchStart','batchEnd'];
     let identity = '', sequence = 0, preview = null, uncertain = false, busy = false, saving = false, activeSave = 0, recognition = null, projectId = null, speechSequence = 0, conversation = [], authorizedContext = null, deadlineExplicit = false, chatState=chatAPI.createChat({projects:getWorkspace().projects});
+    const newId=()=>window.crypto?.randomUUID?.()||globalThis.crypto?.randomUUID?.();
+    let aiMode=null, aiState='', aiReply=null, aiSession=newId(), aiHistory=[], manualDirty=false;
     const workspaceIdentity = () => { const { companyId, user, currentRole } = getWorkspace(); return JSON.stringify({ companyId, user, currentRole }); };
     const current = version => dialog.open && version === sequence && identity === workspaceIdentity() && permitted(getWorkspace());
     const message = (text, error = false) => { node('message').textContent = text; node('message').setAttribute('role', error ? 'alert' : 'status'); };
@@ -67,8 +77,8 @@
     const guided = conversationAPI.createConversation({document, window, SpeechRecognition,
       canContinue:()=>dialog.open&&identity===workspaceIdentity()&&permitted(getWorkspace())&&!uncertain&&!saving,
       getContext:()=>authorizedContext||{project:{name:''},timezone:''},getDraft:()=>chatState.context?chatState.draft:{action:'chat'},
-      nextSlot:()=>chatState.slot||(!chatState.ready?'project':null),nextQuestion:()=>chatState.ready?'Say preview these changes to hear the exact proposal, or change and a field name.':chatState.question(),
-      answerTurn:async(text,isVoiceCurrent)=>processMessage(text,isVoiceCurrent,false),canClarifyYes:()=>chatState.canAcceptYes,onPrompt:text=>addTurn('Assistant',text),
+      nextSlot:()=>aiReply?(aiReply.ready?null:'clarification'):chatState.slot||(!chatState.ready?'project':null),nextQuestion:()=>aiReply?.message||(chatState.ready?'Say preview these changes to hear the exact proposal, or change and a field name.':chatState.question()),
+      answerTurn:async(text,isVoiceCurrent)=>processMessage(text,isVoiceCurrent,false),canClarifyYes:()=>aiReply?.canAcceptYes||chatState.canAcceptYes,onPrompt:text=>addTurn('Assistant',text),
       onCancelSession:command=>{if(command==='cancel conversation')reset();},
       setDraft:patch=>{sequence++;invalidate();for(const [key,value] of Object.entries(patch)){
         const name=key==='text'?'noteText':(['start','end'].includes(key)&&node('action').value==='schedule_batch'?'batch'+key[0].toUpperCase()+key.slice(1):key);
@@ -77,12 +87,12 @@
       }applyMode();},
       preview:async()=>{await makePreview(undefined,true);return preview?{text:node('review').innerText||node('review').textContent,confirmable:Boolean(preview.token)}:null;},
       onCancelPreview:invalidate,
-      onInterrupted:()=>{sequence++;invalidate();clearPendingChat();if(!saving)setBusy(false);message('Conversation interrupted. Nothing saved. Continue by typing or request a fresh preview.');},
+      onInterrupted:()=>{sequence++;abortPending();invalidate();clearPendingChat();if(!saving)setBusy(false);message('Conversation interrupted. Nothing saved. Continue by typing or request a fresh preview.');},
       onTurn:(speaker,text)=>{if(speaker==='You')addTurn(speaker,text);},
       onStatus:(text,active)=>{node('converse-status').textContent=active?(guided.reading?'Speaking. Microphone off.':'Listening for one answer.'):text;node('converse').textContent=active?'Stop microphone':'Talk';node('converse').setAttribute('aria-label',active?'Stop microphone':'Talk to project assistant');node('converse').setAttribute('aria-pressed',String(active));}});
     function addTurn(speaker,text){const turn=document.createElement('p');turn.textContent=speaker+': '+text;node('conversation').append(turn);node('prompt').hidden=true;while(node('conversation').children.length>40)node('conversation').children[0].remove();node('conversation').scrollTop=node('conversation').scrollHeight;}
     function clearPendingChat(){chatState.cancelContextAnswer();if(!chatState.context){chatState.reset();projectId=null;authorizedContext=null;node('project').value='';node('work').hidden=true;}}
-    function pauseForBackground(){stopSpeech();if(busy&&!saving&&!uncertain){sequence++;invalidate();clearPendingChat();setBusy(false);message('Request paused. Nothing saved. Send it again or request a fresh preview.');}}
+    function pauseForBackground(){stopSpeech();if(busy&&!saving&&!uncertain){sequence++;abortPending();invalidate();clearPendingChat();setBusy(false);message('Request paused. Nothing saved. Send it again or request a fresh preview.');}}
     function writeDraft(){const draft=chatState.draft;if(draft.action)node('action').value=draft.action;
       for(const name of fieldNames)if(name!=='timezone')node(name).value=draft[name]??'';
       node('noteText').value=draft.text||'';node('deadline').value=draft.deadline||'none';node('dueDate').value=draft.dueDate||'';
@@ -90,7 +100,7 @@
       for(const name of ['memberIds','weekdays'])for(const option of Array.from(node(name).options||[]))option.selected=(draft[name]||[]).includes(Number(option.value));
       node('batchStart').value=draft.start||'';node('batchEnd').value=draft.end||'';applyMode();node('navigation').hidden=false;
     }
-    async function processMessage(text,isVoiceCurrent=()=>true,autoPreview=true){
+    async function processLocalMessage(text,isVoiceCurrent=()=>true,autoPreview=true){
       if(uncertain||saving||busy)return {message:'Wait for this request to finish.'};
       const result=chatState.consume(text);if(result.cancelled){reset();return {message:'What do you need?'};}
       stopSpeech(true);invalidate();const version=++sequence;node('navigation').hidden=false;
@@ -99,6 +109,28 @@
         }catch(error){if(current(version)&&isVoiceCurrent()){chatState.reset();projectId=null;authorizedContext=null;return {message:'That project is unavailable. Which authorized project should I use?'};}}finally{if(current(version))setBusy(false);}}
       if(!current(version)||!isVoiceCurrent())return {};projectId=chatState.projectId;authorizedContext=chatState.context;node('project').value=projectId?String(projectId):'';node('work').hidden=!projectId;writeDraft();message('');
       if(autoPreview&&chatState.ready&&!result.message){await makePreview();return {previewed:true};}return {message:result.message||chatState.question()};
+    }
+    function adoptAI(result){aiState=result.state;aiReply=result;projectId=result.projectId;authorizedContext=result.context||null;chatState.adopt(result.draft,projectId,authorizedContext);node('project').value=projectId?String(projectId):'';node('work').hidden=!projectId;
+      if(authorizedContext){const members=authorizedContext.members;node('memberId').innerHTML='<option value="">Choose a person</option>'+members.map(row=>`<option value="${row.id}">${escape(row.name)} (ID ${row.id})</option>`).join('');node('memberIds').innerHTML=members.map(row=>`<option value="${row.id}">${escape(row.name)} (ID ${row.id})</option>`).join('');node('timezone').value=authorizedContext.timezone;node('timezone').readOnly=Boolean(authorizedContext.timezone);}writeDraft();
+    }
+    async function processMessage(text,isVoiceCurrent=()=>true,autoPreview=true){
+      if(uncertain||saving||busy)return {message:'Wait for this request to finish.'};
+      const control=String(text).trim().toLowerCase();
+      if(['cancel','cancel request','cancel conversation','stop conversation'].includes(control)){reset();return {message:'What do you need?'};}
+      if(aiReply&&['back','go back'].includes(control)){stopSpeech(true);sequence++;invalidate();const previous=aiHistory.pop();if(previous){adoptAI(previous);return {message:previous.message};}reset();return {message:'What do you need?'};}
+      if(aiReply&&['preview these changes','save','confirm','save it','do it','okay','ok'].includes(control)){if(control==='preview these changes'&&aiReply.ready){await makePreview(undefined,!autoPreview);return {previewed:true};}return {message:'Use Confirm and save only after reviewing the exact preview.'};}
+      stopSpeech(true);invalidate();const version=++sequence;setBusy(true);
+      try{
+        if(aiMode===null){const status=await boundedRequest('/api/assistant/context');if(!current(version)||!isVoiceCurrent())return {};aiMode=status.aiFirst;}
+        if(!aiMode){setBusy(false);return processLocalMessage(text,isVoiceCurrent,autoPreview);}
+        message('Interpreting your request. Nothing saved.');
+        const result=await boundedRequest('/api/assistant/interpret',{text,state:aiState||undefined,sessionId:aiSession,turnId:newId(),projectId:projectId||undefined,...(manualDirty?{draft:draftPayload()}: {})});
+        if(!current(version)||!isVoiceCurrent())return {};
+        if(result.source!=='ai'){aiReply=null;aiState='';manualDirty=true;setBusy(false);const fallback=await processLocalMessage(text,isVoiceCurrent,autoPreview);return {message:result.message+' '+(fallback.message||'Review the manual details.')};}
+        if(aiReply)aiHistory.push(aiReply);if(aiHistory.length>8)aiHistory.shift();adoptAI(result);manualDirty=false;setBusy(false);message('');
+        if(autoPreview&&result.ready){await makePreview();return {previewed:true};}return {message:result.message};
+      }catch(error){if(current(version)&&isVoiceCurrent())return {message:error.message+' Continue with Edit details; nothing saved.'};return {};}
+      finally{if(current(version))setBusy(false);}
     }
     async function sendMessage(event){event?.preventDefault();if(busy||uncertain)return;const text=node('text').value.trim();if(!text)return;stopSpeech();addTurn('You',text);node('text').value='';const result=await processMessage(text);if(result?.message&&dialog.open)addTurn('Assistant',result.message);}
     function readPreview(){guided.stop();if(preview&&!busy&&!uncertain)voice.read(node('review').textContent);}
@@ -122,7 +154,7 @@
       node('timezone').required = schedule || todo && node('deadline').value !== 'none';
     }
     function invalidate() { preview = null; node('read-preview').disabled = true; node('review').hidden = true; node('review').innerHTML = ''; node('confirm-actions').hidden = true; }
-    function reset() { sequence++; stopSpeech(); invalidate(); uncertain = false; projectId = null; authorizedContext=null;deadlineExplicit=false;chatState=chatAPI.createChat({projects:getWorkspace().projects});conversation = []; node('conversation').innerHTML = '';node('prompt').hidden=false;node('details').open=false;node('navigation').hidden=true;node('converse-status').textContent='';busy = false; node('action').value = 'schedule'; node('deadline').value = 'none'; node('noteText').value = ''; node('dueDate').value = ''; setBusy(false); node('confirm').textContent = 'Confirm and save'; node('work').hidden = true; [...fieldNames,...batchNames].forEach(name => node(name).value = ''); node('text').value = ''; message(''); }
+    function reset() { abortPending();aiMode=null;aiState='';aiReply=null;aiHistory=[];aiSession=newId();manualDirty=false;sequence++; stopSpeech(); invalidate(); uncertain = false; projectId = null; authorizedContext=null;deadlineExplicit=false;chatState=chatAPI.createChat({projects:getWorkspace().projects});conversation = []; node('conversation').innerHTML = '';node('prompt').hidden=false;node('details').open=false;node('navigation').hidden=true;node('converse-status').textContent='';busy = false; node('action').value = 'schedule'; node('deadline').value = 'none'; node('noteText').value = ''; node('dueDate').value = ''; setBusy(false); node('confirm').textContent = 'Confirm and save'; node('work').hidden = true; [...fieldNames,...batchNames].forEach(name => node(name).value = ''); node('text').value = ''; message(''); }
     function close() { if (saving) return; stopSpeech(); sequence++; if (!uncertain) reset(); dialog.close(); launcher.focus(); }
     function sync() {
       const workspace = getWorkspace(), next = workspaceIdentity(); launcher.hidden = !permitted(workspace);
@@ -140,7 +172,7 @@
       try {
         const context = await boundedRequest(`/api/projects/${projectId}/assistant/context`);
         if (!current(version)) return;
-        authorizedContext=context;
+        authorizedContext=context;aiMode=context.aiFirst===true;
         node('work').hidden = false; node('memberId').innerHTML = '<option value="">Choose a person</option>' + context.members.map(row => `<option value="${row.id}">${escape(row.name)} · ${escape(row.crew)}</option>`).join('');
         node('memberIds').innerHTML = context.members.map(row => `<option value="${row.id}">${escape(row.name)} &#183; ${escape(row.crew)} &#183; ID ${row.id}</option>`).join('');
         node('timezone').value = context.timezone; node('timezone').readOnly = Boolean(context.timezone);
@@ -154,6 +186,7 @@
       finally { if (current(version)) { setBusy(false); node('dictate').disabled = !SpeechRecognition; } }
     }
     async function chat() {
+      if(aiMode!==false){await sendMessage();return;}
       if (busy || uncertain || !projectId) return;
       const text = node('text').value.trim(), combined = [...conversation, text].join('\nFollow-up: ');
       if (!text || combined.length > 6000) { message('Enter a request or finish the editable fields below. This conversation accepts up to 6,000 characters.', true); return; }
@@ -185,9 +218,9 @@
     }
     async function confirm() {
       if (busy || !preview?.token || !projectId) return; stopSpeech();if(!preview?.token)return; const version = sequence, original = preview, saveId = ++activeSave; saving = true; setBusy(true); message('Saving the reviewed changes.');
-      try { const result = await boundedRequest(`/api/projects/${projectId}/assistant/confirm`, { token: original.token, version: original.version, confirmed: true }); if (!current(version)) return;
-        uncertain = false; invalidate(); message(result.kind === 'note' || result.kind === 'todo' ? `Project ${result.kind === 'note' ? 'note' : 'to-do'} saved. Open the project's Notes & To-dos to see it.` : result.kind === 'schedule_batch' ? `Batch saved: ${result.assignmentIds.length} daily assignments. All selected people/dates are available in the schedule and My Day.` : 'Assignment saved. It is available in the schedule and My Day.');chatState.reset();node('navigation').hidden=true;addTurn('Assistant','Saved. What do you need next?');node('text').value = ''; saving = false; setBusy(false);
-        try { await bounded(signal => onSaved(() => current(version), signal)); } catch { if (current(version)) message('Changes saved. Refresh the schedule or project notes to see them.'); }
+      try { const result = await boundedRequest(`/api/projects/${projectId}/assistant/confirm`, { token: original.token, version: original.version, confirmed: true }, false); if (!current(version)) return;
+        uncertain = false; invalidate(); message(result.kind === 'note' || result.kind === 'todo' ? `Project ${result.kind === 'note' ? 'note' : 'to-do'} saved. Open the project's Notes & To-dos to see it.` : result.kind === 'schedule_batch' ? `Batch saved: ${result.assignmentIds.length} daily assignments. All selected people/dates are available in the schedule and My Day.` : 'Assignment saved. It is available in the schedule and My Day.');chatState.reset();aiState='';aiReply=null;aiHistory=[];aiSession=newId();manualDirty=false;node('navigation').hidden=true;addTurn('Assistant','Saved. What do you need next?');node('text').value = ''; saving = false; setBusy(false);
+        try { await bounded(signal => onSaved(() => current(version), signal), false); } catch { if (current(version)) message('Changes saved. Refresh the schedule or project notes to see them.'); }
       } catch (error) { if (!current(version)) return; if (error.status == null || error.status >= 500) { uncertain = true; message('The save outcome is unknown. Retry this same confirmed preview to check it safely. Do not repeat the request with a new preview.', true); node('confirm').textContent = 'Retry the same confirmed save'; }
         else { uncertain = false; invalidate(); message(error.message + ' Review a fresh preview before saving.', true); }
       } finally { if (saveId === activeSave) { saving = false; if (current(version)) { setBusy(false); node('dictate').disabled = !SpeechRecognition || uncertain; } } }
@@ -202,9 +235,9 @@
     }
     launcher.onclick = open; node('close').onclick = close; node('project').onchange = selectProject; node('chat').onclick = chat; node('form').onsubmit = makePreview;
     node('confirm').onclick = confirm; node('edit').onclick = () => { if (!busy && !uncertain) { stopSpeech(); invalidate();node('details').open=true; (['schedule','schedule_batch'].includes(node('action').value) ? node('activity') : node('noteText')).focus(); message('Edit the fields, then build a fresh preview.'); } }; node('dictate').onclick = dictate; node('voice-session').onclick = () => { if(voice.listening)voice.stop();else{stopSpeech();voice.start();} }; node('read-preview').onclick = ()=>{guided.stop();readPreview();};node('converse').onclick=()=>{if(guided.active)guided.stop();else if(!busy&&!uncertain){stopSpeech();guided.start();}};node('chat-form').onsubmit=sendMessage;node('cancel').onclick=()=>{if(!saving&&!uncertain){reset();node('text').focus();}};node('back').onclick=async()=>{if(!busy&&!uncertain){stopSpeech();const result=await processMessage('back');if(result.message)addTurn('Assistant',result.message);}};
-    for (const name of [...fieldNames, ...extraNames, ...batchNames, 'text']) node(name).addEventListener('input', () => { if (!uncertain) { stopSpeech(); sequence++; invalidate(); applyMode();if(name!=='text'&&authorizedContext)chatState.adopt(draftPayload(),projectId,authorizedContext); } });
-    node('action').onchange = () => { if (!busy && !uncertain) { stopSpeech(); sequence++; invalidate(); deadlineExplicit=false;applyMode();if(authorizedContext)chatState.adopt(draftPayload(),projectId,authorizedContext); } }; node('deadline').onchange = ()=>{node('action').onchange();deadlineExplicit=true;};node('text').onkeydown=event=>{if(event.key==='Enter'&&(event.ctrlKey||event.metaKey)){event.preventDefault();void sendMessage();}};
-    dialog.addEventListener('cancel', event => { event.preventDefault(); close(); }); dialog.addEventListener('close', stopSpeech);
+    for (const name of [...fieldNames, ...extraNames, ...batchNames, 'text']) node(name).addEventListener('input', () => { if (!uncertain) { stopSpeech(); sequence++; invalidate(); applyMode();if(name!=='text'&&authorizedContext){chatState.adopt(draftPayload(),projectId,authorizedContext);manualDirty=true;} } });
+    node('action').onchange = () => { if (!busy && !uncertain) { stopSpeech(); sequence++; invalidate(); deadlineExplicit=false;applyMode();if(authorizedContext){chatState.adopt(draftPayload(),projectId,authorizedContext);manualDirty=true;} } }; node('deadline').onchange = ()=>{node('action').onchange();deadlineExplicit=true;};node('text').onkeydown=event=>{if(event.key==='Enter'&&(event.ctrlKey||event.metaKey)){event.preventDefault();void sendMessage();}};
+    dialog.addEventListener('cancel', event => { event.preventDefault(); close(); }); dialog.addEventListener('close', () => {abortPending();stopSpeech();});
     window.addEventListener('blur', pauseForBackground); document.addEventListener?.('visibilitychange', () => { if (document.hidden) pauseForBackground(); }); window.addEventListener('focus', sync); window.addEventListener('storage', sync); window.addEventListener('popstate', close); sync();
     return { sync, open, close, selectProject, chat, sendMessage, makePreview, confirm, launcher, dialog };
   }

@@ -133,7 +133,7 @@ async function proposeWithAI(context, text, fetchImpl = fetch, action = 'schedul
   return { source: 'ai', draft, message: `Nothing has been saved. ${matches.length > 1 ? 'More than one person has that name; choose the correct person. ' : ''}${missing.length ? 'Please supply or choose: ' + missing.map(key => ({memberId:'person',date:'exact date',start:'start time',end:'end time',activity:'task',instructions:'daily instructions'}[key])).join(', ') + '. Use an exact date and 24-hour times.' : 'Review every suggested field, then preview.'}` };
 }
 
-function createProjectAssistantHandler({ readDb, writeDb, body, json, authenticatedUser, accountAccess = () => ({ locked: false }), now = () => new Date(), propose = proposeWithAI, proposeBatch = proposeBatchWithAI, signingKey = crypto.randomBytes(32) }) {
+function createProjectAssistantHandler({ readDb, writeDb, body, json, authenticatedUser, accountAccess = () => ({ locked: false }), now = () => new Date(), propose = proposeWithAI, proposeBatch = proposeBatchWithAI, aiFirst = () => false, signingKey = crypto.randomBytes(32) }) {
   const savedResult = receipt => ({ saved: true, repeated: true, ...(receipt.resourceKind === 'schedule_batch' ? { kind: 'schedule_batch', assignmentIds: receipt.assignmentIds } : receipt.resourceKind && receipt.resourceKind !== 'schedule' ? { itemId: receipt.itemId, kind: receipt.resourceKind } : { assignmentId: receipt.assignmentId }) });
   function scheduleAccess(db, user, projectId, input, kind) {
     if (!['schedule', 'schedule_batch'].includes(kind)) return allowed(db, user, projectId, null, kind);
@@ -158,7 +158,7 @@ function createProjectAssistantHandler({ readDb, writeDb, body, json, authentica
     if (access.locked) return reply(402, { error: access.reason || 'Company access is unavailable.' });
     if (!ROLES.has(user.role)) return reply(403, { error: 'Project manager, admin, or owner permission required.' });
     if (!activeProject(db, projectId) || !allowed(db, user, projectId, null, 'note')) return reply(404, { error: 'Project not available.' });
-    const context = minimalContext(db, user, projectId, now());
+    const context = { ...minimalContext(db, user, projectId, now()), aiFirst: aiFirst() };
     if (action === 'context' && req.method === 'GET') return reply(200, context);
     if (req.method !== 'POST' || action === 'context') return reply(405, { error: 'Method not allowed.' });
     const input = await body(req);
@@ -214,4 +214,4 @@ function createProjectAssistantHandler({ readDb, writeDb, body, json, authentica
   };
 }
 
-module.exports = { allowed, minimalContext, validate, proposeWithAI, unambiguousWallTime, createProjectAssistantHandler };
+module.exports = { allowed, minimalContext, activeProject, membersFor, validate, proposeWithAI, unambiguousWallTime, createProjectAssistantHandler };
