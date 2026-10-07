@@ -50,7 +50,7 @@ function textValue(value) {
   return { text };
 }
 
-function createProjectNotesHandler({ readDb, writeDb, body, json, authenticatedUser, canAccessProject }) {
+function createProjectNotesHandler({ readDb, writeDb, body, json, authenticatedUser, canAccessProject, notePermissions = () => ({ view: true, create: true, edit: true, complete: true }), storageAvailable = () => true }) {
   return async function handleProjectNotes(req, res, url) {
     const route = url.pathname.match(/^\/api\/projects\/(\d+)\/notes-todos(?:\/([^/]+))?$/);
     if (!route) return false;
@@ -59,14 +59,18 @@ function createProjectNotesHandler({ readDb, writeDb, body, json, authenticatedU
     // Always authenticate, including demo mode. Never trust a requested userId.
     if (!user) return reply(401, { error: 'Authentication required' });
     if (!ROLES.has(user.role)) return reply(403, { error: 'Project team permission required' });
+    if (!storageAvailable(db)) return reply(503, { error: 'Role permission admission is unavailable in this environment.' });
+    const permissions = notePermissions(db, user);
+    if (!permissions.view) return reply(403, { error: 'Notes viewing is disabled for your role.' });
     const projectId = Number(route[1]);
     const project = Number.isSafeInteger(projectId) && (db.projects || []).find(row => Number(row.id) === projectId);
     if (!project || !canAccessProject(db, user, projectId)) return reply(404, { error: 'Project not found' });
     const ownRows = (db.projectNotesTodos || []).filter(row => row.companyId === db.company.id && Number(row.projectId) === projectId);
     const itemId = route[2];
 
-    if (req.method === 'GET' && !itemId) return reply(200, { projectId, items: ownRows.map(presentItem) });
+    if (req.method === 'GET' && !itemId) return reply(200, { projectId, items: ownRows.map(presentItem), ...(db.company.notesRolePolicy === undefined ? {} : { permissions }) });
     if (req.method === 'POST' && !itemId) {
+      if (!permissions.create) return reply(403, { error: 'Creating notes is disabled for your role.' });
       const input = await body(req);
       const invalid = validateInput(input, ['kind', 'text', 'requestId']);
       if (invalid) return reply(400, { error: invalid });
@@ -105,6 +109,7 @@ function createProjectNotesHandler({ readDb, writeDb, body, json, authenticatedU
       const input = await body(req);
       const invalid = validateInput(input, ['revision', 'text', 'completed']);
       if (invalid) return reply(400, { error: invalid });
+      if (Object.hasOwn(input, 'text') && !permissions.edit || Object.hasOwn(input, 'completed') && !permissions.complete) return reply(403, { error: 'This notes change is disabled for your role.' });
       if (!Number.isSafeInteger(input.revision) || input.revision < 1) return reply(400, { error: 'The current revision is required' });
       if (!Object.hasOwn(input, 'text') && !Object.hasOwn(input, 'completed')) return reply(400, { error: 'Enter a change to save' });
       if (Object.hasOwn(input, 'completed') && (row.kind !== 'todo' || typeof input.completed !== 'boolean')) return reply(400, { error: 'Only to-dos can be marked complete or open' });
