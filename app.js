@@ -183,6 +183,7 @@ function formatDate(value){if(!value)return preferredLanguage==='es'?'No estable
 function openProject(id,view){
   if(view&&!view.current())return;
   const p=projects.find(project=>project.id===id);if(!p)return;
+  $('#project-detail-modal').dataset.projectId=String(p.id);
   $('#detail-project-name').textContent=p.name;
   const items=p.estimateItems||[],metrics=productionData.projects.find(x=>x.projectId===p.id)?.items||[],projectReports=reports.filter(report=>projects[report.project]?.id===p.id),approvedDailies=projectReports.filter(report=>report.status==='Approved').length,totalHours=items.reduce((sum,item)=>sum+(Number(item.budgetHours)||0),0),totalCost=items.reduce((sum,item)=>sum+(Number(item.cost)||0),0),costKnown=items.some(item=>item.cost!=null);
   const canManageEstimate=['owner','admin'].includes(currentUser?.role),contractAmount=Number.isFinite(Number(p.contractValue))?Number(p.contractValue):budgetNumber(p.budget),estimateRows=items.map(item=>{const m=metrics.find(x=>x.estimateItemId===item.id)||{actualQuantity:0,actualLaborHours:0};const planned=Number(item.plannedQuantity)||0,actualQty=Number(m.actualQuantity)||0,budgetHours=Number(item.budgetHours)||0,actualHours=Number(m.actualLaborHours)||0,quantityPercent=planned>0?actualQty/planned*100:0,laborPercent=budgetHours>0?actualHours/budgetHours*100:null,remaining=Math.max(0,planned-actualQty),laborAhead=laborRunsAhead(laborPercent,quantityPercent);return `<div class="estimate-row" data-planned="${planned}" data-actual="${actualQty}" data-unit="${escapeHtml(item.unit||'')}" data-budget-hours="${budgetHours}" data-actual-hours="${actualHours}" data-quantity-percent="${quantityPercent}" data-labor-percent="${laborPercent??''}"><div class="estimate-scope"><strong>${escapeHtml(item.name)}</strong>${canManageEstimate?`<span class="estimate-actions"><button type="button" class="secondary" data-edit-estimate-item="${item.id}">Edit</button><button type="button" class="secondary" data-delete-estimate-item="${item.id}">Delete</button></span>`:''}</div><span>${planned.toLocaleString()} ${escapeHtml(item.unit)}</span><span>${actualQty.toLocaleString()} ${escapeHtml(item.unit)}</span><span>${remaining.toLocaleString()} ${escapeHtml(item.unit)}</span><span class="${laborAhead?'metric-risk':''}">${actualHours.toLocaleString()} of ${budgetHours.toLocaleString()} labor hrs${laborPercent==null?'':` · ${laborPercent.toFixed(1)}%`}</span><span class="estimate-progress"><span class="estimate-progress-track" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${Math.min(100,quantityPercent).toFixed(1)}"><i style="width:${Math.min(100,quantityPercent)}%"></i></span><b>${quantityPercent.toFixed(1)}%</b></span></div>`}).join('');
@@ -203,8 +204,24 @@ function openProject(id,view){
   const uploadPlans=$('[data-upload-project-plan]');if(uploadPlans)uploadPlans.onclick=()=>{ $('#plan-project-id').value=p.id;$('#project-plan-files').value='';$('#project-plan-note').value='';$('#project-plan-modal').showModal() };
   $('[data-project-photo]')?.addEventListener('click',()=>openProjectPhoto(projectIndex));
   $$('[data-project-photo-url]').forEach(button=>button.onclick=event=>{event.stopPropagation();openPhotoRecord(projectPhotos.find(photo=>photo.url===button.dataset.projectPhotoUrl))});
-  $$('[data-open-project-report]').forEach(button=>button.onclick=()=>{reportReturnProjectId=p.id;$('#close-report-view').hidden=false;$('#project-detail-modal').close();showPage('reports');renderReports(+button.dataset.openProjectReport)});
+  $$('[data-open-project-report]').forEach(button=>button.onclick=()=>openProjectDailyReport(p.id,Number(button.dataset.openProjectReport)));
   if(!$('#project-detail-modal').open)$('#project-detail-modal').showModal()
+}
+function openProjectDailyReport(projectId,reportId){
+  const dialog=$('#project-detail-modal');
+  if(!dialog.open||Number(dialog.dataset.projectId)!==Number(projectId))return;
+  // Use only the reports already supplied for this signed-in workspace. Never
+  // let the renderer's first-report fallback substitute for the tapped daily.
+  const report=reports.find(item=>item.id===reportId&&Number(projects[item.project]?.id)===Number(projectId));
+  if(!report){notify('This daily report is no longer available. Reopen the project to refresh its reports.');return}
+  const filter=$('#report-status-filter');
+  if(filter&&filter.value!=='all'&&filter.value!==report.status)filter.value='all';
+  reportReturnProjectId=projectId;$('#close-report-view').hidden=false;
+  dialog.close();showPage('reports');renderReports(reportId);
+  const detail=$('#report-detail');detail.setAttribute('tabindex','-1');detail.focus({preventScroll:true});
+  // Rendering is synchronous. Scroll now so a queued callback cannot move the
+  // viewport after the user has already navigated elsewhere.
+  detail.scrollIntoView({behavior:'instant',block:'start'});
 }
 const openProjectEstimateView=openProject;
 openProject=async function(id,view){
@@ -521,7 +538,21 @@ if(access.locked){showSubscriptionLock(access);if(currentUser.role==='owner')awa
 function showEmailVerificationNotice(){if(!currentUser||currentUser.role!=='owner'||currentUser.emailVerifiedAt)return;let banner=$('#email-verification-banner');if(!banner){banner=document.createElement('div');banner.id='email-verification-banner';banner.className='email-verification-banner';banner.innerHTML=`<div><strong>Confirm ${escapeHtml(currentUser.email)}</strong><p>Check your inbox to protect billing and team invitations.</p></div><button type="button" class="secondary small">Resend email</button>`;$('#app-main').insertBefore(banner,$('#app-main').firstElementChild?.nextSibling||$('#app-main').firstChild);banner.querySelector('button').onclick=()=>sendVerificationEmail(true)}banner.hidden=false;const key=`pdl-verification-sent-${currentUser.companyId}`;if(!sessionStorage.getItem(key))sendVerificationEmail(false)}
 async function sendVerificationEmail(announce){try{const result=await api('/api/auth/email-verification/resend',{method:'POST',body:'{}'});sessionStorage.setItem(`pdl-verification-sent-${currentUser.companyId}`,'1');if(announce)notify(result.alreadyVerified?'Email is already confirmed':'Confirmation email sent')}catch(error){if(announce)notify(error.message)}}
 const bootWithEmailVerification=boot;boot=async function(){await bootWithEmailVerification();showEmailVerificationNotice()};
-function enableHomeScreenPullRefresh(){const standalone=matchMedia('(display-mode: standalone)').matches||navigator.standalone===true;if(!standalone||!('ontouchstart' in window))return;const indicator=document.createElement('div');indicator.className='pull-refresh-indicator';indicator.setAttribute('role','status');indicator.setAttribute('aria-live','polite');indicator.innerHTML='<span>↓</span><b>Pull to refresh</b>';document.body.append(indicator);let startY=0,pull=0,tracking=false;document.addEventListener('touchstart',event=>{tracking=window.scrollY<=0&&event.touches.length===1;startY=tracking?event.touches[0].clientY:0;pull=0},{passive:true});document.addEventListener('touchmove',event=>{if(!tracking)return;pull=Math.max(0,event.touches[0].clientY-startY);if(!pull)return;const distance=Math.min(72,pull*.55);indicator.classList.add('visible');indicator.classList.toggle('ready',pull>=90);indicator.style.transform=`translate(-50%, ${distance-50}px)`;indicator.querySelector('b').textContent=pull>=90?'Release to refresh':'Pull to refresh';indicator.querySelector('span').textContent=pull>=90?'↻':'↓'},{passive:true});document.addEventListener('touchend',()=>{if(!tracking)return;const refresh=pull>=90;tracking=false;pull=0;if(refresh){indicator.querySelector('b').textContent='Refreshing…';indicator.querySelector('span').textContent='↻';indicator.style.transform='translate(-50%, 8px)';location.reload();return}indicator.classList.remove('visible','ready');indicator.style.transform='translate(-50%,-60px)'},{passive:true})}
+function enableHomeScreenPullRefresh(){
+  const standalone=matchMedia('(display-mode: standalone)').matches||navigator.standalone===true;
+  if(!standalone||!('ontouchstart' in window))return;
+  const indicator=document.createElement('div');indicator.className='pull-refresh-indicator';indicator.setAttribute('role','status');indicator.setAttribute('aria-live','polite');indicator.innerHTML='<span>↓</span><b>Pull to refresh</b>';document.body.append(indicator);
+  let startY=0,pull=0,tracking=false;
+  // The page stays at scrollY=0 while a native dialog scrolls. A dialog swipe
+  // must never become a page reload and discard the open view or unsaved work.
+  const blocked=event=>window.scrollY>0||Boolean(document.querySelector('dialog[open]'))||Boolean(event?.target?.closest?.('dialog'))||Boolean(event?.target?.closest?.('input,textarea,select,[contenteditable]:not([contenteditable="false"])'));
+  const reset=()=>{tracking=false;pull=0;indicator.classList.remove('visible','ready');indicator.style.transform='translate(-50%,-60px)'};
+  document.addEventListener('touchstart',event=>{reset();tracking=event.touches.length===1&&!blocked(event);startY=tracking?event.touches[0].clientY:0},{passive:true});
+  document.addEventListener('touchmove',event=>{if(!tracking)return;if(event.touches.length!==1||blocked(event)){reset();return}pull=Math.max(0,event.touches[0].clientY-startY);if(!pull){indicator.classList.remove('visible','ready');return}const distance=Math.min(72,pull*.55);indicator.classList.add('visible');indicator.classList.toggle('ready',pull>=90);indicator.style.transform=`translate(-50%, ${distance-50}px)`;indicator.querySelector('b').textContent=pull>=90?'Release to refresh':'Pull to refresh';indicator.querySelector('span').textContent=pull>=90?'↻':'↓'},{passive:true});
+  document.addEventListener('touchend',event=>{const refresh=tracking&&pull>=90&&!blocked(event);reset();if(refresh){indicator.querySelector('b').textContent='Refreshing…';indicator.querySelector('span').textContent='↻';indicator.style.transform='translate(-50%, 8px)';location.reload()}},{passive:true});
+  document.addEventListener('touchcancel',reset,{passive:true});
+}
+
 enableHomeScreenPullRefresh();
 
 // Launch-readiness reconciliation: use authoritative account data and keep
