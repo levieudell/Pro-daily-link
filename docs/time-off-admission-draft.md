@@ -1,5 +1,7 @@
 # Private time-off reads and own requests: bounded source increment
 
+The next separately bounded leave/time-card decision increment is documented in [time-review-admission-draft.md](time-review-admission-draft.md). Statements below describe this earlier milestone; the new increment still excludes payroll and the full Roles editor, and all modes remain disabled by default.
+
 This increment is stacked on preserved draft PR100 at `2336f9691d399b765dabef86d63ea51f7646d0e4`. It advances Company Roles prerequisites with scoped private leave reads, own field/foreman request creation and redacted scheduling availability. It does not implement leave approval, payroll or the full Roles settings editor. Main and every earlier draft remain separate and unchanged.
 
 The atomic runtime remains disabled by default. With the flag absent and no policy, existing handlers, grants, feature decisions, dispatch and provider behavior remain unchanged. Policies here are synthetic fixtures only; no policy-write endpoint or Roles UI exists. No production migration, account/grant/role/settings change, customer read/write, provider message, merge or deployment is performed.

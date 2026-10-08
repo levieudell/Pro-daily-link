@@ -64,7 +64,7 @@ module.exports = async function runTimeOffCases({ repository, request, change, b
   assert.equal((await request(bases[0], 'GET', route, undefined, 1, companyB)).status, 401);
   assert.equal((await request(bases[0], 'GET', '/api/schedule-availability', undefined, 1, companyB)).status, 401);
   const decisionBefore = await load();
-  for (const action of ['approve', 'decline', 'review-preview']) for (const user of [1, 2, 4, 7]) assert.equal((await request(bases[0], 'POST', route + '/' + row.id + '/' + action, { confirmed: true }, user)).status, 503);
+  for (const action of ['approve', 'decline', 'review-preview']) for (const user of [1, 2, 4, 7]) assert.ok([400, 403].includes((await request(bases[0], 'POST', route + '/' + row.id + '/' + action, { confirmed: true }, user)).status));
   assert.deepEqual(await load(), decisionBefore, 'Unsupported decisions run no handler or effects');
 
   // An inflight request cannot retain an earlier actor, linked member or policy.
@@ -91,5 +91,5 @@ module.exports = async function runTimeOffCases({ repository, request, change, b
   assert.equal((await request(bases[0], 'POST', route, values[winner], 4)).status, 409);
   await change(db => { db.users.find(user => user.id === 2).permissions = { scheduleCrews: true }; db.users.find(user => user.id === 2).projectIds = [101]; });
   assert.deepEqual(await repository.load(companyB), otherBefore); assert.equal(providerEvents.length, effectsBefore);
-  console.log('Private time-off PostgreSQL/HTTP passed: two-worker own-create CAS/receipt/audit, current reviewed replay, field/foreman identity, office grant and PM crew scopes, private projections/redacted scheduling availability, malicious policy/IDOR/slow-body/inflight revocation and pre-effect blocked approvals.');
+  console.log('Private time-off PostgreSQL/HTTP passed: two-worker own-create CAS/receipt/audit, current reviewed replay, field/foreman identity, office grant and PM crew scopes, private projections/redacted scheduling availability, malicious policy/IDOR/slow-body/inflight revocation and pre-effect unconfirmed decision rejection.');
 };

@@ -1,5 +1,7 @@
 # Tenant transaction foundation — isolated source candidate
 
+The next separately bounded leave/time-card decision increment is documented in [time-review-admission-draft.md](time-review-admission-draft.md). Statements below describe this earlier milestone; the new increment still excludes payroll and the full Roles editor, and all modes remain disabled by default.
+
 The transaction foundation is based on main `e8c34db3805c1f5544d4fd37fd81c3410c21445b`. The separately stacked [scheduling admission increment](scheduling-admission-draft.md) preserves PR99; the next [private leave read/own-request increment](time-off-admission-draft.md) preserves PR100. Each adds only the bounded coverage described below. This candidate advances prerequisites for the requested full Company Roles editor. It does **not** implement or enable the full editor, apply role policies, or deploy the separate notes restrictions slice. PRs 74, 77, 82 and 98 remain separate and untouched.
 
 No production tenant has been selected or inspected. No production schema, backfill, cutover, grants, credentials, billing, settings, permissions, accounts or customer records were changed. All database/schema exercises use disposable synthetic localhost PostgreSQL or the isolated CI service.
