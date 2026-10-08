@@ -1,5 +1,6 @@
 const $=selector=>document.querySelector(selector);
 const params=new URLSearchParams(location.search),requestedPlan=params.get('plan');
+let founderOffer=null,annualOffer=null;
 let currentStep=1,planWasRequested=['starter','growth','pro'].includes(requestedPlan);
 
 function showStep(step){
@@ -26,6 +27,7 @@ function emailsMatch(){
 }
 
 function validateTrade(){
+  if($('#annual-upfront').checked&&!$('#annual-upfront-terms').checked){showStep(2);$('#annual-upfront-terms').reportValidity();return false;}
   const trade=$('#trade');
   if(!String(trade.value||'').trim()){
     trade.setCustomValidity('Select your trade.');
@@ -60,6 +62,7 @@ function recommend(){
   $('#recommendation').textContent=`Recommended: ${plan[0].toUpperCase()+plan.slice(1)} based on your team and active projects.`;
   document.querySelector(`[value="${plan}"]`).checked=true;
   planWasRequested=false;
+  updateFounderOffer();
 }
 
 $('#trade').onchange=()=>$('#trade').setCustomValidity('');
@@ -111,6 +114,8 @@ $('#signup').onsubmit=async event=>{
         plan:document.querySelector('[name="plan"]:checked').value,
         billingCycle:document.querySelector('[name="billingCycle"]:checked').value,
         onboardingPreference:document.querySelector('[name="onboarding"]:checked').value,
+        annualUpfront:$('#annual-upfront').checked,
+        annualUpfrontTermsAccepted:$('#annual-upfront-terms').checked,
         founderCode:$('#founder-code').value.trim(),
         founderTermsAccepted:$('#founder-terms').checked,
         assistedSetup:$('#assisted-setup').checked,
@@ -122,7 +127,7 @@ $('#signup').onsubmit=async event=>{
     const data=await response.json();
     if(!response.ok)throw new Error(data.error);
     localStorage.setItem('pdl-company-id',data.company.id);
-    if(data.company.founder){
+    if(data.company.founder||data.company.annualUpfront){
       try{
         const checkout=await fetch('/api/billing/checkout',{method:'POST',credentials:'include',headers:{'Content-Type':'application/json','x-pdl-company':data.company.id},body:JSON.stringify({plan:document.querySelector('[name="plan"]:checked').value,billingCycle:document.querySelector('[name="billingCycle"]:checked').value})});
         const payment=await checkout.json();if(!checkout.ok)throw new Error(payment.error);
@@ -140,9 +145,16 @@ if(planWasRequested)document.querySelector(`[name="plan"][value="${requestedPlan
 recommend();
 showStep(1);
 
-let founderOffer=null;
+
 function updateFounderOffer(){
   const active=Boolean(founderOffer?.enabled && $('#founder-code').value.trim());
+  const yearly=document.querySelector('[name="billingCycle"]:checked').value==='annual';
+  $('#annual-upfront-choice').hidden=!annualOffer?.enabled||active||!yearly;
+  if(active||!yearly||!annualOffer?.enabled){$('#annual-upfront').checked=false;$('#annual-upfront-terms').checked=false;}
+  if(!$('#annual-upfront').checked)$('#annual-upfront-terms').checked=false;
+  const upfront=$('#annual-upfront').checked,selected=document.querySelector('[name="plan"]:checked').value,a=annualOffer?.amounts[selected];
+  $('#annual-upfront-consent').hidden=!upfront;$('#annual-upfront-terms').required=upfront;
+  $('#annual-upfront-summary').textContent=a?`Pay $${a.first.toLocaleString()} today for year one. No free trial. Renews at $${a.renewal.toLocaleString()} per year until cancelled. Taxes, if applicable, are additional.`:'';
   $('#founder-options').hidden=!active;
   $('#founder-terms').required=active;
   $('#assisted-setup').disabled=!active||!founderOffer?.setupAvailable;
@@ -158,9 +170,12 @@ function updateFounderOffer(){
     card.querySelector('strong').textContent='$'+(active?founderOffer.prices[id].monthly:values[0])+'/mo';
     card.querySelector('small').textContent='$'+(active?founderOffer.prices[id].annual:values[1]).toLocaleString()+'/year · '+values[2];
   }
+  if(upfront){$('#signup-offer-heading').textContent='Annual upfront — pay today, no free trial';$('#plan-offer-help').textContent=$('#annual-upfront-summary').textContent;$('#annual-cycle-label').textContent='Annual — pay today';$('#create-company').textContent='Create company & continue to payment';}
   const plan=document.querySelector('[name="plan"]:checked').value,annual=document.querySelector('[name="billingCycle"]:checked').value==='annual';
   $('#founder-renewal').textContent='Before the 24-month founder period ends, we will contact you to review renewal options. Your price will not automatically jump to the regular rate. Optional setup is charged only once. Taxes, if applicable, are shown at checkout.';
 }
 $('#founder-code').addEventListener('input',updateFounderOffer);
+$('#annual-upfront').addEventListener('change',updateFounderOffer);
+fetch('/api/annual-upfront-offer').then(r=>r.json()).then(offer=>{annualOffer=offer;updateFounderOffer()}).catch(()=>{});
 document.querySelectorAll('[name="plan"],[name="billingCycle"]').forEach(el=>el.addEventListener('change',updateFounderOffer));
 fetch('/api/founder-offer').then(response=>response.json()).then(offer=>{founderOffer=offer;$('#founder-invitation').hidden=!offer.enabled;updateFounderOffer()}).catch(()=>{});
