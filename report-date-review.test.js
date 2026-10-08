@@ -45,6 +45,7 @@ const context={
   $,$$:()=>[],document:{getElementById:id=>$('#'+id)},
   reportAnalyzeSequence:0,editingReportId:null,extractedDraft:null,
   projects:[{id:101,name:'Synthetic project'},{id:202,name:'Synthetic second project'}],
+  assignments:[{id:1,projectId:202,date:'2026-10-08',memberIds:[7]}],currentRole:'field',currentUser:{memberId:7},reportSourceAssignmentId:null,notify(){},
   reports:[],team:[],workdays:[],timeCards:[],preferredLanguage:'en',
   reportLaborLookupSequence:0,reportLaborLoadedKey:'',reportLaborLookupPromise:null,
   activeNoteLaborEvidence:null,
@@ -88,9 +89,10 @@ context.openReport();
 expectBanner('2026-10-07','New report after viewing an older report');
 assert.equal(calls.gaps,gapsBeforeNew,'New date must refresh with time cards disabled and no gap check');
 
-context.openDailyForAssignment({projectId:202,date:'2026-10-08'});
+$('#report-modal').open=false;
+context.openDailyForAssignment(context.assignments[0]);
 expectBanner('2026-10-08','Assigned work date set programmatically');
-assert.equal($('#report-project').value,'1','Assignment selects its actual project');
+assert.equal(String($('#report-project').value),'1','Assignment selects its actual project');
 
 context.restoreRecoveredReportFields({dateIso:'2026-10-09'});
 expectBanner('2026-10-09','Recovered draft work date');

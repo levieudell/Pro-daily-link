@@ -43,6 +43,7 @@ server.listen(4203, async () => {
     assert.doesNotMatch(appJs, /pdl-templates/);
     const draftFns = new Function('localStorage', `
       let templatesOnFlag = false;
+      let reportSourceAssignmentId = null;
       function templatesOn(){return templatesOnFlag}
       function collectCustomFields(){return globalThis.__customFields || {}}
       const $ = () => globalThis.__customHost;

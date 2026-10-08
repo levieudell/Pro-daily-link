@@ -6,7 +6,7 @@ const app=fs.readFileSync('app.js','utf8');
 assert.match(app,/Saved on this device · protected if you refresh/,'autosave copy must accurately describe device storage');
 assert.match(app,/pdl-active-report-recovery-v1/,'an interrupted report marker must be persisted');
 assert.match(app,/restoreInterruptedReport\(\)/,'interrupted reports must be restored during workspace loading');
-assert.match(app,/openReport\(saved\|\|null\)/,'both existing drafts and new reports must reopen after refresh');
+assert.match(app,/openReport\(saved\|\|null,/,'both existing drafts and new reports must reopen after refresh');
 assert.match(app,/reportRecoverySnapshot\(\)/,'the complete in-progress report state must be captured');
 assert.match(app,/restoreRecoveredReportFields\(draft\)/,'dates, detail fields, labor, and production must be restored');
 assert.match(app,/Reattach .*photo/,'non-restorable browser file selections must be disclosed');
