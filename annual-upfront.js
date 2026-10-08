@@ -24,6 +24,10 @@ async function checkout(company,input,request,env=process.env){
 async function fulfill(db,subscription,info,request){
   if(subscription.metadata?.offer!==VERSION)return;
   const offer=db.company.annualUpfront,a=amounts[info.plan];
+  // After verified first payment, ordinary provider lifecycle/portal changes apply.
+  // Never let the historical signup offer block cancellation or past-due status.
+  if(offer?.used&&offer.paidAt&&offer.subscriptionId===subscription.id&&
+      (subscription.status!=='active'||info.plan!==offer.plan||info.cycle!=='annual'))return;
   if(!offer||offer.version!==VERSION||offer.plan!==info.plan||info.founder||info.cycle!=='annual'||subscription.metadata.company_id!==String(db.company.id)||subscription.trial_end||subscription.trial_start)throw fail('Upfront annual subscription does not match the accepted offer.');
   if(subscription.status==='active'){
     const id=typeof subscription.latest_invoice==='string'?subscription.latest_invoice:subscription.latest_invoice?.id;
