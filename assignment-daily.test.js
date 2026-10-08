@@ -27,6 +27,7 @@ context.currentUser.memberId=null;context.openDailyForAssignment(rows[0]);assert
 context.currentRole='field';context.openDailyForAssignment(rows[0]);assert.equal(context.reportSourceAssignmentId,1);assert.equal($('#report-crew').value,'Crew A','close/reopen starts from the newly selected assignment');
 $('#report-modal').open=false;context.assignments=structuredClone(rows);context.openReport();assert.equal(context.reportSourceAssignmentId,null);assert.doesNotMatch($('#report-job-context').innerHTML,/First scope|Second scope/,'ambiguous generic daily never picks the first shift');
 // Same source validator used by both POST and PATCH; never an authorization bypass.
+for(const crew of ['Saved edited crew','']){context.openReport({project:0,dateIso:date,sourceAssignmentId:2,crew});assert.equal($('#report-crew').value,crew,'saved explicit crew survives report reopen');}
 const validator={fieldRole:u=>['field','foreman'].includes(u?.role),managerAssignmentAllowed:()=>false};vm.createContext(validator);vm.runInContext(declaration(serverSource,'reportSourceAssignment'),validator);
 const db={projects:[{id:11},{id:22}],assignments:rows},user={role:'field',memberId:7},input={sourceAssignmentId:2,dateIso:date};
 assert.equal(validator.reportSourceAssignment(db,user,input,0).id,2);
