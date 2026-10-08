@@ -1341,7 +1341,7 @@ renderMyDay=function(){
 
 const renderReportJobContextBeforeFieldPolish=renderReportJobContext;
 renderReportJobContext=function(options={}){
-  const project=renderReportJobContextBeforeFieldPolish(options),date=$('#report-date').value||companyTodayIso(),assignmentsForDay=currentRole==='field'?reportAssignmentsForDate().filter(row=>Number(row.projectId)===Number(project?.id)):[],automatic=currentRole==='field'&&!editingReportId&&assignmentsForDay.length===1,form=$('#report-form'),spanish=preferredLanguage==='es',context=$('#report-job-context');
+  const project=renderReportJobContextBeforeFieldPolish(options),date=$('#report-date').value||companyTodayIso(),assignmentsForDay=currentRole==='field'?reportAssignmentsForDate().filter(row=>Number(row.projectId)===Number(project?.id)):[],automatic=currentRole==='field'&&!editingReportId&&assignmentsForDay.length===1&&(reportSourceAssignmentId==null||Number(assignmentsForDay[0].id)===Number(reportSourceAssignmentId)),form=$('#report-form'),spanish=preferredLanguage==='es',context=$('#report-job-context');
   form?.classList.toggle('field-auto-details',automatic);
   const dateInput=$('#report-date');if(project){dateInput.min=project.startDate||'';dateInput.max=project.endDate||''}else{dateInput.min='';dateInput.max=''}
   const list=context?.querySelector('dl');if(list&&!list.querySelector('[data-report-context-date]'))list.insertAdjacentHTML('afterbegin',`<div data-report-context-date><dt>${spanish?'Fecha':'Date'}</dt><dd>${escapeHtml(formatDate(date))}</dd></div>`);
