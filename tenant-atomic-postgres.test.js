@@ -304,7 +304,13 @@ async function main() {
     await require('./registry-postgres-cases')({ repository, change, request, bases, checkpoint, waitFor, controls, providerEvents });
     await require('./role-policy-postgres-cases')({ repository, change, request, slowRequest, bases, startWorker, checkpoint, waitFor, controls, providerEvents, pool });
     await require('./navigation-postgres-cases')({ repository, change, request, bases, checkpoint, waitFor, controls, providerEvents });
-    if (process.env.PDL_ROLES_BROWSER_TESTS === '1') { await require('./roles-browser-postgres-cases')({ repository, change, request, bases, providerEvents }); await require('./operational-browser-postgres-cases')({ repository, change, request, bases, providerEvents }); }
+    if (process.env.PDL_ROLES_BROWSER_TESTS === '1') {
+      // Browser journeys get a fresh real process: native adversarial cases
+      // must not consume their process-local request/cache/clock state.
+      const browserBases = [await startWorker()];
+      await require('./roles-browser-postgres-cases')({ repository, change, request, bases: browserBases, providerEvents });
+      await require('./operational-browser-postgres-cases')({ repository, change, request, bases: browserBases, providerEvents });
+    }
     for (let attempt = 0; attempt < 3; attempt++) assert.equal((await request(bases[0], 'POST', '/api/auth/login', { email: 'user1@example.invalid', password: 'invalid-synthetic-password' })).status, 401);
     assert.equal((await request(bases[0], 'POST', '/api/auth/login', { email: 'user1@example.invalid', password: 'invalid-synthetic-password' })).status, 429, 'Atomic failed logins retain the credential lockout');
     assert.deepEqual(await repository.load(companyB), foreignBefore);
