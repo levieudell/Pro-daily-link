@@ -20,11 +20,17 @@ class Node {
   close() { this.open = false; this.events.close?.(); }
   focus() { this.focused = true; }
 }
-const workspace = () => ({ companyId: 'synthetic-a', currentRole: 'office', user: { id: 1, role: 'project_manager', permissions: { scheduleCrews: true }, projectIds: [1], assignedCrews: ['A'] }, projects: [{ id: 1, name: '<script>project</script>', status: 'Active' }] });
+const workspace = () => ({ companyId: require('./fixtures/project-assistant').companyA, currentRole: 'office', user: { id: 1, role: 'project_manager', permissions: { scheduleCrews: true }, projectIds: [1], assignedCrews: ['A'] }, projects: [{ id: 1, name: '<script>project</script>', status: 'Active' }] });
 function harness(request, options = {}) { let data = workspace();const documentEvents={}; const document = { body: new Node('body'), createElement: tag => new Node(tag),hidden:false,focused:true,hasFocus(){return this.focused;},addEventListener(name,callback){(documentEvents[name]||=[]).push(callback);} }, window = { addEventListener() {} }; const api = createAssistant({ document, window, getWorkspace: () => data, request, ...options }); return { ...api,document,documentEvents,node: name => api.dialog.querySelector('[data-assistant-' + name + ']'), update: value => { data = value; } }; }
 const deferred = () => { let resolve, reject; const promise = new Promise((yes, no) => { resolve = yes; reject = no; }); return { promise, resolve, reject }; };
 async function main() {
   assert.equal(permitted(workspace()), true);
+  for (const companyId of [undefined, null, '', 'Forged Built', '22222222-2222-4222-8222-222222222222', workspace().companyId.toUpperCase(), ' ' + workspace().companyId]) {
+    for (const role of ['owner', 'admin', 'project_manager']) assert.equal(permitted({ ...workspace(), companyId, company: { name: 'Forged Built' }, user: { id: 1, role } }), false);
+    const deniedCalls = [], denied = harness(async path => deniedCalls.push(path));
+    denied.update({ ...workspace(), companyId }); denied.sync(); denied.open();
+    assert.equal(denied.launcher.hidden, true); assert.equal(denied.dialog.open, false); assert.deepEqual(deniedCalls, []);
+  }
   for (const reason of ['cancel','close','scope','background']) {
     let signal;const pending=deferred(),events={};
     const c=harness(async(path,payload,requestSignal)=>{if(path==='/api/assistant/context')return {aiFirst:true};signal=requestSignal;return pending.promise;},{window:{addEventListener(name,callback){events[name]=callback;}}});

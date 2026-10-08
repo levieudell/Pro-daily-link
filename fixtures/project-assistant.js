@@ -1,6 +1,7 @@
 'use strict';
 const crypto = require('node:crypto');
-const companyA = '11111111-1111-4111-8111-111111111111', companyB = '22222222-2222-4222-8222-222222222222';
+// Tenant ID matches the authorized pilot; every record and session remains synthetic.
+const companyA = '21c12cd3-4822-4b1e-94e8-beca44efc0b7', companyB = '22222222-2222-4222-8222-222222222222';
 const hash = value => crypto.createHash('sha256').update(value).digest('hex');
 const token = (company, user) => `synthetic-assistant-${company}-${user}`;
 function fixture(companyId = companyA) {

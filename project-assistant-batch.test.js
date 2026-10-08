@@ -5,7 +5,7 @@ const { createProjectAssistantHandler, validate } = require('./project-assistant
 const { proposeBatchWithAI } = require('./project-assistant-batch-proposal');
 const { splitSnapshot, assembleSnapshot } = require('./database/transactional-repository');
 const now = () => new Date('2026-10-07T16:00:00Z');
-const fixture = () => ({ company: { id: 'synthetic-batch', timezone: 'America/Los_Angeles' }, projects: [{id:1,name:'Synthetic project',status:'Active'},{id:2,name:'PRIVATE PROJECT'}], users: [{id:1,role:'project_manager',projectIds:[1],assignedCrews:['A'],permissions:{scheduleCrews:true}}], team: [{id:11,name:'Alex Sample',crew:'A'},{id:12,name:'Taylor Sample',crew:'A'},{id:13,name:'PRIVATE PERSON',crew:'B'}], assignments:[], timeOffRequests:[], workdays:[] });
+const fixture = () => ({ company: { id: require('./fixtures/project-assistant').companyA, timezone: 'America/Los_Angeles' }, projects: [{id:1,name:'Synthetic project',status:'Active'},{id:2,name:'PRIVATE PROJECT'}], users: [{id:1,role:'project_manager',projectIds:[1],assignedCrews:['A'],permissions:{scheduleCrews:true}}], team: [{id:11,name:'Alex Sample',crew:'A'},{id:12,name:'Taylor Sample',crew:'A'},{id:13,name:'PRIVATE PERSON',crew:'B'}], assignments:[], timeOffRequests:[], workdays:[] });
 const input = () => ({ action:'schedule_batch', memberIds:[12,11], startDate:'2026-10-30',endDate:'2026-11-03',weekdays:[0,1,2,3,4,5,6],start:'08:00',end:'16:00',activity:'Frame west wall',instructions:'Check layout.\nStart on the west wall.',timezone:'America/Los_Angeles' });
 async function main() {
   assert.deepEqual(expandBatch(input()).dates,['2026-10-30','2026-10-31','2026-11-01','2026-11-02','2026-11-03']);

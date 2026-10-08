@@ -1,6 +1,7 @@
 'use strict';
 
 const crypto = require('node:crypto');
+const { permittedCompany } = require('./project-assistant-access');
 const availability = require('./schedule-availability');
 const { expandBatch } = require('./project-assistant-batch');
 const { proposeBatchWithAI } = require('./project-assistant-batch-proposal');
@@ -154,6 +155,7 @@ function createProjectAssistantHandler({ readDb, writeDb, body, json, authentica
     if (!route) return false;
     const reply = (status, data) => { json(res, status, data); return true; }, db = readDb(), user = authenticatedUser(req, db), projectId = Number(route[1]), action = route[2];
     if (!user) return reply(401, { error: 'Sign in to use the project assistant.' });
+    if (!permittedCompany(db.company?.id)) return reply(403, { error: 'Project assistant access is not enabled for this company.' });
     const access = accountAccess(db.company);
     if (access.locked) return reply(402, { error: access.reason || 'Company access is unavailable.' });
     if (!ROLES.has(user.role)) return reply(403, { error: 'Project manager, admin, or owner permission required.' });

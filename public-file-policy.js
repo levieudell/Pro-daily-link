@@ -1,6 +1,7 @@
 'use strict';
 const path=require('node:path');
 const PUBLIC_FILES=new Set([
+  'project-assistant-access.js',
   'project-assistant-ui.js','project-assistant-ui.css','project-assistant-voice.js','project-assistant-conversation.js','project-assistant-chat.js','project-assistant-names.js',
   'index.html','landing.html','about.html','blog.html','login.html','signup.html','forgot-password.html','reset-password.html','verify-email.html','guest.html','platform.html','platform-login.html','platform-forgot-password.html','platform-reset-password.html','support.html','privacy.html','terms.html',
   'platform-revenue.css','project-notes-ui.css','styles.css','landing.css','landing-demo.css','enterprise-pricing.css','public-content.css','login.css','signup.css','guest.css','platform.css','platform-mobile.css','legal.css','estimate-mobile.css',

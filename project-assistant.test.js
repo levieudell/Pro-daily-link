@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const { createProjectAssistantHandler, proposeWithAI, validate, unambiguousWallTime } = require('./project-assistant');
 const { splitSnapshot, assembleSnapshot } = require('./database/transactional-repository');
 const now = () => new Date('2026-10-07T16:00:00Z');
-function fixture() { return { company: { id: 'synthetic-a', name: 'Synthetic company', timezone: 'America/Los_Angeles' },
+function fixture() { return { company: { id: require('./fixtures/project-assistant').companyA, name: 'Synthetic company', timezone: 'America/Los_Angeles' },
   projects: [{ id: 1, name: 'Synthetic project', status: 'Active', privateBudget: 'DO_NOT_SEND' }, { id: 2, name: 'Private project' }],
   team: [{ id: 11, name: 'Jordan', crew: 'A' }, { id: 12, name: 'Jordan', crew: 'A' }, { id: 13, name: 'Private member', crew: 'B' }],
   assignments: [], timeOffRequests: [], workdays: [], users: [{ id: 1, role: 'project_manager', status: 'Active', projectIds: [1], assignedCrews: ['A'], permissions: { scheduleCrews: true } }] }; }
@@ -48,7 +48,7 @@ async function main() {
   user = { ...db.users[0], permissions: { scheduleCrews: false } }; assert.equal(db.users[0].permissions.scheduleCrews, true);
   assert.equal((await call('confirm', { token: effectivePreview.token, version: effectivePreview.version, confirmed: true })).status, 403, 'effective authenticated actor restrictions beat stored grants');
   db = fixture(); user = db.users[0]; const rolePreview = (await call('preview', input())).data; user.assignedCrews = ['B']; assert.equal((await call('confirm', { token: rolePreview.token, version: rolePreview.version, confirmed: true })).status, 403);
-  db = fixture(); user = db.users[0]; const tenantPreview = (await call('preview', input())).data; db.company.id = 'synthetic-b'; assert.equal((await call('confirm', { token: tenantPreview.token, version: tenantPreview.version, confirmed: true })).status, 409);
+  db = fixture(); user = db.users[0]; const tenantPreview = (await call('preview', input())).data; db.company.id = 'synthetic-b'; assert.equal((await call('confirm', { token: tenantPreview.token, version: tenantPreview.version, confirmed: true })).status, 403);
   assert.equal(unambiguousWallTime('2026-03-08', '02:30', 'America/Los_Angeles'), false); assert.equal(unambiguousWallTime('2026-11-01', '01:30', 'America/Los_Angeles'), false); assert.equal(unambiguousWallTime('2026-11-01', '08:00', 'America/Los_Angeles'), true);
   db = fixture(); delete db.company.timezone; assert.equal(validate(db, db.users[0], 1, { ...input(), timezone: '' }, now()).status, 400); assert.equal(validate(db, db.users[0], 1, input(), now()).status, 400);
   db = fixture(); user = db.users[0]; user.permissions.scheduleCrews = false;
