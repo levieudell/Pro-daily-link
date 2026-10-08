@@ -1,0 +1,11 @@
+'use strict';
+const assert=require('node:assert/strict'),fs=require('node:fs'),vm=require('node:vm');
+const roster=require('./employee-roster'),team=[{id:1,name:'Active'},{id:2,name:'Archived',archived:true},{id:3,name:'Legacy archived',archivedAt:'2026-10-17'}];
+assert.deepEqual(roster.visible(team).map(m=>m.id),[1]);assert.deepEqual(roster.visible(team,'archived').map(m=>m.id),[2,3]);assert.equal(roster.visible(team,'all').length,3);
+assert.deepEqual(roster.targets(team).map(m=>m.id),[1]);assert.deepEqual(roster.targets(team,{memberIds:[2]}).map(m=>m.id),[1,2]);
+assert.deepEqual(roster.scheduleMembers(team,[{date:'2026-10-16',memberIds:[2]}],new Set(['2026-10-16'])).map(m=>m.id),[1,2]);
+assert.ok(roster.assignmentError(team,[2]));assert.equal(roster.assignmentError(team,[2],{source:{date:'2026-10-16',memberIds:[2]},date:'2026-10-16',today:'2026-10-17'}),null);
+assert.ok(roster.assignmentError(team,[3],{source:{date:'2026-10-16',memberIds:[2]},date:'2026-10-16',today:'2026-10-17'}));assert.ok(roster.assignmentError(team,[2],{move:true}));
+const context={};vm.runInNewContext(fs.readFileSync('employee-roster.js','utf8'),context);assert.equal(context.EmployeeRoster.visible(team).length,1,'browser uses same filtering');
+const app=fs.readFileSync('app.js','utf8'),html=fs.readFileSync('index.html','utf8');assert.ok(html.indexOf('src="employee-roster.js')<html.indexOf('src="app.js'));assert.match(app,/EmployeeRoster\.visible\(team,view\)/);assert.match(app,/memberIds=type==='crew'\?assignmentTargetMembers\(\)/);assert.match(app,/expectedVersion:EmployeeRoster\.version\(member\)/);
+console.log('Employee roster filtering passed: active/archived/all, new and historical assignment choices, retained schedule rows, browser module.');
