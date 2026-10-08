@@ -29,6 +29,7 @@ jobs:
           node-version: 20
           cache: npm
       - run: npm ci
+      - run: node photo-admission.test.js
       - run: node daily-admission.test.js
       - run: node time-write-admission.test.js
       - run: node time-review-admission.test.js

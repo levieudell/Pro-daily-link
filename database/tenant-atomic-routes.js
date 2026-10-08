@@ -12,6 +12,9 @@ function supportedRoute(method, pathname) {
   if (/^\/api\/time-off-requests\/[^/]+\/(review-preview|approve|decline)$/.test(pathname)) return method === 'POST';
   if (['/api/time-cards/action-preview', '/api/pay-periods/action-preview', '/api/time-cards/company-clock'].includes(pathname)) return method === 'POST';
   if (pathname === '/api/daily-actions/preview') return method === 'POST';
+  if (pathname === '/api/photos/upload-preview' || pathname === '/api/photos') return method === 'POST';
+  if (pathname === '/api/photos/recovery-manifest' || /^\/api\/photos\/\d+(?:\/(?:file|export))?$/.test(pathname)) return method === 'GET';
+  if (/^\/api\/files\/project-photos\/[0-9a-f-]{36}\/atomic-photos\/[0-9a-f-]{36}\/photo\.(jpg|png|webp)$/.test(pathname)) return method === 'GET';
   if (pathname === '/api/reports') return ['GET', 'POST'].includes(method);
   if (/^\/api\/reports\/\d+$/.test(pathname)) return ['GET', 'PATCH'].includes(method);
   if (/^\/api\/reports\/\d+\/approve$/.test(pathname)) return method === 'PATCH';
