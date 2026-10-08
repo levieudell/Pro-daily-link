@@ -1,0 +1,18 @@
+name: Annual isolated acceptance
+on:
+  push:
+    branches: [qa/annual-offer-acceptance-20261008, qa/paid-launch-acceptance-20261005]
+jobs:
+  acceptance:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run check:acceptance
+      - run: env -i PATH="$PATH" HOME="$HOME" npm run test:acceptance
+      - run: node annual-upfront.test.js
+      - run: node annual-upfront-ui.test.js
