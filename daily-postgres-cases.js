@@ -30,7 +30,7 @@ module.exports = async function ({ repository, change, request, slowRequest, bas
   });
   let before = await load();
   for (const [method, route] of [['POST', '/api/reports'], ['PATCH', '/api/reports/51'], ['PATCH', '/api/reports/51/approve'], ['POST', '/api/workdays/start'], ['POST', '/api/workdays/81/end'], ['POST', '/api/reporting-exports']]) assert.equal((await request(bases[0], method, route, {}, 1)).status, 400);
-  for (const route of ['/api/photos', '/api/reports/51/safety', '/api/reports/51/disposition', '/api/reports/51/rate-review']) assert.equal((await request(bases[0], route === '/api/photos' ? 'POST' : 'PATCH', route, { files: [{ type: 'image/png', data: 'data:image/png;base64,AAAA' }] }, 1)).status, 503);
+  for (const route of ['/api/reports/51/safety', '/api/reports/51/disposition', '/api/reports/51/rate-review']) assert.equal((await request(bases[0], 'PATCH', route, { files: [{ type: 'image/png', data: 'data:image/png;base64,AAAA' }] }, 1)).status, 503);
   for (const route of ['/api/state', '/api/action-center', '/api/exceptions', '/api/production', '/api/insights', '/api/files/project-photos/foreign', '/api/local-files/foreign.jpg']) assert.equal((await request(bases[0], 'GET', route, undefined, 1)).status, 503);
   assert.deepEqual(await load(), before);
   for (const user of [6, 8, 9]) await preview('createReport', details(), undefined, user, 0, 403);
@@ -44,7 +44,7 @@ module.exports = async function ({ repository, change, request, slowRequest, bas
   const created = await commit(createPre, '/api/reports', 'POST', 4, bases.length - 1, 201), id = created.result.data.id;
   assert.equal(created.result.data.status, 'Draft'); assert.equal(created.result.data.signature, 'Synthetic signed name');
   before = await load(); await commit(createPre, '/api/reports', 'POST', 4, 0, 200, created.conf); assert.deepEqual(await load(), before);
-  assert.equal((await request(bases[0], 'POST', '/api/photos', { projectId: 101, reportId: id, source: 'field', files: [{ type: 'image/png', data: 'data:image/png;base64,AAAA' }] }, 4)).status, 503);
+  assert.equal((await request(bases[0], 'POST', '/api/photos', { projectId: 101, reportId: id, source: 'field', files: [{ type: 'image/png', data: 'data:image/png;base64,AAAA' }] }, 4)).status, 400);
   assert.deepEqual(await load(), before, 'Interrupted upload preserves the persisted draft identity and content');
   // Implicit same-key Draft replacement and unrelated tenant cleanup cannot be staged.
   await preview('createReport', details(), undefined, 4, 0, 409); assert.deepEqual(await load(), before);

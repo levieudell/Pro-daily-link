@@ -26,6 +26,7 @@ const localFile = path.join(temp, 'db.json');
 let bridge, bridgeBase, commits = 0, legacyRequests = 0;
 const controls = { gate: null, readGate: null, dropAck: false, rejectCommit: false, providerMode: 'success', providerCompleted: false };
 const providerEvents = [];
+const photoObjects = new Map(), photoEvents = [];
 function checkpoint() {
   let resolve; const promise = new Promise(done => { resolve = done; });
   return { promise, resolve, count: 0 };
@@ -64,6 +65,25 @@ async function startBridge() {
     const url = new URL(req.url, 'http://localhost');
     const send = (status, value) => { res.writeHead(status, { 'Content-Type': 'application/json' }); res.end(JSON.stringify(value)); };
     try {
+      if (req.method === 'GET' && url.pathname === '/storage/v1/bucket/project-photos') return send(200, { id: 'project-photos', public: controls.photoPublicBucket === true, file_size_limit: controls.photoSmallBucket ? 1 : 6000000, allowed_mime_types: ['image/jpeg', 'image/png', 'image/webp'] });
+      if (url.pathname.startsWith('/storage/v1/object/project-photos/')) {
+        const key = decodeURIComponent(url.pathname.slice('/storage/v1/object/project-photos/'.length));
+        photoEvents.push({ method: req.method, key });
+        assert.ok(key.startsWith(companyA + '/') || key.startsWith(companyB + '/'), 'Only synthetic tenant object keys are accepted');
+        if (req.method === 'POST') {
+          assert.equal(req.headers['x-upsert'], 'false'); const chunks = []; for await (const chunk of req) chunks.push(chunk); const bytes = Buffer.concat(chunks);
+          if (controls.photoPutGate) { controls.photoPutGate.count++; await controls.photoPutGate.promise; }
+          if (controls.photoRejectPut) return send(503, { message: 'Synthetic object rejection' });
+          if (photoObjects.has(key)) return send(409, { message: 'Object already exists' });
+          photoObjects.set(key, { bytes, type: req.headers['content-type'] }); if (controls.photoDropAck) return req.socket.destroy(); return send(200, { Key: key });
+        }
+        if (req.method === 'GET') {
+          const stored = photoObjects.get(key); if (!stored || controls.photoMissingRead) return send(404, { message: 'Object not found' });
+          if (controls.photoGetGate) { controls.photoGetGate.count++; await controls.photoGetGate.promise; }
+          res.writeHead(200, { 'Content-Type': controls.photoWrongType ? 'application/pdf' : stored.type }); return res.end(controls.photoWrongBytes ? Buffer.from('Changed synthetic object') : stored.bytes);
+        }
+        assert.fail('Object deletion and arbitrary storage methods are forbidden');
+      }
       const company = String(url.searchParams.get('company_id') || '').replace(/^eq\./, '');
       if (req.method === 'GET' && url.pathname === '/rest/v1/tenant_revisions') {
         if (controls.readGate && company === companyA) { const gate = controls.readGate; if (++gate.count === 3) await gate.promise; }
@@ -113,7 +133,7 @@ async function startWorker({ dispatch = false } = {}) {
 }
 async function request(base, method, url, input, user = 1, company = companyA, credentialCompany = companyA, credentialToken) {
   const response = await fetch(base + url, { method, headers: { 'Content-Type': 'application/json', 'X-PDL-Company': company, Authorization: 'Bearer ' + (credentialToken || token(credentialCompany, user)) }, ...(input === undefined ? {} : { body: JSON.stringify(input) }), signal: AbortSignal.timeout(15000) });
-  return { status: response.status, headers: response.headers, data: response.headers.get('content-type')?.startsWith('text/csv') ? await response.text() : await response.json() };
+  return { status: response.status, headers: response.headers, data: response.headers.get('content-type')?.startsWith('text/csv') ? await response.text() : response.headers.get('content-type')?.startsWith('image/') ? Buffer.from(await response.arrayBuffer()) : await response.json() };
 }
 async function change(mutator, company = companyA) { const loaded = await repository.load(company); mutator(loaded.snapshot); await repository.save(loaded.snapshot, loaded.revision); }
 async function waitFor(predicate) { const end = Date.now() + 10000; while (!predicate()) { if (Date.now() > end) throw Error('Synthetic barrier timeout'); await new Promise(resolve => setTimeout(resolve, 20)); } }
@@ -165,7 +185,7 @@ async function main() {
 
     const bases = [await startWorker(), await startWorker()];
     const originalLocal = fs.readFileSync(localFile, 'utf8'), foreignBefore = await repository.load(companyB);
-    const unsupported = [['POST', '/api/signup'], ['POST', '/api/billing/webhook'], ['POST', '/api/billing/checkout'], ['PATCH', '/api/platform/companies/x'], ['POST', '/api/auth/forgot'], ['POST', '/api/auth/email-verification/resend'], ['GET', '/api/action-center'], ['GET', '/api/state'], ['POST', '/api/photos'], ['POST', '/api/company/logo'], ['DELETE', '/api/company/logo'], ['POST', '/api/guest/' + 'ab'.repeat(24)], ['POST', '/api/estimate-imports/analyze'], ['POST', '/api/daily-templates/generate'], ['GET', '/api/company/export'], ['POST', '/api/projects/101/assistant/chat'], ['POST', '/api/assistant/interpret']];
+    const unsupported = [['POST', '/api/signup'], ['POST', '/api/billing/webhook'], ['POST', '/api/billing/checkout'], ['PATCH', '/api/platform/companies/x'], ['POST', '/api/auth/forgot'], ['POST', '/api/auth/email-verification/resend'], ['GET', '/api/action-center'], ['GET', '/api/state'], ['POST', '/api/company/logo'], ['DELETE', '/api/company/logo'], ['POST', '/api/guest/' + 'ab'.repeat(24)], ['POST', '/api/estimate-imports/analyze'], ['POST', '/api/daily-templates/generate'], ['GET', '/api/company/export'], ['POST', '/api/projects/101/assistant/chat'], ['POST', '/api/assistant/interpret']];
     const beforeUnsupported = commits;
     for (const [method, url] of unsupported) assert.equal((await request(bases[0], method, url, method === 'GET' ? undefined : {})).status, 503, url);
     assert.equal(commits, beforeUnsupported); assert.equal(legacyRequests, 0); assert.equal(fs.readFileSync(localFile, 'utf8'), originalLocal);
@@ -251,6 +271,7 @@ async function main() {
     await require('./time-review-postgres-cases')({ repository, change, request, slowRequest, bases, checkpoint, waitFor, controls, providerEvents });
     await require('./time-write-postgres-cases')({ repository, change, request, slowRequest, bases, startWorker, checkpoint, waitFor, controls, providerEvents });
     await require('./daily-postgres-cases')({ repository, change, request, slowRequest, bases, startWorker, checkpoint, waitFor, controls, providerEvents });
+    await require('./photo-postgres-cases')({ repository, change, request, slowRequest, bases, startWorker, checkpoint, waitFor, controls, providerEvents, photoObjects, photoEvents });
     for (let attempt = 0; attempt < 3; attempt++) assert.equal((await request(bases[0], 'POST', '/api/auth/login', { email: 'user1@example.invalid', password: 'invalid-synthetic-password' })).status, 401);
     assert.equal((await request(bases[0], 'POST', '/api/auth/login', { email: 'user1@example.invalid', password: 'invalid-synthetic-password' })).status, 429, 'Atomic failed logins retain the credential lockout');
     assert.deepEqual(await repository.load(companyB), foreignBefore);
@@ -259,6 +280,7 @@ async function main() {
   } finally {
     controls.gate?.resolve();
     controls.readGate?.resolve();
+    controls.photoPutGate?.resolve(); controls.photoGetGate?.resolve();
     await Promise.all(children.map(async child => { if (child.exitCode == null) { const ended = once(child, 'exit'); child.kill(); await ended; } }));
     if (bridge) { bridge.closeAllConnections(); await new Promise(resolve => bridge.close(resolve)); }
     await pool.end();

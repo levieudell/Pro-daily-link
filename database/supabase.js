@@ -32,7 +32,7 @@ async function request(relativePath, options = {}) {
     ...options,
     headers: headers(options.headers)
   });
-  if (!response.ok) { const message = (await response.text()).slice(0, 300); if (!require('./tenant-admission').enabled()) throw new Error(`Supabase request failed (${response.status}): ${message}`); throw Object.assign(new Error(`Supabase request failed (${response.status}): ${message}`), { statusCode: response.status === 409 ? 409 : 503, code: /PDL_REVISION_CONFLICT/.test(message) ? 'PDL_REVISION_CONFLICT' : 'PDL_STORAGE_UNAVAILABLE', commitRejected: response.status >= 400 && response.status < 500 }); }
+  if (!response.ok) { const message = (await response.text()).slice(0, 300); if (!require('./tenant-admission').enabled()) throw new Error(`Supabase request failed (${response.status}): ${message}`); throw Object.assign(new Error(`Supabase request failed (${response.status}): ${message}`), { providerStatus: response.status, statusCode: response.status === 409 ? 409 : 503, code: /PDL_REVISION_CONFLICT/.test(message) ? 'PDL_REVISION_CONFLICT' : 'PDL_STORAGE_UNAVAILABLE', commitRejected: response.status >= 400 && response.status < 500 }); }
   return response;
 }
 
