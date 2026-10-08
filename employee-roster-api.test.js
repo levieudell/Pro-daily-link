@@ -1,0 +1,48 @@
+'use strict';
+const assert=require('node:assert/strict'),fs=require('node:fs'),os=require('node:os'),path=require('node:path'),crypto=require('node:crypto');
+const root=fs.mkdtempSync(path.join(os.tmpdir(),'pdl-roster-')),file=path.join(root,'db.json'),companyId='33443344-3344-4344-8344-334433443344';
+const db=JSON.parse(fs.readFileSync('data/db.json','utf8'));db.company={...db.company,id:companyId,name:'Synthetic roster',demo:true,timezone:'America/Los_Angeles'};
+db.company.features={timeCards:true};
+db.team=[{id:1,name:'Synthetic owner',role:'Account Owner',crew:'Office'},{id:9,name:'Synthetic Cliff',crew:'Field B',role:'Field team member',initials:'SC',email:'cliff@example.test'},{id:10,name:'Synthetic Jeremy',crew:'Field B',role:'Field team member',initials:'SJ',email:'jeremy@example.test'},{id:11,name:'Synthetic active',crew:'Field B',role:'Field team member'}];
+db.projects=[{id:101,name:'Historical job',code:'HIST',estimateItems:[]}];db.customers=[];db.crews=[];db.catalog=[];db.changes=[];
+db.users=['owner','admin','project_manager','field'].map((role,i)=>({id:i+1,name:'Synthetic '+role,email:role+'@example.test',companyId,role,status:'Active',memberId:role==='owner'?1:role==='field'?10:null,projectIds:[101],assignedCrews:['Field B'],permissions:{scheduleCrews:true,viewTime:true}}));
+db.sessions=db.users.map(user=>({userId:user.id,companyId,tokenHash:crypto.createHash('sha256').update('synthetic-'+user.role).digest('hex'),expiresAt:'2099-01-01T00:00:00Z'}));
+db.assignments=[{id:20,projectId:101,date:'2020-10-16',start:'08:00',end:'16:00',crew:'Field B',activity:'Historical shift',memberIds:[9,10],notifications:{9:{inAppAt:'2020-10-15'},10:{inAppAt:'2020-10-15'}},acknowledgements:{9:{at:'2020-10-16'},10:{at:'2020-10-16'}}},{id:21,projectId:101,date:'2099-10-18',start:'08:00',end:'16:00',memberIds:[10]}];
+db.reports=[{id:30,project:0,dateIso:'2020-10-16',date:'Oct 16',foreman:'Other author',status:'Approved',notes:'Historical work',summary:'Historical work',laborEntries:[{memberId:9,hours:8,crew:'Field B'},{memberId:10,hours:8,crew:'Field B'}],productionEntries:[],history:[{action:'Approved',by:'Other author',at:'2020-10-17'}]}];
+db.workdays=[{id:40,projectId:101,memberIds:[9,10],status:'complete',startedAt:'2020-10-16T15:00:00Z',endedAt:'2020-10-16T23:00:00Z',reportId:30}];
+db.timeCards=[9,10].map((memberId,i)=>({id:50+i,projectId:101,memberId,date:'2020-10-16',inAt:'2020-10-16T15:00:00Z',outAt:'2020-10-16T23:00:00Z',hours:8,status:'approved',approvedBy:'Other author',approvedAt:'2020-10-17',reportId:30,workdayId:40,history:[{action:'Approved',by:'Other author'}]}));
+db.photos=[{id:60,project:0,workdayId:40,reportId:30,uploader:'Other author',url:'/uploads/historical.jpg',caption:'Retained photo'}];db.auditLog=[];
+fs.writeFileSync(file,JSON.stringify(db));fs.writeFileSync(path.join(root,'platform.json'),JSON.stringify({users:[],sessions:[]}));
+Object.assign(process.env,{PDL_DB_FILE:file,PDL_PLATFORM_FILE:path.join(root,'platform.json'),PDL_REQUIRE_AUTH:'1',PDL_SUPABASE_ENABLED:'0',PDL_TRANSACTIONAL_DB:'off',PDL_TIME_CARDS:'1'});for(const key of ['OPENAI_API_KEY','SENTRY_DSN','RESEND_API_KEY','STRIPE_SECRET_KEY','STRIPE_WEBHOOK_SECRET'])delete process.env[key];require('./database/supabase').loadLocalEnv=()=>{};
+const {server}=require('./server'),nativeFetch=global.fetch;let base;
+global.fetch=(url,options)=>{assert.ok(String(url).startsWith(base+'/'),'only synthetic localhost requests allowed');return nativeFetch(url,options)};
+async function call(method,route,body,role='owner',tenant=companyId){const response=await fetch(base+route,{method,signal:AbortSignal.timeout(10000),headers:{'Content-Type':'application/json','x-pdl-company':tenant,Authorization:'Bearer synthetic-'+role},...(body?{body:JSON.stringify(body)}:{})});const raw=await response.text();return {status:response.status,data:response.headers.get('content-type')?.includes('json')?JSON.parse(raw):raw};}
+function stored(){return JSON.parse(fs.readFileSync(file,'utf8'))}function modify(fn){const d=stored();fn(d);fs.writeFileSync(file,JSON.stringify(d))}
+const historyKeys=['assignments','reports','workdays','timeCards','photos','users','sessions'];
+(async()=>{try{await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));base='http://127.0.0.1:'+server.address().port;
+  const route='/api/team/10/archive',input={archived:true,expectedVersion:0};
+  for(const role of ['field','project_manager','unknown']){const before=fs.readFileSync(file,'utf8');const result=await call('PATCH',route,input,role);assert.ok([401,403].includes(result.status));assert.equal(fs.readFileSync(file,'utf8'),before);}
+  const cross=await call('PATCH',route,input,'owner','44554455-4455-4455-8455-445544554455');assert.ok([401,404].includes(cross.status));
+  assert.equal((await call('PATCH','/api/team/1/archive',input)).status,409);assert.equal((await call('PATCH',route,{archived:'true',expectedVersion:0})).status,400);assert.equal((await call('PATCH',route,{archived:true})).status,400);assert.equal((await call('PATCH','/api/team/999/archive',input)).status,404);
+  modify(d=>d.workdays.push({id:41,status:'active',memberIds:[10]}));assert.equal((await call('PATCH',route,input)).status,409);modify(d=>d.workdays.pop());
+  modify(d=>d.timeCards.push({id:52,memberId:10,outAt:null}));assert.equal((await call('PATCH',route,input)).status,409);modify(d=>d.timeCards.pop());
+  const before=stored(),csvBefore=await call('GET','/api/time-cards.csv?from=2020-10-16&to=2020-10-16');assert.equal(csvBefore.status,200);assert.match(csvBefore.data,/Synthetic Jeremy/);assert.match(csvBefore.data,/Synthetic Cliff/);
+  const archived=await call('PATCH',route,input);assert.equal(archived.status,200);assert.equal(archived.data.id,10);assert.equal(archived.data.archived,true);assert.equal(archived.data.archiveVersion,1);
+  for(const key of historyKeys)assert.deepEqual(stored()[key],before[key],key+' retained byte-for-byte structurally');assert.equal(stored().auditLog.length,1);
+  assert.equal((await call('PATCH',route,input)).status,409,'stale archive rejected');assert.equal((await call('PATCH',route,{archived:true,expectedVersion:1})).status,200);assert.equal(stored().auditLog.length,1,'same-state request is idempotent');
+  const next={projectId:101,memberIds:[10],date:'2099-10-20',start:'08:00',end:'16:00'};assert.equal((await call('POST','/api/assignments',next)).status,409);
+  assert.equal((await call('PATCH','/api/assignments/21',{...next,date:'2099-10-18',edit:true})).status,409,'existing future shift cannot silently reschedule archived employee');
+  assert.equal((await call('PATCH','/api/assignments/20',{memberId:9,targetMemberId:10,date:'2099-10-20'})).status,409);
+  assert.equal((await call('POST','/api/projects',{name:'New project',supervisor:'Synthetic Jeremy'})).status,409,'stale project supervisor blocked');
+  assert.equal((await call('POST','/api/workdays/start',{projectId:101,memberIds:[10]})).status,409,'archived employee cannot open a workday');
+  modify(d=>d.company.activities=[{id:'shop',name:'Shop',active:true}]);
+  assert.equal((await call('POST','/api/time-cards/company-clock',{activityCodeId:'shop'},'field')).status,409,'archived employee cannot open company clock');
+  const preserved=await call('GET','/api/state');assert.equal(preserved.status,200);assert.equal(preserved.data.team.find(m=>m.id===10).name,'Synthetic Jeremy');assert.equal(preserved.data.reports.find(r=>r.id===30).foreman,'Other author');assert.deepEqual(preserved.data.reports.find(r=>r.id===30).laborEntries,before.reports[0].laborEntries);
+  const csvAfter=await call('GET','/api/time-cards.csv?from=2020-10-16&to=2020-10-16');assert.equal(csvAfter.data,csvBefore.data,'payroll CSV names and hours unchanged');
+  const historyEdit=await call('PATCH','/api/assignments/20',{...before.assignments[0],edit:true});assert.equal(historyEdit.status,200,'existing past shift keeps historical members');
+  const restored=await call('PATCH',route,{archived:false,expectedVersion:1},'admin');assert.equal(restored.status,200);assert.equal(restored.data.id,10);assert.equal(restored.data.archiveVersion,2);assert.equal(restored.data.archivedAt,null);assert.equal(stored().auditLog.length,2);
+  assert.equal((await call('PATCH',route,{archived:true,expectedVersion:1})).status,409,'old request cannot rearchive after restore');assert.equal((await call('POST','/api/assignments',next)).status,201);
+  const activeCount=stored().team.length;assert.equal(activeCount,4,'no records deleted or cloned');
+  const {splitSnapshot,assembleSnapshot}=require('./database/transactional-repository'),split=splitSnapshot(stored()),roundTrip=assembleSnapshot(split.scalarData,split.records);assert.deepEqual(roundTrip.team,stored().team,'archive metadata survives transactional round trip');
+  console.log('Employee roster API passed: tenant/role checks, active-shift gates, version conflicts, archive/restore, retained reports/time/payroll/photos/sessions and historical schedule edits.');
+}finally{server.closeAllConnections();await new Promise(resolve=>server.close(resolve));global.fetch=nativeFetch;fs.rmSync(root,{recursive:true,force:true})}})().catch(error=>{console.error(error);process.exitCode=1;server.close()});
