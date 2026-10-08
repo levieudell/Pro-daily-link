@@ -35,7 +35,7 @@
     "assistant:ledger:check": "node database/assistant-budget-readiness.js",
     "assistant:ledger:initialize": "node database/assistant-budget-readiness.js --apply",
     "start:acceptance": "node scripts/start-acceptance.js",
-    "test:acceptance": "node --test acceptance-startup.test.js",
+    "test:acceptance": "node --test acceptance-startup.test.js annual-acceptance-guard.test.js",
     "check:acceptance": "node --check scripts/start-acceptance.js && node --check acceptance-startup.test.js"
   },
   "engines": {

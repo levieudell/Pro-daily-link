@@ -1,7 +1,11 @@
 name: Annual isolated acceptance
 on:
+  pull_request:
+    branches: [qa/paid-launch-acceptance-20261005]
   push:
     branches: [qa/annual-offer-acceptance-20261008, qa/paid-launch-acceptance-20261005]
+permissions:
+  contents: read
 jobs:
   acceptance:
     runs-on: ubuntu-latest
