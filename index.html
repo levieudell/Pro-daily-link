@@ -263,7 +263,7 @@
   </form></dialog>
   <dialog id="report-modal">
     <form method="dialog" id="report-form">
-      <div class="modal-header"><div><p class="eyebrow">FIELD REPORT</p><h2 id="report-modal-title">Create daily report</h2><p id="report-work-date" class="report-work-date" aria-live="polite"></p></div><button class="close-button" value="cancel">×</button></div>
+      <div class="modal-header"><div><p class="eyebrow">FIELD REPORT</p><h2 id="report-modal-title">Create daily report</h2><p id="report-work-date" class="report-work-date" aria-live="polite"></p></div><button type="button" id="close-report" class="close-button" value="cancel" aria-label="Close daily report">×</button></div>
       <div class="report-steps"><span class="active" data-step-dot="1"><b>1</b> Field notes & photos</span><i></i><span data-step-dot="2"><b>2</b> Production & labor</span></div>
       <div id="report-draft-choice" class="draft-choice" hidden><div><strong>Saved draft found</strong><p id="report-draft-summary"></p></div><div><button type="button" class="secondary" id="report-start-fresh">Start fresh</button><button type="button" class="primary" id="report-resume-draft">Resume draft</button></div></div>
       <div class="report-step active" data-report-step="1">
@@ -279,7 +279,7 @@
         <div class="autosave-status" id="autosave-status">Notes save automatically on this device</div>
         <label>Daily photos<input type="file" id="report-photos" accept="image/jpeg,image/png,image/webp" multiple /><small class="input-help">Add progress, material, issue, or completed-work photos.</small></label><label>Photo tags<input id="report-photo-tags" placeholder="progress, concrete, east wall"><small class="input-help">Separate tags with commas. Date and time are added automatically.</small></label>
         <button type="button" class="ai-button" id="ai-convert"><span>✦</span><b>Analyze notes and build report</b><small>AI will propose production, labor, delays, materials, equipment, and safety details</small></button>
-        <div class="modal-actions"><button value="cancel" class="secondary">Cancel</button><button type="button" class="secondary" id="save-report-draft">Save notes as draft</button><button type="button" class="primary" id="report-next-step">Next: production & labor →</button></div>
+        <div class="modal-actions"><button type="button" id="cancel-report" value="cancel" class="secondary">Cancel</button><button type="button" class="secondary" id="save-report-draft">Save notes as draft</button><button type="button" class="primary" id="report-next-step">Next: production & labor →</button></div>
       </div>
       <div class="report-step" data-report-step="2">
         <div id="approved-report-edit-warning" class="verify-banner report-edit-warning" hidden><b>Approved report correction</b><span>Saving changes returns this daily to office review. Production and exceptions will be checked again before approval.</span></div>
@@ -302,7 +302,7 @@
           <label class="safety-none"><input type="checkbox" id="no-safety-observations"> No safety observations reported today <small>This does not certify that the site was hazard-free.</small></label>
         </section>
         <label>Next step<textarea id="report-next" rows="2" placeholder="What should happen next? Leave blank if unknown."></textarea></label>
-        <label>Foreman signature<input id="report-signature" placeholder="Type full name to sign" /></label>
+        <label>Foreman signature<input id="report-signature" placeholder="Type full name to sign" /><small class="input-help">Choose Save draft or Submit to office to save this signature.</small></label>
         <div id="report-custom-fields" class="templates-only"></div>
         <div id="report-submit-status" class="report-submit-status" role="alert" aria-live="assertive"></div>
         <div class="modal-actions"><button type="button" class="secondary" id="report-back">← Back to notes</button><button type="button" class="secondary" id="save-report-step2-draft">Save draft</button><button type="button" class="primary" id="save-report">Submit to office</button></div>
@@ -466,9 +466,9 @@
   <script src="schedule-availability.js?v=20261005-partial-day-leave"></script>
 <script src="daily-work-extraction.js?v=20261007-work-review-small-custom"></script>
   <script src="report-labor-review.js?v=20261007-labor-review"></script>
-  <script src="app.js?v=20261007-work-review-small-custom"></script>
+  <script src="app.js?v=20261007-work-review-small-custom-signature"></script>
   <script src="estimate-mobile.js"></script>
-  <script src="time-approval-controls.js?v=20261007-pay-presets"></script>
+  <script src="time-approval-controls.js?v=20261007-pay-presets-person-total"></script>
   <script src="company-settings-tabs.js?v=20261004-pay-periods"></script>
   <script src="office-workspace.js?v=20261005-office-recovery"></script>
   <script src="reporting-controls.js?v=20261005-project-notes"></script>
