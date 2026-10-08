@@ -14,6 +14,7 @@ const { fixture, companyA, companyB, token } = require('./fixtures/project-assis
 const { TransactionalTenantRepository, splitSnapshot, assembleSnapshot, canonicalHash } = require('./database/transactional-repository');
 const { createAdmission } = require('./database/tenant-admission');
 const { loadConsistentSnapshot } = require('./database/tenant-consistent-read');
+const { readJsonBody } = require('./json-request-body');
 
 const rawUrl = process.env.PDL_ATOMIC_TEST_POSTGRES_URL;
 if (!rawUrl) throw new Error('Explicit PDL_ATOMIC_TEST_POSTGRES_URL is required; PostgreSQL evidence cannot be skipped.');
@@ -21,42 +22,6 @@ const target = new URL(rawUrl);
 if (process.env.PDL_ATOMIC_TEST_ALLOW_SCHEMA !== '1' || !['127.0.0.1', 'localhost', '[::1]'].includes(target.hostname) || !/^\/pdl_atomic_synthetic[a-z0-9_]*$/.test(target.pathname) || target.search || target.hash) throw new Error('Only an explicitly authorized disposable localhost pdl_atomic_synthetic database is accepted.');
 const pool = new Pool({ connectionString: rawUrl, max: 12, connectionTimeoutMillis: 5000 });
 const repository = new TransactionalTenantRepository({ pool });
-// Diagnostics are restricted to this guarded disposable fixture. They never repair
-// data, retry an integrity failure, or alter the production repository's denial.
-const committedSnapshots = new Map();
-const rememberCommit = (company, revision, snapshot) => {
-  committedSnapshots.set(company + ':' + revision, structuredClone(snapshot));
-};
-const fixtureSave = repository.save.bind(repository);
-repository.save = async (snapshot, revision) => {
-  const expected = structuredClone(snapshot), saved = await fixtureSave(snapshot, revision);
-  rememberCommit(saved.companyId, saved.revision, expected); return saved;
-};
-const fixtureLoad = repository.load.bind(repository);
-repository.load = async company => {
-  try { return await fixtureLoad(company); }
-  catch (error) {
-    if (error.code === 'PDL_TENANT_INTEGRITY') {
-      const diagnostic = await repository.withTenant(company, async client => {
-        const state = (await client.query('SELECT revision, scalar_data, content_hash FROM tenant_revisions WHERE company_id=$1', [company])).rows[0];
-        const records = (await client.query('SELECT collection,position,data FROM tenant_records WHERE company_id=$1 ORDER BY collection,position', [company])).rows;
-        const actual = assembleSnapshot(state.scalar_data, records), expected = committedSnapshots.get(company + ':' + state.revision);
-        const differences = [];
-        const describe = value => ({ type: value === null ? 'null' : Array.isArray(value) ? 'array' : typeof value, ...(Array.isArray(value) ? { length: value.length } : {}), hash: canonicalHash({ value }) });
-        const compare = (left, right, key = '$') => {
-          if (differences.length >= 24 || canonicalHash({ value: left }) === canonicalHash({ value: right })) return;
-          if (left && right && typeof left === 'object' && typeof right === 'object' && Array.isArray(left) === Array.isArray(right)) {
-            for (const child of new Set([...Object.keys(left), ...Object.keys(right)])) compare(left[child], right[child], key + '.' + child);
-          } else differences.push({ path: key, expected: describe(left), actual: describe(right) });
-        };
-        if (expected) compare(expected, actual);
-        return { revision: state.revision, revisionValid: Number.isSafeInteger(Number(state.revision)) && Number(state.revision) >= 0, companyMatches: actual.company?.id === company, storedHash: state.content_hash, actualHash: canonicalHash(actual), expectedHash: expected && canonicalHash(expected), collections: [...new Set(records.map(row => row.collection))].map(collection => ({ collection, count: records.filter(row => row.collection === collection).length })), differences };
-      }, 'REPEATABLE READ').catch(failure => ({ diagnosticError: failure.message }));
-      console.error('SYNTHETIC_INTEGRITY_DIAGNOSTIC=' + JSON.stringify(diagnostic));
-    }
-    throw error;
-  }
-};
 const children = [], temp = fs.mkdtempSync(path.join(os.tmpdir(), 'pdl-atomic-http-'));
 const localFile = path.join(temp, 'db.json');
 let bridge, bridgeBase, commits = 0, legacyRequests = 0;
@@ -94,8 +59,7 @@ async function prepareDatabase() {
 }
 async function rpc(snapshot, revision, recordsOverride) {
   const packed = splitSnapshot(snapshot), records = packed.records.map(row => ({ collection: row.collection, record_key: row.recordKey, position: row.position, data: row.data }));
-  const saved = (await pool.query('SELECT * FROM replace_tenant_records($1,$2,$3,$4,$5)', [snapshot.company.id, revision, packed.scalarData, canonicalHash(snapshot), JSON.stringify(recordsOverride || records)])).rows[0];
-  rememberCommit(snapshot.company.id, saved.revision, snapshot); return saved;
+  return (await pool.query('SELECT * FROM replace_tenant_records($1,$2,$3,$4,$5)', [snapshot.company.id, revision, packed.scalarData, canonicalHash(snapshot), JSON.stringify(recordsOverride || records)])).rows[0];
 }
 async function startBridge() {
   bridge = http.createServer(async (req, res) => {
@@ -128,21 +92,22 @@ async function startBridge() {
       }
       if (req.method === 'GET' && url.pathname === '/rest/v1/tenant_records') return send(200, (await pool.query('SELECT collection,position,data FROM tenant_records WHERE company_id=$1 ORDER BY collection,position LIMIT $2 OFFSET $3', [company, Number(url.searchParams.get('limit')), Number(url.searchParams.get('offset'))])).rows);
       if (req.method === 'POST' && ['/rest/v1/rpc/replace_tenant_records', '/rest/v1/rpc/replace_tenant_policy_records'].includes(url.pathname)) {
-        let raw = ''; for await (const chunk of req) raw += chunk;
-        const input = JSON.parse(raw); commits++;
+        const chunks = [], collect = chunk => chunks.push(chunk); req.on('data', collect);
+        const input = await readJsonBody(req); req.off('data', collect); commits++;
+        const formerlyDecoded = chunks.map(chunk => chunk.toString('utf8')).join('');
+        const former = JSON.parse(formerlyDecoded), formerHash = canonicalHash(assembleSnapshot(former.p_scalar_data, former.p_records));
+        if (formerHash !== input.p_content_hash) console.error('SYNTHETIC_UTF8_DIAGNOSTIC=' + JSON.stringify({ revision: input.p_expected_revision, suppliedHash: input.p_content_hash, bufferedHash: canonicalHash(assembleSnapshot(input.p_scalar_data, input.p_records)), formerChunkHash: formerHash, differences: require('./fixtures/snapshot-wire-diagnostics').differences(input, former) }));
         if (controls.gate && (!controls.commitFilter || controls.commitFilter(url, input))) { const current = controls.gate; current.count++; if (current.count === current.expected) current.resolve(); await current.promise; }
         if (controls.rejectCommit) return send(400, { message: 'Synthetic commit rejected before SQL' });
         const policy = url.pathname.endsWith('replace_tenant_policy_records');
         const wireHash = canonicalHash(assembleSnapshot(input.p_scalar_data, input.p_records));
-        if (wireHash !== input.p_content_hash) console.error('SYNTHETIC_RPC_HASH_DIAGNOSTIC=' + JSON.stringify({ revision: input.p_expected_revision, suppliedHash: input.p_content_hash, wireHash }));
+        assert.equal(wireHash, input.p_content_hash, 'Synthetic RPC bytes must preserve the exact submitted snapshot hash');
         const result = await pool.query(policy ? 'SELECT * FROM replace_tenant_policy_records($1,$2,$3,$4,$5,$6)' : 'SELECT * FROM replace_tenant_records($1,$2,$3,$4,$5)', [input.p_company_id, input.p_expected_revision, input.p_scalar_data, input.p_content_hash, JSON.stringify(input.p_records), ...(policy ? [input.p_policy_guard] : [])]);
-        rememberCommit(input.p_company_id, result.rows[0].revision, assembleSnapshot(input.p_scalar_data, input.p_records));
         if (controls.dropAck) return req.socket.destroy();
         return send(200, result.rows);
       }
       if (req.method === 'POST' && url.pathname === '/synthetic-resend') {
-        let raw = ''; for await (const chunk of req) raw += chunk;
-        const email = JSON.parse(raw), current = await repository.load(companyA), key = req.headers['idempotency-key'];
+        const email = await readJsonBody(req), current = await repository.load(companyA), key = req.headers['idempotency-key'];
         const job = current.snapshot.assignmentEmailOutbox.find(row => key === 'pdl-assignment/' + row.id);
         assert.ok(job, 'Only a durable fixed assignment email job may reach transport'); assert.equal(job.status, 'dispatching');
         assert.deepEqual(email.to, [job.payload.to]); assert.ok(email.html.includes(job.payload.projectName));
@@ -161,18 +126,13 @@ async function startWorker({ dispatch = false } = {}) {
   const env = { ...process.env };
   for (const name of Object.keys(env)) if (/^(SENTRY_|RESEND_|OPENAI_|STRIPE_|SUPABASE_|DATABASE_URL$|PDL_)/.test(name)) delete env[name];
   Object.assign(env, { PDL_DB_FILE: localFile, PDL_PLATFORM_FILE: path.join(temp, 'platform.json'), PDL_REQUIRE_AUTH: '1', PDL_SUPABASE_ENABLED: '1', PDL_TRANSACTIONAL_DB: 'primary', PDL_TENANT_ATOMIC: '1', SUPABASE_URL: bridgeBase, SUPABASE_SECRET_KEY: 'synthetic-only-atomic-stub', PDL_ASSISTANT_AI_ENABLED: '0', PDL_AUTH_FAIL_LIMIT: '3', RESEND_API_KEY: 'synthetic-localhost-only', PDL_ASSIGNMENT_OUTBOX_DISPATCH: dispatch ? '1' : '0' });
-  const script = `const original=global.fetch;global.fetch=(url,options)=>{if(String(url)==='https://api.resend.com/emails')return original(${JSON.stringify(bridgeBase + '/synthetic-resend')},options);if(new URL(url).origin!==${JSON.stringify(bridgeBase)})throw Error('External network forbidden');return original(url,options)};require('./fixtures/snapshot-wire-diagnostics').observeWrites();const{server}=require('./server');server.listen(0,'127.0.0.1',()=>console.log('ATOMIC_PORT='+server.address().port));`;
+  const script = `const original=global.fetch;global.fetch=(url,options)=>{if(String(url)==='https://api.resend.com/emails')return original(${JSON.stringify(bridgeBase + '/synthetic-resend')},options);if(new URL(url).origin!==${JSON.stringify(bridgeBase)})throw Error('External network forbidden');return original(url,options)};const{server}=require('./server');server.listen(0,'127.0.0.1',()=>console.log('ATOMIC_PORT='+server.address().port));`;
   const child = spawn(process.execPath, ['-e', script], { cwd: __dirname, env, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] });
   children.push(child);
   return new Promise((resolve, reject) => {
     let log = ''; const timeout = setTimeout(() => reject(Error('Worker start timeout: ' + log)), 15000);
     child.stdout.on('data', bytes => { log += bytes; const match = log.match(/ATOMIC_PORT=(\d+)/); if (match) { clearTimeout(timeout); resolve('http://127.0.0.1:' + match[1]); } });
-    let diagnosticBuffer = '';
-    child.stderr.on('data', bytes => {
-      log += bytes; diagnosticBuffer += bytes;
-      const lines = diagnosticBuffer.split('\n'); diagnosticBuffer = lines.pop();
-      for (const line of lines) if (line.startsWith('SYNTHETIC_WRITE_DIAGNOSTIC=')) console.error(line);
-    });
+    child.stderr.on('data', bytes => { log += bytes; });
     child.once('error', error => { clearTimeout(timeout); reject(error); });
     child.once('exit', code => { clearTimeout(timeout); reject(Error('Worker exit ' + code + ': ' + log)); });
   });
@@ -188,7 +148,7 @@ async function slowRequest(base, user, input, route = notePath, method = 'POST')
   let done;
   const result = new Promise((resolve, reject) => {
     const req = http.request(address, { method, headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(bytes), 'X-PDL-Company': companyA, Authorization: 'Bearer ' + token(companyA, user) } }, res => {
-      let raw = ''; res.on('data', chunk => { raw += chunk; }); res.on('end', () => resolve({ status: res.statusCode, data: JSON.parse(raw) }));
+      readJsonBody(res).then(data => resolve({ status: res.statusCode, data }), reject);
     });
     req.on('error', reject); req.setTimeout(15000, () => req.destroy(Error('Slow-body timeout')));
     req.write(bytes.slice(0, -1)); done = () => req.end(bytes.slice(-1));
