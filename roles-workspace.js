@@ -14,7 +14,7 @@
   if (typeof module !== 'undefined' && module.exports) { module.exports = { currentRows, labels, roleLabels, proposalErrors }; return; }
   const $ = selector => document.querySelector(selector), content = $('#workspace-content'), message = $('#workspace-message');
   const escape = value => String(value ?? '').replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[char]));
-  const records = new Map();
+  const records = new Map(), recovery = window.RoleSaveRecovery;
   let nav, identity = '', sequence = 0, loadGeneration = 0, busy = false, route = '', state, registry, audit, proposed, reason = '', proof, stage = 'loading', outcome = '', confirmed = false;
   const root = '/api/company/role-policy';
   const companyId = () => { const value = document.cookie.split(';').map(row => row.trim()).find(row => row.startsWith('pdl_company='))?.slice(12); try { return value ? decodeURIComponent(value) : new URLSearchParams(location.search).get('tenant') || ''; } catch { return ''; } };
@@ -68,7 +68,7 @@
   function renderEditor() {
     if (!state || !registry || route !== 'roles' || !nav?.settings.roles) return;
     const record = pending();
-    content.innerHTML = `<p class="eyebrow">Company settings / Roles</p><h1>What each role can do</h1><p>Set role limits, then preview how they affect your people. Individual grants and project or crew scope still apply. Permissions change only after explicit confirmation.</p><p class="saved-version">Current policy revision ${state.policyRevision}</p>${protect()}${outcome ? `<p class="notice ${stage === 'saved' ? 'success' : ''}" id="save-result">${escape(outcome)}</p>` : ''}${record ? `<section class="panel"><h2>${record.kind === 'confirm' ? 'Check permission save result' : 'Recover the same preview'}</h2><p>A request is awaiting a reliable result. Keep this page open. Recovery uses the exact original request and never starts a new permission change.</p><div class="actions"><button class="primary" id="recover-request" ${busy ? 'disabled' : ''}>${record.kind === 'confirm' ? 'Check save result' : 'Recover preview'}</button></div></section>` : ''}${stage === 'review' && proof ? impact() : ''}${matrix()}${stage === 'editing' && !record ? `<section class="panel"><label class="reason" for="policy-reason">Reason for this change<textarea id="policy-reason" maxlength="1000" ${busy ? 'disabled' : ''} placeholder="Explain what this change is for">${escape(reason)}</textarea></label><div class="actions"><button class="primary" id="preview-policy" ${busy ? 'disabled' : ''}>Preview access changes</button><button id="reset-defaults" ${busy ? 'disabled' : ''}>Use supported defaults</button></div></section>` : ''}<div class="actions"><button id="refresh-policy" ${busy || record ? 'disabled' : ''}>${stage === 'saved' ? 'Review current permissions' : 'Refresh current permissions'}</button><button id="close-editor">Close editor</button></div><section class="panel"><h2>Unavailable role controls</h2><p><a href="#role-profiles">Manage Office and custom profiles</a> for the six admitted families. Profiles inherit one existing role and its assignments. These broader domains remain unavailable.</p><div class="unavailable"><p>Project, customer, people and subcontractor changes</p><p>Company details, forms and catalog</p><p>Report flags, rates and deletion; estimates, tickets and broader changes</p><p>Public sharing, provider actions and complete attachment backup</p></div></section>${history()}`;
+    content.innerHTML = `<p class="eyebrow">Company settings / Roles</p><h1>What each role can do</h1><p>Set role limits, then preview how they affect your people. Individual grants and project or crew scope still apply. Permissions change only after explicit confirmation.</p><p class="saved-version">Current policy revision ${state.policyRevision}</p>${protect()}${outcome ? `<p class="notice ${stage === 'saved' ? 'success' : ''}" id="save-result">${escape(outcome)}</p>` : ''}${record ? `<section class="panel"><h2>${record.kind === 'confirm' ? 'Check permission save result' : 'Recover the same preview'}</h2><p>Request ${escape(record.body.requestId)} is awaiting a reliable result. Recovery uses the exact original request. Confirmed save identities survive a reload in this tab; no request is sent automatically.</p><div class="actions">${record.unresolved ? `<p>The earlier request result remains unknown. Review current permissions and activity.</p><button id="reconcile-request" ${busy || record.reviewRevision !== state.tenantRevision ? 'disabled' : ''}>I reviewed current permissions and activity</button>` : `<button class="primary" id="recover-request" ${busy ? 'disabled' : ''}>${record.kind === 'confirm' ? 'Check save result' : 'Recover preview'}</button>`}</div></section>` : ''}${stage === 'review' && proof ? impact() : ''}${matrix()}${stage === 'editing' && !record ? `<section class="panel"><label class="reason" for="policy-reason">Reason for this change<textarea id="policy-reason" maxlength="1000" ${busy ? 'disabled' : ''} placeholder="Explain what this change is for">${escape(reason)}</textarea></label><div class="actions"><button class="primary" id="preview-policy" ${busy ? 'disabled' : ''}>Preview access changes</button><button id="reset-defaults" ${busy ? 'disabled' : ''}>Use supported defaults</button></div></section>` : ''}<div class="actions"><button id="refresh-policy" ${busy || record && !record.unresolved ? 'disabled' : ''}>${stage === 'saved' ? 'Review current permissions' : 'Refresh current permissions'}</button><button id="close-editor">Close editor</button></div><section class="panel"><h2>Unavailable role controls</h2><p><a href="#role-profiles">Manage Office and custom profiles</a> for the six admitted families. Profiles inherit one existing role and its assignments. These broader domains remain unavailable.</p><div class="unavailable"><p>Project, customer, people and subcontractor changes</p><p>Company details, forms and catalog</p><p>Report flags, rates and deletion; estimates, tickets and broader changes</p><p>Public sharing, provider actions and complete attachment backup</p></div></section>${history()}`;
     updateExpiry();
   }
   function updateExpiry() {
@@ -89,6 +89,8 @@
       if (!current()) return;
       await freshIdentity(nextState.tenantRevision); if (!current()) return;
       state = nextState; registry = nextRegistry; audit = nextAudit;
+      if (!pending()) { const original = recovery.get('roles', identity); if (original) records.set(identity, original); }
+      if (pending()?.unresolved) pending().reviewRevision = state.tenantRevision;
       proposed = previous || currentRows(state); reason = previousReason; stage = pending() ? 'recovery' : 'editing'; say(''); renderEditor();
     } catch (error) {
       if (!current() && !error.identityChanged) return;
@@ -118,13 +120,15 @@
       if (!isCurrent(mark, true)) return;
       if (!record) {
         const body = kind === 'preview' ? { requestId: crypto.randomUUID(), expectedRevision: state.tenantRevision, reason: reason.trim(), policies: copy(proposed) } : { previewId: proof.previewId, version: proof.version, requestId: crypto.randomUUID(), confirmed: true };
-        record = { kind, body, identity, sent: false }; records.set(identity, record);
+        record = { kind, body, identity, sent: false }; if (kind === 'confirm') recovery.remember('roles', record); records.set(identity, record);
       }
+      if (record.kind === 'confirm') recovery.remember('roles', record);
       stage = 'recovery'; renderEditor(); record.sent = true;
       const result = await request(root + '/' + record.kind, { method: 'POST', body: JSON.stringify(record.body) });
       record.result = result;
+      let cleanupError; if (record.kind === 'confirm') { try { recovery.forget('roles', record); } catch (storageError) { record.cleanupPending = true; cleanupError = storageError; } }
       if (!isCurrent(mark, true)) { record.result = result; return; }
-      await freshIdentity(); if (!isCurrent(mark, true)) { record.result = result; return; }
+      await freshIdentity(); if (!isCurrent(mark, true)) { record.result = result; return; } if (cleanupError) throw cleanupError;
       records.delete(record.identity); outcome = '';
       if (record.kind === 'preview') { proof = result; proposed = copy(record.body.policies); reason = record.body.reason; stage = 'review'; }
       else {
@@ -139,13 +143,20 @@
       if (!isCurrent(mark, true)) return;
       if (error.status === 401 || error.status === 402 || error.status === 403) { state = registry = proposed = proof = audit = null; content.replaceChildren(); say('Your access changed. Reopen the workspace to verify your current identity.', true); }
       else if (error.status >= 400 && error.status < 500) {
-        if (record) records.delete(record.identity); stage = 'stale'; proof = null;
+        if (record?.kind === 'confirm' && record.hadUncertain && !record.result) { record.unresolved = true; try { recovery.unresolved('roles', record); } catch (storageError) { say(storageError.message, true); } await loadEditor(); } else if (record) { try { if (record.kind === 'confirm') recovery.forget('roles', record); records.delete(record.identity); } catch (storageError) { record.unresolved = true; say(storageError.message, true); } } stage = 'stale'; proof = null;
         outcome = record?.kind === 'confirm' && record.result ? `The original save succeeded at policy revision ${record.result.policyRevision}. This request no longer matches current company settings. Refresh current permissions.` : error.message + (record?.hadUncertain ? ' The earlier request result remains unknown. Review current permissions before a new preview.' : ' Refresh current permissions before a new preview.');
       }
-      else if (record?.result && stage === 'saved') { outcome += ' Current permissions could not be refreshed. Use Review current permissions.'; }
+      else if (record?.result && record.kind === 'confirm') { records.delete(record.identity); stage = 'saved'; proof = null; outcome = 'The original save succeeded at policy revision ' + record.result.policyRevision + '. Request ' + record.body.requestId + '. Current permissions could not be refreshed. Use Review current permissions.' + (record.cleanupPending ? ' This tab could not clear its recovery identity; after a reload, check the original result again.' : ''); }
       else if (record && (error.uncertain || record.result)) { record.hadUncertain = true; stage = 'recovery'; outcome = error.message; }
       else { if (record) records.delete(record.identity); stage = 'editing'; proof = null; outcome = error.message + (error.status === 409 ? ' Review current settings before making another change.' : ''); }
     } finally { busy = false; renderEditor(); }
+  }
+  async function reconcile() {
+    const record = pending(); if (busy || !record?.unresolved || record.reviewRevision !== state?.tenantRevision || route !== 'roles') return;
+    busy = true; const mark = ticket(), reviewedRevision = record.reviewRevision; renderEditor();
+    try { await freshIdentity(reviewedRevision); if (!isCurrent(mark, true)) return; await loadEditor(); if (!isCurrent(mark, true) || !state || !audit) return; if (state.tenantRevision !== reviewedRevision) { outcome = 'The company changed. Review current permissions and activity again before acknowledging the earlier unknown result.'; return; } recovery.forget('roles', record); records.delete(record.identity); stage = 'editing'; outcome = 'Current permissions and activity reviewed. The earlier request result remains unknown. Request ' + record.body.requestId + '.'; }
+    catch (error) { if (isCurrent(mark, true)) { if ([401, 402, 403].includes(error.status)) { state = registry = proposed = proof = audit = null; confirmed = false; content.replaceChildren(); say('Your access changed. Reopen the workspace to verify your current identity.', true); } else { if (error.status === 409) await loadEditor(); say(error.message + ' Review current permissions and activity again.', true); } } }
+    finally { busy = false; renderEditor(); }
   }
   content.addEventListener('input', event => { if (event.target.id === 'policy-reason' && !busy) reason = event.target.value; });
   content.addEventListener('change', event => {
@@ -160,7 +171,8 @@
     if (busy) return;
     if (button.id === 'preview-policy') { if (!reason.trim()) { say('Enter a reason before previewing.', true); $('#policy-reason').focus(); return; } const errors = proposalErrors(proposed); if (errors.length) { say(errors.join(' '), true); return; } say(''); perform('preview'); }
     if (button.id === 'confirm-policy' && confirmed && proof && Date.parse(proof.expiresAt) > Date.now()) perform('confirm');
-    if (button.id === 'recover-request' && pending()) perform(pending().kind, pending());
+    if (button.id === 'reconcile-request') reconcile();
+    if (button.id === 'recover-request' && pending() && !pending().unresolved) perform(pending().kind, pending());
     if (button.id === 'refresh-policy') { outcome = ''; loadEditor(); }
     if (button.id === 'edit-proposal') { outcome = ''; loadEditor({ preserveProposal: true }); }
     if (button.id === 'reset-defaults') { proposed = copy(state.defaults); renderEditor(); }

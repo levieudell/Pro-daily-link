@@ -1,7 +1,7 @@
 'use strict';
 // Deployment boundary, never an editable role flag or request-selected cohort.
 const uuid = value => typeof value === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(value);
-const blockers = Object.freeze(['operational acceptance of unsupported company/project/customer/team/forms/catalog/financial and attachment workflows', 'separate Office and optional custom-role semantics', 'authoritative tenant backup, isolated restore and reviewed migration/rollback packet', 'selected-tenant credential/private-read/write/provider fence across legacy hosts, scripts and service-role credentials']);
+const blockers = Object.freeze(['G1 normal entry and account lifecycle', 'G2 normal app entry and finite projections', 'G3 protected resource/settings lifecycle', 'G4 complete daily/report workflow', 'G5 commercial and sharing workflow', 'G6 attachment compatibility and authoritative recovery', 'G7 global/platform/billing/provider routing', 'G8 paused live Assistant typed integration', 'G9 durable history and remaining recovery', 'G10 integrated production fence/restore/migration/rollback/release packet']);
 const fail = message => { throw Object.assign(Error(message), { code: 'PDL_ACTIVATION_NOT_READY', statusCode: 503 }); };
 function configuration(env = process.env) {
   if (env.PDL_TENANT_ATOMIC !== '1') return { enabled: false, companyId: null, synthetic: false };
