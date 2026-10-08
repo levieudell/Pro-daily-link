@@ -1,6 +1,7 @@
 'use strict';
 const path=require('node:path');
 const PUBLIC_FILES=new Set([
+  'robots.txt','sitemap.xml',
   'employee-roster.js',
   'company-timezone.js',
   'schedule-approved-labor.js',
