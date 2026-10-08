@@ -58,7 +58,7 @@ async function startServer(authRequired = true) {
   const env = { ...process.env, PDL_DB_FILE: dbFile, PDL_PLATFORM_FILE: path.join(temp, 'platform.json'), PDL_SUPABASE_ENABLED: '0', PDL_TRANSACTIONAL_DB: 'off', PDL_REQUIRE_AUTH: authRequired ? '1' : '0', PDL_EMAIL_DEV_MODE: '1' };
   for (const key of ['SENTRY_DSN', 'RESEND_API_KEY', 'OPENAI_API_KEY', 'STRIPE_SECRET_KEY', 'STRIPE_WEBHOOK_SECRET']) delete env[key];
   serverLog = '';
-  child = spawn(process.execPath, ['-e', "const {server}=require('./server');server.listen(0,'127.0.0.1',()=>console.log('NOTES_TEST_PORT='+server.address().port));"], { cwd: __dirname, env, stdio: ['ignore', 'pipe', 'pipe'] });
+  child = spawn(process.execPath, ['-e', "const {server}=require('./server');server.listen(0,'127.0.0.1',()=>console.log('NOTES_TEST_PORT='+server.address().port));"], { cwd: __dirname, env, stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true });
   await new Promise((resolve, reject) => {
     const timeout = setTimeout(() => reject(new Error('Synthetic notes server did not start: ' + serverLog)), 15000);
     child.stdout.on('data', bytes => {
