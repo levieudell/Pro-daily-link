@@ -1,0 +1,14 @@
+'use strict';
+const assert = require('node:assert/strict'), gate = require('./tenant-activation');
+const a = '00000000-0000-4000-8000-000000000001', b = '00000000-0000-4000-8000-000000000002';
+assert.deepEqual(gate.configuration({}), { enabled: false, companyId: null, synthetic: false });
+const config = gate.configuration({ PDL_TENANT_ATOMIC: '1', PDL_TENANT_ATOMIC_SYNTHETIC: '1', PDL_TENANT_ATOMIC_COMPANY: a, SUPABASE_URL: 'http://127.0.0.1:1234' });
+assert.equal(gate.accepts(a, config), true); assert.equal(gate.accepts(b, config), false);
+for (const id of ['forged', a.toUpperCase() + ' ', [a], '*']) assert.throws(() => gate.configuration({ PDL_TENANT_ATOMIC: '1', PDL_TENANT_ATOMIC_SYNTHETIC: '1', PDL_TENANT_ATOMIC_COMPANY: id }), /canonical/);
+for (const env of [{}, { SUPABASE_URL: 'https://provider.invalid' }, { SUPABASE_URL: 'http://127.0.0.1', PDL_TENANT_ATOMIC_SYNTHETIC: '0' }, { SUPABASE_URL: 'https://localhost', PDL_TENANT_ATOMIC_SYNTHETIC: '1' }]) assert.throws(() => gate.configuration({ ...env, PDL_TENANT_ATOMIC: '1' }));
+const synthetic = { PDL_TENANT_ATOMIC: '1', PDL_TENANT_ATOMIC_SYNTHETIC: '1', SUPABASE_URL: 'http://127.0.0.1:1234' };
+assert.equal(gate.accepts(b, gate.configuration(synthetic)), true);
+for (const NODE_ENV of [undefined, 'development', 'test', 'Production', 'production']) assert.throws(() => gate.configuration({ PDL_TENANT_ATOMIC: '1', PDL_TENANT_ATOMIC_SYNTHETIC: '1', PDL_TENANT_ATOMIC_COMPANY: a, SUPABASE_URL: 'https://provider.invalid', NODE_ENV }));
+for (const env of [synthetic, { PDL_TENANT_ATOMIC: '1', PDL_TENANT_ATOMIC_SYNTHETIC: '1', PDL_TENANT_ATOMIC_COMPANY: a }]) assert.throws(() => gate.configuration({ ...env, NODE_ENV: 'production' }), /release gates/);
+assert.equal(gate.describe(config).productionReady, false);
+console.log('Tenant activation: fixed process binding, explicit localhost-only synthetic scope, unchanged default and unfinished production release denial passed.');

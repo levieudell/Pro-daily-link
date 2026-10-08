@@ -104,8 +104,9 @@ function validateDelta(before, after, user, operation) {
     if (projectIds.length > 1 || projectIds.some(id => key(project.id) !== id) || !equal(omit(before.projects[report.project], ['progress', 'production']), omit(project, ['progress', 'production']))) fail(409, 'Approval cannot change unrelated project settings');
   } else if (projectIds.length) fail(409, 'Project settings cannot change');
 }
-function reportProjection(db, user, report, presentReport) {
+function reportProjection(db, user, report, presentReport, liveProject = true) {
   const row = presentReport(db, user, report), result = pick(row, reportFields);
+  if (liveProject) { const project = db.projects?.[report.project]; require('./notes-access').uniqueNumeric(db.projects, project?.id, 'Report project', db.company.id); if (typeof project.name !== 'string' || project.name.length > 5000 || /[\u0000-\u001f\u007f]/.test(project.name)) fail(409, 'Report project label needs reconciliation'); result.projectId = Number(project.id); result.projectName = project.name; }
   result.laborEntries = (row.laborEntries || []).map(entry => pick(entry, ['memberId', 'hours', 'crew']));
   result.productionEntries = (row.productionEntries || []).map(entry => pick(entry, productionFields));
   result.workSuggestions = (row.workSuggestions || []).map(entry => pick(entry, productionFields));

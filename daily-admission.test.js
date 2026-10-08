@@ -30,6 +30,8 @@ db.company.timeWriteRolePolicy.roles.field.clockCards = false; assert.equal(acce
 db.company.timeWriteRolePolicy.roles.project_manager.createCards = false; assert.equal(access.access(db, pm).runWorkdays, false); delete db.company.timeWriteRolePolicy;
 const projection = admission.reportProjection(db, pm, { ...report, privateSentinel: 'PRIVATE', rateSnapshot: { schemaVersion: 1, laborRate: 100, secret: 'PRIVATE' }, laborEntries: [{ memberId: 11, hours: 1, privateSentinel: 'PRIVATE' }] }, (_db, _user, row) => rates.withoutReportRates(row));
 assert.ok(!JSON.stringify(projection).includes('PRIVATE')); assert.equal(projection.signature, report.signature);
+const malformedLabel = structuredClone(db); malformedLabel.projects[0].name = { privatePricing: 'PRIVATE' }; assert.throws(() => admission.reportProjection(malformedLabel, pm, report, (_db, _user, row) => row), { statusCode: 409 });
+const captured = admission.reportProjection(db, pm, report, (_db, _user, row) => row, false); const changedProjects = structuredClone(db); changedProjects.projects.reverse(); changedProjects.projects[0].name = 'Renamed current project'; assert.deepEqual(admission.reportProjection(changedProjects, pm, report, (_db, _user, row) => row, false), captured); assert.equal(Object.hasOwn(captured, 'projectName'), false);
 const source = fs.readFileSync('server.js', 'utf8');
 assert.ok(source.includes('!dbContext.getStore().dailyCandidate'));
 assert.ok(source.includes('delete safe.dailyActionPreviews;delete safe.dailyActionReceipts;'));

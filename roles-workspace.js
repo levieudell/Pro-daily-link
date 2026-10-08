@@ -37,12 +37,13 @@
     nav = data; identity = nextIdentity;
     $('#company-label').textContent = data.company.name; $('#actor-label').textContent = data.actor.name;
     $('[data-route="roles"]').hidden = !data.settings.roles;
+    for (const [name, [, family, action]] of Object.entries(window.WorkspaceActions?.routes || {})) $('[data-route="' + name + '"]').hidden = !data.actor.effectiveCapabilities[family]?.[action];
   }
-  async function freshIdentity(expectedRevision) {
+  async function freshIdentity(expectedRevision, ownerOnly = true) {
     const old = identity, mark = ticket(), data = await request('/api/navigation');
     if (!isCurrent(mark)) throw Object.assign(Error('The workspace changed while this request was pending.'), { stale: true });
     applyNavigation(data);
-    if (old !== identity || !data.settings.roles) { say('Your signed-in identity or permissions changed. Reopen this workspace.', true); throw Object.assign(Error('Your signed-in identity or permissions changed. Reopen this workspace.'), { status: 403, identityChanged: true }); }
+    if (old !== identity || ownerOnly && !data.settings.roles) { say('Your signed-in identity or permissions changed. Reopen this workspace.', true); throw Object.assign(Error('Your signed-in identity or permissions changed. Reopen this workspace.'), { status: 403, identityChanged: true }); }
     if (expectedRevision != null && data.tenantRevision !== expectedRevision) throw Object.assign(Error('The company changed after this review. Refresh current permissions and preview again.'), { status: 409 });
   }
   function directory() {
@@ -66,7 +67,7 @@
   function renderEditor() {
     if (!state || !registry || route !== 'roles' || !nav?.settings.roles) return;
     const record = pending();
-    content.innerHTML = `<p class="eyebrow">Company settings / Roles</p><h1>What each role can do</h1><p>Set role limits, then preview how they affect your people. Individual grants and project or crew scope still apply. Permissions change only after explicit confirmation.</p><p class="saved-version">Current policy revision ${state.policyRevision}</p>${protect()}${outcome ? `<p class="notice ${stage === 'saved' ? 'success' : ''}" id="save-result">${escape(outcome)}</p>` : ''}${record ? `<section class="panel"><h2>${record.kind === 'confirm' ? 'Check permission save result' : 'Recover the same preview'}</h2><p>A request is awaiting a reliable result. Keep this page open. Recovery uses the exact original request and never starts a new permission change.</p><div class="actions"><button class="primary" id="recover-request" ${busy ? 'disabled' : ''}>${record.kind === 'confirm' ? 'Check save result' : 'Recover preview'}</button></div></section>` : ''}${stage === 'review' && proof ? impact() : ''}${matrix()}${stage === 'editing' && !record ? `<section class="panel"><label class="reason" for="policy-reason">Reason for this change<textarea id="policy-reason" maxlength="1000" ${busy ? 'disabled' : ''} placeholder="Explain what this change is for">${escape(reason)}</textarea></label><div class="actions"><button class="primary" id="preview-policy" ${busy ? 'disabled' : ''}>Preview access changes</button><button id="reset-defaults" ${busy ? 'disabled' : ''}>Use supported defaults</button></div></section>` : ''}<div class="actions"><button id="refresh-policy" ${busy || record ? 'disabled' : ''}>${stage === 'saved' ? 'Review current permissions' : 'Refresh current permissions'}</button><button id="close-editor">Close editor</button></div><section class="panel"><h2>Unavailable role controls</h2><p>These domains have no editable role controls in this workspace.</p><div class="unavailable"><p>Project, customer, people and subcontractor changes</p><p>Company details, forms and catalog</p><p>Report flags, rates and deletion; estimates, tickets and broader changes</p><p>Public sharing, provider actions and complete attachment backup</p></div></section>${history()}`;
+    content.innerHTML = `<p class="eyebrow">Company settings / Roles</p><h1>What each role can do</h1><p>Set role limits, then preview how they affect your people. Individual grants and project or crew scope still apply. Permissions change only after explicit confirmation.</p><p class="saved-version">Current policy revision ${state.policyRevision}</p>${protect()}${outcome ? `<p class="notice ${stage === 'saved' ? 'success' : ''}" id="save-result">${escape(outcome)}</p>` : ''}${record ? `<section class="panel"><h2>${record.kind === 'confirm' ? 'Check permission save result' : 'Recover the same preview'}</h2><p>A request is awaiting a reliable result. Keep this page open. Recovery uses the exact original request and never starts a new permission change.</p><div class="actions"><button class="primary" id="recover-request" ${busy ? 'disabled' : ''}>${record.kind === 'confirm' ? 'Check save result' : 'Recover preview'}</button></div></section>` : ''}${stage === 'review' && proof ? impact() : ''}${matrix()}${stage === 'editing' && !record ? `<section class="panel"><label class="reason" for="policy-reason">Reason for this change<textarea id="policy-reason" maxlength="1000" ${busy ? 'disabled' : ''} placeholder="Explain what this change is for">${escape(reason)}</textarea></label><div class="actions"><button class="primary" id="preview-policy" ${busy ? 'disabled' : ''}>Preview access changes</button><button id="reset-defaults" ${busy ? 'disabled' : ''}>Use supported defaults</button></div></section>` : ''}<div class="actions"><button id="refresh-policy" ${busy || record ? 'disabled' : ''}>${stage === 'saved' ? 'Review current permissions' : 'Refresh current permissions'}</button><button id="close-editor">Close editor</button></div><section class="panel"><h2>Unavailable role controls</h2><p>Office remains a legacy Admin compatibility alias. A separate Office permission profile and optional custom roles are unfinished. These domains have no editable role controls in this workspace.</p><div class="unavailable"><p>Project, customer, people and subcontractor changes</p><p>Company details, forms and catalog</p><p>Report flags, rates and deletion; estimates, tickets and broader changes</p><p>Public sharing, provider actions and complete attachment backup</p></div></section>${history()}`;
     updateExpiry();
   }
   function updateExpiry() {
@@ -95,13 +96,15 @@
     }
   }
   async function enter() {
-    const next = location.hash.slice(1) || 'roles'; route = ['roles', 'projects', 'team', 'customers'].includes(next) ? next : 'projects';
+    const next = location.hash.slice(1) || 'roles'; route = ['roles', 'projects', 'team', 'customers', ...Object.keys(window.WorkspaceActions?.routes || {})].includes(next) ? next : 'projects';
+    window.WorkspaceActions?.leave();
     sequence++; confirmed = false; proof = null; content.replaceChildren(); say('Loading your workspace…');
     const mark = sequence;
     try {
       const data = await request('/api/navigation'); if (mark !== sequence) return; applyNavigation(data);
       document.querySelectorAll('[data-route]').forEach(link => { if (link.dataset.route === route) link.setAttribute('aria-current', 'page'); else link.removeAttribute('aria-current'); });
       if (route === 'roles') { if (!nav.settings.roles) { say('Only the active company owner can manage role permissions.', true); return; } await loadEditor(); }
+      else if (window.WorkspaceActions?.routes[route]) { window.WorkspaceActions.mount({ nav, route, content, escape, say, request, ticket, current: isCurrent, companyId, getNav: () => nav, verify: revision => freshIdentity(revision, false) }); }
       else { say(''); directory(); }
     } catch (error) { if (mark !== sequence && !error.identityChanged) return; content.replaceChildren(); say(error.status === 404 || error.status === 503 ? 'This workspace is not available for this company yet.' : error.message, true); }
   }
@@ -169,8 +172,8 @@
   document.querySelector('nav').addEventListener('click', event => { const link = event.target.closest('[data-route]'); if (link?.dataset.route === route && !busy) { event.preventDefault(); enter(); } });
   async function resume() {
     confirmed = false; updateExpiry(); if (!nav) return;
-    const old = identity, mark = ticket();
-    try { const data = await request('/api/navigation'); if (mark.companyId !== companyId() || mark.sequence !== sequence) return; applyNavigation(data); if (old !== identity) await enter(); else if (route === 'roles' && proof && data.tenantRevision !== proof.tenantRevision) { proof = null; stage = pending() ? 'recovery' : 'editing'; outcome = 'The company changed. Refresh current permissions and preview again.'; renderEditor(); } }
+    const old = identity, oldRevision = nav.tenantRevision, mark = ticket();
+    try { const data = await request('/api/navigation'); if (mark.companyId !== companyId() || mark.sequence !== sequence) return; applyNavigation(data); if (old !== identity || window.WorkspaceActions?.routes[route] && oldRevision !== data.tenantRevision) await enter(); else if (route === 'roles' && proof && data.tenantRevision !== proof.tenantRevision) { proof = null; stage = pending() ? 'recovery' : 'editing'; outcome = 'The company changed. Refresh current permissions and preview again.'; renderEditor(); } }
     catch (error) { if (mark.sequence === sequence) { sequence++; content.replaceChildren(); state = registry = proposed = proof = null; say('Your session or workspace access changed. Reopen to verify your identity.', true); } }
   }
   window.addEventListener('focus', resume);

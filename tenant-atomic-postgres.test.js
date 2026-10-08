@@ -43,7 +43,7 @@ async function prepareDatabase() {
   for (const role of ['anon', 'authenticated', 'service_role']) {
     if (!(await pool.query('SELECT 1 FROM pg_roles WHERE rolname=$1', [role])).rowCount) await pool.query('CREATE ROLE ' + role);
   }
-  for (const file of ['001_tenant_foundation.sql', '007_transactional_records.sql', '008_require_explicit_revision.sql', 'role-policy-commit.sql']) await pool.query(fs.readFileSync(path.join(__dirname, 'database', file), 'utf8'));
+  for (const file of ['001_tenant_foundation.sql', '007_transactional_records.sql', '008_require_explicit_revision.sql', 'role-policy-commit.sql', 'tenant-atomic-readiness.sql']) await pool.query(fs.readFileSync(path.join(__dirname, 'database', file), 'utf8'));
   const initial = fixture(), foreign = fixture(companyB);
   initial.emptySentinel = []; initial.nullSentinel = null;
   for (const role of ['crew', 'platform_owner']) {
@@ -86,10 +86,12 @@ async function startBridge() {
         assert.fail('Object deletion and arbitrary storage methods are forbidden');
       }
       const company = String(url.searchParams.get('company_id') || '').replace(/^eq\./, '');
+      if (controls.tenantLookups && ['/rest/v1/tenant_revisions','/rest/v1/tenant_records'].includes(url.pathname)) controls.tenantLookups.push(company);
       if (req.method === 'GET' && url.pathname === '/rest/v1/tenant_revisions') {
         if (controls.readGate && company === companyA) { const gate = controls.readGate; if (++gate.count === 3) await gate.promise; }
         return send(200, (await pool.query('SELECT revision, scalar_data, content_hash FROM tenant_revisions WHERE company_id=$1', [company])).rows);
       }
+      if (req.method === 'POST' && url.pathname === '/rest/v1/rpc/tenant_atomic_readiness') { const input = await readJsonBody(req); return send(200, (await pool.query('SELECT * FROM public.tenant_atomic_readiness($1)', [input.p_company_id])).rows); }
       if (req.method === 'GET' && url.pathname === '/rest/v1/tenant_records') return send(200, (await pool.query('SELECT collection,position,data FROM tenant_records WHERE company_id=$1 ORDER BY collection,position LIMIT $2 OFFSET $3', [company, Number(url.searchParams.get('limit')), Number(url.searchParams.get('offset'))])).rows);
       if (req.method === 'POST' && ['/rest/v1/rpc/replace_tenant_records', '/rest/v1/rpc/replace_tenant_policy_records'].includes(url.pathname)) {
         const chunks = [], collect = chunk => { chunks.push(chunk); if (controls.utf8Probe) controls.utf8Probe.receivedBytes = (controls.utf8Probe.receivedBytes || 0) + chunk.length; }; req.on('data', collect);
@@ -122,11 +124,12 @@ async function startBridge() {
   await new Promise(resolve => bridge.listen(0, '127.0.0.1', resolve));
   bridgeBase = 'http://127.0.0.1:' + bridge.address().port;
 }
-async function startWorker({ dispatch = false } = {}) {
+async function startWorker({ dispatch = false, companyId } = {}) {
   const env = { ...process.env };
   for (const name of Object.keys(env)) if (/^(SENTRY_|RESEND_|OPENAI_|STRIPE_|SUPABASE_|DATABASE_URL$|PDL_)/.test(name)) delete env[name];
-  Object.assign(env, { PDL_DB_FILE: localFile, PDL_PLATFORM_FILE: path.join(temp, 'platform.json'), PDL_REQUIRE_AUTH: '1', PDL_SUPABASE_ENABLED: '1', PDL_TRANSACTIONAL_DB: 'primary', PDL_TENANT_ATOMIC: '1', SUPABASE_URL: bridgeBase, SUPABASE_SECRET_KEY: 'synthetic-only-atomic-stub', PDL_ASSISTANT_AI_ENABLED: '0', PDL_AUTH_FAIL_LIMIT: '3', RESEND_API_KEY: 'synthetic-localhost-only', PDL_ASSIGNMENT_OUTBOX_DISPATCH: dispatch ? '1' : '0' });
-  const script = `const original=global.fetch;global.fetch=(url,options)=>{if(String(url)==='https://api.resend.com/emails')return original(${JSON.stringify(bridgeBase + '/synthetic-resend')},options);if(new URL(url).origin!==${JSON.stringify(bridgeBase)})throw Error('External network forbidden');return original(url,options)};const{server}=require('./server');server.listen(0,'127.0.0.1',()=>console.log('ATOMIC_PORT='+server.address().port));`;
+  Object.assign(env, { PDL_DB_FILE: localFile, PDL_PLATFORM_FILE: path.join(temp, 'platform.json'), PDL_REQUIRE_AUTH: '1', PDL_SUPABASE_ENABLED: '1', PDL_TRANSACTIONAL_DB: 'primary', PDL_TENANT_ATOMIC: '1', PDL_TENANT_ATOMIC_SYNTHETIC: '1', SUPABASE_URL: bridgeBase, SUPABASE_SECRET_KEY: 'synthetic-only-atomic-stub', PDL_ASSISTANT_AI_ENABLED: '0', PDL_AUTH_FAIL_LIMIT: '3', RESEND_API_KEY: 'synthetic-localhost-only', PDL_ASSIGNMENT_OUTBOX_DISPATCH: dispatch ? '1' : '0' });
+  if (companyId) env.PDL_TENANT_ATOMIC_COMPANY = companyId;
+  const script = `const original=global.fetch;global.fetch=(url,options)=>{if(String(url)==='https://api.resend.com/emails')return original(${JSON.stringify(bridgeBase + '/synthetic-resend')},options);if(new URL(url).origin!==${JSON.stringify(bridgeBase)})throw Error('External network forbidden');return original(url,options)};const{server,ready}=require('./server');ready.then(()=>server.listen(0,'127.0.0.1',()=>console.log('ATOMIC_PORT='+server.address().port))).catch(error=>{console.error(error.code);process.exitCode=1});`;
   const child = spawn(process.execPath, ['-e', script], { cwd: __dirname, env, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] });
   children.push(child);
   return new Promise((resolve, reject) => {
@@ -161,10 +164,10 @@ async function main() {
     // A real localhost body is interrupted inside a UTF-8 character. Wait until
     // the bridge receives that first fragment before sending the remaining bytes.
     const beforeUtf8 = await repository.load(companyA), utf8Candidate = structuredClone(beforeUtf8.snapshot);
-    utf8Candidate.syntheticUnicode = 'Reviewed → changed · café 👷';
+    utf8Candidate.syntheticUnicode = 'Reviewed Ã¢â€ â€™ changed Ã‚Â· cafÃƒÂ© Ã°Å¸â€˜Â·';
     const utf8Packed = splitSnapshot(utf8Candidate);
     const utf8Bytes = Buffer.from(JSON.stringify({ p_company_id: companyA, p_expected_revision: beforeUtf8.revision, p_scalar_data: utf8Packed.scalarData, p_content_hash: canonicalHash(utf8Candidate), p_records: utf8Packed.records.map(row => ({ collection: row.collection, record_key: row.recordKey, position: row.position, data: row.data })) }));
-    const utf8Split = utf8Bytes.indexOf(Buffer.from('→')) + 1; assert.ok(utf8Split > 1);
+    const utf8Split = utf8Bytes.indexOf(Buffer.from('Ã¢â€ â€™')) + 1; assert.ok(utf8Split > 1);
     let utf8Request;
     const utf8Result = new Promise((resolve, reject) => {
       utf8Request = http.request(bridgeBase + '/rest/v1/rpc/replace_tenant_records', { method: 'POST', headers: { 'Content-Type': 'application/json', 'Content-Length': utf8Bytes.length } }, response => readJsonBody(response).then(data => resolve({ status: response.statusCode, data }), reject));
@@ -290,6 +293,7 @@ async function main() {
     await pool.query('UPDATE tenant_revisions SET content_hash=$1 WHERE company_id=$2', ['f'.repeat(64), companyA]);
     assert.equal((await request(bases[0], 'GET', notePath)).status, 503, 'Corrupt authority cannot fall back to the stale local file');
     await pool.query('UPDATE tenant_revisions SET content_hash=$1 WHERE company_id=$2', [afterUnknown.contentHash, companyA]);
+    await require('./activation-postgres-cases')({ repository, request, startWorker, pool, controls, providerEvents, photoEvents });
     await require('./scheduling-postgres-cases')({ repository, change, request, slowRequest, bases, startWorker, checkpoint, waitFor, controls, providerEvents });
     await require('./time-off-postgres-cases')({ repository, change, request, slowRequest, bases, checkpoint, waitFor, controls, providerEvents });
     await require('./time-review-postgres-cases')({ repository, change, request, slowRequest, bases, checkpoint, waitFor, controls, providerEvents });
@@ -300,7 +304,7 @@ async function main() {
     await require('./registry-postgres-cases')({ repository, change, request, bases, checkpoint, waitFor, controls, providerEvents });
     await require('./role-policy-postgres-cases')({ repository, change, request, slowRequest, bases, startWorker, checkpoint, waitFor, controls, providerEvents, pool });
     await require('./navigation-postgres-cases')({ repository, change, request, bases, checkpoint, waitFor, controls, providerEvents });
-    if (process.env.PDL_ROLES_BROWSER_TESTS === '1') await require('./roles-browser-postgres-cases')({ repository, change, request, bases, providerEvents });
+    if (process.env.PDL_ROLES_BROWSER_TESTS === '1') { await require('./roles-browser-postgres-cases')({ repository, change, request, bases, providerEvents }); await require('./operational-browser-postgres-cases')({ repository, change, request, bases, providerEvents }); }
     for (let attempt = 0; attempt < 3; attempt++) assert.equal((await request(bases[0], 'POST', '/api/auth/login', { email: 'user1@example.invalid', password: 'invalid-synthetic-password' })).status, 401);
     assert.equal((await request(bases[0], 'POST', '/api/auth/login', { email: 'user1@example.invalid', password: 'invalid-synthetic-password' })).status, 429, 'Atomic failed logins retain the credential lockout');
     assert.deepEqual(await repository.load(companyB), foreignBefore);

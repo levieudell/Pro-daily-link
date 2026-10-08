@@ -17,6 +17,17 @@ function resource(db, row, collection, memberIds, projectId) {
   try { for (const id of memberIds) ids.uniqueNumeric(db.team, id, 'Source member', db.company.id); }
   catch (error) { if (error.statusCode === 404) fail('Navigation source member needs reconciliation'); throw error; }
 }
+function validateScopeRecords(db, projects) {
+  for (const key of ['assignments', 'workdays', 'reports', 'timeCards']) if (Object.hasOwn(db, key) && (!Array.isArray(db[key]) || db[key].length > 10000)) fail('Navigation source collection needs reconciliation');
+  for (const row of db.assignments || []) resource(db, row, 'assignments', row.memberIds, row.projectId);
+  for (const row of db.workdays || []) resource(db, row, 'workdays', row.memberIds, row.projectId);
+  for (const row of db.reports || []) {
+    if (!Number.isSafeInteger(row.project) || row.project < 0 || row.project >= projects.length || !Array.isArray(row.laborEntries)) fail('Report navigation scope needs reconciliation');
+    if (row.foreman != null) label(row.foreman);
+    resource(db, row, 'reports', row.laborEntries.map(entry => entry.memberId), projects[row.project].id);
+  }
+  for (const row of db.timeCards || []) resource(db, row, 'timeCards', [row.memberId], row.projectId);
+}
 function projectViews(db, actor, project, baselineProjectAllowed) {
   const notes = ids.access(db, actor).view && ids.projectAllowed(db, actor, project.id, baselineProjectAllowed);
   const assignments = (db.assignments || []).filter(row => Number(row.projectId) === Number(project.id) && schedule.inScope(db, actor, row, 'view'));
@@ -30,17 +41,9 @@ function projection(db, stored, baselineProjectAllowed, revision) {
   if (!['owner', ...registry.roles].includes(actor.role)) throw Object.assign(Error('Workspace role is unavailable'), { statusCode: 403 });
   if (!Array.isArray(db.users) || db.users.length > 1000) fail('Navigation account directory needs reconciliation');
   const projects = rows(db, 'projects'), team = rows(db, 'team'), customers = rows(db, 'customers');
-  for (const key of ['assignments', 'workdays', 'reports', 'timeCards']) if (Object.hasOwn(db, key) && (!Array.isArray(db[key]) || db[key].length > 10000)) fail('Navigation source collection needs reconciliation');
   label(db.company.name);
   for (const project of projects) if (project.customerId != null && !ids.numericId(project.customerId)) fail('Project customer link needs reconciliation');
-  for (const row of db.assignments || []) resource(db, row, 'assignments', row.memberIds, row.projectId);
-  for (const row of db.workdays || []) resource(db, row, 'workdays', row.memberIds, row.projectId);
-  for (const row of db.reports || []) {
-    if (!Number.isSafeInteger(row.project) || row.project < 0 || row.project >= projects.length || !Array.isArray(row.laborEntries)) fail('Report navigation scope needs reconciliation');
-    if (row.foreman != null) label(row.foreman);
-    resource(db, row, 'reports', row.laborEntries.map(entry => entry.memberId), projects[row.project].id);
-  }
-  for (const row of db.timeCards || []) resource(db, row, 'timeCards', [row.memberId], row.projectId);
+  validateScopeRecords(db, projects);
   const office = ['owner', 'admin'].includes(actor.role), projectRows = projects.map(project => ({ project, views: projectViews(db, actor, project, baselineProjectAllowed) })).filter(row => office || Object.values(row.views).some(Boolean));
   const visibleMembers = new Set();
   for (const row of schedule.visibleAssignments(db, actor)) for (const id of row.memberIds) visibleMembers.add(Number(id));
@@ -71,4 +74,4 @@ function createHandler({ readDb, json, revision, assertCurrent, accountAccess, b
     return true;
   };
 }
-module.exports = { projection, createHandler };
+module.exports = { projection, createHandler, validateScopeRecords };
