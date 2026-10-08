@@ -1,6 +1,6 @@
 # Project notes role permissions: isolated integration draft
 
-This branch adds the first complete settings-to-server flow for project notes and to-dos. This reconciliation is based on main `fd1236fcf51ce8f1726bcb2a0897fe1715015e41`; it preserves the current assistant pilot, custom work review, labor/date warnings, pay presets, dashboard navigation, signature and filtered-time fixes. It neither merges the earlier PM-only PR74 nor activates the broad standalone model in PR77. No production settings, accounts, keys or provider data were changed.
+This branch adds the first complete settings-to-server flow for project notes and to-dos. This reconciliation is based on main `e8c34db3805c1f5544d4fd37fd81c3410c21445b`; it preserves the current assistant pilot, custom work review, labor/date warnings, pay presets, dashboard navigation, signature, filtered-time and saved-timezone fixes. It neither merges the earlier PM-only PR74 nor activates the broad standalone model in PR77. No production settings, accounts, keys or provider data were changed.
 
 ## Working flow
 

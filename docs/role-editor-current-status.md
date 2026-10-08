@@ -1,6 +1,6 @@
 # Full Roles editor: source status and implementation milestones
 
-Inspected main: `fd1236fcf51ce8f1726bcb2a0897fe1715015e41` (signature display/protection and person-filtered time totals). This reconciliation preserves that release and the fixed Forged Built assistant pilot. It is draft code with synthetic evidence, not a deployed Roles editor. No production accounts, permissions, settings, schema, migration or provider data were changed.
+Inspected main: `e8c34db3805c1f5544d4fd37fd81c3410c21445b` (signature display/protection, person-filtered time totals and saved-timezone preservation). This reconciliation preserves that release and the fixed Forged Built assistant pilot. It is draft code with synthetic evidence, not a deployed Roles editor. No production accounts, permissions, settings, schema, migration or provider data were changed.
 
 ## Why Roles is absent, and what the smallest draft actually does
 
