@@ -10,6 +10,8 @@ const { supportedRoute: atomicRouteSupported } = require('./database/tenant-atom
 const schedulingAccess = require('./scheduling-access');
 const timeOffAccess = require('./time-off-access');
 const timeReviewAccess = require('./time-review-access');
+const timeWriteAccess = require('./time-write-access');
+const handleAtomicTimeWrite = require('./time-write-admission').createHandler({ readDb, writeDb, body, json, revision: () => dbContext.getStore().transactionalRevision, activities: db => companyActivities(structuredClone(db)), run: runTimeWriteCandidate, raw: (res, response) => { dbContext.getStore().response = response; res.statusCode = response.status; }, assertCurrent: assertTimeResponseCurrent });
 const handleAtomicTimeReview = require('./time-review-admission').createHandler({ readDb, writeDb, body, json, revision: () => dbContext.getStore().transactionalRevision, isApproved: timeCardIsApproved, statusText: timeCardStatusText, completeCard: card => payPeriods.completeCard(card), overlap: timeCardOverlap, upsert: upsertTimeCard, presentCard: presentTimeCard, filterCards: filterTimeCards, mergeCopies: mergeTimeCardCopies, fieldAccess: (db, user, card) => fieldTimeCards.access(db, user, card) });
 const handleAtomicTimeOff = require('./time-off-admission').createHandler({ readDb, writeDb, body, json });
 const assignmentEmailOutbox = require('./assignment-email-outbox');
@@ -183,14 +185,14 @@ async function platformCompanies(platform){const local=tenantDatabases(),remote=
 function platformAudit(platform,req,action,reason,companyId){platform.auditEvents ||= [];platform.auditEvents.push({id:crypto.randomUUID(),action,actorName:req.platformAuth?.user.name||'Platform owner',reason,companyId:companyId||null,at:new Date().toISOString()})}
 function jsonHeaders(res,status,data,headers={}){const responseHeaders={'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store',...headers},context=dbContext.getStore();res.statusCode=status;if(context?.deferResponse&&!res.headersSent){context.response={status,data,headers:responseHeaders};return data}res.writeHead(status,responseHeaders);res.end(JSON.stringify(data));return data}
 function json(res,status,data){return jsonHeaders(res,status,data)}
-function flushDeferredResponse(res,context){if(!context.response||res.headersSent)return;const{status,data,headers}=context.response;res.writeHead(status,headers);res.end(JSON.stringify(data))}
+function flushDeferredResponse(res,context){if(!context.response||res.headersSent)return;const{status,data,headers}=context.response;res.writeHead(status,headers);res.end(Object.hasOwn(context.response,'raw')?context.response.raw:JSON.stringify(data))}
 function body(req){if(req.parsedBodyPromise)return req.parsedBodyPromise;req.parsedBodyPromise=new Promise((resolve,reject)=>{let raw='',settled=false;req.on('data',c=>{if(settled)return;raw+=c;if(Buffer.byteLength(raw)>16_000_000){settled=true;const error=new Error('Request too large');error.statusCode=413;reject(error);req.resume()}});req.on('end',()=>{if(settled)return;try{resolve(raw?JSON.parse(raw):{})}catch(error){error.statusCode=400;reject(error)}});req.on('error',reject)});return req.parsedBodyPromise}
 function nextId(rows){return rows.reduce((max,row)=>Math.max(max,Number(row.id)||0),0)+1}
 function reportDateLabel(report){const iso=String(report?.dateIso||'');if(/^\d{4}-\d{2}-\d{2}$/.test(iso)){const [year,month,day]=iso.split('-').map(Number);return new Date(year,month-1,day).toLocaleDateString('en-US',{month:'short',day:'numeric'})}return report?.date||''}
 function presentCompanyLogo(logo){return logo&&(logo.url||logo.objectKey)?{url:'/api/company/logo',contentType:logo.contentType||'',updatedAt:logo.updatedAt||null}:null}
 function publicCompanyLogo(company){if(!company)return company;const safe={...company},shown=presentCompanyLogo(safe.logo);if(shown)safe.logo=shown;else delete safe.logo;return safe}
 function companyForField(company){const safe=publicCompanyLogo(company)||{};delete safe.planPrice;delete safe.discountPercent;delete safe.commercialNote;return safe}
-function customerDataExport(db){const copy=structuredClone(db),secretKeys=new Set(['passwordHash','passwordSalt','setupHash','setupSalt','tokenHash','stripeCustomerId','stripeSubscriptionId','stripeCheckoutSessionId']);const clean=value=>{if(Array.isArray(value))return value.map(clean);if(!value||typeof value!=='object')return value;const result={};for(const[key,item]of Object.entries(value))if(!secretKeys.has(key))result[key]=clean(item);return result};const safe=clean(copy);delete safe.sessions;delete safe.passwordResets;delete safe.assignmentEmailOutbox;delete safe.scheduleActionReceipts;delete safe.timeOffActionReceipts;delete safe.timeReviewReceipts;safe.exportMetadata={format:'pro-daily-link-company-export',version:1,exportedAt:new Date().toISOString(),companyId:db.company.id,companyName:db.company.name};return safe}
+function customerDataExport(db){const copy=structuredClone(db),secretKeys=new Set(['passwordHash','passwordSalt','setupHash','setupSalt','tokenHash','stripeCustomerId','stripeSubscriptionId','stripeCheckoutSessionId']);const clean=value=>{if(Array.isArray(value))return value.map(clean);if(!value||typeof value!=='object')return value;const result={};for(const[key,item]of Object.entries(value))if(!secretKeys.has(key))result[key]=clean(item);return result};const safe=clean(copy);delete safe.sessions;delete safe.passwordResets;delete safe.assignmentEmailOutbox;delete safe.scheduleActionReceipts;delete safe.timeOffActionReceipts;delete safe.timeReviewReceipts;delete safe.timeWriterPreviews;delete safe.timeWriterReceipts;safe.exportMetadata={format:'pro-daily-link-company-export',version:1,exportedAt:new Date().toISOString(),companyId:db.company.id,companyName:db.company.name};return safe}
 function nonNegativeNumber(value){if(typeof value==='string'&&value.trim()==='')return null;const number=typeof value==='number'?value:Number(String(value).trim());if(!Number.isFinite(number)||number<0)return null;return Math.round(number*100)/100}
 function importBudgetHours(line,catalogItem){if(!line||!Object.hasOwn(line,'budgetHours'))return catalogItem?Math.round(Number(line.quantity)*Number(catalogItem.targetHoursPerUnit)*100)/100:0;if(line.budgetHours==null||(typeof line.budgetHours==='string'&&line.budgetHours.trim()===''))return null;return nonNegativeNumber(line.budgetHours)??NaN}
 function companyDateIso(company,date=new Date()){const timezone=company?.timezone||'America/Los_Angeles',parts=new Intl.DateTimeFormat('en-US',{timeZone:timezone,year:'numeric',month:'2-digit',day:'2-digit'}).formatToParts(date),value=type=>parts.find(part=>part.type===type)?.value;return `${value('year')}-${value('month')}-${value('day')}`}
@@ -675,6 +677,26 @@ async function handleTimeRecords(req,res,url){
   const decision=url.pathname.match(/^\/api\/time-off-requests\/([^/]+)\/(approve|decline)$/);if(decision&&req.method==='POST'){if(!office){json(res,403,{error:'Office permission required'});return true}const scope=user?.role==='project_manager'?managerScope(db,user):null,row=db.timeOffRequests.find(item=>String(item.id)===decision[1]&&(!scope||scope.memberIds.has(Number(item.memberId))));if(!row){json(res,404,{error:'Time-off request not found'});return true}const input=await body(req),now=new Date().toISOString();row.status=decision[2]==='approve'?'approved':'declined';row.reviewNote=String(input.note||'').trim().slice(0,500);row.reviewedAt=now;row.reviewedBy=user?.name||'Office';row.history ||= [];row.history.push({action:row.status==='approved'?'Approved':'Declined',by:row.reviewedBy,at:now,note:row.reviewNote});writeDb(db);json(res,200,row);return true}
   json(res,404,{error:'Not found'});return true
 }
+// Execute only audited legacy time handlers against a private candidate. Neither
+// their intermediate writes nor CSV bytes can reach the outer admission/client.
+async function assertTimeResponseCurrent(req) {
+  const context = dbContext.getStore(), current = await supabase.loadTransactionalSnapshot(context.companyId);
+  if (!current || current.revision !== context.transactionalRevision) throw Object.assign(Error('Company changed while preparing this time view; refresh'), { statusCode: 409 });
+  const { auth, status } = authenticateRequestAccount(req, current.snapshot);
+  if (!auth) throw Object.assign(Error('Authentication required'), { statusCode: status });
+  const account = accountAccess(current.snapshot.company);
+  if (account.locked) throw Object.assign(Error(account.reason), { statusCode: 402 });
+}
+async function runTimeWriteCandidate(req, operation) {
+  const parent = dbContext.getStore();
+  const child = { ...parent, db: structuredClone(parent.db), candidate: null, dirty: false, response: null, pending: [], closed: false, deferResponse: true };
+  const request = { method: operation.method, auth: req.auth, headers: req.headers, parsedBodyPromise: Promise.resolve(operation.details) };
+  const response = { headersSent: false, statusCode: 200, writeHead(status, headers) { child.response = { status, headers, raw: '' }; }, end(bytes) { child.response.raw = String(bytes); } };
+  const url = new URL(operation.path, 'http://localhost');
+  const handled = await dbContext.run(child, () => operation.kind === 'payroll' ? handlePayPeriods(request, response, url) : operation.kind === 'activities' ? handleTimeRecords(request, response, url) : handleTimeCards(request, response, url));
+  if (!handled || !child.response || child.pending.length) throw tenantAdmission.unavailable('Unsupported time candidate response or effect');
+  return { candidate: child.db, response: child.response };
+}
 async function handlePayPeriods(req,res,url){
   if(!url.pathname.startsWith('/api/pay-periods'))return false;
   const db=readDb(),user=req.auth?.user;
@@ -758,7 +780,7 @@ function authenticateRequestAccount(req, db) {
   // Shared request actor for manual routes and assistant actions. Role-policy
   // integration must resolve effective permissions here, before assigning auth.
   const baselineUser = storedUser?.role === 'office' ? { ...storedUser, role: 'admin' } : storedUser;
-  const user = timeReviewAccess.actor(db, timeOffAccess.actor(db, schedulingAccess.actor(db, baselineUser, Boolean(dbContext.getStore()?.atomic)), Boolean(dbContext.getStore()?.atomic)), Boolean(dbContext.getStore()?.atomic));
+  const user = timeWriteAccess.actor(db, timeReviewAccess.actor(db, timeOffAccess.actor(db, schedulingAccess.actor(db, baselineUser, Boolean(dbContext.getStore()?.atomic)), Boolean(dbContext.getStore()?.atomic)), Boolean(dbContext.getStore()?.atomic)), Boolean(dbContext.getStore()?.atomic));
   req.auth = user ? { session, user, companyId: session.companyId } : null;
   return { auth: req.auth, status: wrongTenant ? 404 : user ? 200 : 401 };
 }
@@ -878,6 +900,7 @@ async function api(req,res,url){
   if(await handleProjectAssistant(req,res,url))return;
   if(process.env.PDL_REQUIRE_AUTH==='1'&&!url.pathname.startsWith('/api/guest/')){const db=readDb(),{auth,status}=authenticateRequestAccount(req,db),user=auth?.user;if(!auth)return json(res,status,{error:status===404?'Resource not found':'Authentication required'});const access=accountAccess(db.company),accessRoute=url.pathname==='/api/account-access'||url.pathname.startsWith('/api/billing');if(access.locked&&!accessRoute)return json(res,402,{error:access.reason,code:'subscription_required',access});const ownerRoute=url.pathname==='/api/users'||/^\/api\/users\//.test(url.pathname);if(ownerRoute&&user.role!=='owner')return json(res,403,{error:'Account owner permission required'});const officeRoute=['/api/production','/api/insights','/api/exceptions','/api/action-center','/api/changes','/api/catalog','/api/estimate-imports'].some(route=>url.pathname.startsWith(route))||url.pathname.includes('/approve')||url.pathname.includes('/disposition');if(officeRoute&&!['owner','admin','project_manager'].includes(user.role))return json(res,403,{error:'Office permission required'})}
   if(await handleProjectNotes(req,res,url))return;
+  if(dbContext.getStore()?.atomic && await handleAtomicTimeWrite(req,res,url))return;
   if(dbContext.getStore()?.atomic && await handleAtomicTimeReview(req,res,url))return;
   if(dbContext.getStore()?.atomic && await handleAtomicTimeOff(req,res,url))return;
   if(dbContext.getStore()?.atomic && /^\/api\/assignments(?:\/\d+(?:\/acknowledge)?)?$/.test(url.pathname)){
@@ -1092,7 +1115,7 @@ async function api(req,res,url){
       if(!member)return json(res,404,{error:'Field user not found'});
       return json(res,200,fieldWorkspace(db,member,null));
     }
-    const{sessions,assignmentEmailOutbox:privateAssignmentEmailOutbox,scheduleActionReceipts:privateScheduleActionReceipts,timeOffActionReceipts:privateTimeOffActionReceipts,timeReviewReceipts:privateTimeReviewReceipts,auditLog,reportingExports,payPeriods:privatePayPeriods,payPeriodExports,projectNotesTodos:privateProjectNotesTodos,assistantConfirmations:privateAssistantConfirmations,...publicDb}=db,signedInOffice=session&&!fieldRole(session)?((db.users||[]).find(user=>Number(user.id)===Number(session.id))||session):null,officeUser=signedInOffice||accountUser||(db.users||[]).find(user=>user.status==='Active'&&['owner','admin'].includes(user.role)),safe={...publicDb,company:publicCompanyLogo(publicDb.company),currentUser:publicAccount(officeUser),auditLog:['owner','admin'].includes(officeUser?.role)?(auditLog||[]).filter(entry=>officeTimeCardViewer(req)||!String(entry.type).startsWith('pay_period_')):[],users:(db.users||[]).map(({setupHash,setupSalt,passwordHash,passwordSalt,...user})=>user),subcontractorLinks:(db.subcontractorLinks||[]).map(({tokenHash,...link})=>link)};
+    const{sessions,assignmentEmailOutbox:privateAssignmentEmailOutbox,scheduleActionReceipts:privateScheduleActionReceipts,timeOffActionReceipts:privateTimeOffActionReceipts,timeReviewReceipts:privateTimeReviewReceipts,timeWriterPreviews:privateTimeWriterPreviews,timeWriterReceipts:privateTimeWriterReceipts,auditLog,reportingExports,payPeriods:privatePayPeriods,payPeriodExports,projectNotesTodos:privateProjectNotesTodos,assistantConfirmations:privateAssistantConfirmations,...publicDb}=db,signedInOffice=session&&!fieldRole(session)?((db.users||[]).find(user=>Number(user.id)===Number(session.id))||session):null,officeUser=signedInOffice||accountUser||(db.users||[]).find(user=>user.status==='Active'&&['owner','admin'].includes(user.role)),safe={...publicDb,company:publicCompanyLogo(publicDb.company),currentUser:publicAccount(officeUser),auditLog:['owner','admin'].includes(officeUser?.role)?(auditLog||[]).filter(entry=>officeTimeCardViewer(req)||!String(entry.type).startsWith('pay_period_')):[],users:(db.users||[]).map(({setupHash,setupSalt,passwordHash,passwordSalt,...user})=>user),subcontractorLinks:(db.subcontractorLinks||[]).map(({tokenHash,...link})=>link)};
     safe.scheduleAvailability=scopedScheduleAvailability(db,officeUser);
     safe.reports=(safe.reports||[]).map(report=>presentReport(db,officeUser,report));if(!timeCardsEnabled(db.company)||!officeTimeCardViewer(req))delete safe.timeCards;else safe.timeCards=db.timeCards||[];
     if(!templatesEnabled(db.company))delete safe.dailyTemplates;else safe.dailyTemplates=templateList(db);
