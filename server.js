@@ -11,6 +11,8 @@ const schedulingAccess = require('./scheduling-access');
 const timeOffAccess = require('./time-off-access');
 const timeReviewAccess = require('./time-review-access');
 const timeWriteAccess = require('./time-write-access');
+const dailyAccess = require('./daily-access');
+const handleAtomicDaily = require('./daily-admission').createHandler({ readDb, writeDb, body, json, revision: () => dbContext.getStore().transactionalRevision, run: runDailyCandidate, presentReport, exportProjection: dailyExportProjection, assertCurrent: assertTimeResponseCurrent, raw: (res, response) => { dbContext.getStore().response = response; res.statusCode = response.status; } });
 const handleAtomicTimeWrite = require('./time-write-admission').createHandler({ readDb, writeDb, body, json, revision: () => dbContext.getStore().transactionalRevision, activities: db => companyActivities(structuredClone(db)), run: runTimeWriteCandidate, raw: (res, response) => { dbContext.getStore().response = response; res.statusCode = response.status; }, assertCurrent: assertTimeResponseCurrent });
 const handleAtomicTimeReview = require('./time-review-admission').createHandler({ readDb, writeDb, body, json, revision: () => dbContext.getStore().transactionalRevision, isApproved: timeCardIsApproved, statusText: timeCardStatusText, completeCard: card => payPeriods.completeCard(card), overlap: timeCardOverlap, upsert: upsertTimeCard, presentCard: presentTimeCard, filterCards: filterTimeCards, mergeCopies: mergeTimeCardCopies, fieldAccess: (db, user, card) => fieldTimeCards.access(db, user, card) });
 const handleAtomicTimeOff = require('./time-off-admission').createHandler({ readDb, writeDb, body, json });
@@ -192,7 +194,7 @@ function reportDateLabel(report){const iso=String(report?.dateIso||'');if(/^\d{4
 function presentCompanyLogo(logo){return logo&&(logo.url||logo.objectKey)?{url:'/api/company/logo',contentType:logo.contentType||'',updatedAt:logo.updatedAt||null}:null}
 function publicCompanyLogo(company){if(!company)return company;const safe={...company},shown=presentCompanyLogo(safe.logo);if(shown)safe.logo=shown;else delete safe.logo;return safe}
 function companyForField(company){const safe=publicCompanyLogo(company)||{};delete safe.planPrice;delete safe.discountPercent;delete safe.commercialNote;return safe}
-function customerDataExport(db){const copy=structuredClone(db),secretKeys=new Set(['passwordHash','passwordSalt','setupHash','setupSalt','tokenHash','stripeCustomerId','stripeSubscriptionId','stripeCheckoutSessionId']);const clean=value=>{if(Array.isArray(value))return value.map(clean);if(!value||typeof value!=='object')return value;const result={};for(const[key,item]of Object.entries(value))if(!secretKeys.has(key))result[key]=clean(item);return result};const safe=clean(copy);delete safe.sessions;delete safe.passwordResets;delete safe.assignmentEmailOutbox;delete safe.scheduleActionReceipts;delete safe.timeOffActionReceipts;delete safe.timeReviewReceipts;delete safe.timeWriterPreviews;delete safe.timeWriterReceipts;safe.exportMetadata={format:'pro-daily-link-company-export',version:1,exportedAt:new Date().toISOString(),companyId:db.company.id,companyName:db.company.name};return safe}
+function customerDataExport(db){const copy=structuredClone(db),secretKeys=new Set(['passwordHash','passwordSalt','setupHash','setupSalt','tokenHash','stripeCustomerId','stripeSubscriptionId','stripeCheckoutSessionId']);const clean=value=>{if(Array.isArray(value))return value.map(clean);if(!value||typeof value!=='object')return value;const result={};for(const[key,item]of Object.entries(value))if(!secretKeys.has(key))result[key]=clean(item);return result};const safe=clean(copy);delete safe.sessions;delete safe.passwordResets;delete safe.assignmentEmailOutbox;delete safe.scheduleActionReceipts;delete safe.timeOffActionReceipts;delete safe.timeReviewReceipts;delete safe.timeWriterPreviews;delete safe.timeWriterReceipts;delete safe.dailyActionPreviews;delete safe.dailyActionReceipts;safe.exportMetadata={format:'pro-daily-link-company-export',version:1,exportedAt:new Date().toISOString(),companyId:db.company.id,companyName:db.company.name};return safe}
 function nonNegativeNumber(value){if(typeof value==='string'&&value.trim()==='')return null;const number=typeof value==='number'?value:Number(String(value).trim());if(!Number.isFinite(number)||number<0)return null;return Math.round(number*100)/100}
 function importBudgetHours(line,catalogItem){if(!line||!Object.hasOwn(line,'budgetHours'))return catalogItem?Math.round(Number(line.quantity)*Number(catalogItem.targetHoursPerUnit)*100)/100:0;if(line.budgetHours==null||(typeof line.budgetHours==='string'&&line.budgetHours.trim()===''))return null;return nonNegativeNumber(line.budgetHours)??NaN}
 function companyDateIso(company,date=new Date()){const timezone=company?.timezone||'America/Los_Angeles',parts=new Intl.DateTimeFormat('en-US',{timeZone:timezone,year:'numeric',month:'2-digit',day:'2-digit'}).formatToParts(date),value=type=>parts.find(part=>part.type===type)?.value;return `${value('year')}-${value('month')}-${value('day')}`}
@@ -687,6 +689,37 @@ async function assertTimeResponseCurrent(req) {
   const account = accountAccess(current.snapshot.company);
   if (account.locked) throw Object.assign(Error(account.reason), { statusCode: 402 });
 }
+// Finite daily operations call the unchanged legacy API on a private child
+// candidate. The internal context marker skips only this admission wrapper;
+// body/path are reconstructed from its closed server-side action definition.
+async function runDailyCandidate(req, operation) {
+  const parent = dbContext.getStore();
+  const child = { ...parent, db: structuredClone(parent.db), candidate: null, dirty: false, response: null, pending: [], closed: false, deferResponse: true, dailyCandidate: true };
+  const request = { method: operation.method, auth: req.auth, headers: req.headers, parsedBodyPromise: Promise.resolve(structuredClone(operation.details)) };
+  const response = { headersSent: false, statusCode: 200, writeHead(status, headers) { child.response = { status, headers, raw: '' }; }, end(bytes) { child.response.raw = String(bytes); } };
+  await dbContext.run(child, () => api(request, response, new URL(operation.path, 'http://localhost')));
+  if (!child.response || child.pending.length) throw tenantAdmission.unavailable('Unsupported daily candidate response or effect');
+  return { candidate: child.db, response: child.response };
+}
+function dailyExportProjection(db, user, record) {
+  const pick = (row, keys) => Object.fromEntries(keys.filter(key => Object.hasOwn(row || {}, key)).map(key => [key, row[key]]));
+  const result = pick(record, ['id', 'companyId', 'schemaVersion', 'seriesId', 'version', 'supersedesId', 'reason', 'kind', 'createdAt', 'snapshotSha256']);
+  result.filters = pick(record.filters, ['projectId', 'from', 'to', 'status']); result.createdBy = pick(record.createdBy, ['id', 'name', 'role']);
+  result.includedApprovals = (record.includedApprovals || []).map(row => ({ reportId: row.reportId, history: (row.history || []).map(entry => pick(entry, ['action', 'by', 'actorId', 'at'])) }));
+  if (record.snapshot) {
+    const snapshot = record.snapshot, project = snapshot.project || {};
+    result.snapshot = { project: pick(project, ['id', 'name', 'code', 'status', 'contractType', 'contractValue', 'budget', 'progress', 'production']), reports: (snapshot.reports || []).map(row => require('./daily-admission').reportProjection(db, user, row, presentReport)), team: (snapshot.team || []).map(row => pick(row, ['id', 'name', 'role', 'crew'])), totals: pick(snapshot.totals, ['approvedReports', 'laborHours']) };
+    result.snapshot.project.estimateItems = (project.estimateItems || []).map(row => pick(row, ['id', 'name', 'description', 'unit', 'plannedQuantity', 'budgetHours', 'cost']));
+    if (project.tmSettings) result.snapshot.project.tmSettings = pick(project.tmSettings, ['defaultLaborRate', 'materialMarkup', 'equipmentMarkup']);
+    result.snapshot.totals.production = (snapshot.totals?.production || []).map(row => pick(row, ['estimateItemId', 'description', 'unit', 'quantity']));
+    // Captured financial calculation stays private to the immutable owner gate.
+    if (Object.hasOwn(snapshot.totals || {}, 'financial')) {
+      const financial = snapshot.totals.financial;
+      result.snapshot.totals.financial = financial === null ? null : { ...pick(financial, ['approvedDailies', 'laborHours', 'complete', 'laborAmount', 'knownLaborAmount']), labor: (financial.labor || []).map(row => pick(row, ['classification', 'rate', 'hours', 'amount'])), missingRateReports: (financial.missingRateReports || []).map(row => pick(row, ['reportId', 'dateIso', 'reason'])) };
+    }
+  }
+  return result;
+}
 async function runTimeWriteCandidate(req, operation) {
   const parent = dbContext.getStore();
   const child = { ...parent, db: structuredClone(parent.db), candidate: null, dirty: false, response: null, pending: [], closed: false, deferResponse: true };
@@ -780,7 +813,7 @@ function authenticateRequestAccount(req, db) {
   // Shared request actor for manual routes and assistant actions. Role-policy
   // integration must resolve effective permissions here, before assigning auth.
   const baselineUser = storedUser?.role === 'office' ? { ...storedUser, role: 'admin' } : storedUser;
-  const user = timeWriteAccess.actor(db, timeReviewAccess.actor(db, timeOffAccess.actor(db, schedulingAccess.actor(db, baselineUser, Boolean(dbContext.getStore()?.atomic)), Boolean(dbContext.getStore()?.atomic)), Boolean(dbContext.getStore()?.atomic)), Boolean(dbContext.getStore()?.atomic));
+  const user = dailyAccess.actor(db, timeWriteAccess.actor(db, timeReviewAccess.actor(db, timeOffAccess.actor(db, schedulingAccess.actor(db, baselineUser, Boolean(dbContext.getStore()?.atomic)), Boolean(dbContext.getStore()?.atomic)), Boolean(dbContext.getStore()?.atomic)), Boolean(dbContext.getStore()?.atomic)), Boolean(dbContext.getStore()?.atomic));
   req.auth = user ? { session, user, companyId: session.companyId } : null;
   return { auth: req.auth, status: wrongTenant ? 404 : user ? 200 : 401 };
 }
@@ -900,6 +933,7 @@ async function api(req,res,url){
   if(await handleProjectAssistant(req,res,url))return;
   if(process.env.PDL_REQUIRE_AUTH==='1'&&!url.pathname.startsWith('/api/guest/')){const db=readDb(),{auth,status}=authenticateRequestAccount(req,db),user=auth?.user;if(!auth)return json(res,status,{error:status===404?'Resource not found':'Authentication required'});const access=accountAccess(db.company),accessRoute=url.pathname==='/api/account-access'||url.pathname.startsWith('/api/billing');if(access.locked&&!accessRoute)return json(res,402,{error:access.reason,code:'subscription_required',access});const ownerRoute=url.pathname==='/api/users'||/^\/api\/users\//.test(url.pathname);if(ownerRoute&&user.role!=='owner')return json(res,403,{error:'Account owner permission required'});const officeRoute=['/api/production','/api/insights','/api/exceptions','/api/action-center','/api/changes','/api/catalog','/api/estimate-imports'].some(route=>url.pathname.startsWith(route))||url.pathname.includes('/approve')||url.pathname.includes('/disposition');if(officeRoute&&!['owner','admin','project_manager'].includes(user.role))return json(res,403,{error:'Office permission required'})}
   if(await handleProjectNotes(req,res,url))return;
+  if(dbContext.getStore()?.atomic && !dbContext.getStore().dailyCandidate && await handleAtomicDaily(req,res,url))return;
   if(dbContext.getStore()?.atomic && await handleAtomicTimeWrite(req,res,url))return;
   if(dbContext.getStore()?.atomic && await handleAtomicTimeReview(req,res,url))return;
   if(dbContext.getStore()?.atomic && await handleAtomicTimeOff(req,res,url))return;
@@ -1115,7 +1149,7 @@ async function api(req,res,url){
       if(!member)return json(res,404,{error:'Field user not found'});
       return json(res,200,fieldWorkspace(db,member,null));
     }
-    const{sessions,assignmentEmailOutbox:privateAssignmentEmailOutbox,scheduleActionReceipts:privateScheduleActionReceipts,timeOffActionReceipts:privateTimeOffActionReceipts,timeReviewReceipts:privateTimeReviewReceipts,timeWriterPreviews:privateTimeWriterPreviews,timeWriterReceipts:privateTimeWriterReceipts,auditLog,reportingExports,payPeriods:privatePayPeriods,payPeriodExports,projectNotesTodos:privateProjectNotesTodos,assistantConfirmations:privateAssistantConfirmations,...publicDb}=db,signedInOffice=session&&!fieldRole(session)?((db.users||[]).find(user=>Number(user.id)===Number(session.id))||session):null,officeUser=signedInOffice||accountUser||(db.users||[]).find(user=>user.status==='Active'&&['owner','admin'].includes(user.role)),safe={...publicDb,company:publicCompanyLogo(publicDb.company),currentUser:publicAccount(officeUser),auditLog:['owner','admin'].includes(officeUser?.role)?(auditLog||[]).filter(entry=>officeTimeCardViewer(req)||!String(entry.type).startsWith('pay_period_')):[],users:(db.users||[]).map(({setupHash,setupSalt,passwordHash,passwordSalt,...user})=>user),subcontractorLinks:(db.subcontractorLinks||[]).map(({tokenHash,...link})=>link)};
+    const{sessions,assignmentEmailOutbox:privateAssignmentEmailOutbox,scheduleActionReceipts:privateScheduleActionReceipts,timeOffActionReceipts:privateTimeOffActionReceipts,timeReviewReceipts:privateTimeReviewReceipts,timeWriterPreviews:privateTimeWriterPreviews,timeWriterReceipts:privateTimeWriterReceipts,dailyActionPreviews:privateDailyActionPreviews,dailyActionReceipts:privateDailyActionReceipts,auditLog,reportingExports,payPeriods:privatePayPeriods,payPeriodExports,projectNotesTodos:privateProjectNotesTodos,assistantConfirmations:privateAssistantConfirmations,...publicDb}=db,signedInOffice=session&&!fieldRole(session)?((db.users||[]).find(user=>Number(user.id)===Number(session.id))||session):null,officeUser=signedInOffice||accountUser||(db.users||[]).find(user=>user.status==='Active'&&['owner','admin'].includes(user.role)),safe={...publicDb,company:publicCompanyLogo(publicDb.company),currentUser:publicAccount(officeUser),auditLog:['owner','admin'].includes(officeUser?.role)?(auditLog||[]).filter(entry=>officeTimeCardViewer(req)||!String(entry.type).startsWith('pay_period_')):[],users:(db.users||[]).map(({setupHash,setupSalt,passwordHash,passwordSalt,...user})=>user),subcontractorLinks:(db.subcontractorLinks||[]).map(({tokenHash,...link})=>link)};
     safe.scheduleAvailability=scopedScheduleAvailability(db,officeUser);
     safe.reports=(safe.reports||[]).map(report=>presentReport(db,officeUser,report));if(!timeCardsEnabled(db.company)||!officeTimeCardViewer(req))delete safe.timeCards;else safe.timeCards=db.timeCards||[];
     if(!templatesEnabled(db.company))delete safe.dailyTemplates;else safe.dailyTemplates=templateList(db);

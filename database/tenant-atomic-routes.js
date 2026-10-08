@@ -11,6 +11,14 @@ function supportedRoute(method, pathname) {
   if (/^\/api\/projects\/\d+\/assistant\/(preview|confirm)$/.test(pathname)) return method === 'POST';
   if (/^\/api\/time-off-requests\/[^/]+\/(review-preview|approve|decline)$/.test(pathname)) return method === 'POST';
   if (['/api/time-cards/action-preview', '/api/pay-periods/action-preview', '/api/time-cards/company-clock'].includes(pathname)) return method === 'POST';
+  if (pathname === '/api/daily-actions/preview') return method === 'POST';
+  if (pathname === '/api/reports') return ['GET', 'POST'].includes(method);
+  if (/^\/api\/reports\/\d+$/.test(pathname)) return ['GET', 'PATCH'].includes(method);
+  if (/^\/api\/reports\/\d+\/approve$/.test(pathname)) return method === 'PATCH';
+  if (pathname === '/api/workdays' || /^\/api\/workdays\/\d+$/.test(pathname)) return method === 'GET';
+  if (pathname === '/api/workdays/start' || /^\/api\/workdays\/\d+\/end$/.test(pathname)) return method === 'POST';
+  if (pathname === '/api/reporting-exports') return ['GET', 'POST'].includes(method);
+  if (/^\/api\/reporting-exports\/[0-9a-f-]{36}(?:\.csv)?$/.test(pathname)) return method === 'GET';
   if (pathname === '/api/time-cards') return ['GET', 'POST'].includes(method);
   if (/^\/api\/time-cards\/\d+$/.test(pathname)) return ['PATCH', 'DELETE'].includes(method);
   if (/^\/api\/time-cards\/\d+\/(submit|clock-out)$/.test(pathname)) return method === 'POST';

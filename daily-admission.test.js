@@ -1,0 +1,37 @@
+'use strict';
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const { fixture } = require('./fixtures/project-assistant');
+const access = require('./daily-access'), admission = require('./daily-admission'), rates = require('./report-rate-policy');
+const db = fixture(); db.company.features.timeCards = true;
+const pm = db.users.find(row => row.id === 2); pm.permissions = { viewDailies: true, approveDailies: true, manageTime: true };
+const policy = () => ({ version: 1, revision: 1, roles: Object.fromEntries(access.roles.map(role => [role, access.ceiling(role)])) });
+assert.equal(access.actor(db, pm, false), pm);
+for (const role of ['crew', 'platform_owner', 'unknown']) assert.ok(Object.values(access.access(db, { role, permissions: { viewDailies: true, approveDailies: true } })).every(value => !value));
+for (const role of access.roles) assert.equal(access.access(db, { role, permissions: { viewDailies: true, approveDailies: true, manageTime: true } }).approveReports, ['admin', 'project_manager'].includes(role));
+for (const bad of [null, { ...policy(), roles: { ...policy().roles, owner: access.ceiling('owner') } }, { ...policy(), roles: { ...policy().roles, field: { ...access.ceiling('field'), approveReports: true } } }, { ...policy(), roles: { ...policy().roles, project_manager: { ...access.ceiling('project_manager'), aiAssistant: true } } }]) {
+  db.company.dailyPolicyRequired = true; db.company.dailyRolePolicy = bad;
+  assert.ok(Object.values(access.access(db, pm)).every(value => !value)); assert.equal(access.access(db, db.users[0]).approveReports, true); assert.equal(access.actor(db, pm, false), null);
+}
+delete db.company.dailyPolicyRequired; delete db.company.dailyRolePolicy;
+const report = { id: 51, project: 0, foreman: 'Synthetic user 4', status: 'Draft', dateIso: '2026-01-05', notes: 'Synthetic completed work', signature: 'Signature retained', laborEntries: [{ memberId: 11, hours: 1, crew: 'A' }], productionEntries: [{ estimateItemId: 1, quantity: 1, laborHours: 1 }], history: [] };
+db.reports = [report]; db.projects[0].estimateItems = [{ id: 1 }];
+const edit = admission.parse({ action: 'editReport', id: 51, details: { summary: 'Synthetic correction' } }); admission.authorize(db, pm, edit);
+const next = structuredClone(db); next.reports[0].summary = 'Synthetic correction'; admission.validateDelta(db, next, pm, edit);
+next.timeCards = [{ id: 1, hours: 3 }]; assert.throws(() => admission.validateDelta(db, next, pm, edit), { statusCode: 409 });
+assert.throws(() => admission.parse({ action: 'createReport', details: { projectId: 101, project: 0, status: 'Draft' } }), { statusCode: 400 });
+assert.throws(() => admission.parse({ action: 'createReport', details: { projectId: 101, extracted: { secret: true }, status: 'Draft' } }), { statusCode: 400 });
+assert.throws(() => admission.parse({ action: 'editReport', id: 51, details: { laborEntries: [{ memberId: 11, hours: true }] } }), { statusCode: 400 });
+assert.throws(() => admission.parse({ action: 'editReport', id: 51, details: { customFields: { nested: { secret: true } } } }), { statusCode: 400 });
+db.reports[0].laborEntries.push({ memberId: 13, hours: 1, crew: 'B' }); assert.throws(() => admission.authorize(db, pm, edit), { statusCode: 404 }); db.reports[0].laborEntries.pop();
+db.projects.push({ ...db.projects[0] }); assert.throws(() => admission.authorize(db, pm, edit), { statusCode: 409 }); db.projects.pop();
+const time = require('./time-write-access'); db.company.timeWriteRolePolicy = { version: 1, revision: 1, roles: Object.fromEntries(time.roles.map(role => [role, time.ceiling(role)])) };
+db.company.timeWriteRolePolicy.roles.field.clockCards = false; assert.equal(access.access(db, db.users.find(row => row.id === 4)).runWorkdays, false);
+db.company.timeWriteRolePolicy.roles.project_manager.createCards = false; assert.equal(access.access(db, pm).runWorkdays, false); delete db.company.timeWriteRolePolicy;
+const projection = admission.reportProjection(db, pm, { ...report, privateSentinel: 'PRIVATE', rateSnapshot: { schemaVersion: 1, laborRate: 100, secret: 'PRIVATE' }, laborEntries: [{ memberId: 11, hours: 1, privateSentinel: 'PRIVATE' }] }, (_db, _user, row) => rates.withoutReportRates(row));
+assert.ok(!JSON.stringify(projection).includes('PRIVATE')); assert.equal(projection.signature, report.signature);
+const source = fs.readFileSync('server.js', 'utf8');
+assert.ok(source.includes('!dbContext.getStore().dailyCandidate'));
+assert.ok(source.includes('delete safe.dailyActionPreviews;delete safe.dailyActionReceipts;'));
+for (const route of ['/api/photos', '/api/state', '/api/action-center', '/api/exceptions', '/api/production', '/api/insights', '/api/reports/51/safety', '/api/reports/51/disposition']) assert.equal(require('./database/tenant-atomic-routes').supportedRoute('POST', route), false);
+console.log('Daily admission unit: closed roles/actions/inputs, owner/assistant protections, entire crew/duplicate bindings, typed-time intersection, immutable compound rows, signature/private projection and unsupported effects passed.');
