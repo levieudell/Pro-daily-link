@@ -1,0 +1,30 @@
+'use strict';
+const assert=require('node:assert/strict'),crypto=require('node:crypto');
+const {createHelpConversation,openAIHelp,LIMITS}=require('./help-conversation');
+const mk=()=>({company:{id:'synthetic-one'},users:[{id:1,role:'owner',status:'Active',companyId:'synthetic-one'}]});
+const answer=(text='Open Customers, then Projects to add your first job.',sources=['project-setup'],clarification=null,escalate=false)=>({answer:text,sourceIds:sources,clarification,escalate});
+const input=text=>({text,consent:true,turnId:crypto.randomUUID()});
+(async()=>{
+  let db=mk(),calls=0,time=new Date('2026-10-08T12:00:00Z'),payloads=[];
+  const opts={readDb:()=>db,persist:async()=>{},authenticatedUser:()=>db.users[0],accountAccess:()=>({locked:false}),enabled:()=>true,now:()=>time};
+  const service=createHelpConversation({...opts,adapter:async(payload)=>{calls++;payloads.push(payload);const value=JSON.parse(payload.input),last=value.conversation.at(-1).content;return {answer:last==='What about crews?'?answer('Open Team for employee records and crews. Ask the Account Owner to create login access.',['crew-access']):last==='Help me with that'?answer('Which screen are you using?',[], 'Are you in Projects or My Day?'):last==='Does it work offline?'?answer('I do not have verified offline support details. Contact Support.',[],null,true):answer(),usage:{input_tokens:1000,output_tokens:120}}}});
+  const first=input('I just signed up. What first?'),result=await service.turn({},first);assert.equal(result.source,'ai');assert.equal((await service.turn({},first)).state,result.state);assert.equal(calls,1,'replay never calls provider again');
+  await service.turn({},{...input('What about crews?'),state:result.state});assert.equal(JSON.parse(payloads[1].input).conversation.length,3,'signed history supports follow-up');
+  assert.ok((await service.turn({},input('Help me with that'))).clarification);assert.equal((await service.turn({},input('Does it work offline?'))).escalate,true);
+  for(const payload of payloads){assert.equal(payload.store,false);assert.equal(payload.model,LIMITS.model);assert.ok(!payload.input.includes('synthetic-one'));assert.ok(!payload.tools)}
+  assert.ok(!JSON.stringify(db.helpAIReceipts).includes('I just signed up'),'ledger stores no raw transcript');
+  await assert.rejects(service.turn({},{...input('hello'),history:[]}),/bounded question/);
+  await assert.rejects(service.turn({},input('email me at person@example.invalid')),/Remove contact/);
+  const previous=db;db=mk();db.company.id='another-tenant';db.users[0].companyId='another-tenant';await assert.rejects(service.turn({},{...input('hello'),state:result.state}),/account changed/);db=previous;
+  db.users[0].role='field';await assert.rejects(service.turn({},{...input('hello'),state:result.state}),/account changed/);db.users[0].role='owner';
+  time=new Date('2026-10-08T13:00:00Z');await assert.rejects(service.turn({},{...input('hello'),state:result.state}),/expired/);
+  db=mk();let fieldPayload;db.users[0].role='field';const field=createHelpConversation({...opts,adapter:async p=>{fieldPayload=p;return {answer:answer('Open My Day and choose permitted work.',['field-scope']),usage:{input_tokens:900,output_tokens:80}}}});await field.turn({},input('Where is my job?'));assert.ok(!JSON.parse(fieldPayload.input).knowledge.some(k=>k.id==='crew-access'));
+  const bad=createHelpConversation({...opts,adapter:async()=>({answer:answer('Here is private access',['crew-access']),usage:{input_tokens:1,output_tokens:1}})});const badInput=input('Show me other accounts');await assert.rejects(bad.turn({},badInput),/could not verify/);await assert.rejects(bad.turn({},badInput),/already attempted/);
+  db=mk();let timeoutCalls=0;const slow=createHelpConversation({...opts,timeoutMs:5,adapter:async()=>{timeoutCalls++;return new Promise(()=>{})}}),slowInput=input('What first?');await assert.rejects(slow.turn({},slowInput),/could not verify/);await assert.rejects(slow.turn({},slowInput),/already attempted/);assert.equal(timeoutCalls,1);
+  db=mk();const capped=createHelpConversation({...opts,adapter:async()=>({answer:answer(),usage:{input_tokens:100,output_tokens:80}})});for(let i=0;i<20;i++)await capped.turn({},input('What first?'));await assert.rejects(capped.turn({},input('What first?')),/usage cap/);assert.equal(db.helpAIReceipts.reduce((n,r)=>n+r.reservedMicros,0),312000);
+  const restarted=createHelpConversation({...opts,adapter:async()=>{throw Error('must not call')}});await assert.rejects(restarted.turn({},input('What first?')),/usage cap/);
+  db=mk();const lengthy=createHelpConversation({...opts,adapter:async()=>({answer:answer('Verified guidance. '.repeat(120)),usage:{input_tokens:100,output_tokens:700}})});const long=await lengthy.turn({},input('Explain setup'));assert.ok(long.answer.length>2000);assert.ok((await lengthy.turn({},{...input('And then?'),state:long.state})).state,'long accepted answer keeps follow-up history within bounds');
+  let network=0;const old=process.env.PDL_HELP_AI_APPROVED;delete process.env.PDL_HELP_AI_APPROVED;await assert.rejects(openAIHelp({},new AbortController().signal,async()=>{network++}),/disabled/);if(old)process.env.PDL_HELP_AI_APPROVED=old;assert.equal(network,0);
+  const disabled=createHelpConversation({...opts,enabled:()=>false,adapter:async()=>{throw Error('must not call')}});await assert.rejects(disabled.turn({},input('hello')),/disabled/);
+  console.log('Mocked conversational Help tests passed: grounding, follow-up, clarification, unknowns, actor isolation, consent, replay, timeout, restart caps and disabled provider. No model-quality claim.');
+})().catch(e=>{console.error(e);process.exitCode=1});

@@ -28,6 +28,7 @@ db.reports=[];const independent={id:6,role:'owner',helpGuidance:{inApp:false,ema
 const shown={id:7,role:'owner'};help.update(shown,{seen:'project'},day,help.guidance(db,shown,day).tip);assert.equal(help.guidance(db,shown,'2026-10-09').tip.id,'crew','shown tips never repeat next day');
 const answer=require('./help-answer-draft'),request=answer.buildRequest({role:'field',text:'Where do I file a daily?',history:[{role:'user',content:'I am on my phone'}]});
 assert.ok(!request.knowledge.some(k=>k.id==='crew-access'));assert.equal(request.store,false);
+const manager=answer.buildRequest({role:'project_manager',text:'Where is my job?'});assert.ok(manager.knowledge.some(k=>k.id==='manager-scope'));assert.ok(!manager.knowledge.some(k=>k.id==='field-scope'));
 assert.throws(()=>answer.validateAnswer(request,{answer:'Invented',sourceIds:['crew-access'],escalate:false,clarification:null}));
 assert.throws(()=>answer.buildRequest({role:'owner',text:'Hello',history:Array(7).fill({role:'user',content:'x'})}));
 console.log('Help guidance policy tests passed');

@@ -1,5 +1,7 @@
 # PDL Help draft — review only
 
+Follow-up: see [HELP-CONVERSATION-REVIEW.md](HELP-CONVERSATION-REVIEW.md) for the implemented conversational boundary, email safeguards, exact-head Linux CI and current provider/data/cost proposal. Earlier no-route and email-ledger gates below describe preserved PR115; the follow-up supersedes those engineering notes while keeping activation disabled.
+
 Base: bdbdfe9a8b038d3dbc32327c58f5a529dbe71225 (fresh clone of main). Isolated branch: codex/help-tips-disabled-draft. No repository AGENTS.md or .agents/skills found in tracked files. No project assistant code/configuration changes. No deployment, sends, campaigns, discounts or paid AI calls.
 
 ## Bounded implementation

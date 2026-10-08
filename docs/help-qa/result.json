@@ -1,5 +1,5 @@
 {
-  "baseCommit": "bdbdfe9a8b038d3dbc32327c58f5a529dbe71225",
+  "baseCommit": "1d20a12ee267ea025a725431d1b3b67e373dc398",
   "viewports": [
     "1440x1000",
     "390x844"
@@ -9,9 +9,11 @@
     "help opens",
     "no horizontal page overflow",
     "single preferences form",
+    "consent and conversational follow-up via real HTTP with mocked provider",
     "email opt-in previews disabled copy",
     "dismiss survives reopen",
     "no page exceptions"
   ],
-  "providerCalls": 0
+  "paidProviderCalls": 0,
+  "mockedProviderCalls": 4
 }
