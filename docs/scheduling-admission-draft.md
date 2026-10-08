@@ -1,5 +1,7 @@
 # Scheduling enforcement and finite assignment email admission
 
+The next separately bounded leave/time-card decision increment is documented in [time-review-admission-draft.md](time-review-admission-draft.md). Statements below describe this earlier milestone; the new increment still excludes payroll and the full Roles editor, and all modes remain disabled by default.
+
 This source-only increment is stacked on preserved draft PR99 (`4741c805f6561adfc40445a27e19e75b59f07777`). It advances the requested Company Roles editor prerequisites. It does not expose a policy settings UI or enable a tenant policy. No production settings, grants, accounts, schema, keys, deployment or provider messages were changed. Earlier role/editor and notes drafts remain separate.
 
 The original application behavior remains in flag-off mode when no policy exists. The new atomic runtime remains disabled by default, requires strict authentication and initialized transactional primary storage, and rejects every API outside its fixed implementation allowlist. This mode is incomplete and must not be deployed as a full application or Roles editor. Policy records here are installed only by synthetic test fixtures; there is no policy-write HTTP endpoint.

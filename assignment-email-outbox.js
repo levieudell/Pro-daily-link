@@ -1,6 +1,7 @@
 'use strict';
 const crypto = require('node:crypto');
 const scheduling = require('./scheduling-access');
+const availability = require('./schedule-availability');
 const { canonicalHash } = require('./database/transactional-repository');
 const businessRecord = row => ({ id: row.id, projectId: row.projectId, memberIds: row.memberIds, date: row.date, start: row.start, end: row.end, activity: row.activity, instructions: row.instructions || null });
 const credential = actor => ({ id: actor.id, role: actor.role, projectIds: actor.projectIds || [], assignedCrews: actor.assignedCrews || [], scheduleCrews: actor.permissions?.scheduleCrews === true });
@@ -44,6 +45,7 @@ function currentAuthority(db, job, now) {
   const project = (db.projects || []).find(row => row.id === job.projectId && !row.archived && row.status !== 'Inactive');
   if (!recipient || !member || !project || recipient.memberId !== job.memberId || canonicalHash({ name: recipient.name, email: recipient.email, memberId: recipient.memberId }) !== job.recipientHash || job.payload.to !== recipient.email || job.payload.name !== recipient.name || job.payload.companyName !== db.company.name || job.payload.projectName !== project.name || Object.keys(job.payload).some(key => !['to', 'name', 'companyName', 'projectName', 'assignments'].includes(key))) return false;
   const rows = job.assignmentIds.map(id => (db.assignments || []).find(row => row.id === id));
+  if (rows.some(row => row && availability.onDate(availability.approved(db.timeOffRequests, [job.memberId]), job.memberId, row.date, row.start, row.end))) return false;
   return rows.every(row => row && row.projectId === job.projectId && row.memberIds.includes(job.memberId) && scheduling.inScope(db, actor, row, 'create') && scheduling.inScope(db, recipient, row, 'view')) && canonicalHash(rows.map(businessRecord)) === job.assignmentHash && canonicalHash(rows.map(businessRecord)) === canonicalHash(job.payload.assignments);
 }
 function createDispatcher({ load, commit, send, accountAllowed, now = () => Date.now() }) {
