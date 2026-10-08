@@ -1,0 +1,36 @@
+name: Synthetic tenant atomicity
+on:
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  atomic-postgres:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: pdl_atomic_synthetic
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: synthetic-ci-only
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - run: node tenant-admission.test.js
+      - run: node tenant-atomic-postgres.test.js
+        env:
+          PDL_ATOMIC_TEST_ALLOW_SCHEMA: '1'
+          PDL_ATOMIC_TEST_POSTGRES_URL: postgresql://postgres:synthetic-ci-only@127.0.0.1:5432/pdl_atomic_synthetic

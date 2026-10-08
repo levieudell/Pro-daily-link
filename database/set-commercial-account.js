@@ -11,6 +11,7 @@ function argument(name, fallback = '') {
 }
 
 async function main() {
+  require('./tenant-admission').blockLegacyWriter('maintenance account writer');
   const email = argument('email').trim().toLowerCase();
   const accountType = argument('type', 'standard');
   if (!email || !['standard', 'early_adopter', 'legacy'].includes(accountType)) {

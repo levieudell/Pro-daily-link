@@ -94,6 +94,7 @@ async function countRows(baseUrl, secretKey, table, companyId) {
 }
 
 async function applySnapshot(snapshot, env) {
+  require('./tenant-admission').blockLegacyWriter('normalized migration apply');
   const order = ['company', 'users', 'memberships', 'customers', 'projects', 'team_members', 'subcontractors', 'reports', 'assignments', 'photos', 'workdays', 'changes'];
   for (const key of order) await upsert(env.SUPABASE_URL, env.SUPABASE_SECRET_KEY, key === 'company' ? 'companies' : key, key === 'company' ? [snapshot.company] : snapshot[key]);
   const reconciliation = {};
@@ -106,6 +107,7 @@ function summary(snapshot) {
 }
 
 async function main() {
+  if (process.argv.includes('--apply')) require('./tenant-admission').blockLegacyWriter('normalized migration apply');
   const sourcePath = process.argv.find(arg => arg.endsWith('.json')) || path.join(__dirname, '..', 'data', 'db.json');
   const source = JSON.parse(fs.readFileSync(sourcePath, 'utf8'));
   const snapshot = buildTenantSnapshot(source);

@@ -28,6 +28,7 @@ function selectSnapshots(snapshots, companyId) {
 async function main() {
   if (!supabase.configured()) throw new Error('Supabase configuration is missing.');
   const { apply, companyId } = parseArgs();
+  if (apply) require('./tenant-admission').blockLegacyWriter('transactional migration apply');
   const snapshots = selectSnapshots(await supabase.listCompanySnapshots(), companyId);
   const summary = snapshots.map(snapshot => ({ id: snapshot.company.id, name: snapshot.company.name, revision: Number(snapshot.company.persistence?.revision || 0), hash: canonicalHash(snapshot), records: Object.values(snapshot).filter(Array.isArray).reduce((total, rows) => total + rows.length, 0) }));
   if (!apply) {

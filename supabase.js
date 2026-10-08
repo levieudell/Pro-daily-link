@@ -73,6 +73,7 @@ async function loadCompanySnapshot(companyId) {
 }
 
 async function saveCompanySnapshot(snapshot) {
+  require('./database/tenant-admission').blockLegacyWriter('old legacy adapter');
   if (!configured()) return false;
   const id = snapshot.company.id;
   await request('/rest/v1/companies?on_conflict=id', {
