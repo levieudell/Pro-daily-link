@@ -78,7 +78,7 @@ async function syncActionCenter(){
 }
 const requestedCompany=new URLSearchParams(location.search).get('tenant');if(requestedCompany)localStorage.setItem('pdl-company-id',requestedCompany);
 $$('dialog').forEach(dialog=>{dialog.querySelectorAll('.close-button,button[value="cancel"]').forEach(button=>{button.type='button';if(button.classList.contains('close-button')&&!button.getAttribute('aria-label'))button.setAttribute('aria-label','Close dialog');button.onclick=event=>{event.preventDefault();event.stopPropagation();suppressReportOpenUntil=Date.now()+900;dialog.close('cancel')}});dialog.addEventListener('click',event=>{if(event.target!==dialog)return;event.preventDefault();event.stopPropagation();suppressReportOpenUntil=Date.now()+900;dialog.close('cancel')})});
-document.addEventListener('pointerup',event=>{const button=event.target.closest?.('.close-button');if(!button)return;const dialog=button.closest('dialog');if(dialog?.open){event.preventDefault();event.stopPropagation();suppressReportOpenUntil=Date.now()+900;dialog.close('cancel')}},{passive:false,capture:true});
+document.addEventListener('pointerup',event=>{const button=event.target.closest?.('.close-button');if(!button)return;const dialog=button.closest('dialog');if(dialog?.id==='report-modal')return;if(dialog?.open){event.preventDefault();event.stopPropagation();suppressReportOpenUntil=Date.now()+900;dialog.close('cancel')}},{passive:false,capture:true});
 function updateConnectivity(showRecovery=false){const banner=$('#connection-banner');if(navigator.onLine&&!showRecovery){banner.className='connection-banner';return}banner.textContent=navigator.onLine?(preferredLanguage==='es'?'Conexión restaurada.':'Connection restored.'):(preferredLanguage==='es'?'Sin conexión. Sus notas permanecen guardadas en este dispositivo.':'You are offline. Your notes remain saved on this device.');banner.className=`connection-banner visible${navigator.onLine?' online':''}`;if(navigator.onLine)setTimeout(()=>banner.className='connection-banner',2200)}
 window.addEventListener('offline',()=>updateConnectivity());window.addEventListener('online',()=>updateConnectivity(true));updateConnectivity();
 function userInitials(name){return String(name||'User').split(/\s+/).map(part=>part[0]).join('').slice(0,2).toUpperCase()}
@@ -455,7 +455,7 @@ renderReports=function(selected){
       const updated=await api(`/api/reports/${reportId}/approve`,{method:'PATCH'});
       reports[reports.findIndex(report=>report.id===reportId)]=updated;
       await syncActionCenter();
-      renderReportsWithRefreshBase(reportId);
+      renderReports(reportId);
       notify('Daily report approved and production totals updated');
     }catch(error){notify(error.message)}
   };
@@ -1436,3 +1436,25 @@ const renderReportsBeforeLaborReview=renderReports;
 renderReports=function(selected){const result=renderReportsBeforeLaborReview(selected),detail=$('#report-detail'),edit=detail?.querySelector('[data-edit-report]'),report=reports.find(row=>Number(row.id)===Number(edit?.dataset.editReport));if(!report)return result;const title=detail.querySelector('h2');if(title){const date=document.createElement('p');date.className='report-work-date';date.textContent='Report date: '+reportReviewDate(report.dateIso);title.insertAdjacentElement('afterend',date)}const warnings=reportLaborReviewWarnings(report);if(warnings.length){title?.insertAdjacentHTML('beforebegin',reportLaborReviewMarkup(warnings));const approve=detail.querySelector('[data-approve-report]'),approveBeforeReview=approve?.onclick;if(approve&&approveBeforeReview)approve.onclick=event=>{const detail=warnings.map(row=>row.memberName+': '+row.hours+' hours here, plus '+row.otherHours+' hours in '+row.otherReports.map(other=>'report #'+other.id).join(', ')).join('\n');if(confirm(detail+'\n\nApprove only if these are additional hours or separate shifts. If the same shift is counted twice, cancel and use Edit / correct.'))return approveBeforeReview.call(approve,event)}}return result};
 const reportDateChangeBeforeLaborReview=$('#report-date').onchange;
 $('#report-date').onchange=event=>{reportDateChangeBeforeLaborReview?.call($('#report-date'),event);updateReportGaps()};
+
+// Show the saved typed signature independently of the report's author.
+function reportSignatureMarkup(report){
+  const signature=String(report?.signature||'').trim(),spanish=preferredLanguage==='es';
+  return `<div class="data-box report-signature"><small>${spanish?'FIRMA DEL CAPATAZ':'FOREMAN SIGNATURE'}</small><strong>${escapeHtml(signature||(spanish?'No registrada':'Not recorded'))}</strong></div>`;
+}
+const renderReportsBeforeSignature=renderReports;
+renderReports=function(selected){
+  const result=renderReportsBeforeSignature(selected),detail=$('#report-detail'),edit=detail?.querySelector('[data-edit-report]'),report=reports.find(row=>Number(row.id)===Number(edit?.dataset.editReport));
+  if(report)detail.querySelector('.data-sections')?.insertAdjacentHTML('beforeend',reportSignatureMarkup(report));
+  return result;
+};
+
+// Signature-only edits require the same discard decision as edited notes.
+let reportSavedSignature='';
+const openReportBeforeSignatureProtection=openReport;
+openReport=function(report=null,context={}){reportSavedSignature=String(report?.signature||'').trim();return openReportBeforeSignatureProtection(report,context)};
+const reportHasUnsavedInputBeforeSignatureProtection=reportHasUnsavedInput;
+reportHasUnsavedInput=function(){return reportHasUnsavedInputBeforeSignatureProtection()||Boolean($('#report-modal')?.open&&editingReportId&&String($('#report-signature')?.value||'').trim()!==reportSavedSignature)};
+
+// Enter in a text field must not invoke the dialog's cancel button.
+$('#report-form').addEventListener('submit',event=>event.preventDefault());
