@@ -42,7 +42,7 @@ async function prepareDatabase() {
   for (const role of ['anon', 'authenticated', 'service_role']) {
     if (!(await pool.query('SELECT 1 FROM pg_roles WHERE rolname=$1', [role])).rowCount) await pool.query('CREATE ROLE ' + role);
   }
-  for (const file of ['001_tenant_foundation.sql', '007_transactional_records.sql', '008_require_explicit_revision.sql']) await pool.query(fs.readFileSync(path.join(__dirname, 'database', file), 'utf8'));
+  for (const file of ['001_tenant_foundation.sql', '007_transactional_records.sql', '008_require_explicit_revision.sql', 'role-policy-commit.sql']) await pool.query(fs.readFileSync(path.join(__dirname, 'database', file), 'utf8'));
   const initial = fixture(), foreign = fixture(companyB);
   initial.emptySentinel = []; initial.nullSentinel = null;
   for (const role of ['crew', 'platform_owner']) {
@@ -90,12 +90,13 @@ async function startBridge() {
         return send(200, (await pool.query('SELECT revision, scalar_data, content_hash FROM tenant_revisions WHERE company_id=$1', [company])).rows);
       }
       if (req.method === 'GET' && url.pathname === '/rest/v1/tenant_records') return send(200, (await pool.query('SELECT collection,position,data FROM tenant_records WHERE company_id=$1 ORDER BY collection,position LIMIT $2 OFFSET $3', [company, Number(url.searchParams.get('limit')), Number(url.searchParams.get('offset'))])).rows);
-      if (req.method === 'POST' && url.pathname === '/rest/v1/rpc/replace_tenant_records') {
+      if (req.method === 'POST' && ['/rest/v1/rpc/replace_tenant_records', '/rest/v1/rpc/replace_tenant_policy_records'].includes(url.pathname)) {
         let raw = ''; for await (const chunk of req) raw += chunk;
         const input = JSON.parse(raw); commits++;
-        if (controls.gate) { const current = controls.gate; current.count++; if (current.count === current.expected) current.resolve(); await current.promise; }
+        if (controls.gate && (!controls.commitFilter || controls.commitFilter(url, input))) { const current = controls.gate; current.count++; if (current.count === current.expected) current.resolve(); await current.promise; }
         if (controls.rejectCommit) return send(400, { message: 'Synthetic commit rejected before SQL' });
-        const result = await pool.query('SELECT * FROM replace_tenant_records($1,$2,$3,$4,$5)', [input.p_company_id, input.p_expected_revision, input.p_scalar_data, input.p_content_hash, JSON.stringify(input.p_records)]);
+        const policy = url.pathname.endsWith('replace_tenant_policy_records');
+        const result = await pool.query(policy ? 'SELECT * FROM replace_tenant_policy_records($1,$2,$3,$4,$5,$6)' : 'SELECT * FROM replace_tenant_records($1,$2,$3,$4,$5)', [input.p_company_id, input.p_expected_revision, input.p_scalar_data, input.p_content_hash, JSON.stringify(input.p_records), ...(policy ? [input.p_policy_guard] : [])]);
         if (controls.dropAck) return req.socket.destroy();
         return send(200, result.rows);
       }
@@ -274,6 +275,7 @@ async function main() {
     await require('./photo-postgres-cases')({ repository, change, request, slowRequest, bases, startWorker, checkpoint, waitFor, controls, providerEvents, photoObjects, photoEvents });
     await require('./notes-postgres-cases')({ repository, change, request, slowRequest, bases, checkpoint, waitFor, controls, providerEvents });
     await require('./registry-postgres-cases')({ repository, change, request, bases, checkpoint, waitFor, controls, providerEvents });
+    await require('./role-policy-postgres-cases')({ repository, change, request, slowRequest, bases, startWorker, checkpoint, waitFor, controls, providerEvents, pool });
     for (let attempt = 0; attempt < 3; attempt++) assert.equal((await request(bases[0], 'POST', '/api/auth/login', { email: 'user1@example.invalid', password: 'invalid-synthetic-password' })).status, 401);
     assert.equal((await request(bases[0], 'POST', '/api/auth/login', { email: 'user1@example.invalid', password: 'invalid-synthetic-password' })).status, 429, 'Atomic failed logins retain the credential lockout');
     assert.deepEqual(await repository.load(companyB), foreignBefore);

@@ -24,7 +24,7 @@ function createAdmission({ load, commit, mirror = async () => {} }) {
     if (!context.dirty) return { committed: false };
     requireRevision(context.transactionalRevision);
     let result;
-    try { result = await commit(context.candidate, context.transactionalRevision); }
+    try { result = await commit(context.candidate, context.transactionalRevision, context.policyGuard); }
     catch (error) {
       if (error?.code === 'PDL_REVISION_CONFLICT' || error?.commitRejected === true) throw error;
       throw unknownCommit();

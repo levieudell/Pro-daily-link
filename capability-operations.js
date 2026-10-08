@@ -10,6 +10,9 @@ add('account.logout', 'POST', /^\/api\/auth\/logout$/, [], 'authenticated-self')
 add('accounts.list', 'GET', /^\/api\/users$/, [], 'owner');
 add('accounts.edit', 'PATCH', /^\/api\/users\/\d+$/, [], 'owner-and-owner-protection');
 add('roles.registry', 'GET', /^\/api\/company\/role-capabilities$/, [], 'owner');
+add('roles.policyRead', 'GET', /^\/api\/company\/role-policy(?:\/audit)?$/, [], 'owner');
+add('roles.policyPreview', 'POST', /^\/api\/company\/role-policy\/preview$/, [], 'owner-originating-session-and-durable-preview');
+add('roles.policyConfirm', 'POST', /^\/api\/company\/role-policy\/confirm$/, [], 'owner-explicit-confirmation-and-guarded-CAS');
 for (const [method, action] of [['GET', 'view'], ['POST', 'create']]) add('schedule.' + action, method, /^\/api\/assignments$/, ['scheduling.' + action]);
 for (const [method, action] of [['PATCH', 'edit'], ['DELETE', 'remove']]) add('schedule.' + action, method, /^\/api\/assignments\/\d+$/, ['scheduling.' + action]);
 add('schedule.acknowledge', 'POST', /^\/api\/assignments\/\d+\/acknowledge$/, ['scheduling.acknowledge']);
