@@ -1,0 +1,33 @@
+'use strict';
+const assert=require('node:assert/strict');
+const help=require('./help-guidance');
+const day='2026-10-08',db={company:{id:'synthetic'},projects:[],team:[],reports:[]},owner={id:1,role:'owner'};
+assert.equal(help.guidance(db,owner,day).tip.id,'project');
+assert.equal(help.emailPreview(db,owner,day),null,'no default email enrollment');
+help.update(owner,{seen:'project'},day,help.guidance(db,owner,day).tip);
+help.update(owner,{dismiss:'project'},day,help.guidance(db,owner,day).tip);
+assert.equal(help.guidance(db,owner,day).tip,null,'one tip per day, dismissal does not rotate');
+assert.equal(help.guidance(db,owner,'2026-10-09').tip.id,'crew');
+const fresh={id:2,role:'admin'};db.projects.push({id:1});db.team.push({id:1,crew:'Crew A'});
+assert.equal(help.guidance(db,fresh,day).tip.id,'daily');
+db.reports.push({status:'Draft'});assert.equal(help.guidance(db,fresh,day).tip.id,'daily');
+db.reports[0].status='Needs review';assert.equal(help.guidance(db,fresh,day).tip,null);
+for(const role of ['field','foreman','project_manager']){
+  const user={id:3,role};assert.equal(help.guidance(db,user,day).tip.id,'field-daily');
+  assert.throws(()=>help.update(user,{emailTips:true},day,null));assert.equal(help.emailPreview(db,user,day),null);
+}
+db.projects=[];db.team=[];db.reports=[];
+const enrolled={id:4,role:'owner'};help.update(enrolled,{emailTips:true},day,null);
+const preview=help.emailPreview(db,enrolled,day);assert.equal(preview.deliveryEnabled,false);
+assert.equal(preview.dedupeKey,help.emailPreview(db,enrolled,'2026-10-09').dedupeKey,'same tip never gets a new send identity');
+assert.notEqual(preview.dedupeKey,help.emailPreview({...db,company:{id:'other'}},enrolled,day).dedupeKey);
+help.update(enrolled,{emailTips:false},day,null);assert.equal(help.emailPreview(db,enrolled,day),null);
+assert.throws(()=>help.update(owner,{userId:7},day,null));
+const field={id:5,role:'field',memberId:5};db.reports=[{status:'Needs review',laborEntries:[{memberId:5}]}];assert.equal(help.guidance(db,field,day).tip,null,'own submitted daily is complete');
+db.reports=[];const independent={id:6,role:'owner',helpGuidance:{inApp:false,emailTips:true}};assert.ok(help.emailPreview(db,independent,day));
+const shown={id:7,role:'owner'};help.update(shown,{seen:'project'},day,help.guidance(db,shown,day).tip);assert.equal(help.guidance(db,shown,'2026-10-09').tip.id,'crew','shown tips never repeat next day');
+const answer=require('./help-answer-draft'),request=answer.buildRequest({role:'field',text:'Where do I file a daily?',history:[{role:'user',content:'I am on my phone'}]});
+assert.ok(!request.knowledge.some(k=>k.id==='crew-access'));assert.equal(request.store,false);
+assert.throws(()=>answer.validateAnswer(request,{answer:'Invented',sourceIds:['crew-access'],escalate:false,clarification:null}));
+assert.throws(()=>answer.buildRequest({role:'owner',text:'Hello',history:Array(7).fill({role:'user',content:'x'})}));
+console.log('Help guidance policy tests passed');
