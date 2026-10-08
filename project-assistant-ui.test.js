@@ -25,6 +25,13 @@ function harness(request, options = {}) { let data = workspace();const documentE
 const deferred = () => { let resolve, reject; const promise = new Promise((yes, no) => { resolve = yes; reject = no; }); return { promise, resolve, reject }; };
 async function main() {
   assert.equal(permitted(workspace()), true);
+  for (const reason of ['cancel','close','scope','background']) {
+    let signal;const pending=deferred(),events={};
+    const c=harness(async(path,payload,requestSignal)=>{if(path==='/api/assistant/context')return {aiFirst:true};signal=requestSignal;return pending.promise;},{window:{addEventListener(name,callback){events[name]=callback;}}});
+    c.open();c.node('text').value='Schedule Jordan tomorrow';const turn=c.sendMessage();await new Promise(resolve=>setImmediate(resolve));assert.ok(signal);
+    if(reason==='cancel')c.node('cancel').onclick();else if(reason==='close')c.close();else if(reason==='scope'){c.update({...workspace(),companyId:'different'});c.sync();}else events.blur();
+    assert.equal(signal.aborted,true,reason+' aborts non-save network work');await turn;pending.resolve({source:'form',message:'late'});c.close();
+  }
   for (const role of ['field', 'foreman', 'platform_owner', 'guest']) assert.equal(permitted({ ...workspace(), user: { id: 1, role } }), false);
   assert.equal(permitted({ ...workspace(), user: { id: 1, role: 'project_manager', permissions: {} } }), true);
   const markup = previewMarkup(sample()); assert.ok(!markup.includes('<script>')); assert.ok(!markup.includes('<img')); assert.match(markup, /&lt;script&gt;/);
