@@ -10,7 +10,7 @@ node('#field-notes').value='Synthetic report with photo';node('#report-signature
 node('#report-photos').files=[{name:'synthetic.jpg'}];
 const calls=[];let uploadFails=true,recoveryId;
 const draftStorage=new Map([['scoped-project-1','Synthetic report with photo'],['pdl-draft-0','Unattributed legacy draft']]);
-const context={$:node,$$:()=>[],timeCardsOn:()=>false,editingReportId:null,reportLaborTotals:()=>({crew:0,allocated:0,balanced:true}),noteLaborUnassigned:()=>0,templatesOn:()=>false,
+const context={$:node,$$:()=>[],timeCardsOn:()=>false,editingReportId:null,reportSourceAssignmentId:null,reportLaborTotals:()=>({crew:0,allocated:0,balanced:true}),noteLaborUnassigned:()=>0,templatesOn:()=>false,
   signedInCompanyId:()=> 'synthetic-tenant',company:{id:'synthetic-tenant'},projects:[{id:1}],reports:[],photos:[],extractedDraft:null,currentUser:{name:'QA'},activeNoteLaborEvidence:null,
   dailyTemplatePayload:()=>({}),api:async(route,options)=>{calls.push({route,method:options.method,status:JSON.parse(options.body).status});return{id:10,project:0,status:JSON.parse(options.body).status,notes:'Synthetic report with photo'}},
   uploadPhotos:async()=>{if(uploadFails)throw new Error('Synthetic upload failure');return[{id:1,reportId:10}]},
