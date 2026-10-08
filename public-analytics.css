@@ -1,0 +1,5 @@
+.pdl-analytics-consent { position: fixed; bottom: 3.5rem; left: 1rem; right: 1rem; max-width: 40rem; padding: 1rem; border: 1px solid #68716d; border-radius: .5rem; background: #fff; color: #111416; box-shadow: 0 4px 20px #0003; z-index: 10000; font: 16px/1.5 system-ui; }
+.pdl-analytics-consent[hidden] { display: none; }
+.pdl-analytics-consent p { margin: 0 0 .75rem; }
+.pdl-analytics-consent button, .pdl-analytics-settings { padding: .6rem .8rem; border: 1px solid #68716d; border-radius: .3rem; background: #fff; color: #111416; cursor: pointer; font: inherit; }
+.pdl-analytics-settings { position: fixed; bottom: .75rem; left: 1rem; z-index: 9999; font: 14px system-ui; }
