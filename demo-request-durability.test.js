@@ -194,6 +194,31 @@ async function until(predicate) {
     assert.equal((await request('/api/demo-requests', legacy)).status, 201);
     assert.equal(saveCount, beforeLocal);
     assert.equal(localPlatform().demoRequests.length, 10);
+    const timed = { ...lead, requestId: 'timed-synthetic-123456789', preferredTime: '2026-10-12T09:30', preferredTimeZone: 'America/Chicago', preferredTimeUtc: '2026-10-12T14:30:00.000Z' };
+    const acceptedTime = await request('/api/demo-requests', timed);
+    assert.equal(acceptedTime.status, 201);
+    assert.equal(localPlatform().demoRequests[0].preferredTimeZone, 'America/Chicago');
+    assert.equal(localPlatform().demoRequests[0].preferredTimeUtc, timed.preferredTimeUtc);
+    assert.equal((await request('/api/demo-requests', timed)).data.id, acceptedTime.data.id);
+    for (const wrong of [
+      { preferredTimeZone: 'Invalid/Zone' },
+      { preferredTimeUtc: '2026-10-12T09:30:00.000Z' },
+      { preferredTime: '2026-03-08T02:30', preferredTimeUtc: '2026-03-08T08:30:00.000Z' },
+      { preferredTimeUtc: '' }
+    ]) assert.equal((await request('/api/demo-requests', { ...timed, ...wrong })).status, 400);
+    const changeStatus = () => fetch(base + '/api/platform/demo-requests/' + acceptedTime.data.id, {
+      method: 'PATCH', headers: { 'Content-Type': 'application/json', 'x-pdl-platform-key': process.env.PDL_PLATFORM_KEY }, body: JSON.stringify({ status: 'Contacted' })
+    });
+    cloudEnabled = true; failSave = true;
+    assert.equal((await changeStatus()).status, 503, 'operator updates must acknowledge cloud failure');
+    failSave = false; holdSave = true; releaseSave = null;
+    let statusSettled = false;
+    const pendingStatus = changeStatus().then(response => { statusSettled = true; return response; });
+    await until(() => releaseSave);
+    assert.equal(statusSettled, false, 'operator updates wait for cloud persistence');
+    releaseSave();
+    assert.equal((await pendingStatus).status, 200);
+    assert.equal(savedSnapshot.platform.demoRequests.find(row => row.id === acceptedTime.data.id).status, 'Contacted');
     console.log('Demo request durability passed: delayed/failing cloud saves, retries, deduplication, ordered snapshots, validation, and local-only compatibility.');
   } finally {
     releaseSave?.();
