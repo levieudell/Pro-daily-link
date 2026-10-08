@@ -10,6 +10,8 @@ Office has its own protected ID, kind, name and editable capability definition. 
 
 Custom profiles inherit one existing Admin, PM, Foreman or Field base. Their action masks can only intersect actual base-role policies, stored grants, feature locks and original resource scope. PM projects and crews, Field/Foreman linked member and project scope, customer privacy and team visibility remain unchanged. A Crew remains a membership attribute. Named profiles never grant account/tenant/security/platform/billing administration, pricing, public sharing, provider access or Assistant eligibility. Signed-in PM/Admin/Owner eligibility remains fixed; scheduling additionally consumes the fresh typed scheduling restriction and existing grants/project/crew checks.
 
+Creating a profile does not implicitly activate a base-role policy or tighten its scope defaults. In particular, original shared-project notes visibility remains exact when no ordinary notes policy exists. The preview compares the real current and proposed project visibility; any later activation of a base notes policy is a separate reviewed change.
+
 Malformed, missing required, duplicate, foreign or protected-target profile state denies all nonowner typed actions; finite errors withhold private configuration. A legitimate assigned account whose base role no longer matches receives a restrictive mismatch descriptor. Ordinary account-role edits require explicit reviewed profile removal first. Owner action access bypasses restrictive profile corruption; the profile manager returns reconciliation-required rather than guessing or silently repairing damaged data.
 
 ## Owner workflow and transactions
