@@ -12,8 +12,8 @@ Base: bdbdfe9a8b038d3dbc32327c58f5a529dbe71225. No production changes or trackin
 ## Draft implementation
 - Unique factual homepage and founder-page titles/descriptions; canonical homepage/about/privacy/terms URLs.
 - Sitemap lists only the five public information pages. No customer records, accounts, projects, signup queries, dashboard, guest links or fabricated articles.
-- robots permits public crawling, including OAI-SearchBot through its existing wildcard default, while excluding API/upload/token guest paths. No GPTBot-specific training-policy change.
-- All API responses receive X-Robots-Tag: noindex, nofollow. Account/workspace/guest/platform/support shells receive noindex metadata. This is indexing guidance, not access control. Existing authentication and public-file allowlist remain in force.
+- robots permits public crawling, including OAI-SearchBot through its existing wildcard default, while excluding API/upload paths. Data-free token guest shells stay crawlable so crawlers can observe their noindex instruction. No GPTBot-specific training-policy change.
+- All API responses receive X-Robots-Tag: noindex, nofollow. Account/workspace/guest/platform/support shells receive noindex metadata. This is indexing guidance, not access control. Robots-blocked API/upload URLs cannot be relied upon to expose a noindex instruction; they can still appear as URL-only search entries. Existing private authentication is the data protection, and Search Console inspection is required for any old indexed private URLs. Existing authentication and public-file allowlist remain in force.
 - txt/xml content types and allowlist entries make crawler files actually servable.
 - Existing H1, founder claim, prices, entitlements, sample labels, CTA pairs and workflow copy remain intact. Useful search terminology is construction daily report software, field reporting, crew hours, production tracking and extra-work flags, supported by current public product/workflow copy.
 
