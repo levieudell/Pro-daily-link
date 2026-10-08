@@ -374,113 +374,48 @@ test('unmarked users/sessions and a privileged root cannot be silently reused', 
   assert.throws(() => prepareStorage(config), /root must remain/);
 });
 
-async function bootEnterprise(env, base) {
-  // This test-only child simulates Render metadata. It never connects to Render,
-  // Stripe or any other provider, and forces its server onto fresh loopback.
+// Reviewed PR114 has no Enterprise billing module. Replace the obsolete quote
+// journey with an actual annual-mode boot; retain all credential/storage guards.
+async function bootAnnual(env, base) {
   const source = `
-    const assert = require('node:assert/strict');
-    const net = require('node:net');
-    const blocked = () => { throw new Error('Outbound network disabled in acceptance tests'); };
-    global.fetch = blocked;
-    net.Socket.prototype.connect = blocked;
-    for (const name of ['node:http', 'node:https']) { const api = require(name); api.request = blocked; api.get = blocked; }
-    require('node:tls').connect = blocked;
-    const listen = net.Server.prototype.listen;
-    net.Server.prototype.listen = function(port, host, callback) { assert.equal(host, '0.0.0.0'); return listen.call(this, port, '127.0.0.1', callback); };
-    const Module = require('node:module'), load = Module._load, serverPath = require('node:path').join(process.cwd(), 'server');
-    Module._load = function(request, parent, isMain) {
-      if (request === serverPath) assert.equal(Object.hasOwn(process.env, 'PDL_ACCEPTANCE_PLATFORM_PASSWORD'), false, 'Fixture password must be removed before importing server');
-      return load.apply(this, arguments);
-    };
-    const enterprise = require('./enterprise-billing'), fixture = require('./fixtures/enterprise-billing').fixture();
-    const create = enterprise.createService;
-    enterprise.createService = options => create({ ...options, client: fixture.client });
-    const result = require('./scripts/start-acceptance').start();
-    assert.equal(Object.hasOwn(process.env, 'PDL_ACCEPTANCE_PLATFORM_PASSWORD'), false);
-    assert.equal(process.env.PDL_REQUIRE_AUTH, '1');
-    assert.equal(process.env.PDL_ENTERPRISE_CHECKOUT_ENABLED, '1');
-    assert.equal(Object.hasOwn(result.config, 'password'), false);
-  `;
-  const child = spawn(process.execPath, ['-e', source], { cwd: ROOT, env, stdio: ['ignore', 'pipe', 'pipe'] });
-  let logs = ''; child.stdout.on('data', chunk => { logs += chunk; }); child.stderr.on('data', chunk => { logs += chunk; });
-  const stopped = new Promise(resolve => child.once('exit', resolve));
-  const stop = async () => { if (child.exitCode === null) child.kill('SIGTERM'); await stopped; };
-  for (let attempt = 0; attempt < 150; attempt++) {
-    if (child.exitCode !== null) throw new Error('Synthetic Enterprise test child exited: ' + logs);
-    try { if ((await fetch(base + '/api/health')).ok) return { stop, logs: () => logs }; } catch {}
-    await new Promise(resolve => setTimeout(resolve, 30));
-  }
-  await stop(); throw new Error('Synthetic Enterprise test child did not become healthy');
+    const assert=require('node:assert/strict'),net=require('node:net');
+    const blocked=()=>{throw Error('Outbound network disabled in acceptance tests')};
+    global.fetch=blocked;net.Socket.prototype.connect=blocked;
+    for(const name of ['node:http','node:https']){const api=require(name);api.request=blocked;api.get=blocked;}
+    require('node:tls').connect=blocked;
+    const listen=net.Server.prototype.listen;
+    net.Server.prototype.listen=function(port,host,callback){assert.equal(host,'0.0.0.0');return listen.call(this,port,'127.0.0.1',callback)};
+    const Module=require('node:module'),load=Module._load,serverPath=require('node:path').join(process.cwd(),'server');
+    Module._load=function(request,parent,isMain){if(request===serverPath){
+      for(const key of ['PDL_ACCEPTANCE_PLATFORM_PASSWORD','PDL_ACCEPTANCE_PLATFORM_OWNER','PDL_ACCEPTANCE_ENTERPRISE'])assert.equal(Object.hasOwn(process.env,key),false);
+      assert.equal(process.env.PDL_ENTERPRISE_CHECKOUT_ENABLED,'0');assert.equal(process.env.PDL_REQUIRE_AUTH,'1');
+    }return load.call(this,request,parent,isMain)};
+    require('./scripts/start-acceptance').start();`;
+  const child=spawn(process.execPath,['-e',source],{cwd:ROOT,env,stdio:['ignore','pipe','pipe']});let logs='';
+  child.stdout.on('data',chunk=>logs+=chunk);child.stderr.on('data',chunk=>logs+=chunk);
+  const stopped=new Promise(resolve=>child.once('exit',resolve));
+  const stop=async()=>{if(child.exitCode===null)child.kill('SIGTERM');await stopped;};
+  for(let attempt=0;attempt<150;attempt++){
+    if(child.exitCode!==null)throw Error('Annual test child exited: '+logs);
+    try{if((await fetch(base+'/api/health')).ok)return {stop,logs:()=>logs};}catch{}
+    await new Promise(resolve=>setTimeout(resolve,30));
+  }await stop();throw Error('Annual child did not become healthy');
 }
-
-test('normal platform login authorizes Enterprise quotes, keeps sessions on restart, and denies non-owners', async t => {
-  const directory = temporary('enterprise-http'); t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
-  const port = await freePort(), base = `http://127.0.0.1:${port}`, password = fixturePassword();
-  const env = { ...enterpriseEnv(), PORT: String(port), PDL_ACCEPTANCE_DATA_DIR: directory, PDL_ACCEPTANCE_PLATFORM_PASSWORD: password, STRIPE_SECRET_KEY: 'rk_test_SyntheticNotAnActualCredential', STRIPE_WEBHOOK_SECRET: 'whsec_SyntheticNotAnActualCredential' };
-  let running = await bootEnterprise(env, base); t.after(async () => running.stop());
-  const platformFile = path.join(directory, 'platform.json');
-  const seeded = JSON.parse(fs.readFileSync(platformFile));
-  assert.equal(seeded.users.length, 1); assert.deepEqual(seeded.sessions, []);
-  const route = `/api/platform/companies/${ROOT_TENANT}/enterprise-quotes`;
-  const send = (url, body, headers = {}) => fetch(base + url, { method: 'POST', headers: { 'content-type': 'application/json', ...headers }, body: JSON.stringify(body) });
-  for (const url of ['/api/platform/overview', route, '/api/platform/auth/me']) assert.equal((await fetch(base + url)).status, 401);
-  assert.equal((await send('/api/platform/auth/login', { email: OWNER.email, password: 'wrong-synthetic-password' })).status, 401);
-  assert.equal((await send('/api/platform/auth/login', { email: OWNER.email, password: password.trim() })).status, 401);
-  assert.deepEqual(JSON.parse(fs.readFileSync(platformFile)).sessions, []);
-  const response = await send('/api/platform/auth/login', { email: OWNER.email, password });
-  assert.equal(response.status, 200);
-  const loginBody = await response.json(), setCookie = response.headers.get('set-cookie');
-  assert.equal(loginBody.user.role, 'platform_owner');
-  assert.match(setCookie, /HttpOnly/); assert.match(setCookie, /SameSite=Strict/); assert.match(setCookie, /Secure/);
-  const headers = { cookie: setCookie.split(';')[0] };
-  assert.equal((await fetch(base + '/api/platform/auth/me', { headers })).status, 200);
-  const list = await fetch(base + route, { headers }); assert.equal(list.status, 200); assert.equal((await list.json()).checkoutEnabled, true);
-  const input = require('./fixtures/enterprise-billing').input({ totalAmount: 1000, requestId: 'acceptance_synthetic_quote_0001', expiresAt: new Date(Date.now() + 86400000).toISOString(), scope: 'Synthetic USD 10 acceptance only', cancellationPolicy: 'Synthetic test cancellation terms only', refundPolicy: 'Synthetic test refund terms only' });
-  const created = await send(route, input, headers); assert.equal(created.status, 201); const quote = await created.json();
-  assert.equal(quote.totalAmount, 1000); assert.equal(quote.status, 'draft');
-  const issued = await send(route + '/' + quote.id + '/issue', { revision: quote.revision, termsDigest: quote.termsDigest, commercialApproved: true }, headers);
-  assert.equal(issued.status, 200);
-  for (const url of ['/data/platform.json', '/data/db.json', '/scripts/start-acceptance.js', '/acceptance-startup.test.js', '/.pdl-acceptance.json', '/' + OWNER_IDENTITY_FILE, '/tmp/' + path.basename(directory) + '/platform.json']) assert.equal((await fetch(base + url)).status, 404);
-  const publicText = await fetch(base + '/api/health').then(r => r.text());
-  const persisted = JSON.parse(fs.readFileSync(platformFile));
-  assert.equal(persisted.sessions.length, 1);
-  const beforeRestart = fs.readFileSync(platformFile, 'utf8');
-  for (const value of [password, seeded.users[0].passwordHash, seeded.users[0].passwordSalt, env.STRIPE_SECRET_KEY, env.STRIPE_WEBHOOK_SECRET]) {
-    assert.equal(running.logs().includes(value), false); assert.equal(publicText.includes(value), false); assert.equal(JSON.stringify(loginBody).includes(value), false);
-  }
-  await running.stop();
-  // Simulate password omission on the SAME filesystem only. Actual Render secret
-  // changes can redeploy and lose state; fresh state without a password refuses.
-  const cleanedEnv = { ...env }; delete cleanedEnv.PDL_ACCEPTANCE_PLATFORM_PASSWORD;
-  running = await bootEnterprise(cleanedEnv, base);
-  assert.equal(fs.readFileSync(platformFile, 'utf8'), beforeRestart);
-  assert.equal((await fetch(base + route, { headers })).status, 200);
-  const signup = await send('/api/signup', { companyName: 'Synthetic enterprise tenant', ownerName: 'Synthetic account owner', email: 'tenant-owner@example.invalid', password: fixturePassword(), legalAccepted: true, plan: 'starter' });
-  assert.equal(signup.status, 201);
-  const tenant = await signup.json();
-  const tenantCookie = signup.headers.getSetCookie().map(value => value.split(';')[0]).join('; ');
-  assert.equal((await fetch(base + route, { headers: { cookie: tenantCookie } })).status, 401);
-  const tenantRoute = `/api/platform/companies/${tenant.company.id}/enterprise-quotes`;
-  const tenantQuoteResponse = await send(tenantRoute, { ...input, requestId: 'acceptance_synthetic_tenant_0003' }, headers);
-  assert.equal(tenantQuoteResponse.status, 201); const tenantQuote = await tenantQuoteResponse.json();
-  assert.equal((await send(tenantRoute + '/' + tenantQuote.id + '/issue', { revision: tenantQuote.revision, termsDigest: tenantQuote.termsDigest, commercialApproved: true }, headers)).status, 200);
-  const fakeCheckout = await send('/api/billing/enterprise-quotes/' + tenantQuote.id + '/checkout', { revision: tenantQuote.revision, termsDigest: tenantQuote.termsDigest, termsAccepted: true }, { cookie: tenantCookie, 'x-pdl-company': tenant.company.id });
-  assert.equal(fakeCheckout.status, 200); assert.equal((await fakeCheckout.json()).url, 'https://checkout.stripe.com/c/pay/synthetic');
-  // Build a support account through normal owner-controlled setup/login APIs,
-  // never through a seeded session or an authentication bypass.
-  const staff = await send('/api/platform/users', { name: 'Synthetic acceptance support', email: 'support@example.invalid', role: 'support' }, headers);
-  assert.equal(staff.status, 201); const staffBody = await staff.json(), supportPassword = fixturePassword();
-  const confirm = await send('/api/platform/auth/claim', { email: 'support@example.invalid', setupCode: staffBody.setupCode, password: supportPassword });
-  assert.equal(confirm.status, 200);
-  const supportLogin = await send('/api/platform/auth/login', { email: 'support@example.invalid', password: supportPassword }); assert.equal(supportLogin.status, 200);
-  const supportHeaders = { cookie: supportLogin.headers.get('set-cookie').split(';')[0] };
-  assert.equal((await fetch(base + route, { headers: supportHeaders })).status, 403);
-  assert.equal((await send(route, { ...input, requestId: 'acceptance_synthetic_denied_0002' }, supportHeaders)).status, 403);
-  await running.stop();
-  const beforeConflict = fs.readFileSync(platformFile, 'utf8');
-  assert.throws(() => prepareStorage(validateConfig(cleanedEnv)), /fixture identity conflicts/);
-  assert.equal(fs.readFileSync(platformFile, 'utf8'), beforeConflict);
-  for (const value of [password, supportPassword, staffBody.setupCode, seeded.users[0].passwordHash, seeded.users[0].passwordSalt]) assert.equal(running.logs().includes(value), false);
+test('annual isolated boot narrows inherited owner mode, creates no credentials, and preserves paid fixture on restart',async t=>{
+  const directory=temporary('annual-http');t.after(()=>fs.rmSync(directory,{recursive:true,force:true}));
+  const port=await freePort(),base=`http://127.0.0.1:${port}`,password=fixturePassword();
+  const env={...enterpriseEnv(),PDL_ACCEPTANCE_ANNUAL_STARTER:'test-only',PDL_ACCEPTANCE_PLATFORM_PASSWORD:password,PORT:String(port),PDL_ACCEPTANCE_DATA_DIR:directory};
+  let running=await bootAnnual(env,base);t.after(async()=>running.stop());
+  const platformFile=path.join(directory,'platform.json'),file=path.join(directory,'tenants','synthetic-pr114-starter.json');
+  assert.deepEqual(JSON.parse(fs.readFileSync(platformFile)).users,[]);assert.deepEqual(JSON.parse(fs.readFileSync(platformFile)).sessions,[]);
+  assert.equal(fs.existsSync(path.join(directory,OWNER_IDENTITY_FILE)),false);
+  const db=JSON.parse(fs.readFileSync(file));assert.deepEqual(db.users,[]);assert.deepEqual(db.sessions,[]);assert.equal(db.company.subscriptionStatus,'Incomplete');
+  assert.equal(running.logs().includes(password),false);
+  const health=await fetch(base+'/api/health');assert.equal(health.headers.get('x-pdl-candidate'),require('./scripts/start-acceptance').CANDIDATE);
+  assert.equal((await fetch(base+'/api/platform/overview',{headers:{'x-pdl-company':ROOT_TENANT}})).status,401);
+  for(const url of ['/data/platform.json','/scripts/start-acceptance.js','/'+OWNER_IDENTITY_FILE])assert.equal((await fetch(base+url)).status,404);
+  db.company.subscriptionStatus='Active';fs.writeFileSync(file,JSON.stringify(db));const before=fs.readFileSync(file,'utf8');
+  await running.stop();running=await bootAnnual(env,base);assert.equal(fs.readFileSync(file,'utf8'),before);assert.equal(running.logs().includes(password),false);
 });
 
 test('fixture refusal never prints the password or stored credential material', t => {
