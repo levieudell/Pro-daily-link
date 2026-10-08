@@ -975,6 +975,7 @@ async function api(req,res,url){
       const params={mode:'subscription',payment_method_types:'card','payment_method_types[0]':'card','line_items[0][price]':choice.priceId,'line_items[0][quantity]':1,success_url:publicUrl+'/app?tenant='+encodeURIComponent(db.company.id)+'&billing=success&session_id={CHECKOUT_SESSION_ID}',cancel_url:publicUrl+'/app?tenant='+encodeURIComponent(db.company.id)+'&billing=cancelled',client_reference_id:db.company.id,'metadata[company_id]':db.company.id,'subscription_data[metadata][company_id]':db.company.id,'subscription_data[metadata][plan]':input.plan,'subscription_data[metadata][billing_cycle]':choice.cycle};
       delete params.payment_method_types;
       Object.assign(params,trialParams,upfrontParams);
+      if(upfrontParams['metadata[offer]'])delete params['payment_method_types[0]'];
       if(trialParams['subscription_data[billing_cycle_anchor]'])params['custom_text[submit][message]']='Your original free trial ends '+db.company.trialEndsAt+'. No charge before then. Your selected subscription starts billing at that deadline; completing checkout after it requires payment.';
       if(choice.founder){params['subscription_data[metadata][offer]']='founder';params['custom_text[submit][message]']='Founder pricing applies for 24 months from first payment. We will contact you before it ends to review renewal options. No automatic regular-price increase. No free trial.';}
       if(choice.setup){params['line_items[1][price]']=process.env.STRIPE_PRICE_ASSISTED_SETUP;params['line_items[1][quantity]']=1;}

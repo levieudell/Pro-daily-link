@@ -112,7 +112,9 @@ try{
     assert.equal(p.params['discounts[0][coupon]'],'coupon_once');assert.equal(p.params['line_items[0][price]'],`price_${plan}_annual`);assert.equal(p.params['subscription_data[billing_cycle_anchor]'],undefined);assert.equal(p.params['subscription_data[trial_end]'],undefined);assert.equal(p.params.allow_promotion_codes,undefined);assert.match(p.params['custom_text[submit][message]'],/today.*No free trial.*Renews automatically/);assert.doesNotMatch(p.params['custom_text[submit][message]'],/No charge before/);
     const count=created;const concurrent=await Promise.all([1,2,3].map(()=>c.request('/api/billing/checkout','POST',{plan,billingCycle:'annual'})));assert.ok(concurrent.every(x=>x.status===200));assert.equal(created,count);
     const sub=providerSubscription(c,'active','sub_upfront_'+plan,`price_${plan}_annual`);sub.metadata.offer=offerPolicy.VERSION;sub.latest_invoice='in_missing';
+    delete sub.metadata.offer;assert.equal((await webhook(sub,'missing_offer_'+plan)).status,409);sub.metadata.offer='wrong';assert.equal((await webhook(sub,'wrong_offer_'+plan)).status,409);sub.metadata.offer=offerPolicy.VERSION;
     assert.equal((await webhook(sub,'unpaid_'+plan)).status,409);assert.equal(c.read().company.subscriptionStatus,'Incomplete');
+    const earlyRenewal=invoice(sub,plan,false);invoices.set(earlyRenewal.id,earlyRenewal);sub.latest_invoice=earlyRenewal.id;assert.equal((await webhook(sub,'missing_first_'+plan)).status,409);assert.equal(c.read().company.subscriptionStatus,'Incomplete');
     const first=invoice(sub,plan);invoices.set(first.id,first);sub.latest_invoice=first.id;
     first.currency='eur';assert.equal((await webhook(sub,'wrong_currency_'+plan)).status,409);first.currency='usd';
     first.total_excluding_tax++;assert.equal((await webhook(sub,'wrong_amount_'+plan)).status,409);first.total_excluding_tax--;

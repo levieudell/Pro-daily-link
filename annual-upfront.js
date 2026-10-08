@@ -1,4 +1,5 @@
 'use strict';
+const crypto=require('node:crypto');
 const VERSION='annual-upfront-first-year-v1';
 const amounts={starter:{first:891,renewal:990},growth:{first:1791,renewal:1990},pro:{first:3591,renewal:3990}};
 const fail=(message,statusCode=400)=>Object.assign(new Error(message),{statusCode});
@@ -19,9 +20,11 @@ async function checkout(company,input,request,env=process.env){
   if(coupon.id!==env.STRIPE_FIRST_YEAR_ANNUAL_COUPON||coupon.livemode!==/^(sk|rk)_live_/.test(env.STRIPE_SECRET_KEY)||coupon.valid!==true||coupon.duration!=='once'||coupon.percent_off!==10||coupon.amount_off!=null||coupon.max_redemptions!=null||coupon.redeem_by!=null||coupon.applies_to?.products?.length)throw fail('The upfront annual discount configuration does not match this offer.',503);
   if(company.stripeCustomerId){const customer=await request('/customers/'+encodeURIComponent(company.stripeCustomerId),null,'GET');if(customer.id!==company.stripeCustomerId||customer.livemode!==coupon.livemode||customer.deleted||customer.discount||customer.discounts?.length||customer.balance)throw fail('Customer billing requires support review before applying this offer.',409);}
   const a=amounts[offer.plan];
-  return {'discounts[0][coupon]':coupon.id,'metadata[offer]':VERSION,'subscription_data[metadata][offer]':VERSION,'custom_text[submit][message]':`Pay $${a.first.toLocaleString('en-US')} today for your first year. No free trial. Renews automatically at $${a.renewal.toLocaleString('en-US')} per year until cancelled. Taxes, if applicable, are additional.`};
+  return {integration_identifier:'annual_upfront_'+Array.from(crypto.randomBytes(8),n=>String.fromCharCode(97+n%26)).join(''),'discounts[0][coupon]':coupon.id,'metadata[offer]':VERSION,'subscription_data[metadata][offer]':VERSION,'custom_text[submit][message]':`Pay $${a.first.toLocaleString('en-US')} today for your first year. No free trial. Renews automatically at $${a.renewal.toLocaleString('en-US')} per year until cancelled. Taxes, if applicable, are additional.`};
 }
 async function fulfill(db,subscription,info,request){
+  const accepted=db.company.annualUpfront;
+  if(accepted&&(!accepted.used||accepted.subscriptionId===subscription.id&&!accepted.paidAt)&&subscription.metadata?.offer!==VERSION)throw fail('Upfront annual subscription is missing the accepted offer.',409);
   if(subscription.metadata?.offer!==VERSION)return;
   const offer=db.company.annualUpfront,a=amounts[info.plan];
   // After verified first payment, ordinary provider lifecycle/portal changes apply.
@@ -33,6 +36,7 @@ async function fulfill(db,subscription,info,request){
     const id=typeof subscription.latest_invoice==='string'?subscription.latest_invoice:subscription.latest_invoice?.id;
     const invoice=id?await request('/invoices/'+encodeURIComponent(id),null,'GET'):null;
     const first=invoice?.billing_reason==='subscription_create',expected=(first?a.first:a.renewal)*100;
+    if(!offer.paidAt&&!first||first&&offer.firstInvoiceId&&offer.firstInvoiceId!==id)throw fail('The discounted first annual invoice must be verified before activation.',409);
     const invoiceSub=invoice?.subscription||invoice?.parent?.subscription_details?.subscription;
     const customer=typeof subscription.customer==='string'?subscription.customer:subscription.customer?.id;
     if(!invoice||invoice.id!==id||invoice.livemode!==subscription.livemode||invoice.currency!=='usd'||invoiceSub!==subscription.id||invoice.customer!==customer||invoice.status!=='paid'||invoice.subtotal!==a.renewal*100||invoice.total_excluding_tax!==expected||invoice.amount_paid<expected||invoice.amount_remaining!==0)throw fail('Waiting for a verified upfront annual invoice payment.',409);
