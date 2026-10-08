@@ -1,5 +1,5 @@
 'use strict';
-// Reviewable AI request/response contract. Deliberately no provider or HTTP route.
+// Reviewed grounding for the separately gated conversational Help boundary.
 const KNOWLEDGE=Object.freeze([
   {id:'project-setup',roles:['owner','admin'],source:'index.html: project modal; onboarding-journey.test.js',text:'Create a customer in Customers, then add a project in Projects and choose the customer. Add estimate scope with quantity, unit and budget hours when tracking production.'},
   {id:'crew-access',roles:['owner','admin'],source:'index.html: team-member-modal and user-modal; server.js: /api/users',text:'Team has employee records, crews and user accounts. An employee record alone has no login. The Account Owner creates user access with a temporary password; share it securely. Admins can manage employees and crews but should ask the Account Owner for login permissions.'},
@@ -11,10 +11,10 @@ const POLICY='You are the friendly PDL product Help assistant. Answer only from 
 function buildRequest({role,text,history=[]}){
   if(!['owner','admin','project_manager','foreman','field'].includes(role)||typeof text!=='string'||!text.trim()||text.length>2000||!Array.isArray(history)||history.length>6)throw Error('Invalid bounded help conversation');
   if(history.some(m=>!['user','assistant'].includes(m.role)||typeof m.content!=='string'||m.content.length>2000))throw Error('Invalid conversation history');
-  return {store:false,max_output_tokens:600,instructions:POLICY,knowledge:KNOWLEDGE.filter(k=>k.roles.includes(role)),conversation:[...history,{role:'user',content:text}]};
+  return {store:false,max_output_tokens:800,instructions:POLICY,knowledge:KNOWLEDGE.filter(k=>k.roles.includes(role)),conversation:[...history,{role:'user',content:text}]};
 }
 function validateAnswer(request,response){
-  if(!response||typeof response.answer!=='string'||response.answer.length>3000||!Array.isArray(response.sourceIds)||response.sourceIds.some(id=>!request.knowledge.some(k=>k.id===id))||typeof response.escalate!=='boolean'||!(response.clarification===null||typeof response.clarification==='string'))throw Error('Unverified help answer');
+  if(!response||Object.keys(response).some(k=>!['answer','sourceIds','clarification','escalate'].includes(k))||typeof response.answer!=='string'||!response.answer.trim()||response.answer.length>3000||!Array.isArray(response.sourceIds)||response.sourceIds.length>request.knowledge.length||response.sourceIds.some(id=>!request.knowledge.some(k=>k.id===id))||typeof response.escalate!=='boolean'||!(response.clarification===null||typeof response.clarification==='string'&&response.clarification.length<=500))throw Error('Unverified help answer');
   return response;
 }
 module.exports={KNOWLEDGE,POLICY,buildRequest,validateAnswer};

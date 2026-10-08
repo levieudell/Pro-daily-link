@@ -7,6 +7,7 @@
     try{
       const value=await api('/api/help-guidance',{redirectOnUnauthorized:false});
       if(request!==sequence)return;
+      window.renderHelpConversation?.(host,value.conversationEnabled);
       const heading=document.createElement('h3');heading.textContent='A little help getting started';host.append(heading);
       const welcome=document.createElement('p');welcome.textContent=value.welcome;host.append(welcome);
       const source=document.createElement('small');source.textContent=value.source;host.append(source);
