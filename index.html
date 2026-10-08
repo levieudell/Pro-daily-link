@@ -38,6 +38,7 @@
           const response=await fetch('/api/auth/me',{credentials:'include',cache:'no-store'});
           if(!response.ok){location.replace('/');return false}
           window.pdlAuthenticatedUser=await response.json();
+          if(config.scopedWorkspace){location.replace('/workspace.html?tenant='+encodeURIComponent(window.pdlAuthenticatedUser.companyId)+'#'+(window.pdlAuthenticatedUser.accessRole==='owner'?'roles':'projects'));return false}
         }
         document.documentElement.classList.add('workspace-authenticated');
         return true;

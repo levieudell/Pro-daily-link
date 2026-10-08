@@ -7,7 +7,7 @@ permissions:
 jobs:
   atomic-postgres:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
     services:
       postgres:
         image: postgres:16-alpine
@@ -29,6 +29,10 @@ jobs:
           node-version: 20
           cache: npm
       - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - run: node json-request-body.test.js
+      - run: node scoped-navigation.test.js
+      - run: node roles-workspace.test.js
       - run: node role-policy-api.test.js
       - run: node capability-registry.test.js
       - run: node notes-admission.test.js
@@ -44,3 +48,11 @@ jobs:
         env:
           PDL_ATOMIC_TEST_ALLOW_SCHEMA: '1'
           PDL_ATOMIC_TEST_POSTGRES_URL: postgresql://postgres:synthetic-ci-only@127.0.0.1:5432/pdl_atomic_synthetic
+          PDL_ROLES_BROWSER_TESTS: '1'
+          PDL_ROLES_BROWSER_ARTIFACTS: roles-browser-evidence
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: roles-browser-evidence-attempt-${{ github.run_attempt }}
+          path: roles-browser-evidence
+          if-no-files-found: error

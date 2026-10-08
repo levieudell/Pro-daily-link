@@ -11,9 +11,10 @@ const { spawn } = require('node:child_process');
 const { once } = require('node:events');
 const { Pool } = require('pg');
 const { fixture, companyA, companyB, token } = require('./fixtures/project-assistant');
-const { TransactionalTenantRepository, splitSnapshot, canonicalHash } = require('./database/transactional-repository');
+const { TransactionalTenantRepository, splitSnapshot, assembleSnapshot, canonicalHash } = require('./database/transactional-repository');
 const { createAdmission } = require('./database/tenant-admission');
 const { loadConsistentSnapshot } = require('./database/tenant-consistent-read');
+const { readJsonBody } = require('./json-request-body');
 
 const rawUrl = process.env.PDL_ATOMIC_TEST_POSTGRES_URL;
 if (!rawUrl) throw new Error('Explicit PDL_ATOMIC_TEST_POSTGRES_URL is required; PostgreSQL evidence cannot be skipped.');
@@ -91,18 +92,22 @@ async function startBridge() {
       }
       if (req.method === 'GET' && url.pathname === '/rest/v1/tenant_records') return send(200, (await pool.query('SELECT collection,position,data FROM tenant_records WHERE company_id=$1 ORDER BY collection,position LIMIT $2 OFFSET $3', [company, Number(url.searchParams.get('limit')), Number(url.searchParams.get('offset'))])).rows);
       if (req.method === 'POST' && ['/rest/v1/rpc/replace_tenant_records', '/rest/v1/rpc/replace_tenant_policy_records'].includes(url.pathname)) {
-        let raw = ''; for await (const chunk of req) raw += chunk;
-        const input = JSON.parse(raw); commits++;
+        const chunks = [], collect = chunk => { chunks.push(chunk); if (controls.utf8Probe) controls.utf8Probe.receivedBytes = (controls.utf8Probe.receivedBytes || 0) + chunk.length; }; req.on('data', collect);
+        const input = await readJsonBody(req); req.off('data', collect); commits++;
+        const formerlyDecoded = chunks.map(chunk => chunk.toString('utf8')).join('');
+        const former = JSON.parse(formerlyDecoded), formerHash = canonicalHash(assembleSnapshot(former.p_scalar_data, former.p_records));
+        if (formerHash !== input.p_content_hash) { if (controls.utf8Probe) controls.utf8Probe.legacyChanged = true; console.error('SYNTHETIC_UTF8_DIAGNOSTIC=' + JSON.stringify({ revision: input.p_expected_revision, suppliedHash: input.p_content_hash, bufferedHash: canonicalHash(assembleSnapshot(input.p_scalar_data, input.p_records)), formerChunkHash: formerHash, differences: require('./fixtures/snapshot-wire-diagnostics').differences(input, former) })); }
         if (controls.gate && (!controls.commitFilter || controls.commitFilter(url, input))) { const current = controls.gate; current.count++; if (current.count === current.expected) current.resolve(); await current.promise; }
         if (controls.rejectCommit) return send(400, { message: 'Synthetic commit rejected before SQL' });
         const policy = url.pathname.endsWith('replace_tenant_policy_records');
+        const wireHash = canonicalHash(assembleSnapshot(input.p_scalar_data, input.p_records));
+        assert.equal(wireHash, input.p_content_hash, 'Synthetic RPC bytes must preserve the exact submitted snapshot hash');
         const result = await pool.query(policy ? 'SELECT * FROM replace_tenant_policy_records($1,$2,$3,$4,$5,$6)' : 'SELECT * FROM replace_tenant_records($1,$2,$3,$4,$5)', [input.p_company_id, input.p_expected_revision, input.p_scalar_data, input.p_content_hash, JSON.stringify(input.p_records), ...(policy ? [input.p_policy_guard] : [])]);
         if (controls.dropAck) return req.socket.destroy();
         return send(200, result.rows);
       }
       if (req.method === 'POST' && url.pathname === '/synthetic-resend') {
-        let raw = ''; for await (const chunk of req) raw += chunk;
-        const email = JSON.parse(raw), current = await repository.load(companyA), key = req.headers['idempotency-key'];
+        const email = await readJsonBody(req), current = await repository.load(companyA), key = req.headers['idempotency-key'];
         const job = current.snapshot.assignmentEmailOutbox.find(row => key === 'pdl-assignment/' + row.id);
         assert.ok(job, 'Only a durable fixed assignment email job may reach transport'); assert.equal(job.status, 'dispatching');
         assert.deepEqual(email.to, [job.payload.to]); assert.ok(email.html.includes(job.payload.projectName));
@@ -143,7 +148,7 @@ async function slowRequest(base, user, input, route = notePath, method = 'POST')
   let done;
   const result = new Promise((resolve, reject) => {
     const req = http.request(address, { method, headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(bytes), 'X-PDL-Company': companyA, Authorization: 'Bearer ' + token(companyA, user) } }, res => {
-      let raw = ''; res.on('data', chunk => { raw += chunk; }); res.on('end', () => resolve({ status: res.statusCode, data: JSON.parse(raw) }));
+      readJsonBody(res).then(data => resolve({ status: res.statusCode, data }), reject);
     });
     req.on('error', reject); req.setTimeout(15000, () => req.destroy(Error('Slow-body timeout')));
     req.write(bytes.slice(0, -1)); done = () => req.end(bytes.slice(-1));
@@ -153,6 +158,24 @@ async function slowRequest(base, user, input, route = notePath, method = 'POST')
 async function main() {
   try {
     await prepareDatabase(); await startBridge();
+    // A real localhost body is interrupted inside a UTF-8 character. Wait until
+    // the bridge receives that first fragment before sending the remaining bytes.
+    const beforeUtf8 = await repository.load(companyA), utf8Candidate = structuredClone(beforeUtf8.snapshot);
+    utf8Candidate.syntheticUnicode = 'Reviewed → changed · café 👷';
+    const utf8Packed = splitSnapshot(utf8Candidate);
+    const utf8Bytes = Buffer.from(JSON.stringify({ p_company_id: companyA, p_expected_revision: beforeUtf8.revision, p_scalar_data: utf8Packed.scalarData, p_content_hash: canonicalHash(utf8Candidate), p_records: utf8Packed.records.map(row => ({ collection: row.collection, record_key: row.recordKey, position: row.position, data: row.data })) }));
+    const utf8Split = utf8Bytes.indexOf(Buffer.from('→')) + 1; assert.ok(utf8Split > 1);
+    let utf8Request;
+    const utf8Result = new Promise((resolve, reject) => {
+      utf8Request = http.request(bridgeBase + '/rest/v1/rpc/replace_tenant_records', { method: 'POST', headers: { 'Content-Type': 'application/json', 'Content-Length': utf8Bytes.length } }, response => readJsonBody(response).then(data => resolve({ status: response.statusCode, data }), reject));
+      utf8Request.on('error', reject); utf8Request.setTimeout(15000, () => utf8Request.destroy(Error('Synthetic UTF-8 body timeout')));
+    });
+    controls.utf8Probe = checkpoint(); utf8Request.write(utf8Bytes.subarray(0, utf8Split));
+    await waitFor(() => controls.utf8Probe.receivedBytes >= utf8Split); utf8Request.end(utf8Bytes.subarray(utf8Split));
+    const utf8Saved = await utf8Result, utf8Observed = controls.utf8Probe; controls.utf8Probe = null; assert.equal(utf8Saved.status, 200); assert.equal(utf8Observed.legacyChanged, true, 'Real fragmented delivery must reproduce the former decoder corruption');
+    const afterUtf8 = await repository.load(companyA); assert.deepEqual(afterUtf8.snapshot, utf8Candidate); assert.equal(afterUtf8.contentHash, canonicalHash(utf8Candidate));
+    await repository.save(beforeUtf8.snapshot, afterUtf8.revision); assert.deepEqual((await repository.load(companyA)).snapshot, beforeUtf8.snapshot);
+    console.log('Synthetic UTF-8 HTTP/SQL passed: forced partial multibyte delivery preserves the submitted snapshot/hash and restores unchanged business/grants; the former decoder damage is recorded separately.');
     const load = company => loadConsistentSnapshot(company, async url => fetch(bridgeBase + url));
     assert.equal((await load(companyA)).snapshot.largeSentinel.length, 1103);
     const pristine = await repository.load(companyA);
@@ -276,6 +299,8 @@ async function main() {
     await require('./notes-postgres-cases')({ repository, change, request, slowRequest, bases, checkpoint, waitFor, controls, providerEvents });
     await require('./registry-postgres-cases')({ repository, change, request, bases, checkpoint, waitFor, controls, providerEvents });
     await require('./role-policy-postgres-cases')({ repository, change, request, slowRequest, bases, startWorker, checkpoint, waitFor, controls, providerEvents, pool });
+    await require('./navigation-postgres-cases')({ repository, change, request, bases, checkpoint, waitFor, controls, providerEvents });
+    if (process.env.PDL_ROLES_BROWSER_TESTS === '1') await require('./roles-browser-postgres-cases')({ repository, change, request, bases, providerEvents });
     for (let attempt = 0; attempt < 3; attempt++) assert.equal((await request(bases[0], 'POST', '/api/auth/login', { email: 'user1@example.invalid', password: 'invalid-synthetic-password' })).status, 401);
     assert.equal((await request(bases[0], 'POST', '/api/auth/login', { email: 'user1@example.invalid', password: 'invalid-synthetic-password' })).status, 429, 'Atomic failed logins retain the credential lockout');
     assert.deepEqual(await repository.load(companyB), foreignBefore);
