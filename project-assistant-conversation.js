@@ -4,6 +4,7 @@
   else root.PDLAssistantConversation = api;
 })(typeof globalThis !== 'undefined' ? globalThis : this, function() {
   'use strict';
+  const actionAvailable = (context, action) => !action || (['schedule', 'schedule_batch'].includes(action) ? context?.capabilities?.schedule !== false : ['note', 'todo'].includes(action) && context?.capabilities?.[action] !== false);
   const clean = value => String(value || '').trim().replace(/[.!?]+$/, '').toLowerCase();
   const slots = {
     schedule: ['memberId', 'date', 'start', 'end', 'activity', 'instructions'],
@@ -110,6 +111,7 @@
       const draft = getDraft(), context = getContext();
       if (!slots[draft.action]&&!nextQuestion) { stop('Choose a supported action before starting conversation.'); return; }
       if (['schedule','schedule_batch'].includes(draft.action) && context.capabilities?.schedule === false) { stop('Scheduling permission is unavailable. Choose a project note or to-do.'); return; }
+      if (['note','todo'].includes(draft.action) && !actionAvailable(context, draft.action)) { stop('Adding project notes and to-dos is unavailable for your access.'); return; }
       if ((['schedule','schedule_batch'].includes(draft.action) || draft.action === 'todo' && draft.deadline && draft.deadline !== 'none') && !context.timezone) { stop('Company timezone is missing. Ask the owner to confirm it in Company settings, then return.'); return; }
       asked = nextSlot ? nextSlot() : missingSlot(draft);
       speak(override || prefix + (nextQuestion ? nextQuestion() : asked ? question(asked, context) : 'The draft fields are complete. Say preview these changes for the exact server preview, change and a field name to correct it, or cancel conversation. Voice never saves.'), true);
@@ -183,5 +185,5 @@
     window.addEventListener('pagehide', () => stop('Conversation stopped because the page closed.'));
     return { start, stop, get active() { return active; }, get reading() { return reading; }, get supported() { return Boolean(SpeechRecognition && window.speechSynthesis && window.SpeechSynthesisUtterance); } };
   }
-  return { exactDate, exactTime, people, parseAnswer, missingSlot, createConversation };
+  return { exactDate, exactTime, people, parseAnswer, missingSlot, createConversation, actionAvailable };
 });

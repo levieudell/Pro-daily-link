@@ -62,6 +62,7 @@
     const slot=()=>!draft.action?'action':!projectId?'project':singleDateEdit?'date':voice.missingSlot(draft);
     function question(){
       if(['schedule','schedule_batch'].includes(draft.action)&&context?.capabilities?.schedule===false)return 'Scheduling is unavailable for your access. Would you like to add a note or to-do?';
+      if(['note','todo'].includes(draft.action)&&!voice.actionAvailable(context,draft.action))return 'Adding project notes and to-dos is unavailable for your access.';
       if(problem)return problem;
       if(pending){const choices=pending.kind==='project'?pending.choices.map(id=>{const row=projects.find(row=>Number(row.id)===id);return row.name+' (ID '+id+')';}):pending.choices.map(ids=>ids.map(id=>{const row=context.members.find(row=>Number(row.id)===id);return row.name+' (ID '+id+')';}).join(' and '));return choices.length===1?'Did you mean '+choices[0]+'?':'Which '+(pending.kind==='project'?'project':'people')+': '+choices.slice(0,5).map((choice,index)=>(index+1)+'. '+choice).join('; ')+'?';}
       const key=slot();if(!original&&!draft.action)return 'What do you need?';
@@ -115,7 +116,7 @@
     function reset(){draft={};projectId=null;context=null;original='';history=[];problem='';pending=null;relativeAnswer=null;singleDateEdit=false;}
     function adopt(value,id,ctx){draft={...value};projectId=id;context=ctx;problem='';original='';pending=null;relativeAnswer=null;singleDateEdit=false;}
     function cancelContextAnswer(){relativeAnswer=null;}
-    return {consume,hydrate,reset,adopt,cancelContextAnswer,question,get canAcceptYes(){return Boolean(pending&&pending.choices.length===1&&!problem);},get slot(){return pending?'clarification':slot();},get draft(){return {...draft};},get projectId(){return projectId;},get context(){return context;},get ready(){return Boolean(projectId&&context&&!problem&&!pending&&!relativeAnswer&&!slot()&&(!['schedule','schedule_batch'].includes(draft.action)||context.capabilities?.schedule!==false));}};
+    return {consume,hydrate,reset,adopt,cancelContextAnswer,question,get canAcceptYes(){return Boolean(pending&&pending.choices.length===1&&!problem);},get slot(){return pending?'clarification':slot();},get draft(){return {...draft};},get projectId(){return projectId;},get context(){return context;},get ready(){return Boolean(projectId&&context&&!problem&&!pending&&!relativeAnswer&&!slot()&&voice.actionAvailable(context,draft.action));}};
   }
   function previewText(result){const row=result.proposal;
     const project=row.projectName+(Number.isSafeInteger(row.projectId)?` (project ID ${row.projectId})`:'');

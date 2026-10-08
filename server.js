@@ -12,6 +12,8 @@ const timeOffAccess = require('./time-off-access');
 const timeReviewAccess = require('./time-review-access');
 const timeWriteAccess = require('./time-write-access');
 const dailyAccess = require('./daily-access');
+const notesAccess = require('./notes-access');
+const handleAtomicNotes = require('./notes-admission').createHandler({ readDb, writeDb, body, json, run: (...args) => handleProjectNotes(...args), response: () => dbContext.getStore().response, assertCurrent: assertTimeResponseCurrent, baselineProjectAllowed: baselineNotesProjectAllowed });
 const handleAtomicPhoto = require('./photo-admission').createHandler({ readDb, writeDb, body, json, revision: () => dbContext.getStore().transactionalRevision, assertCurrent: assertTimeResponseCurrent, store: require('./database/atomic-photo-store').createStore((...args) => supabase.request(...args)), raw: (res, response) => { dbContext.getStore().response = response; res.statusCode = response.status; } });
 const handleAtomicDaily = require('./daily-admission').createHandler({ readDb, writeDb, body, json, revision: () => dbContext.getStore().transactionalRevision, run: runDailyCandidate, presentReport, exportProjection: dailyExportProjection, assertCurrent: assertTimeResponseCurrent, raw: (res, response) => { dbContext.getStore().response = response; res.statusCode = response.status; } });
 const handleAtomicTimeWrite = require('./time-write-admission').createHandler({ readDb, writeDb, body, json, revision: () => dbContext.getStore().transactionalRevision, activities: db => companyActivities(structuredClone(db)), run: runTimeWriteCandidate, raw: (res, response) => { dbContext.getStore().response = response; res.statusCode = response.status; }, assertCurrent: assertTimeResponseCurrent });
@@ -814,7 +816,7 @@ function authenticateRequestAccount(req, db) {
   // Shared request actor for manual routes and assistant actions. Role-policy
   // integration must resolve effective permissions here, before assigning auth.
   const baselineUser = storedUser?.role === 'office' ? { ...storedUser, role: 'admin' } : storedUser;
-  const user = dailyAccess.actor(db, timeWriteAccess.actor(db, timeReviewAccess.actor(db, timeOffAccess.actor(db, schedulingAccess.actor(db, baselineUser, Boolean(dbContext.getStore()?.atomic)), Boolean(dbContext.getStore()?.atomic)), Boolean(dbContext.getStore()?.atomic)), Boolean(dbContext.getStore()?.atomic)), Boolean(dbContext.getStore()?.atomic));
+  const user = notesAccess.actor(db, dailyAccess.actor(db, timeWriteAccess.actor(db, timeReviewAccess.actor(db, timeOffAccess.actor(db, schedulingAccess.actor(db, baselineUser, Boolean(dbContext.getStore()?.atomic)), Boolean(dbContext.getStore()?.atomic)), Boolean(dbContext.getStore()?.atomic)), Boolean(dbContext.getStore()?.atomic)), Boolean(dbContext.getStore()?.atomic)), Boolean(dbContext.getStore()?.atomic));
   req.auth = user ? { session, user, companyId: session.companyId } : null;
   return { auth: req.auth, status: wrongTenant ? 404 : user ? 200 : 401 };
 }
@@ -830,16 +832,14 @@ const handleAssistantAI = createAIHandler({
   readFreshDb: async req => { const database = await authenticatedRequestDatabase(req); if (!database) throw new Error('Unavailable'); return freshestTenantSnapshot(database); },
   body, json, authenticatedUser: projectNotesUser, accountAccess, supabase
 });
-const handleProjectNotes = createProjectNotesHandler({
-  readDb, writeDb, body, json, authenticatedUser: projectNotesUser,
-  canAccessProject(db, user, projectId) {
+function baselineNotesProjectAllowed(db, user, projectId) {
     if (['owner', 'admin'].includes(user.role)) return true;
     if (user.role === 'project_manager') return managerScope(db, user).projectIds.has(projectId);
     if (!fieldRole(user)) return false;
     const member = (db.team || []).find(row => Number(row.id) === Number(user.memberId));
     return Boolean(member && fieldProjectIds(db, member).allowedIds.has(projectId));
-  }
-});
+}
+const handleProjectNotes = createProjectNotesHandler({ readDb, writeDb, body, json, authenticatedUser: projectNotesUser, canAccessProject: baselineNotesProjectAllowed });
 
 async function salesDemoRecoveryBackup(snapshot){
   const directory=path.join(path.dirname(DB_FILE),'.demo-recovery');
@@ -931,8 +931,9 @@ async function api(req,res,url){
   if(req.method==='GET'&&url.pathname==='/api/auth/me'){const db=readDb(),token=bearer(req)||cookie(req,'pdl_session'),tokenHash=token&&crypto.createHash('sha256').update(token).digest('hex'),session=(db.sessions||[]).find(row=>row.tokenHash===tokenHash&&new Date(row.expiresAt)>new Date()),user=session&&(db.users||[]).find(row=>row.id===session.userId&&row.status==='Active');if(!session||!user)return json(res,401,{error:'Authentication required'});const sessionSeconds=30*86400;session.expiresAt=new Date(Date.now()+sessionSeconds*1000).toISOString();writeDb(db);const secure=process.env.NODE_ENV==='production'?'; Secure':'';return jsonHeaders(res,200,{id:user.id,name:user.name,email:user.email,emailVerifiedAt:user.emailVerifiedAt||null,role:user.role==='foreman'?'field':user.role==='office'?'admin':user.role,accessRole:user.role==='office'?'admin':user.role,companyId:session.companyId,projectIds:user.projectIds||[],assignedCrews:user.assignedCrews||[],memberId:user.memberId||null,preferredLanguage:user.preferredLanguage||'en',preferences:user.preferences||{},permissions:user.permissions||{},timeCards:freshTimeCardsFlag(),templates:freshTemplatesFlag()},{'Set-Cookie':[`pdl_session=${token}; HttpOnly; SameSite=Strict; Path=/; Max-Age=${sessionSeconds}${secure}`,`pdl_company=${session.companyId}; SameSite=Strict; Path=/; Max-Age=${sessionSeconds}${secure}`]})}
   if(req.method==='POST'&&url.pathname==='/api/auth/logout'){const db=readDb(),token=bearer(req)||cookie(req,'pdl_session'),tokenHash=token&&crypto.createHash('sha256').update(token).digest('hex');db.sessions=(db.sessions||[]).filter(row=>row.tokenHash!==tokenHash);writeDb(db);const secure=process.env.NODE_ENV==='production'?'; Secure':'';return jsonHeaders(res,200,{ok:true},{'Set-Cookie':[`pdl_session=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0${secure}`,`pdl_company=; SameSite=Strict; Path=/; Max-Age=0${secure}`]})}
   if(await handleAssistantAI(req,res,url))return;
-  if(await handleProjectAssistant(req,res,url))return;
+  if(await handleProjectAssistant(req,res,url)){if(dbContext.getStore()?.atomic && dbContext.getStore().response?.status<400)await assertTimeResponseCurrent(req);return;}
   if(process.env.PDL_REQUIRE_AUTH==='1'&&!url.pathname.startsWith('/api/guest/')){const db=readDb(),{auth,status}=authenticateRequestAccount(req,db),user=auth?.user;if(!auth)return json(res,status,{error:status===404?'Resource not found':'Authentication required'});const access=accountAccess(db.company),accessRoute=url.pathname==='/api/account-access'||url.pathname.startsWith('/api/billing');if(access.locked&&!accessRoute)return json(res,402,{error:access.reason,code:'subscription_required',access});const ownerRoute=url.pathname==='/api/users'||/^\/api\/users\//.test(url.pathname);if(ownerRoute&&user.role!=='owner')return json(res,403,{error:'Account owner permission required'});const officeRoute=['/api/production','/api/insights','/api/exceptions','/api/action-center','/api/changes','/api/catalog','/api/estimate-imports'].some(route=>url.pathname.startsWith(route))||url.pathname.includes('/approve')||url.pathname.includes('/disposition');if(officeRoute&&!['owner','admin','project_manager'].includes(user.role))return json(res,403,{error:'Office permission required'})}
+  if(dbContext.getStore()?.atomic && await handleAtomicNotes(req,res,url))return;
   if(await handleProjectNotes(req,res,url))return;
   if(dbContext.getStore()?.atomic && await handleAtomicPhoto(req,res,url))return;
   if(dbContext.getStore()?.atomic && !dbContext.getStore().dailyCandidate && await handleAtomicDaily(req,res,url))return;

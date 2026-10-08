@@ -11,11 +11,11 @@ function createAIHandler({ readDb, readFreshDb = readDb, authenticatedUser, acco
     if (!permittedCompany(db.company?.id)) throw Error('Assistant pilot access is unavailable.');
     if (!user || !roles.has(user.role) || user.companyId != null && user.companyId !== db.company.id || req.auth?.companyId != null && req.auth.companyId !== db.company.id || user.status !== 'Active') throw Error('Your assistant access changed. Sign in or use your permitted manual screens.');
     if (accountAccess(db.company).locked) throw Error('Company access is unavailable.');
-    return { db, user, actor: { companyId: db.company.id, userId: user.id, role: user.role, permissions: user.permissions || {}, projectIds: user.projectIds || [], assignedCrews: user.assignedCrews || [], timezone: db.company.timezone || '' } };
+    return { db, user, actor: { companyId: db.company.id, userId: user.id, role: user.role, permissions: user.permissions || {}, projectIds: user.projectIds || [], assignedCrews: user.assignedCrews || [], timezone: db.company.timezone || '', notesPermissions: user.notesPermissions, notesPolicyRevision: user.notesPolicyRevision } };
   }
   const budget = createBudget(store || createSharedStore(supabase), now);
   function context({ db, user }, projectId) {
-    const projects = db.projects.filter(row => activeProject(db, Number(row.id)) && allowed(db, user, Number(row.id), null, 'note')).map(row => ({ id: Number(row.id), name: String(row.name) }));
+    const projects = db.projects.filter(row => activeProject(db, Number(row.id)) && allowed(db, user, Number(row.id), null, 'project') && (allowed(db, user, Number(row.id)) || allowed(db, user, Number(row.id), null, 'note'))).map(row => ({ id: Number(row.id), name: String(row.name) }));
     if (projectId != null && !projects.some(row => row.id === projectId)) throw Error('That project is unavailable. Choose an authorized project.');
     const zone = db.company.timezone;let parts;
     try { if (!zone) throw Error('Missing timezone');parts=new Intl.DateTimeFormat('en-CA', { timeZone: zone, year:'numeric', month:'2-digit', day:'2-digit' }).formatToParts(now()); }

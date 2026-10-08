@@ -6,7 +6,7 @@ const {fixture,companyA,companyB,token}=require('./fixtures/project-assistant');
 const {createProjectAssistantHandler}=require('./project-assistant');
 const source=fs.readFileSync('server.js','utf8'),start=source.indexOf('function authenticateRequestAccount('),end=source.indexOf('function projectNotesUser(',start);
 assert.ok(start>=0&&end>start);
-const context={crypto,bearer:req=>req.token,cookie:()=>null,schedulingAccess:require('./scheduling-access'),timeOffAccess:require('./time-off-access'),timeReviewAccess:require('./time-review-access'),timeWriteAccess:require('./time-write-access'),dailyAccess:require('./daily-access'),dbContext:new(require('node:async_hooks').AsyncLocalStorage)()};vm.createContext(context);vm.runInContext(source.slice(start,end),context);
+const context={crypto,bearer:req=>req.token,cookie:()=>null,notesAccess:require('./notes-access'),schedulingAccess:require('./scheduling-access'),timeOffAccess:require('./time-off-access'),timeReviewAccess:require('./time-review-access'),timeWriteAccess:require('./time-write-access'),dailyAccess:require('./daily-access'),dbContext:new(require('node:async_hooks').AsyncLocalStorage)()};vm.createContext(context);vm.runInContext(source.slice(start,end),context);
 const authenticate=context.authenticateRequestAccount;
 const single={action:'schedule',memberId:11,date:'2098-10-12',start:'08:00',end:'16:00',timezone:'America/Los_Angeles',activity:'Frame',instructions:'Check layout'};
 const batch={action:'schedule_batch',memberIds:[11,12],startDate:'2098-10-12',endDate:'2098-10-13',weekdays:[0,1,2,3,4,5,6],start:'08:00',end:'16:00',timezone:'America/Los_Angeles',activity:'Frame',instructions:'Check layout each day'};
