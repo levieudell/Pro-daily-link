@@ -19,7 +19,7 @@
       try{
         const result=await api('/api/help/conversation',{method:'POST',body:JSON.stringify({text,state:session.state,turnId:session.turnId,consent:true})});
         if(identity!==JSON.stringify([company.id,currentUser?.id,currentUser?.role]))return;
-        const topics={'project-setup':'Project setup','crew-access':'Crew and login access','daily-review':'Daily reports','field-scope':'Assigned work','help-preferences':'Help preferences'};
+        const topics={'project-setup':'Project setup','crew-access':'Crew and login access','daily-review':'Daily reports','field-scope':'Assigned field work','manager-scope':'Assigned projects','help-preferences':'Help preferences'};
         session.messages.push('You: '+text,'PDL Help: '+result.answer+(result.clarification?'\n'+result.clarification:'')+(result.sourceIds.length?'\nVerified topics: '+result.sourceIds.map(id=>topics[id]||'Product help').join(', '):'')+(result.escalate?'\nContact Support or your Account Owner for the next step.':''));session.state=result.state;session.turnId=null;session.text=null;question.value='';status.textContent='Answer ready. Review it before taking any action.';render();
       }catch(error){status.textContent=error.message}finally{session.busy=false;send.disabled=reset.disabled=false}
     };
