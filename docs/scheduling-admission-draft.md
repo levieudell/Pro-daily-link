@@ -63,7 +63,7 @@ The settings preview/confirm/revision/audit UI remains gated on all relevant pat
 | Reports, production/insights/exceptions, safety and workday creation | Foreman/field ownership gaps, PM project/crew checks and whole-tenant read aggregates; prevent a forged report from manufacturing later project access |
 | Customers/projects/team and estimates/catalog/plans | Generic object spreads allow client IDs; missing office eligibility, project scope and financial/pricing guards; project financial fields need a separate fixed ceiling |
 | Tickets/proposals | Existing PM pricing restrictions are not consistently applied to mutation or responses; approve must remain a distinct typed operation |
-| Time cards, time-off, payroll and approval/export paths | Current feature/role/PM/own-member scope must apply on every path; scheduling versus leave approval races need shared CAS admission |
+| Time cards, time-off decisions, payroll and approval/export paths | Private leave reads/own requests are a separate bounded increment described in [time-off admission](time-off-admission-draft.md). Every remaining decision needs current feature/role/PM/own-member scope; scheduling versus leave approval races need shared CAS admission |
 | Crews, project archive and templates | Relationship updates and default project generation need scoped candidates/audit; retain owner/security boundaries |
 | Uploads, plans, photos, logos, guest/import storage and deletion | Stage assets before admission and use post-commit cleanup/tombstones; no storage deletion before a losing business CAS |
 | Authentication and compliance emails | Reset/verification bearer credentials cannot use this assignment outbox; finite contracts and lifecycle handling remain separate |

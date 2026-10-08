@@ -1,6 +1,6 @@
 # Tenant transaction foundation — isolated source candidate
 
-The transaction foundation is based on main `e8c34db3805c1f5544d4fd37fd81c3410c21445b`. The separately stacked [scheduling admission increment](scheduling-admission-draft.md) preserves PR99 and adds the bounded coverage described below. This candidate advances prerequisites for the requested full Company Roles editor. It does **not** implement or enable the full editor, apply role policies, or deploy the separate notes restrictions slice. PRs 74, 77, 82 and 98 remain separate and untouched.
+The transaction foundation is based on main `e8c34db3805c1f5544d4fd37fd81c3410c21445b`. The separately stacked [scheduling admission increment](scheduling-admission-draft.md) preserves PR99; the next [private leave read/own-request increment](time-off-admission-draft.md) preserves PR100. Each adds only the bounded coverage described below. This candidate advances prerequisites for the requested full Company Roles editor. It does **not** implement or enable the full editor, apply role policies, or deploy the separate notes restrictions slice. PRs 74, 77, 82 and 98 remain separate and untouched.
 
 No production tenant has been selected or inspected. No production schema, backfill, cutover, grants, credentials, billing, settings, permissions, accounts or customer records were changed. All database/schema exercises use disposable synthetic localhost PostgreSQL or the isolated CI service.
 
@@ -10,7 +10,7 @@ No production tenant has been selected or inspected. No production schema, backf
 2. **Authoritative CAS first:** one staged candidate per request, one mandatory expected revision and database CAS, then an optional disposable mirror, then deferred JSON/body/cookies. Multiple stage calls replace the candidate rather than committing intermediate snapshots. Rejected handlers discard their candidates. Conflict/SQL rejection produces no mirror, receipt publication, effect or success response. SQL008 is source only and rejects null/unsafe expected revisions before materializing or locking revision zero. Both JS writers also require an explicit safe integer revision.
 3. **Shared admission boundary, bounded coverage:** `PDL_TENANT_ATOMIC=1` enters the explicit route admission boundary before all legacy bypass dispatch. It requires strict auth and initialized transactional primary storage. Supported requests fully receive their input before a verified tenant load and current session/user assembly. Every unsupported API route is rejected before handler execution or side effects. This is a prerequisite candidate, not completed integration of every app writer.
 
-With the new flag absent, ordinary routes retain existing role decisions, sessions, legacy dispatch, provider/billing/storage behavior and feature defaults. Malformed/missing expected revision calls are intentionally rejected. No generic editable permission dictionary is introduced. The stacked scheduling increment has a closed, restrictive scheduling policy used only by synthetic fixtures, with no policy-write endpoint or settings UI.
+With the new flag absent, ordinary routes retain existing role decisions, sessions, legacy dispatch, provider/billing/storage behavior and feature defaults. Malformed/missing expected revision calls are intentionally rejected. No generic editable permission dictionary is introduced. The stacked scheduling and private leave-read/request increments have closed, restrictive policies used only by synthetic fixtures, with no policy-write endpoint or settings UI.
 
 ## Audited coverage
 
@@ -22,6 +22,7 @@ With the new flag absent, ordinary routes retain existing role decisions, sessio
 | Manual assistant selected-project context, preview, confirmation | Fixed pilot and signed-in owner/admin/PM gate. Schedule additionally requires current scheduleCrews/project/crew scope. Resource and confirmation receipt commit together. Scheduling retains existing in-app assignment notifications in that candidate; project notes/to-dos send none. No provider, email or public sharing. |
 | Signup; platform tenant feature/owner/demo/reset/subscription changes; sales demo; webhook; company lookup | Rejected at the outer boundary before disk/cloud/account effects. |
 | Manual scheduling GET/POST/PATCH/DELETE and own acknowledgement | Closed scheduling action/scope checks; one candidate contains assignment, audit, exact create receipt and fixed manual-recipient email jobs. See the scheduling increment for current dispatch/revocation limitations. |
+| Private leave GET/own field-foreman POST; redacted schedule-availability GET | Fixed role/grant/own-member/crew scope; closed private read/create reductions; one request/receipt/audit candidate, no effects. Approve/decline/review-preview remain unsupported. |
 | Other app mutations: reports/approvals, time cards/payroll, financial/pricing, company, estimates, templates, guest reports | Rejected at the boundary pending individual admission/effect review. Existing application works in flag-off mode. |
 | Hidden GET effects: workspace repair, ticket purge, automatic compliance reminders; streamed/export/file routes | Rejected. Atomic context also skips legacy readDb repairs and disk feature overrides. |
 | Upload/delete/bucket/backup/legacy snapshot adapters and platform persistence | Defense-in-depth rejection before I/O in atomic mode. No automatic backup is launched by admitted writes. |
@@ -30,7 +31,7 @@ With the new flag absent, ordinary routes retain existing role decisions, sessio
 | Private assistant budget ledger | Its existing private operations CAS stays separate; it cannot grant tenant permissions or pilot eligibility. Provider routes are outside this admission draft. |
 | Synthetic generators/portable backup/restore drills | Create isolated artifacts only; no production tenant writer is introduced. |
 
-Route support is a fixed implementation allowlist in `database/tenant-atomic-routes.js`, not an administrator-controlled authorization flag. Existing permissions and the bounded scheduling restrictions are freshly assembled at `authenticateRequestAccount(req, db)` before `req.auth` is assigned. Full-role effective restrictions remain future work.
+Route support is a fixed implementation allowlist in `database/tenant-atomic-routes.js`, not an administrator-controlled authorization flag. Existing permissions and bounded scheduling/private leave restrictions are freshly assembled at `authenticateRequestAccount(req, db)` before `req.auth` is assigned. Full-role effective restrictions remain future work.
 
 ## Failure and concurrency contract
 
