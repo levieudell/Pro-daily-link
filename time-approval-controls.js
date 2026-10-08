@@ -67,7 +67,12 @@ else {
       if(!person)timePerson=null;
       list.hidden=Boolean(person);heading.hidden=!person;panel.hidden=!person;
       $('#timecard-office-actions').hidden=!person||!canManageTime();$('#timecard-filter-total').hidden=!person;
-      if(person){$('#time-person-name').textContent=person.name+' · '+person.hours.toFixed(2).replace(/\.00$/,'')+' hours';$('#timecard-rows').innerHTML=person.cards.map(card=>timeCardRowMarkup(card,true,canManageTime())).join('');$$('[data-timecard-pick], [data-timecard-approve]').forEach(box=>{const card=person.cards.find(c=>String(c.id)===(box.dataset.timecardPick||box.dataset.timecardApprove));if(!card||!timeCardComplete(card))box.disabled=true})}
+      if(person){
+        const total=$('#timecard-filter-total'),filters=timeCardFilters();
+        total.querySelector('strong').textContent=person.hours.toFixed(2).replace(/\.00$/,'')+' hours';
+        total.querySelector('small').textContent=person.name+' · '+(filters.from||'All dates')+(filters.to?' through '+filters.to:'')+' · '+person.cards.length+' time card'+(person.cards.length===1?'':'s');
+        $('#time-person-name').textContent=person.name+' · '+person.hours.toFixed(2).replace(/\.00$/,'')+' hours';$('#timecard-rows').innerHTML=person.cards.map(card=>timeCardRowMarkup(card,true,canManageTime())).join('');$$('[data-timecard-pick], [data-timecard-approve]').forEach(box=>{const card=person.cards.find(c=>String(c.id)===(box.dataset.timecardPick||box.dataset.timecardApprove));if(!card||!timeCardComplete(card))box.disabled=true});
+      }
       else {$('#timecard-rows').innerHTML='';list.innerHTML=people.length?people.map(p=>`<button type="button" class="time-person-summary" data-time-person="${escapeHtml(p.id)}"><strong>${escapeHtml(p.name)}</strong><span>${p.hours.toFixed(2).replace(/\.00$/,'')} hours</span><small>${p.submitted} need approval · ${p.draft} draft · ${p.approved} approved${p.running?' · '+p.running+' running':''}${p.incomplete?' · '+p.incomplete+' incomplete':''}</small><span aria-hidden="true">›</span></button>`).join(''):'<p class="input-help">No people with time for these filters.</p>'}
     }else if(currentRole!=='field'){$('#timecard-rows').innerHTML='';list.innerHTML='';panel.hidden=true;$('#timecard-office-actions').hidden=true;$('#timecard-filter-total').hidden=true}
     clearTimeSelection();
