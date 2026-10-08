@@ -32,7 +32,7 @@ async function request(relativePath, options = {}) {
     ...options,
     headers: headers(options.headers)
   });
-  if (!response.ok) { const message = (await response.text()).slice(0, 300); if (!require('./tenant-admission').enabled()) throw new Error(`Supabase request failed (${response.status}): ${message}`); throw Object.assign(new Error(`Supabase request failed (${response.status}): ${message}`), { providerStatus: response.status, statusCode: response.status === 409 ? 409 : 503, code: /PDL_REVISION_CONFLICT/.test(message) ? 'PDL_REVISION_CONFLICT' : 'PDL_STORAGE_UNAVAILABLE', commitRejected: response.status >= 400 && response.status < 500 }); }
+  if (!response.ok) { const message = (await response.text()).slice(0, 300); if (!require('./tenant-admission').enabled()) throw new Error(`Supabase request failed (${response.status}): ${message}`); throw Object.assign(new Error(`Supabase request failed (${response.status}): ${message}`), { providerStatus: response.status, statusCode: response.status === 409 || /PDL_POLICY_(AUTHORIZATION|GUARD)/.test(message) ? 409 : 503, code: /PDL_REVISION_CONFLICT/.test(message) ? 'PDL_REVISION_CONFLICT' : 'PDL_STORAGE_UNAVAILABLE', commitRejected: response.status >= 400 && response.status < 500 }); }
   return response;
 }
 
@@ -166,17 +166,18 @@ async function health() {
   }
 }
 
-async function saveTransactionalSnapshot(snapshot, expectedRevision) {
+async function saveTransactionalSnapshot(snapshot, expectedRevision, policyGuard) {
+  if (policyGuard !== undefined) require('../role-policy-api').validateCommitGuard(policyGuard);
   require('./tenant-admission').requireRevision(expectedRevision);
   if (!configured()) throw new Error('Supabase is not configured');
   const { splitSnapshot, canonicalHash, databaseCompanyId } = require('./transactional-repository');
   const companyId = databaseCompanyId(snapshot);
   const { scalarData, records } = splitSnapshot(snapshot);
   const payload = records.map(row => ({ collection: row.collection, record_key: row.recordKey, position: row.position, data: row.data }));
-  const response = await request('/rest/v1/rpc/replace_tenant_records', {
+  const response = await request('/rest/v1/rpc/' + (policyGuard ? 'replace_tenant_policy_records' : 'replace_tenant_records'), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ p_company_id: companyId, p_expected_revision: Number(expectedRevision), p_scalar_data: scalarData, p_content_hash: canonicalHash(snapshot), p_records: payload })
+    body: JSON.stringify({ p_company_id: companyId, p_expected_revision: Number(expectedRevision), p_scalar_data: scalarData, p_content_hash: canonicalHash(snapshot), p_records: payload, ...(policyGuard ? { p_policy_guard: policyGuard } : {}) })
   });
   const [result] = await response.json();
   if (!result || !Number.isSafeInteger(Number(result.revision)) || Number(result.revision) !== expectedRevision + 1 || Number(result.record_count) !== records.length) throw require('./tenant-admission').unknownCommit();
