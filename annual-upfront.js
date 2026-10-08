@@ -35,6 +35,7 @@ async function fulfill(db,subscription,info,request){
   if(subscription.status==='active'){
     const id=typeof subscription.latest_invoice==='string'?subscription.latest_invoice:subscription.latest_invoice?.id;
     const invoice=id?await request('/invoices/'+encodeURIComponent(id),null,'GET'):null;
+    if(offer.paidAt&&offer.used&&offer.subscriptionId===subscription.id&&invoice?.billing_reason==='subscription_update'&&invoice.id===id&&invoice.status==='paid'&&invoice.customer===(typeof subscription.customer==='string'?subscription.customer:subscription.customer?.id)&&invoice.livemode===subscription.livemode&&invoice.currency==='usd'&&(invoice.subscription||invoice.parent?.subscription_details?.subscription)===subscription.id)return;
     const first=invoice?.billing_reason==='subscription_create',expected=(first?a.first:a.renewal)*100;
     if(!offer.paidAt&&!first||first&&offer.firstInvoiceId&&offer.firstInvoiceId!==id)throw fail('The discounted first annual invoice must be verified before activation.',409);
     const invoiceSub=invoice?.subscription||invoice?.parent?.subscription_details?.subscription;
