@@ -6,7 +6,7 @@ const path = require('node:path');
 const Stripe = require('stripe');
 const policy = require('./subscription-checkout');
 const offerPolicy=require('./annual-upfront');
-let coupon={id:'coupon_once',livemode:false,valid:true,duration:'once',percent_off:10,amount_off:null},invoices=new Map();
+let coupon={id:'coupon_once',livemode:false,valid:true,duration:'once',percent_off:10,amount_off:null},invoices=new Map(),invoicePages=null;
 const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'pdl-subscription-repair-'));
 for (const key of Object.keys(process.env)) if (/STRIPE|SUPABASE|OPENAI|RESEND|SENTRY|DATABASE_URL/.test(key)) delete process.env[key];
 Object.assign(process.env, { PDL_DB_FILE: path.join(temp, 'db.json'), PDL_PLATFORM_FILE: path.join(temp, 'platform.json'),
@@ -36,6 +36,7 @@ global.fetch = async (url, options = {}) => {
   const reply = (value, status = 200) => new Response(JSON.stringify(value), { status });
   if (providerOutage) return reply({ error: { message: 'Synthetic outage' } }, 503);
   if(pathname.startsWith('/coupons/'))return reply(coupon);
+  if(pathname==='/invoices')return reply(invoicePages?invoicePages(target):{data:[...invoices.values()].filter(i=>i.subscription===target.searchParams.get('subscription')),has_more:false});
   if(pathname.startsWith('/invoices/'))return reply(invoices.get(pathname.split('/').pop())||null);
   if(pathname.startsWith('/customers/'))return reply({id:pathname.split('/').pop(),livemode:false,balance:0,discounts:[]});
   if (pathname.startsWith('/prices/')) return reply(prices[pathname.split('/').pop()]);
@@ -127,6 +128,37 @@ try{
     sub.status='canceled';assert.equal((await webhook(sub,'cancel_'+plan)).status,200);assert.equal(c.read().company.subscriptionStatus,'Cancelled');r=await c.request('/api/billing/checkout','POST',{plan,billingCycle:'annual'});assert.equal(r.status,200);assert.equal(c.read().company.pendingCheckout.params['discounts[0][coupon]'],undefined);assert.equal(c.read().company.pendingCheckout.params['subscription_data[billing_cycle_anchor]'],undefined);
   }
   for(const extra of [{annualUpfrontTermsAccepted:false},{billingCycle:'monthly'},{founderCode:'not-a-real-invitation'},{discountPercent:5},{promotionCode:'OTHER'},{assistedSetup:true}])assert.equal((await newAnnual('starter',extra)).result.status,400);
+  // Actual signed HTTP handler: missed creation delivery, paginated provider history,
+  // rejected forged invoices, current unpaid/canceled state and duplicate/out-of-order events.
+  {
+    const {c:delayed}=await newAnnual();
+    const sub=providerSubscription(delayed,'active','sub_delayed','price_starter_annual');
+    sub.metadata.offer=offerPolicy.VERSION;
+    const first=invoice(sub,'starter'),renew=invoice(sub,'starter',false);
+    invoices.set(first.id,first);invoices.set(renew.id,renew);sub.latest_invoice=renew.id;
+    invoicePages=url=>url.searchParams.get('starting_after')===renew.id?{data:[first],has_more:false}:{data:[renew],has_more:true};
+    for(const bad of [{currency:'eur'},{customer:'cus_foreign'},{subscription:'sub_foreign'},{livemode:true},{status:'open'},{amount_paid:0},{amount_remaining:1},{subtotal:1},{total_excluding_tax:1},{total_discount_amounts:[]}]){
+      const original={...first};Object.assign(first,bad);
+      assert.equal((await webhook(sub,'delayed_forged_'+Object.keys(bad)[0])).status,409);
+      assert.equal(delayed.read().company.subscriptionStatus,'Incomplete');
+      Object.assign(first,original);
+    }
+    renew.status='open';assert.equal((await webhook(sub,'delayed_unpaid')).status,409);renew.status='paid';
+    for(const status of ['past_due','unpaid','incomplete_expired','canceled']){
+      sub.status=status;assert.equal((await webhook(sub,'delayed_'+status)).status,200);
+      assert.notEqual(delayed.read().company.subscriptionStatus,'Active');
+      assert.equal(delayed.read().company.annualUpfront.used,false);
+    }
+    sub.status='active';assert.equal((await webhook(sub,'delayed_recovered')).status,200);
+    assert.equal(delayed.read().company.subscriptionStatus,'Active');assert.equal(delayed.read().company.planPrice,990);
+    assert.equal(delayed.read().company.annualUpfront.firstInvoiceId,first.id);
+    assert.equal((await webhook(sub,'delayed_recovered')).status,200);
+    assert.equal((await webhook({...sub,latest_invoice:first.id},'old_creation_after_renewal')).status,200);
+    assert.equal(delayed.read().company.planPrice,990,'old event retrieves current provider subscription');
+    sub.status='canceled';assert.equal((await webhook(sub,'delayed_cancel_after_paid')).status,200);
+    assert.equal(delayed.read().company.subscriptionStatus,'Cancelled');
+    invoicePages=null;
+  }
   const {c}=await newAnnual();assert.equal((await c.request('/api/billing/checkout','POST',{plan:'growth',billingCycle:'annual'})).status,409);assert.equal((await c.request('/api/billing/checkout','POST',{plan:'starter',billingCycle:'monthly'})).status,409);
   const good={...coupon};for(const bad of [{duration:'forever'},{percent_off:20},{livemode:true},{max_redemptions:5},{redeem_by:1800000000},{valid:false},{amount_off:99},{applies_to:{products:['foreign']}}]){coupon={...good,...bad};assert.equal((await c.request('/api/billing/checkout','POST',{plan:'starter',billingCycle:'annual'})).status,503);}coupon=good;
   prices.price_starter_annual.currency='eur';assert.equal((await c.request('/api/billing/checkout','POST',{plan:'starter',billingCycle:'annual'})).status,503);prices.price_starter_annual.currency='usd';
