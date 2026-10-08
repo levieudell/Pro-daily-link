@@ -33,4 +33,3 @@ server.listen(0,'127.0.0.1',async()=>{
  }catch(error){console.error(error);process.exitCode=1}
  finally{server.close(()=>{const resolved=path.resolve(temp);assert.ok(resolved.startsWith(path.resolve(os.tmpdir())+path.sep));fs.rmSync(resolved,{recursive:true,force:true})})}
 });
-

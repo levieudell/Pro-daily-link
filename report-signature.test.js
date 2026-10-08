@@ -110,4 +110,3 @@ assert.ok(html.includes('Choose Save draft or Submit to office to save this sign
  assert.ok(node('#report-detail').innerHTML.includes('Retry signer'));assert.equal($('[data-approve-report]'),null);
  console.log('Report signature lifecycle passed: stored display/escaping, empty/Spanish state, signature-only close protection, native submit, device recovery, draft save/reopen, missing signature, failed save/photo retry and submission.');
 })().catch(error=>{console.error(error);process.exitCode=1});
-
