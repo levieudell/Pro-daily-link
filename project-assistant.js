@@ -31,6 +31,9 @@ function unambiguousWallTime(date, time, timezone) {
 }
 function allowed(db, user, projectId, memberId, action = 'schedule') {
   if (!user || !ROLES.has(user.role)) return false;
+  // A typed effective restriction can only reduce the existing fixed-role access.
+  if (['note', 'todo'].includes(action) && user.notesPermissions !== undefined &&
+    !(user.notesPermissions?.view === true && user.notesPermissions?.create === true)) return false;
   if (user.role !== 'project_manager') return true;
   const crews = new Set((user.assignedCrews || []).map(name => String(name).trim().toLowerCase()).filter(Boolean));
   const member = (db.team || []).find(row => Number(row.id) === memberId);
@@ -43,12 +46,12 @@ function minimalContext(db, user, projectId, now = new Date()) {
   return { project: { id: projectId, name: activeProject(db, projectId).name }, timezone: validZone(db.company.timezone) ? db.company.timezone : '',
     today: validZone(db.company.timezone) ? wallParts(now, db.company.timezone).date : '',
     members: membersFor(db, user, projectId).map(row => ({ id: Number(row.id), name: String(row.name), crew: String(row.crew || '') })),
-    aiAvailable: Boolean(process.env.OPENAI_API_KEY), capabilities: { schedule: allowed(db, user, projectId), note: true, todo: true }, limits: 'Single-day or atomic batch scheduling: at most 31 calendar days, 10 people, 100 person/day combinations; explicit weekdays. Project notes and to-dos. No email, notification blast or public sharing.' };
+    aiAvailable: Boolean(process.env.OPENAI_API_KEY), capabilities: { schedule: allowed(db, user, projectId), note: allowed(db, user, projectId, null, 'note'), todo: allowed(db, user, projectId, null, 'todo') }, limits: 'Single-day or atomic batch scheduling: at most 31 calendar days, 10 people, 100 person/day combinations; explicit weekdays. Project notes and to-dos. No email, notification blast or public sharing.' };
 }
 function fingerprint(db, user, projectId, input) {
   const memberIds = input.action === 'schedule_batch' ? input.memberIds : [input.memberId];
   return hash({ companyId: db.company.id, timezone: db.company.timezone || null,
-    actor: { id: user.id, role: user.role, permissions: user.permissions, projectIds: user.projectIds, assignedCrews: user.assignedCrews },
+    actor: { id: user.id, role: user.role, permissions: user.permissions, projectIds: user.projectIds, assignedCrews: user.assignedCrews, notesPermissions: user.notesPermissions, notesPolicyRevision: user.notesPolicyRevision, notesCustomRoleId: user.notesCustomRoleId },
     project: activeProject(db, projectId), members: (db.team || []).filter(row => memberIds.includes(Number(row.id))),
     projectNotes: !['schedule', 'schedule_batch'].includes(input.action) ? (db.projectNotesTodos || []).filter(row => Number(row.projectId) === projectId && row.companyId === db.company.id) : undefined,
     assignments: (db.assignments || []).filter(row => (row.memberIds || []).map(Number).some(id => memberIds.includes(id))),
@@ -92,7 +95,8 @@ function validateBatch(db, user, projectId, input, now) {
   return { input: { ...expanded.input, activity: input.activity.trim(), instructions: input.instructions.trim() }, dates: expanded.dates, personDays: expanded.personDays, conflicts };
 }
 function validateNote(db, user, projectId, input, now) {
-  if (invalidObject(input, ['action', 'text', 'deadline', 'dueDate', 'timezone']) || !allowed(db, user, projectId, null, input.action)) return { status: 400, error: 'Review only the supported project note or to-do fields.' };
+  if (!allowed(db, user, projectId, null, input.action)) return { status: 403, error: 'Creating project notes and to-dos is disabled for your access.' };
+  if (invalidObject(input, ['action', 'text', 'deadline', 'dueDate', 'timezone'])) return { status: 400, error: 'Review only the supported project note or to-do fields.' };
   const parsed = textValue(input.text);
   if (parsed.error) return { status: 400, error: parsed.error };
   if (!['none', 'today', 'date'].includes(input.deadline) || input.action === 'note' && input.deadline !== 'none') return { status: 400, error: 'Choose a deadline only for a to-do.' };
@@ -159,13 +163,14 @@ function createProjectAssistantHandler({ readDb, writeDb, body, json, authentica
     const access = accountAccess(db.company);
     if (access.locked) return reply(402, { error: access.reason || 'Company access is unavailable.' });
     if (!ROLES.has(user.role)) return reply(403, { error: 'Project manager, admin, or owner permission required.' });
-    if (!activeProject(db, projectId) || !allowed(db, user, projectId, null, 'note')) return reply(404, { error: 'Project not available.' });
+    if (!activeProject(db, projectId) || !allowed(db, user, projectId, null, 'project')) return reply(404, { error: 'Project not available.' });
     const context = { ...minimalContext(db, user, projectId, now()), aiFirst: aiFirst() };
     if (action === 'context' && req.method === 'GET') return reply(200, context);
     if (req.method !== 'POST' || action === 'context') return reply(405, { error: 'Method not allowed.' });
     const input = await body(req);
     if (action === 'chat') {
       if (invalidObject(input, ['text', 'action']) || input.action != null && !['schedule', 'schedule_batch', 'note', 'todo'].includes(input.action) || typeof input.text !== 'string' || !input.text.trim() || input.text.length > 6000) return reply(400, { error: 'Choose a supported action and describe the request using 6,000 characters or fewer.' });
+      if (!allowed(db, user, projectId, null, input.action || 'schedule')) return reply(403, { error: 'This action is disabled for your access.' });
       try { return reply(200, await (input.action === 'schedule_batch' ? proposeBatch(context, input.text) : propose(context, input.text, undefined, input.action || 'schedule'))); }
       catch { return reply(200, { source: 'form', draft: {}, message: 'AI could not make a suggestion. Complete the fields and preview. Nothing has been saved.' }); }
     }

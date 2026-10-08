@@ -62,6 +62,7 @@
     const slot=()=>!draft.action?'action':!projectId?'project':singleDateEdit?'date':voice.missingSlot(draft);
     function question(){
       if(['schedule','schedule_batch'].includes(draft.action)&&context?.capabilities?.schedule===false)return 'Scheduling is unavailable for your access. Would you like to add a note or to-do?';
+      if(['note','todo'].includes(draft.action)&&context&&!voice.actionAvailable(context,draft.action))return 'Adding project notes and to-dos is unavailable for your access. Use your permitted manual screens.';
       if(problem)return problem;
       if(pending){const choices=pending.kind==='project'?pending.choices.map(id=>{const row=projects.find(row=>Number(row.id)===id);return row.name+' (ID '+id+')';}):pending.choices.map(ids=>ids.map(id=>{const row=context.members.find(row=>Number(row.id)===id);return row.name+' (ID '+id+')';}).join(' and '));return choices.length===1?'Did you mean '+choices[0]+'?':'Which '+(pending.kind==='project'?'project':'people')+': '+choices.slice(0,5).map((choice,index)=>(index+1)+'. '+choice).join('; ')+'?';}
       const key=slot();if(!original&&!draft.action)return 'What do you need?';
@@ -71,7 +72,7 @@
       return key?questions[key]:'Everything is ready for preview. Nothing has been saved.';
     }
     function setDate(key,date){if(singleDateEdit){draft.startDate=draft.endDate=date;draft.weekdays=[new Date(date+'T12:00:00Z').getUTCDay()];singleDateEdit=false;}else draft[key]=date;}
-    function hydrate(value){context=value;problem='';if(relativeAnswer){const {key,text}=relativeAnswer;relativeAnswer=null;const date=names.relativeDate(text,value.today);if(date)setDate(key,date);else problem='What exact date should I use?';}else{pending=null;draft=proposedFields(original,draft,context);if(['schedule','schedule_batch'].includes(draft.action)){const result=names.peopleFor(personPhrase(original),value.members||[],true);if(!result.ids&&result.choices.length&&result.choices.length<=5)pending={kind:'people',choices:result.choices};}}draft.timezone=value.timezone||'';if(['schedule','schedule_batch'].includes(draft.action)&&value.capabilities?.schedule===false)problem='Scheduling is unavailable for your access. Would you like to add a note or to-do?';}
+    function hydrate(value){context=value;problem='';if(relativeAnswer){const {key,text}=relativeAnswer;relativeAnswer=null;const date=names.relativeDate(text,value.today);if(date)setDate(key,date);else problem='What exact date should I use?';}else{pending=null;draft=proposedFields(original,draft,context);if(['schedule','schedule_batch'].includes(draft.action)){const result=names.peopleFor(personPhrase(original),value.members||[],true);if(!result.ids&&result.choices.length&&result.choices.length<=5)pending={kind:'people',choices:result.choices};}}draft.timezone=value.timezone||'';if(['note','todo'].includes(draft.action)&&!voice.actionAvailable(value,draft.action))problem='Adding project notes and to-dos is unavailable for your access. Use your permitted manual screens.';if(['schedule','schedule_batch'].includes(draft.action)&&value.capabilities?.schedule===false)problem='Scheduling is unavailable for your access. Would you like to add a note or to-do?';}
     function setPeople(ids){pending=null;if(ids.length>1||draft.action==='schedule_batch'){draft.action='schedule_batch';draft.memberIds=ids;delete draft.memberId;if(draft.date){draft.startDate=draft.endDate=draft.date;draft.weekdays=[new Date(draft.date+'T12:00:00Z').getUTCDay()];delete draft.date;}}else draft.memberId=ids[0];}
     function resolveProject(text,answer=false){const result=names.projectsFor(text,projects,answer);projectId=result.id;pending=!projectId&&result.choices.length&&result.choices.length<=5?{kind:'project',choices:result.choices.map(row=>Number(row.id))}:null;return projectId?{needsContext:projectId}:{};}
     function consume(text){
@@ -105,6 +106,7 @@
       if(!projectId)return resolveProject(value,true);
       if(!context)return {needsContext:projectId};
       if(['schedule','schedule_batch'].includes(draft.action)&&context.capabilities?.schedule===false){const action=intent(value);if(!['note','todo'].includes(action))return {message:'Scheduling is unavailable for your access. Would you like to add a note or to-do?'};draft={action};original=value;hydrate(context);return {};}
+      if(['note','todo'].includes(draft.action)&&!voice.actionAvailable(context,draft.action)){const action=intent(value);if(!action||!voice.actionAvailable(context,action))return {message:question()};draft={action};original=value;hydrate(context);return {};}
       const key=slot();
       if(!key)return {message:'Say preview these changes for a fresh preview, or change and a field name. Saving uses the Confirm button.'};
       if(key==='memberId'||key==='memberIds'){const result=names.peopleFor(value,context.members||[],true);if(result.ids){setPeople(result.ids);return {};}if(result.choices.length&&result.choices.length<=5){pending={kind:'people',choices:result.choices};return {};}}
@@ -115,7 +117,7 @@
     function reset(){draft={};projectId=null;context=null;original='';history=[];problem='';pending=null;relativeAnswer=null;singleDateEdit=false;}
     function adopt(value,id,ctx){draft={...value};projectId=id;context=ctx;problem='';original='';pending=null;relativeAnswer=null;singleDateEdit=false;}
     function cancelContextAnswer(){relativeAnswer=null;}
-    return {consume,hydrate,reset,adopt,cancelContextAnswer,question,get canAcceptYes(){return Boolean(pending&&pending.choices.length===1&&!problem);},get slot(){return pending?'clarification':slot();},get draft(){return {...draft};},get projectId(){return projectId;},get context(){return context;},get ready(){return Boolean(projectId&&context&&!problem&&!pending&&!relativeAnswer&&!slot()&&(!['schedule','schedule_batch'].includes(draft.action)||context.capabilities?.schedule!==false));}};
+    return {consume,hydrate,reset,adopt,cancelContextAnswer,question,get canAcceptYes(){return Boolean(pending&&pending.choices.length===1&&!problem);},get slot(){return pending?'clarification':slot();},get draft(){return {...draft};},get projectId(){return projectId;},get context(){return context;},get ready(){return Boolean(projectId&&context&&!problem&&!pending&&!relativeAnswer&&!slot()&&voice.actionAvailable(context,draft.action));}};
   }
   function previewText(result){const row=result.proposal;
     const project=row.projectName+(Number.isSafeInteger(row.projectId)?` (project ID ${row.projectId})`:'');

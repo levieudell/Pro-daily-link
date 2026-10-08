@@ -11,6 +11,12 @@
     note: ['text'], todo: ['text', 'deadline', 'dueDate']
   };
   const labels = {memberId:'person', memberIds:'people', date:'date', startDate:'start date', endDate:'end date', weekdays:'weekdays', start:'start time', end:'end time', activity:'task', instructions:'daily instructions', text:'text', deadline:'deadline', dueDate:'due date'};
+  function actionAvailable(context, action) {
+    if (['schedule', 'schedule_batch'].includes(action)) return context?.capabilities?.schedule !== false;
+    if (action === 'note') return context?.capabilities?.note !== false;
+    if (action === 'todo') return context?.capabilities?.todo !== false;
+    return false;
+  }
   function missingSlot(draft) {
     return (slots[draft.action] || []).find(key => {
       if (key === 'dueDate' && draft.deadline !== 'date') return false;
@@ -110,6 +116,7 @@
       const draft = getDraft(), context = getContext();
       if (!slots[draft.action]&&!nextQuestion) { stop('Choose a supported action before starting conversation.'); return; }
       if (['schedule','schedule_batch'].includes(draft.action) && context.capabilities?.schedule === false) { stop('Scheduling permission is unavailable. Choose a project note or to-do.'); return; }
+      if (['note','todo'].includes(draft.action) && !actionAvailable(context, draft.action)) { stop('Adding project notes and to-dos is unavailable for your access. Use your permitted manual screens.'); return; }
       if ((['schedule','schedule_batch'].includes(draft.action) || draft.action === 'todo' && draft.deadline && draft.deadline !== 'none') && !context.timezone) { stop('Company timezone is missing. Ask the owner to confirm it in Company settings, then return.'); return; }
       asked = nextSlot ? nextSlot() : missingSlot(draft);
       speak(override || prefix + (nextQuestion ? nextQuestion() : asked ? question(asked, context) : 'The draft fields are complete. Say preview these changes for the exact server preview, change and a field name to correct it, or cancel conversation. Voice never saves.'), true);
@@ -183,5 +190,5 @@
     window.addEventListener('pagehide', () => stop('Conversation stopped because the page closed.'));
     return { start, stop, get active() { return active; }, get reading() { return reading; }, get supported() { return Boolean(SpeechRecognition && window.speechSynthesis && window.SpeechSynthesisUtterance); } };
   }
-  return { exactDate, exactTime, people, parseAnswer, missingSlot, createConversation };
+  return { exactDate, exactTime, people, parseAnswer, actionAvailable, missingSlot, createConversation };
 });

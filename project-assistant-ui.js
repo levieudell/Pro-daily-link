@@ -147,6 +147,8 @@
       applyMode(); node('voice-session').disabled = value || uncertain || !voice.supported; node('read-preview').disabled = value || uncertain || !preview;node('converse').disabled = value&&!guided.active || uncertain || !guided.supported;node('cancel').disabled=value&&saving||uncertain;node('back').disabled=value||uncertain;
     }
     function applyMode() {
+      for (const action of ['schedule','schedule_batch','note','todo']) { const option = node('action').querySelector(`option[value="${action}"]`); if (option) option.disabled = authorizedContext && !conversationAPI.actionAvailable(authorizedContext, action); }
+      node('preview').disabled = busy || uncertain || Boolean(authorizedContext && !conversationAPI.actionAvailable(authorizedContext, node('action').value));
       const batch = node('action').value === 'schedule_batch', schedule = batch || node('action').value === 'schedule', todo = node('action').value === 'todo';
       node('single-fields').hidden = batch; node('batch-fields').hidden = !batch;
       for (const name of batchNames) node(name).disabled = busy || uncertain || !batch;
@@ -182,7 +184,7 @@
         node('timezone').value = context.timezone; node('timezone').readOnly = Boolean(context.timezone);
         const option = node('action').querySelector('option[value="schedule"]'); if (option) option.disabled = context.capabilities?.schedule === false;
         const batchOption = node('action').querySelector('option[value="schedule_batch"]'); if (batchOption) batchOption.disabled = context.capabilities?.schedule === false;
-        if (context.capabilities?.schedule === false) node('action').value = 'note';
+        if (!conversationAPI.actionAvailable(context, node('action').value)) node('action').value = ['schedule','note','todo'].find(action => conversationAPI.actionAvailable(context, action)) || 'schedule';
         chatState.adopt(draftPayload(),projectId,context);
         node('voice').textContent = SpeechRecognition ? 'Dictation may use your browser or device speech service. Start it only when you want to speak; then review the transcript.' : 'Dictation is unavailable on this browser. Type or use your keyboard microphone.';
         node('dictate').disabled = !SpeechRecognition; message(context.aiAvailable ? 'Describe one assignment or complete the fields. Nothing has been saved.' : 'AI is unavailable. Complete the fields below and preview.');
@@ -250,7 +252,7 @@
 
 if (typeof window !== 'undefined' && window.PDLProjectAssistant && typeof currentUser !== 'undefined') {
   const projectAssistant = window.PDLProjectAssistant.createAssistant({ document, window,
-    getWorkspace: () => ({ companyId: signedInCompanyId() || company?.id, user: currentUser && { id: currentUser.id, role: currentUser.role, projectIds: currentUser.projectIds, assignedCrews: currentUser.assignedCrews, permissions: currentUser.permissions }, currentRole, projects: (projects || []).map(({ id, name, archived, status }) => ({ id, name, archived, status })) }),
+    getWorkspace: () => ({ companyId: signedInCompanyId() || company?.id, user: currentUser && { id: currentUser.id, role: currentUser.role, projectIds: currentUser.projectIds, assignedCrews: currentUser.assignedCrews, permissions: currentUser.permissions, notesPermissions: currentUser.notesPermissions, notesPolicyRevision: currentUser.notesPolicyRevision, notesCustomRoleId: currentUser.notesCustomRoleId }, currentRole, projects: (projects || []).map(({ id, name, archived, status }) => ({ id, name, archived, status })) }),
     request: async (path, payload, signal) => { const response = await fetch(path, { method: payload ? 'POST' : 'GET', signal, credentials: 'include', cache: 'no-store', headers: { 'Content-Type': 'application/json', 'X-PDL-Company': signedInCompanyId() || company?.id || '' }, ...(payload ? { body: JSON.stringify(payload) } : {}) }); const data = await response.json(); if (!response.ok) { const error = new Error(data.error || 'Request unavailable.'); error.status = response.status; throw error; } return data; },
     onSaved: async (isCurrent, signal) => { const response = await fetch('/api/state', { signal, credentials: 'include', cache: 'no-store', headers: { 'X-PDL-Company': signedInCompanyId() || company?.id || '' } }); if (!response.ok) throw new Error('Schedule refresh failed.'); const state = await response.json(); if (!isCurrent()) return; assignments = state.assignments || []; renderSchedule(); renderActivities(); renderDashboardSummary(); }
   });
