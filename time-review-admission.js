@@ -39,8 +39,10 @@ function createHandler({ readDb, writeDb, body, json, revision, isApproved, stat
   const decode = token => {
     if (typeof token !== 'string' || token.length > 20000) return null;
     try {
-      const [payload, signature, extra] = token.split('.');
-      if (!payload || !signature || extra) return null;
+      const parts = token.split('.');
+      if (parts.length !== 2) return null;
+      const [payload, signature] = parts;
+      if (!payload || !signature) return null;
       if (Buffer.from(payload, 'base64url').toString('base64url') !== payload) return null;
       const expected = crypto.createHmac('sha256', signingKey).update(payload).digest(), actual = Buffer.from(signature, 'base64url');
       if (actual.length !== expected.length || actual.toString('base64url') !== signature || !crypto.timingSafeEqual(actual, expected)) return null;

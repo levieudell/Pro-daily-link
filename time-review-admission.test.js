@@ -51,6 +51,8 @@ async function main() {
   const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_', alias = confirmation.token.slice(0, -1) + alphabet[alphabet.indexOf(confirmation.token.at(-1)) + 1];
   assert.equal(Buffer.from(alias.split('.')[1], 'base64url').equals(Buffer.from(signature, 'base64url')), true, 'Noncanonical signature alias has identical decoded bytes');
   assert.equal((await call('/api/time-cards/501/approve', { ...confirmation, token: alias })).status, 409); assert.equal(writes, noWrite);
+  for (const suffix of ['.', '..junk']) assert.equal((await call('/api/time-cards/501/approve', { ...confirmation, token: confirmation.token + suffix })).status, 409);
+  assert.equal(writes, noWrite, 'Whole-token suffix aliases cannot bypass the exact signed format');
   assert.equal((await call('/api/time-cards/501/approve', confirmation)).status, 200); assert.equal(db.timeCards[0].status, 'approved'); assert.equal(db.timeCards[0].hours, 7.25); assert.equal(db.timeCards[0].history.length, 1);
   const after = structuredClone(db), afterWrites = writes;
   assert.equal((await call('/api/time-cards/501/approve', confirmation)).status, 200); assert.equal(writes, afterWrites); assert.equal(JSON.stringify(db), JSON.stringify(after));

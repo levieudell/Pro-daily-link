@@ -52,7 +52,7 @@ module.exports = async function runTimeReviewCases({ repository, change, request
   assert.equal((await request(bases[1], 'POST', '/api/time-cards/501/approve', conf, 2)).status, 409, 'First confirmation on another worker requires that worker to produce a fresh preview');
   assert.deepEqual(await load(), noWrites);
   const targetPreview = await previewCards(1); assert.equal(targetPreview.status, 200); assert.deepEqual(await load(), noWrites);
-  for (const extra of [{ confirmed: false }, { hours: 100 }, { token: tampered(conf.token) }, { token: alias(conf.token) }, { requestId: '' }]) {
+  for (const extra of [{ confirmed: false }, { hours: 100 }, { token: tampered(conf.token) }, { token: alias(conf.token) }, { token: conf.token + '.' }, { token: conf.token + '..junk' }, { requestId: '' }]) {
     const denied = await request(bases[0], 'POST', '/api/time-cards/501/approve', { ...conf, ...extra }, 2);
     assert.ok([400, 409].includes(denied.status), 'Closed input/canonical signed token must reject before writes: ' + denied.status);
   }
