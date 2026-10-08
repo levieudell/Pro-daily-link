@@ -1,6 +1,7 @@
 'use strict';
 const path=require('node:path');
 const PUBLIC_FILES=new Set([
+  'public-analytics-config.js','public-analytics.js','public-analytics.css',
   'robots.txt','sitemap.xml',
   'employee-roster.js',
   'company-timezone.js',
