@@ -125,7 +125,7 @@
         const lines = row.productionEntries?.length ? row.productionEntries : [{}];
         fields += '<fieldset id="production-fields"><legend>Production scopes</legend>' + lines.map(line => productionLine(line,projectItems)).join('') + '<button type="button" id="production-add">Add scope</button></fieldset>';
       }
-      
+
       if (action === 'workdayStart') fields += text('startNote', 'Start note', '', 2000);
       if (action === 'workdayEnd') fields += text('notes', 'Work performed', '', 20000) + text('next', 'Next work', '', 2000) + input('foreman', 'Report author', 'text', nav.actor.name);
       if (['periodCreate', 'periodEdit'].includes(action)) fields += input('label', 'Pay-period name', 'text', row.label || '', true) + input('from', 'First day', 'date', row.from || '', true) + input('to', 'Last day', 'date', row.to || '', true);

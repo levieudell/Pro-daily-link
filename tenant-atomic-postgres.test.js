@@ -164,10 +164,10 @@ async function main() {
     // A real localhost body is interrupted inside a UTF-8 character. Wait until
     // the bridge receives that first fragment before sending the remaining bytes.
     const beforeUtf8 = await repository.load(companyA), utf8Candidate = structuredClone(beforeUtf8.snapshot);
-    utf8Candidate.syntheticUnicode = 'Reviewed Ã¢â€ â€™ changed Ã‚Â· cafÃƒÂ© Ã°Å¸â€˜Â·';
+    utf8Candidate.syntheticUnicode = 'Reviewed → changed · café 👷';
     const utf8Packed = splitSnapshot(utf8Candidate);
     const utf8Bytes = Buffer.from(JSON.stringify({ p_company_id: companyA, p_expected_revision: beforeUtf8.revision, p_scalar_data: utf8Packed.scalarData, p_content_hash: canonicalHash(utf8Candidate), p_records: utf8Packed.records.map(row => ({ collection: row.collection, record_key: row.recordKey, position: row.position, data: row.data })) }));
-    const utf8Split = utf8Bytes.indexOf(Buffer.from('Ã¢â€ â€™')) + 1; assert.ok(utf8Split > 1);
+    const utf8Split = utf8Bytes.indexOf(Buffer.from('→')) + 1; assert.ok(utf8Split > 1);
     let utf8Request;
     const utf8Result = new Promise((resolve, reject) => {
       utf8Request = http.request(bridgeBase + '/rest/v1/rpc/replace_tenant_records', { method: 'POST', headers: { 'Content-Type': 'application/json', 'Content-Length': utf8Bytes.length } }, response => readJsonBody(response).then(data => resolve({ status: response.statusCode, data }), reject));
