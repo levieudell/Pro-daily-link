@@ -29,6 +29,7 @@ jobs:
           node-version: 20
           cache: npm
       - run: npm ci
+      - run: node time-off-admission.test.js
       - run: node scheduling-access.test.js
       - run: node tenant-admission.test.js
       - run: node tenant-atomic-postgres.test.js

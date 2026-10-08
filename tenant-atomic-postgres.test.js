@@ -108,8 +108,8 @@ async function startWorker({ dispatch = false } = {}) {
     child.once('exit', code => { clearTimeout(timeout); reject(Error('Worker exit ' + code + ': ' + log)); });
   });
 }
-async function request(base, method, url, input, user = 1, company = companyA, credentialCompany = companyA) {
-  const response = await fetch(base + url, { method, headers: { 'Content-Type': 'application/json', 'X-PDL-Company': company, Authorization: 'Bearer ' + token(credentialCompany, user) }, ...(input === undefined ? {} : { body: JSON.stringify(input) }), signal: AbortSignal.timeout(15000) });
+async function request(base, method, url, input, user = 1, company = companyA, credentialCompany = companyA, credentialToken) {
+  const response = await fetch(base + url, { method, headers: { 'Content-Type': 'application/json', 'X-PDL-Company': company, Authorization: 'Bearer ' + (credentialToken || token(credentialCompany, user)) }, ...(input === undefined ? {} : { body: JSON.stringify(input) }), signal: AbortSignal.timeout(15000) });
   return { status: response.status, headers: response.headers, data: await response.json() };
 }
 async function change(mutator, company = companyA) { const loaded = await repository.load(company); mutator(loaded.snapshot); await repository.save(loaded.snapshot, loaded.revision); }
@@ -244,6 +244,7 @@ async function main() {
     assert.equal((await request(bases[0], 'GET', notePath)).status, 503, 'Corrupt authority cannot fall back to the stale local file');
     await pool.query('UPDATE tenant_revisions SET content_hash=$1 WHERE company_id=$2', [afterUnknown.contentHash, companyA]);
     await require('./scheduling-postgres-cases')({ repository, change, request, slowRequest, bases, startWorker, checkpoint, waitFor, controls, providerEvents });
+    await require('./time-off-postgres-cases')({ repository, change, request, slowRequest, bases, checkpoint, waitFor, controls, providerEvents });
     for (let attempt = 0; attempt < 3; attempt++) assert.equal((await request(bases[0], 'POST', '/api/auth/login', { email: 'user1@example.invalid', password: 'invalid-synthetic-password' })).status, 401);
     assert.equal((await request(bases[0], 'POST', '/api/auth/login', { email: 'user1@example.invalid', password: 'invalid-synthetic-password' })).status, 429, 'Atomic failed logins retain the credential lockout');
     assert.deepEqual(await repository.load(companyB), foreignBefore);
