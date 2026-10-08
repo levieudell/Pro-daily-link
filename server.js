@@ -7,6 +7,9 @@ const { AsyncLocalStorage } = require('node:async_hooks');
 const supabase = require('./database/supabase');
 const tenantAdmission = require('./database/tenant-admission');
 const { supportedRoute: atomicRouteSupported } = require('./database/tenant-atomic-routes');
+const schedulingAccess = require('./scheduling-access');
+const assignmentEmailOutbox = require('./assignment-email-outbox');
+const { guard: guardScheduleRoute } = require('./scheduling-route-guard');
 const backupVerification = require('./database/backup-verification');
 const { stableUuid } = require('./database/migrate-json');
 const Sentry = require('@sentry/node');
@@ -183,7 +186,7 @@ function reportDateLabel(report){const iso=String(report?.dateIso||'');if(/^\d{4
 function presentCompanyLogo(logo){return logo&&(logo.url||logo.objectKey)?{url:'/api/company/logo',contentType:logo.contentType||'',updatedAt:logo.updatedAt||null}:null}
 function publicCompanyLogo(company){if(!company)return company;const safe={...company},shown=presentCompanyLogo(safe.logo);if(shown)safe.logo=shown;else delete safe.logo;return safe}
 function companyForField(company){const safe=publicCompanyLogo(company)||{};delete safe.planPrice;delete safe.discountPercent;delete safe.commercialNote;return safe}
-function customerDataExport(db){const copy=structuredClone(db),secretKeys=new Set(['passwordHash','passwordSalt','setupHash','setupSalt','tokenHash','stripeCustomerId','stripeSubscriptionId','stripeCheckoutSessionId']);const clean=value=>{if(Array.isArray(value))return value.map(clean);if(!value||typeof value!=='object')return value;const result={};for(const[key,item]of Object.entries(value))if(!secretKeys.has(key))result[key]=clean(item);return result};const safe=clean(copy);delete safe.sessions;delete safe.passwordResets;safe.exportMetadata={format:'pro-daily-link-company-export',version:1,exportedAt:new Date().toISOString(),companyId:db.company.id,companyName:db.company.name};return safe}
+function customerDataExport(db){const copy=structuredClone(db),secretKeys=new Set(['passwordHash','passwordSalt','setupHash','setupSalt','tokenHash','stripeCustomerId','stripeSubscriptionId','stripeCheckoutSessionId']);const clean=value=>{if(Array.isArray(value))return value.map(clean);if(!value||typeof value!=='object')return value;const result={};for(const[key,item]of Object.entries(value))if(!secretKeys.has(key))result[key]=clean(item);return result};const safe=clean(copy);delete safe.sessions;delete safe.passwordResets;delete safe.assignmentEmailOutbox;delete safe.scheduleActionReceipts;safe.exportMetadata={format:'pro-daily-link-company-export',version:1,exportedAt:new Date().toISOString(),companyId:db.company.id,companyName:db.company.name};return safe}
 function nonNegativeNumber(value){if(typeof value==='string'&&value.trim()==='')return null;const number=typeof value==='number'?value:Number(String(value).trim());if(!Number.isFinite(number)||number<0)return null;return Math.round(number*100)/100}
 function importBudgetHours(line,catalogItem){if(!line||!Object.hasOwn(line,'budgetHours'))return catalogItem?Math.round(Number(line.quantity)*Number(catalogItem.targetHoursPerUnit)*100)/100:0;if(line.budgetHours==null||(typeof line.budgetHours==='string'&&line.budgetHours.trim()===''))return null;return nonNegativeNumber(line.budgetHours)??NaN}
 function companyDateIso(company,date=new Date()){const timezone=company?.timezone||'America/Los_Angeles',parts=new Intl.DateTimeFormat('en-US',{timeZone:timezone,year:'numeric',month:'2-digit',day:'2-digit'}).formatToParts(date),value=type=>parts.find(part=>part.type===type)?.value;return `${value('year')}-${value('month')}-${value('day')}`}
@@ -282,11 +285,12 @@ async function sendEmailVerification({to,name,companyName,verifyUrl}){
   const response=await fetch('https://api.resend.com/emails',{method:'POST',headers:{Authorization:`Bearer ${process.env.RESEND_API_KEY}`,'Content-Type':'application/json','User-Agent':'ProDailyLink/1.0'},body:JSON.stringify({from:process.env.RESEND_FROM||'Pro Daily Link <support@prodailylink.com>',reply_to:resendReplyTo(),to:[to],subject:'Confirm your Pro Daily Link email',html:`<div style="font-family:Arial,sans-serif;max-width:560px;margin:auto;color:#111416"><h1 style="font-size:24px">Confirm your email</h1><p>Hi ${escapeHtml(name)},</p><p>Confirm this email address for <strong>${escapeHtml(companyName)}</strong>.</p><p><a href="${escapeHtml(verifyUrl)}" style="display:inline-block;background:#ff6b1a;color:#fff;padding:12px 18px;border-radius:8px;text-decoration:none;font-weight:700">Confirm email</a></p><p>This link expires in 24 hours and can only be used once.</p><p style="color:#68716d;font-size:12px">If you did not create this account, you can ignore this email.</p></div>`})});
   if(!response.ok)throw Error(`Email provider rejected the confirmation message (${response.status})`);
 }
-async function sendAssignmentEmail({to,name,companyName,projectName,assignments}){
+async function sendAssignmentEmail({to,name,companyName,projectName,assignments},idempotencyKey){
   if(!process.env.RESEND_API_KEY)throw Error('Assignment email is not configured');
   const dates=assignments.map(row=>new Date(`${row.date}T12:00:00`).toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'})),first=assignments[0],publicUrl=String(process.env.PDL_PUBLIC_URL||'').replace(/\/$/,'');
-  const response=await fetch('https://api.resend.com/emails',{method:'POST',headers:{Authorization:`Bearer ${process.env.RESEND_API_KEY}`,'Content-Type':'application/json','User-Agent':'ProDailyLink/1.0'},body:JSON.stringify({from:process.env.RESEND_FROM||'Pro Daily Link <support@prodailylink.com>',reply_to:resendReplyTo(),to:[to],subject:`New assignment · ${projectName}`,html:`<div style="font-family:Arial,sans-serif;max-width:560px;margin:auto;color:#111416"><h1 style="font-size:24px">New work assignment</h1><p>Hi ${escapeHtml(name)},</p><p><strong>${escapeHtml(companyName)}</strong> scheduled you for <strong>${escapeHtml(projectName)}</strong>.</p><p><strong>${escapeHtml(dates.join(', '))}</strong><br>${escapeHtml(first.start)}–${escapeHtml(first.end)} · ${escapeHtml(first.activity)}</p>${publicUrl?`<p><a href="${escapeHtml(publicUrl)}/app#my-day" style="display:inline-block;background:#ff6b1a;color:#fff;padding:12px 18px;border-radius:8px;text-decoration:none;font-weight:700">View and acknowledge</a></p>`:''}<p style="color:#68716d;font-size:12px">Sign in to Pro Daily Link for the latest schedule.</p></div>`})});
-  if(!response.ok)throw Error(`Email provider rejected the assignment message (${response.status})`);
+  const response=await fetch('https://api.resend.com/emails',{method:'POST',...(idempotencyKey?{signal:AbortSignal.timeout(10000)}:{}),headers:{Authorization:`Bearer ${process.env.RESEND_API_KEY}`,'Content-Type':'application/json','User-Agent':'ProDailyLink/1.0',...(idempotencyKey?{'Idempotency-Key':idempotencyKey}:{})},body:JSON.stringify({from:process.env.RESEND_FROM||'Pro Daily Link <support@prodailylink.com>',reply_to:resendReplyTo(),to:[to],subject:`New assignment · ${projectName}`,html:`<div style="font-family:Arial,sans-serif;max-width:560px;margin:auto;color:#111416"><h1 style="font-size:24px">New work assignment</h1><p>Hi ${escapeHtml(name)},</p><p><strong>${escapeHtml(companyName)}</strong> scheduled you for <strong>${escapeHtml(projectName)}</strong>.</p><p><strong>${escapeHtml(dates.join(', '))}</strong><br>${escapeHtml(first.start)}–${escapeHtml(first.end)} · ${escapeHtml(first.activity)}</p>${publicUrl?`<p><a href="${escapeHtml(publicUrl)}/app#my-day" style="display:inline-block;background:#ff6b1a;color:#fff;padding:12px 18px;border-radius:8px;text-decoration:none;font-weight:700">View and acknowledge</a></p>`:''}<p style="color:#68716d;font-size:12px">Sign in to Pro Daily Link for the latest schedule.</p></div>`})});
+  if(!response.ok)throw Object.assign(Error(`Email provider rejected the assignment message (${response.status})`),{deliveryRejected:response.status>=400&&response.status<500});
+  if(idempotencyKey)return response.json();
 }
 function subcontractorArchived(sub){return Boolean(sub.archivedAt||sub.status==='Archived')}
 function subcontractorRequirements(sub,now=new Date()){
@@ -749,7 +753,8 @@ function authenticateRequestAccount(req, db) {
   const storedUser = !wrongTenant && session && (db.users || []).find(row => row.id === session.userId && row.status === 'Active' && (!row.companyId || row.companyId === db.company.id));
   // Shared request actor for manual routes and assistant actions. Role-policy
   // integration must resolve effective permissions here, before assigning auth.
-  const user = storedUser?.role === 'office' ? { ...storedUser, role: 'admin' } : storedUser;
+  const baselineUser = storedUser?.role === 'office' ? { ...storedUser, role: 'admin' } : storedUser;
+  const user = schedulingAccess.actor(db, baselineUser, Boolean(dbContext.getStore()?.atomic));
   req.auth = user ? { session, user, companyId: session.companyId } : null;
   return { auth: req.auth, status: wrongTenant ? 404 : user ? 200 : 401 };
 }
@@ -869,6 +874,22 @@ async function api(req,res,url){
   if(await handleProjectAssistant(req,res,url))return;
   if(process.env.PDL_REQUIRE_AUTH==='1'&&!url.pathname.startsWith('/api/guest/')){const db=readDb(),{auth,status}=authenticateRequestAccount(req,db),user=auth?.user;if(!auth)return json(res,status,{error:status===404?'Resource not found':'Authentication required'});const access=accountAccess(db.company),accessRoute=url.pathname==='/api/account-access'||url.pathname.startsWith('/api/billing');if(access.locked&&!accessRoute)return json(res,402,{error:access.reason,code:'subscription_required',access});const ownerRoute=url.pathname==='/api/users'||/^\/api\/users\//.test(url.pathname);if(ownerRoute&&user.role!=='owner')return json(res,403,{error:'Account owner permission required'});const officeRoute=['/api/production','/api/insights','/api/exceptions','/api/action-center','/api/changes','/api/catalog','/api/estimate-imports'].some(route=>url.pathname.startsWith(route))||url.pathname.includes('/approve')||url.pathname.includes('/disposition');if(officeRoute&&!['owner','admin','project_manager'].includes(user.role))return json(res,403,{error:'Office permission required'})}
   if(await handleProjectNotes(req,res,url))return;
+  if(dbContext.getStore()?.atomic && /^\/api\/assignments(?:\/\d+(?:\/acknowledge)?)?$/.test(url.pathname)){
+    const db=readDb(),input=['POST','PATCH','DELETE'].includes(req.method)?await body(req):{};
+    const denied=guardScheduleRoute(db,req.auth?.user,req.method,url,input);
+    if(denied)return json(res,denied.status,{error:denied.error});
+    if(req.method==='GET')return json(res,200,{assignments:schedulingAccess.visibleAssignments(db,req.auth.user),capabilities:schedulingAccess.access(db,req.auth.user)});
+    if(req.method==='POST'&&url.pathname==='/api/assignments'){
+      const prior=(db.scheduleActionReceipts||[]).find(row=>row.requestId===input.requestId&&row.actorId===req.auth.user.id);
+      if(prior){
+        const rows=prior.assignmentIds.map(id=>(db.assignments||[]).find(row=>row.id===id));
+        if(prior.inputHash!==require('./database/transactional-repository').canonicalHash(input)||prior.sessionHash!==req.auth.session.tokenHash||rows.some(row=>!schedulingAccess.inScope(db,req.auth.user,row,'create'))||require('./database/transactional-repository').canonicalHash(rows.map(assignmentEmailOutbox.businessRecord))!==prior.assignmentHash)return json(res,409,{error:'This scheduling request was already used or access changed.'});
+        return json(res,200,prior.result);
+      }
+    }
+    db.auditLog ||= [];db.auditLog.push({id:crypto.randomUUID(),type:'schedule_action',actorId:req.auth.user.id,actor:req.auth.user.name,method:req.method,path:url.pathname,at:new Date().toISOString()});
+  }
+
   if(process.env.PDL_REQUIRE_AUTH==='1'&&(subcontractorCreate||subcontractorUpdate||subcontractorProfile||subcontractorReminder||subcontractorArchive)&&!['owner','admin'].includes(req.auth?.user?.role))return json(res,403,{error:'Account Owner or Admin permission required'});
   if(process.env.PDL_REQUIRE_AUTH==='1'&&(subcontractorLinkCreate||subcontractorLinkRevoke)&&!['owner','admin','project_manager'].includes(req.auth?.user?.role))return json(res,403,{error:'Office permission required'});
   if(subcontractorProfile){
@@ -1065,7 +1086,7 @@ async function api(req,res,url){
       if(!member)return json(res,404,{error:'Field user not found'});
       return json(res,200,fieldWorkspace(db,member,null));
     }
-    const{sessions,auditLog,reportingExports,payPeriods:privatePayPeriods,payPeriodExports,projectNotesTodos:privateProjectNotesTodos,assistantConfirmations:privateAssistantConfirmations,...publicDb}=db,signedInOffice=session&&!fieldRole(session)?((db.users||[]).find(user=>Number(user.id)===Number(session.id))||session):null,officeUser=signedInOffice||accountUser||(db.users||[]).find(user=>user.status==='Active'&&['owner','admin'].includes(user.role)),safe={...publicDb,company:publicCompanyLogo(publicDb.company),currentUser:publicAccount(officeUser),auditLog:['owner','admin'].includes(officeUser?.role)?(auditLog||[]).filter(entry=>officeTimeCardViewer(req)||!String(entry.type).startsWith('pay_period_')):[],users:(db.users||[]).map(({setupHash,setupSalt,passwordHash,passwordSalt,...user})=>user),subcontractorLinks:(db.subcontractorLinks||[]).map(({tokenHash,...link})=>link)};
+    const{sessions,assignmentEmailOutbox:privateAssignmentEmailOutbox,scheduleActionReceipts:privateScheduleActionReceipts,auditLog,reportingExports,payPeriods:privatePayPeriods,payPeriodExports,projectNotesTodos:privateProjectNotesTodos,assistantConfirmations:privateAssistantConfirmations,...publicDb}=db,signedInOffice=session&&!fieldRole(session)?((db.users||[]).find(user=>Number(user.id)===Number(session.id))||session):null,officeUser=signedInOffice||accountUser||(db.users||[]).find(user=>user.status==='Active'&&['owner','admin'].includes(user.role)),safe={...publicDb,company:publicCompanyLogo(publicDb.company),currentUser:publicAccount(officeUser),auditLog:['owner','admin'].includes(officeUser?.role)?(auditLog||[]).filter(entry=>officeTimeCardViewer(req)||!String(entry.type).startsWith('pay_period_')):[],users:(db.users||[]).map(({setupHash,setupSalt,passwordHash,passwordSalt,...user})=>user),subcontractorLinks:(db.subcontractorLinks||[]).map(({tokenHash,...link})=>link)};
     safe.scheduleAvailability=scopedScheduleAvailability(db,officeUser);
     safe.reports=(safe.reports||[]).map(report=>presentReport(db,officeUser,report));if(!timeCardsEnabled(db.company)||!officeTimeCardViewer(req))delete safe.timeCards;else safe.timeCards=db.timeCards||[];
     if(!templatesEnabled(db.company))delete safe.dailyTemplates;else safe.dailyTemplates=templateList(db);
@@ -1135,12 +1156,20 @@ async function api(req,res,url){
     const conflicts=db.assignments.filter(a=>dates.includes(a.date)&&a.memberIds.some(id=>memberIds.includes(id))&&input.start<a.end&&input.end>a.start);
     if(conflicts.length){const conflictIds=[...new Set(conflicts.flatMap(a=>a.memberIds).filter(id=>memberIds.includes(id)))],names=db.team.filter(m=>conflictIds.includes(m.id)).map(m=>m.name),conflictDates=[...new Set(conflicts.map(row=>row.date))].sort();return json(res,409,{error:`Schedule conflict for ${names.join(', ')} on ${conflictDates.join(', ')}`,conflictMemberIds:conflictIds,conflictDates})}
     const created=createAssignmentRows(db,{...input,memberIds,instructions:undefined},dates);
-    db.assignments.push(...created);writeDb(db);
+    db.assignments.push(...created);
+    if(dbContext.getStore()?.atomic){
+      for(const row of created){row.createdByUserId=req.auth.user.id;row.source='manual_schedule'}
+      if(process.env.RESEND_API_KEY)assignmentEmailOutbox.enqueue(db,req.auth,created);
+      const result=created.length===1?created[0]:{assignments:created};
+      db.scheduleActionReceipts ||= [];db.scheduleActionReceipts.push({id:crypto.randomUUID(),actorId:req.auth.user.id,sessionHash:req.auth.session.tokenHash,requestId:input.requestId,inputHash:require('./database/transactional-repository').canonicalHash(input),assignmentIds:created.map(row=>row.id),assignmentHash:require('./database/transactional-repository').canonicalHash(created.map(assignmentEmailOutbox.businessRecord)),result:structuredClone(result)});
+      writeDb(db);return json(res,201,result);
+    }
+    writeDb(db);
     const recipients=(db.users||[]).filter(user=>user.status==='Active'&&user.memberId&&memberIds.includes(Number(user.memberId))&&user.email);
     if(process.env.RESEND_API_KEY&&recipients.length)await Promise.all(recipients.map(async user=>{try{await sendAssignmentEmail({to:user.email,name:user.name,companyName:db.company.name,projectName:project.name,assignments:created});for(const row of created)row.notifications[user.memberId].emailStatus='sent'}catch(error){for(const row of created)row.notifications[user.memberId].emailStatus='failed';console.error('Assignment notification email failed',error.message)}}));
     writeDb(db);return json(res,201,created.length===1?created[0]:{assignments:created});
   }
-  const assignmentAck=url.pathname.match(/^\/api\/assignments\/(\d+)\/acknowledge$/);if(req.method==='POST'&&assignmentAck){const input=await body(req),db=readDb(),assignment=db.assignments.find(row=>row.id===Number(assignmentAck[1])),memberId=Number(req.auth?.user.memberId||input.memberId);if(!assignment||!assignment.memberIds.includes(memberId))return json(res,404,{error:'Assignment not found for this team member'});if(process.env.PDL_REQUIRE_AUTH==='1'&&Number(req.auth?.user.memberId)!==memberId)return json(res,403,{error:'You can only acknowledge your own assignment'});assignment.acknowledgements ||= {};assignment.acknowledgements[memberId]={status:'acknowledged',at:new Date().toISOString(),by:req.auth?.user.name||db.team.find(member=>member.id===memberId)?.name||'Field user'};writeDb(db);return json(res,200,assignment)}
+  const assignmentAck=url.pathname.match(/^\/api\/assignments\/(\d+)\/acknowledge$/);if(req.method==='POST'&&assignmentAck){const input=await body(req),db=readDb(),assignment=db.assignments.find(row=>row.id===Number(assignmentAck[1])),memberId=Number(req.auth?.user.memberId||input.memberId);if(!assignment||!assignment.memberIds.includes(memberId))return json(res,404,{error:'Assignment not found for this team member'});if(process.env.PDL_REQUIRE_AUTH==='1'&&Number(req.auth?.user.memberId)!==memberId)return json(res,403,{error:'You can only acknowledge your own assignment'});assignment.acknowledgements ||= {};assignment.acknowledgements[memberId]={status:'acknowledged',at:new Date().toISOString(),by:req.auth?.user.name||db.team.find(member=>member.id===memberId)?.name||'Field user'};writeDb(db);return json(res,200,dbContext.getStore()?.atomic?schedulingAccess.visibleAssignments(db,req.auth.user).find(row=>row.id===assignment.id):assignment)}
   if(await handleDailyTemplates(req,res,url))return;
   if(await handleTimeRecords(req,res,url))return;
   if(await handlePayPeriods(req,res,url))return;
@@ -1237,6 +1266,19 @@ const atomicAdmission = tenantAdmission.createAdmission({
     finally { try { fs.unlinkSync(temporary); } catch {} }
   }
 });
+const assignmentEmailDispatcher = assignmentEmailOutbox.createDispatcher({
+  load: companyId => supabase.loadTransactionalSnapshot(companyId),
+  commit: (snapshot, revision) => supabase.saveTransactionalSnapshot(snapshot, revision),
+  send: sendAssignmentEmail,
+  accountAllowed: snapshot => !accountAccess(snapshot.company).locked
+});
+async function dispatchQueuedAssignmentEmails(companyId) {
+  const loaded = await supabase.loadTransactionalSnapshot(companyId);
+  for(const job of (loaded?.snapshot.assignmentEmailOutbox || []).filter(row => row.status === 'queued').slice(0, 10)) {
+    try { await assignmentEmailDispatcher.dispatch(companyId, job.id); }
+    catch(error) { if(error.code !== 'PDL_REVISION_CONFLICT') console.error('Assignment email dispatch needs review.'); }
+  }
+}
 async function atomicRequest(req, res, url, requestId) {
   if (!supabase.configured() || transactionalMode() !== 'primary' || process.env.PDL_REQUIRE_AUTH !== '1') throw tenantAdmission.unavailable('Atomic admission requires strict authentication and initialized transactional primary storage.');
   if (!atomicRouteSupported(req.method, url.pathname)) return json(res, 503, { error: 'This route is outside the atomic admission draft.', code: 'ATOMIC_ROUTE_UNSUPPORTED', requestId });
@@ -1245,7 +1287,7 @@ async function atomicRequest(req, res, url, requestId) {
   if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(companyId) || (header && stored && header !== stored)) return json(res, 400, { error: 'A matching explicit company identifier is required.', requestId });
   // Fully receive input before loading the authoritative actor. A slow request
   // must not retain authorization captured before a revocation or role change.
-  if (['POST', 'PATCH'].includes(req.method)) await body(req);
+  if (['POST', 'PATCH', 'PUT', 'DELETE'].includes(req.method)) await body(req);
   const context = await atomicAdmission.begin(companyId);
   const result = await dbContext.run(context, async () => {
     if (url.pathname === '/api/auth/login') {
@@ -1266,6 +1308,7 @@ async function atomicRequest(req, res, url, requestId) {
     res.setHeader('X-PDL-Mirror-Status', saved.mirrored ? 'saved' : 'degraded');
   }
   flushDeferredResponse(res, context);
+  if(saved.committed && process.env.PDL_ASSIGNMENT_OUTBOX_DISPATCH === '1')setImmediate(() => dispatchQueuedAssignmentEmails(companyId).catch(() => console.error('Assignment email dispatch unavailable.')));
   return result;
 }
 const server=http.createServer(async(req,res)=>{const requestId=crypto.randomUUID();try{secureHeaders(res);res.setHeader('X-Request-Id',requestId);const url=new URL(req.url,'http://localhost');if(url.pathname.startsWith('/api/')){if(!rateLimit(req,res,url))return;if(tenantAdmission.enabled())return await atomicRequest(req,res,url,requestId);if(salesDemoRoute.test(url.pathname))return await handleSalesDemo(req,res,url);if(req.method==='POST'&&url.pathname==='/api/demo-requests')return await handleDemoRequest(req,res);if(url.pathname==='/api/platform/revenue')return await handlePlatformRevenue(req,res,url);if(req.method==='POST'&&url.pathname==='/api/billing/webhook')return await handleStripeWebhook(req,res);if(req.method==='POST'&&url.pathname==='/api/auth/company'){const input=await body(req),companyId=await companyIdForEmail(input.email);return json(res,200,{companyId:companyId||null})}const guestToken=(req.method==='GET'||req.method==='POST')?url.pathname.match(/^\/api\/guest\/([a-f0-9]{48})(?:\/ticket-scan)?$/):null,database=guestToken?await guestRequestDatabase(req,url,guestToken[1]):await authenticatedRequestDatabase(req);if(!database)return json(res,404,{error:guestToken?'This guest link is invalid or expired':'Company workspace not found'});const companyId=String(database.db?.company?.id||JSON.parse(fs.readFileSync(database.file,'utf8')).company.id);if(assistantPath(url.pathname)){const pilotDb=freshestTenantSnapshot(database),{auth,status}=authenticateRequestAccount(req,pilotDb);if(!auth)return json(res,status,{error:'Authentication required'});if(!permittedCompany(pilotDb.company?.id))return json(res,403,{error:'Project assistant access is not enabled for this company.'})}if(req.method==='POST'&&/^\/api\/projects\/\d+\/assistant\/chat$/.test(url.pathname)||(req.method==='POST'&&url.pathname==='/api/assistant/interpret')||(req.method==='GET'&&url.pathname==='/api/assistant/context')){const context={...database,db:freshestTenantSnapshot(database),pending:[]};return await dbContext.run(context,()=>url.pathname.startsWith('/api/assistant/')?handleAssistantAI(req,res,url):handleProjectAssistant(req,res,url))}return await withTenantQueue(companyId,async()=>{database.db=freshestTenantSnapshot(database);const context={...database,pending:[],backup:null,deferResponse:transactionalMode()==='primary'};try{const result=await dbContext.run(context,()=>api(req,res,url));if(isCredentialAttempt(req,url)&&res.statusCode===401)recordAuthFailure(req);await Promise.all(context.pending);flushDeferredResponse(res,context);return result}catch(error){if(error.code==='PDL_REVISION_CONFLICT'||/PDL_REVISION_CONFLICT/.test(String(error.message))){if(!res.headersSent)return json(res,409,{error:'This company changed while you were saving. Nothing was overwritten. Refresh and try again.',code:'STALE_WRITE',requestId})}throw error}})}let requested=decodeURIComponent(url.pathname==='/'?'/landing.html':url.pathname==='/app'?'/index.html':url.pathname==='/favicon.ico'?'/assets/pro-daily-link-logo.png':/^\/guest\/[a-f0-9]{48}$/.test(url.pathname)?'/guest.html':url.pathname);if(requested.startsWith('/uploads/')){res.writeHead(307,{Location:'/api/local-files/'+requested.slice(9).split('/').map(encodeURIComponent).join('/'),'Cache-Control':'no-store'});return res.end()}let file=path.resolve(ROOT,'.'+requested);if(!isPublicFile(ROOT,file)||!file.startsWith(ROOT+path.sep)||!fs.existsSync(file)||fs.statSync(file).isDirectory()||!fs.realpathSync(file).startsWith(ROOT+path.sep)){res.writeHead(404);return res.end('Not found')}const extension=path.extname(file),mustRevalidate=['.html','.js','.css'].includes(extension);res.writeHead(200,{'Content-Type':MIME[extension]||'application/octet-stream','Cache-Control':mustRevalidate?'no-cache, no-store, must-revalidate':'public, max-age=3600'});fs.createReadStream(file).pipe(res)}catch(error){console.error(`[${requestId}]`,error);if(process.env.SENTRY_DSN)Sentry.withScope(scope=>{scope.setTag('request_id',requestId);scope.setTag('method',req.method);scope.setTag('route',String(req.url||'').split('?')[0]);Sentry.captureException(error)});if(!res.headersSent&&(error.code==='PDL_REVISION_CONFLICT'||/PDL_REVISION_CONFLICT/.test(String(error.message))))return json(res,409,{error:'This company changed while you were saving. Nothing was overwritten. Refresh and try again.',code:'STALE_WRITE',requestId});if(!res.headersSent&&error.code==='PDL_COMMIT_OUTCOME_UNKNOWN')return json(res,503,{error:error.message,code:'COMMIT_OUTCOME_UNKNOWN',requestId});if(!res.headersSent)json(res,error.statusCode||500,{error:error.statusCode===413?'Request is too large':error.statusCode===400?'Invalid request body':'Unexpected server error',requestId})}});

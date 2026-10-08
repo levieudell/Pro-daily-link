@@ -3,6 +3,7 @@
 const crypto = require('node:crypto');
 const { permittedCompany } = require('./project-assistant-access');
 const availability = require('./schedule-availability');
+const schedulingAccess = require('./scheduling-access');
 const { expandBatch } = require('./project-assistant-batch');
 const { proposeBatchWithAI } = require('./project-assistant-batch-proposal');
 const { createAssignmentRows } = require('./assignment-records');
@@ -31,6 +32,7 @@ function unambiguousWallTime(date, time, timezone) {
 }
 function allowed(db, user, projectId, memberId, action = 'schedule') {
   if (!user || !ROLES.has(user.role)) return false;
+  if (['schedule', 'schedule_batch'].includes(action) && schedulingAccess.required(db) && !schedulingAccess.access(db, user).create) return false;
   if (user.role !== 'project_manager') return true;
   const crews = new Set((user.assignedCrews || []).map(name => String(name).trim().toLowerCase()).filter(Boolean));
   const member = (db.team || []).find(row => Number(row.id) === memberId);
@@ -48,7 +50,7 @@ function minimalContext(db, user, projectId, now = new Date()) {
 function fingerprint(db, user, projectId, input) {
   const memberIds = input.action === 'schedule_batch' ? input.memberIds : [input.memberId];
   return hash({ companyId: db.company.id, timezone: db.company.timezone || null,
-    actor: { id: user.id, role: user.role, permissions: user.permissions, projectIds: user.projectIds, assignedCrews: user.assignedCrews },
+    actor: { id: user.id, role: user.role, permissions: user.permissions, schedulingAccess: user.schedulingAccess, schedulingPolicyRevision: db.company.schedulingRolePolicy?.revision || 0, projectIds: user.projectIds, assignedCrews: user.assignedCrews },
     project: activeProject(db, projectId), members: (db.team || []).filter(row => memberIds.includes(Number(row.id))),
     projectNotes: !['schedule', 'schedule_batch'].includes(input.action) ? (db.projectNotesTodos || []).filter(row => Number(row.projectId) === projectId && row.companyId === db.company.id) : undefined,
     assignments: (db.assignments || []).filter(row => (row.memberIds || []).map(Number).some(id => memberIds.includes(id))),
