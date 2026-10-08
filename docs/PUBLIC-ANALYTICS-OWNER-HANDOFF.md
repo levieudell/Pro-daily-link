@@ -10,7 +10,7 @@ Approved changes saved and read back before billing browser handoff:
 - Enhanced Measurement OFF on stream 13331422396.
 - Ads personalization allowed in 0 of 307 regions on property 520632381.
 
-Browser paused at a safe boundary for checkout diagnosis. Retention has NOT yet been changed: event retention was 2 months, user retention 14 months, reset on new activity ON. Resume only after the parent returns the browser slot; change user retention to the approved 2 months, preserve reset ON, and read back both retention values. Reset ON means the user-data retention window restarts on new activity; turning it OFF would be a separate setting change. Google's retention controls do not cap aggregate standard reports.
+After the parent returned the browser slot, user retention was saved at the approved 2 months; Google's success notification confirmed the save. Event retention remains 2 months. Reset on new activity remains ON, unchanged. Enhanced Measurement OFF, ads personalization 0/307 regions allowed and the existing Ads link with personalization disabled were read back. Reset ON means the user-data retention window restarts on new activity; turning it OFF would be a separate setting change. Google's retention controls do not cap aggregate standard reports.
 
 Google Signals is not enabled; user-provided collection is not activated. Granular location/device collection remains at its existing ON setting (no separate approval to change it). Account Google products/services, modeling/business insights, technical support and business recommendations sharing boxes were all OFF. One existing Ads link has personalized advertising disabled; preserve it. Non-personalized measurement/conversion use can remain available in Ads. No Search Console link exists; that separate task must coordinate through the parent.
 
@@ -40,7 +40,7 @@ Owner reports: https://analytics.google.com/analytics/web/?authuser=2#/a38122434
 
 ## Validation and official references
 
-Original exact head 06e34ac passed Linux Test application and founder-billing checks, including full npm test, audit and security scan. Independent review passed. Local analytics/privacy, browser safety, landing-pricing DOM, onboarding journey and blog checks passed. Windows full suite hits an unchanged POSIX permissions assertion; exact-head Linux CI passed it. Re-run exact-head CI after this source/config/copy update before release.
+Config/copy exact head 68c8c4c passed Linux Test application and founder-billing checks, including full npm test, audit and security scan. Independent review passed. Local analytics/privacy, browser safety, landing-pricing DOM, onboarding journey and blog checks passed. Windows full suite hits an unchanged POSIX permissions assertion; exact-head Linux CI passed it. Re-run exact-head CI after this documentation status update before release.
 
 - https://developers.google.com/tag-platform/security/concepts/consent-mode
 - https://developers.google.com/analytics/devguides/collection/ga4/views
