@@ -4,11 +4,12 @@
   else root.PDLProjectAssistant = api;
 })(typeof globalThis !== 'undefined' ? globalThis : this, function() {
   'use strict';
+  const accessAPI = typeof module === 'object' && module.exports ? require('./project-assistant-access') : globalThis.PDLAssistantAccess;
   const voiceAPI = typeof module === 'object' && module.exports ? require('./project-assistant-voice') : globalThis.PDLAssistantVoice;
   const conversationAPI = typeof module === 'object' && module.exports ? require('./project-assistant-conversation') : globalThis.PDLAssistantConversation;
   const chatAPI = typeof module === 'object' && module.exports ? require('./project-assistant-chat') : globalThis.PDLAssistantChat;
   const escape = value => String(value ?? '').replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[char]));
-  const permitted = workspace => workspace?.currentRole === 'office' && Boolean(workspace.user?.id) &&
+  const permitted = workspace => accessAPI?.permittedCompany(workspace?.companyId) === true && workspace?.currentRole === 'office' && Boolean(workspace.user?.id) &&
     ['owner', 'admin', 'project_manager'].includes(workspace.user.role);
   const mascot = '<svg viewBox="0 0 80 80" aria-hidden="true" focusable="false"><path d="M15 41c0-18 10-27 25-27s25 9 25 27v13c0 15-12 24-25 24S15 69 15 54z" fill="#ffb36b" stroke="#492d24" stroke-width="3"/><path d="M12 35c1-18 11-29 28-29s27 11 28 29H12z" fill="#ff751f" stroke="#492d24" stroke-width="3"/><path d="M35 6h10v25H35z" fill="#ffa247"/><path d="M8 34h64v9H8z" fill="#ff751f" stroke="#492d24" stroke-width="3" stroke-linejoin="round"/><ellipse cx="29" cy="51" rx="7" ry="9" fill="white"/><ellipse cx="51" cy="49" rx="7" ry="9" fill="white"/><circle cx="31" cy="52" r="3.5" fill="#492d24"/><circle cx="49" cy="50" r="3.5" fill="#492d24"/><path d="M27 64q14 9 28-5" fill="none" stroke="#492d24" stroke-width="3" stroke-linecap="round"/></svg>';
   function previewMarkup(result) {
@@ -30,7 +31,10 @@
       })]); }
       finally { clearTimeout(timer); controller.signal.removeEventListener('abort', onAbort); pendingReads.delete(controller); }
     }
-    const boundedRequest = (path, payload, cancellable = true) => bounded(signal => request(path, payload, signal), cancellable);
+    const boundedRequest = (path, payload, cancellable = true) => {
+      if (!permitted(getWorkspace())) return Promise.reject(Object.assign(new Error('Project assistant access is unavailable.'), { status: 403 }));
+      return bounded(signal => request(path, payload, signal), cancellable);
+    };
     const launcher = document.createElement('button'); launcher.type = 'button'; launcher.id = 'project-assistant-launcher'; launcher.hidden = true;
     launcher.className = 'project-assistant-launcher'; launcher.setAttribute('aria-label', 'Open project assistant'); launcher.setAttribute('aria-haspopup', 'dialog'); launcher.innerHTML = mascot;
     const dialog = document.createElement('dialog'); dialog.id = 'project-assistant-dialog'; dialog.className = 'project-assistant-dialog'; dialog.setAttribute('aria-labelledby', 'project-assistant-title');

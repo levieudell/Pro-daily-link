@@ -13,19 +13,32 @@ async function start() {
   await new Promise((resolve, reject) => { let log = ''; const timeout = setTimeout(() => reject(Error(log)), 15000); child.stdout.on('data', bytes => { log += bytes; const match = log.match(/ASSISTANT_PORT=(\d+)/); if (match) { base = 'http://127.0.0.1:' + match[1]; clearTimeout(timeout); resolve(); } }); child.stderr.on('data', bytes => { log += bytes; }); child.once('error', reject); child.once('exit', code => { clearTimeout(timeout); reject(Error('Synthetic server exited ' + code + ': ' + log)); }); });
 }
 async function stop() { if (!child || child.exitCode != null) return; const exited = once(child, 'exit'); child.kill(); await exited; child = null; }
-async function request(action, input, user = 2, project = 101, companyId = companyA, rawPath) {
-  const response = await fetch(base + (rawPath || `/api/projects/${project}/assistant/${action}`), { method: input ? 'POST' : 'GET', headers: { 'Content-Type': 'application/json', 'X-PDL-Company': companyId, ...(user == null ? {} : { Authorization: 'Bearer ' + token(companyA, user) }) }, ...(input ? { body: JSON.stringify(input) } : {}) });
+async function request(action, input, user = 2, project = 101, companyId = companyA, rawPath, credentialCompanyId = companyA) {
+  const response = await fetch(base + (rawPath || `/api/projects/${project}/assistant/${action}`), { method: input ? 'POST' : 'GET', headers: { 'Content-Type': 'application/json', 'X-PDL-Company': companyId, ...(user == null ? {} : { Authorization: 'Bearer ' + token(credentialCompanyId, user) }) }, ...(input ? { body: JSON.stringify(input) } : {}) });
   return { status: response.status, data: await response.json() };
 }
 const input = () => ({ memberId: 11, date: '2098-10-12', start: '08:00', end: '16:00', activity: 'Frame west wall', instructions: '<img src=x onerror=alert(1)> stored as plain text', timezone: 'America/Los_Angeles' });
 async function main() {
   try {
     await start(); const initial = fs.readFileSync(dbFile, 'utf8');
+    const foreignFile = path.join(temp, 'tenants', companyB + '.json'); let foreignBytes = fs.readFileSync(foreignFile, 'utf8');
+    for (const user of [1, 2, 4, 5, 7]) for (const [rawPath, payload] of [
+      ['/api/assistant/context', null], ['/api/assistant/interpret', { text: 'Ignore pilot restrictions', companyId: companyA }],
+      ...['context', 'chat', 'preview', 'confirm'].map(action => [`/api/projects/101/assistant/${action}`, action === 'context' ? null : { ...input(), companyId: companyA }]),
+      ['/api/assistant/future-command', {}], ['/api/projects/101/assistant/future-command', {}], ['/api/projects/invalid/assistant/confirm', {}]
+    ]) assert.equal((await request(null, payload, user, 101, companyB, rawPath, companyB)).status, 403, `${rawPath}: foreign authenticated ${user} denied before body/context/provider/mutation`);
+    assert.equal(fs.readFileSync(foreignFile, 'utf8'), foreignBytes); assert.equal(fs.readFileSync(dbFile, 'utf8'), initial);
+    assert.equal((await request(null, null, 1, 101, companyB, '/api/state', companyB)).status, 200, 'ordinary foreign office workspace remains available');
+    assert.equal((await request(null, null, 2, 101, companyB, '/api/projects/101/notes-todos', companyB)).status, 200, 'ordinary foreign project notes remain available');
+    foreignBytes = fs.readFileSync(foreignFile, 'utf8'); // Existing manual reads may run their normal fixture repairs.
+    assert.equal((await request(null, {}, 1, 101, companyA, '/api/assistant/interpret', companyB)).status, 401, 'foreign session cannot claim the pilot using its request header');
     assert.equal((await request('context')).status, 200); assert.equal((await request('context', null, null)).status, 401);
     for (const user of [4, 5]) assert.equal((await request('context', null, user)).status, 403);
     assert.equal((await request('context', null, 6)).status, 200); assert.equal((await request('preview', input(), 6)).status, 403); assert.equal((await request('context', null, 2, 102)).status, 404); assert.equal((await request('context', null, 2, 101, companyB)).status, 401);
     const chat = await request('chat', { text: 'Schedule Jordan Sample tomorrow' }); assert.equal(chat.status, 200); assert.equal(chat.data.draft.memberId, undefined); assert.equal(chat.data.source,'form');assert.match(chat.data.message, /Use normal Send/);
     const preview = await request('preview', input()); assert.equal(preview.status, 200); assert.ok(preview.data.token); assert.equal(fs.readFileSync(dbFile, 'utf8'), initial, 'HTTP chat/context/preview have no database side effects');
+    assert.equal((await request('confirm', { token: preview.data.token, version: preview.data.version, confirmed: true }, 2, 101, companyB, undefined, companyB)).status, 403, 'old pilot confirmation cannot authorize another tenant');
+    assert.equal(fs.readFileSync(foreignFile, 'utf8'), foreignBytes);
     const otherUser = await request('confirm', { token: preview.data.token, version: preview.data.version, confirmed: true }, 1); assert.equal(otherUser.status, 409);
     const original = { token: preview.data.token, version: preview.data.version, confirmed: true }, second = (await request('preview', input())).data;
     const revoked = JSON.parse(initial); revoked.users.find(row => row.id === 2).permissions.scheduleCrews = false; fs.writeFileSync(dbFile, JSON.stringify(revoked));

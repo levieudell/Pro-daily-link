@@ -1,4 +1,5 @@
 'use strict';
+const { permittedCompany } = require('./project-assistant-access');
 const { allowed, minimalContext, activeProject, membersFor } = require('./project-assistant');
 const { createIntentService, pricedModel } = require('./project-assistant-intent');
 const { createBudget, createSharedStore, digest } = require('./project-assistant-budget');
@@ -7,6 +8,7 @@ const uuid = value => typeof value === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-
 function createAIHandler({ readDb, readFreshDb = readDb, authenticatedUser, accountAccess, body, json, supabase, store, now = () => new Date(), adapter, enabled, signingKey }) {
   function authorize(req, db) {
     const user = authenticatedUser(req, db);
+    if (!permittedCompany(db.company?.id)) throw Error('Assistant pilot access is unavailable.');
     if (!user || !roles.has(user.role) || user.companyId != null && user.companyId !== db.company.id || req.auth?.companyId != null && req.auth.companyId !== db.company.id || user.status !== 'Active') throw Error('Your assistant access changed. Sign in or use your permitted manual screens.');
     if (accountAccess(db.company).locked) throw Error('Company access is unavailable.');
     return { db, user, actor: { companyId: db.company.id, userId: user.id, role: user.role, permissions: user.permissions || {}, projectIds: user.projectIds || [], assignedCrews: user.assignedCrews || [], timezone: db.company.timezone || '' } };
