@@ -25,12 +25,15 @@ module.exports = async function ({ repository, change, request, bases, providerE
   async function confirm() { await page.locator('#work-explicit-confirm').check(); await page.evaluate(() => { const button = document.querySelector('#work-confirm'); button.click(); button.click(); }); await page.locator('#workspace-message').filter({hasText:'Saved.'}).waitFor(); }
   async function screenshot(name) { await page.screenshot({ path: path.join(artifacts,name + '.png') }); assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true); }
   async function test(name, run, viewport = {width:1440,height:1000}) {
-    await reset(); context = await browser.newContext({viewport, acceptDownloads:true}); mutations=[]; errors=[]; responses=[];
+    // Independent contexts model distinct clients behind the existing proxy header.
+    // Keep the ordinary rate budget and one address throughout each journey.
+    const clientAddress = '198.51.100.' + (cases.length + 1);
+    await reset(); context = await browser.newContext({ viewport, acceptDownloads:true, extraHTTPHeaders: { 'X-Forwarded-For': clientAddress } }); mutations=[]; errors=[]; responses=[];
     await context.route('**/*', route => { if (new URL(route.request().url()).origin !== base) { external.push(route.request().url()); return route.abort(); } return route.continue(); });
     page = await context.newPage(); page.setDefaultTimeout(10000); page.on('pageerror', error => errors.push(error.message)); page.on('request', row => { if (['POST','PATCH','DELETE'].includes(row.method())) mutations.push({method:row.method(),path:new URL(row.url()).pathname,body:row.postDataJSON()}); });
     page.on('response', async row => { if (row.url().includes('/api/')) responses.push({path:new URL(row.url()).pathname,status:row.status()}); });
-    try { await run(); assert.deepEqual(errors,[]); cases.push({name,viewport,passed:true}); console.log('Operational browser passed: ' + name); }
-    catch (error) { await page.screenshot({path:path.join(artifacts,'failure.png')}).catch(()=>{}); cases.push({name,viewport,passed:false,error:error.message,responses,pageErrors:errors}); throw error; }
+    try { await run(); assert.deepEqual(errors,[]); cases.push({name,viewport,clientAddress,passed:true}); console.log('Operational browser passed: ' + name); }
+    catch (error) { await page.screenshot({path:path.join(artifacts,'failure.png')}).catch(()=>{}); cases.push({name,viewport,passed:false,error:error.message,clientAddress,responses,pageErrors:errors}); throw error; }
     finally { for (const hold of holds.splice(0)) hold.resolve(); await context.close(); }
   }
   try {

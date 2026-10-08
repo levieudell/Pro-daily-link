@@ -24,11 +24,14 @@ module.exports = async function ({ repository, change, request, bases, providerE
   async function recoveryReady() { await page.locator('#recover-request').waitFor(); await page.waitForFunction(() => !document.querySelector('#recover-request')?.disabled); }
   async function reopen() { await page.locator('#close-editor').click(); await page.getByRole('heading', { name: 'Projects', exact: true }).waitFor(); await page.locator('[data-route="roles"]').click(); }
   async function test(name, run, viewport = { width: 1440, height: 1000 }) {
-    await reset(); context = await browser.newContext({ viewport }); posts = []; pageErrors = []; bootstrapResponses = [];
+    // Independent contexts model distinct clients behind the existing proxy header.
+    // Keep the ordinary rate budget and one address throughout each journey.
+    const clientAddress = '192.0.2.' + (cases.length + 1);
+    await reset(); context = await browser.newContext({ viewport, extraHTTPHeaders: { 'X-Forwarded-For': clientAddress } }); posts = []; pageErrors = []; bootstrapResponses = [];
     await context.route('**/*', async route => { if (new URL(route.request().url()).origin !== base) { external.push(route.request().url()); return route.abort(); } return route.continue(); });
     page = await context.newPage(); page.setDefaultTimeout(15000); page.on('response', response => { const pathname = new URL(response.url()).pathname; if (['/api/config', '/api/auth/me'].includes(pathname)) bootstrapResponses.push({ pathname, status: response.status() }); }); page.on('pageerror', error => pageErrors.push(error.message)); page.on('request', row => { if (row.method() === 'POST' && new URL(row.url()).pathname.startsWith(ROOT)) posts.push({ path: new URL(row.url()).pathname, body: row.postDataJSON() }); });
-    try { await cookies(); await run(); assert.deepEqual(pageErrors, []); cases.push({ name, viewport, passed: true }); console.log('Roles browser passed: ' + name); }
-    catch (error) { await page.screenshot({ path: path.join(artifacts, 'failure.png') }).catch(() => {}); cases.push({ name, passed: false, error: error.message, bootstrapResponses }); throw error; }
+    try { await cookies(); await run(); assert.deepEqual(pageErrors, []); cases.push({ name, viewport, clientAddress, passed: true }); console.log('Roles browser passed: ' + name); }
+    catch (error) { await page.screenshot({ path: path.join(artifacts, 'failure.png') }).catch(() => {}); cases.push({ name, passed: false, error: error.message, clientAddress, bootstrapResponses }); throw error; }
     finally { for (const hold of holds.splice(0)) hold.resolve(); await context.close(); }
   }
   try {
