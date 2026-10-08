@@ -21,3 +21,10 @@ test('annual seed stays private without users, sessions or password and refuses 
  fs.symlinkSync(file,path.join(dir,'linked'));assert.throws(()=>h.prepareAnnualFixture(config),/private, owned/);
  }finally{fs.rmSync(dir,{recursive:true,force:true});for(const key of Object.keys(process.env))delete process.env[key];Object.assign(process.env,saved);}
 });
+test('annual root replacement refuses nonempty fixture arrays without altering bytes',()=>{
+ const saved={...process.env};Object.assign(process.env,env);
+ const dir=fs.mkdtempSync('/tmp/pdl-acceptance-annual-conflict-');fs.chmodSync(dir,0o700);
+ try{const file=path.join(dir,'db.json'),db=h.seedRoot();db.projects=[{id:1,name:'Synthetic preserved conflict'}];fs.writeFileSync(file,JSON.stringify(db),{mode:0o600});const before=fs.readFileSync(file,'utf8');
+ assert.throws(()=>h.prepareAnnualFixture({directory:dir,local:false,publicUrl:h.APPROVED_ORIGIN}),/conflicts/);assert.equal(fs.readFileSync(file,'utf8'),before);
+ }finally{fs.rmSync(dir,{recursive:true,force:true});for(const key of Object.keys(process.env))delete process.env[key];Object.assign(process.env,saved);}
+});

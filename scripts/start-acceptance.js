@@ -187,7 +187,7 @@ function prepareAnnualFixture(config) {
   if(exists(file)){
     const previous=JSON.parse(fs.readFileSync(file,'utf8'));
     if(previous.company?.id==='synthetic-pr114-starter')return file;
-    if(previous.company?.id!==ROOT_TENANT || previous.users?.length || previous.sessions?.length)reject('Annual root fixture conflicts with existing state.');
+    if(previous.company?.id!==ROOT_TENANT || Object.values(previous).some(value=>Array.isArray(value)&&value.length))reject('Annual root fixture conflicts with existing state.');
     const temp=file+'.annual-init';fs.writeFileSync(temp,JSON.stringify(db)+'\n',{flag:'wx',mode:0o600});fs.renameSync(temp,file);
   }else writeMissing(file,db);
   assertPrivateTree(config.directory);
