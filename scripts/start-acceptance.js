@@ -93,7 +93,7 @@ function validateConfig(env = process.env, root = ROOT) {
     const keep = path.join(uploads, '.gitkeep');
     if (exists(keep) && (!fs.lstatSync(keep).isFile() || !['', '\n'].includes(fs.readFileSync(keep, 'utf8')))) reject('Unexpected upload placeholder.');
   }
-  return { root, directory, publicUrl, port, local, enterprise, passwordProvided, keyPresent: Boolean(key), webhookPresent: Boolean(env.STRIPE_WEBHOOK_SECRET), expectedAccount: EXPECTED_STRIPE_ACCOUNT, candidate: CANDIDATE };
+  return { root, directory, publicUrl, port, local, enterprise, annual: annualFixtureTarget(env), passwordProvided, keyPresent: Boolean(key), webhookPresent: Boolean(env.STRIPE_WEBHOOK_SECRET), expectedAccount: EXPECTED_STRIPE_ACCOUNT, candidate: CANDIDATE };
 }
 function assertPrivateTree(file) {
   const stat = fs.lstatSync(file);
@@ -161,7 +161,7 @@ function prepareStorage(config, password) {
   writeMissing(platformFile, { acceptanceOnly: true, users: [], sessions: [], notes: [], helpItems: [], blogPosts: [], demoRequests: [], onboardingOrders: [], supportTickets: [], followUps: [], auditEvents: [] });
   let db, platform;
   try { db = JSON.parse(fs.readFileSync(dbFile, 'utf8')); platform = JSON.parse(fs.readFileSync(platformFile, 'utf8')); } catch { reject('Acceptance state is invalid; it will not be overwritten.'); }
-  if (db.acceptanceOnly !== true || db.company?.id !== ROOT_TENANT || platform.acceptanceOnly !== true) reject('State is not marked as synthetic acceptance data.');
+  if (db.acceptanceOnly !== true || (db.company?.id !== ROOT_TENANT && !(config.annual && db.company?.id==='synthetic-pr114-starter')) || platform.acceptanceOnly !== true) reject('State is not marked as synthetic acceptance data.');
   if (!Array.isArray(db.users) || db.users.length || !Array.isArray(db.sessions) || db.sessions.length) reject('The synthetic acceptance root must remain without users or sessions.');
   if (preparePlatformOwner(config, platform, password, path.join(dir, OWNER_IDENTITY_FILE))) {
     // Exclusive temporary write plus rename avoids a half-written password row.
@@ -180,13 +180,17 @@ function annualFixtureTarget(env=process.env) {
 }
 function prepareAnnualFixture(config) {
   if(config.local || config.publicUrl!==APPROVED_ORIGIN || !annualFixtureTarget()) reject('Annual fixture is restricted to the approved isolated service.');
-  const dir=path.join(config.directory,'tenants');
-  if(!exists(dir))fs.mkdirSync(dir,{mode:0o700});
-  assertPrivateTree(dir);
+  assertPrivateTree(config.directory);
   const db=seedRoot();
   db.company={id:'synthetic-pr114-starter',name:'Synthetic PR114 Starter',timezone:'Etc/UTC',plan:'starter',accountType:'standard',billingExempt:false,subscriptionStatus:'Incomplete',trialEndsAt:null,stripeCustomerId:'cus_VP7IwQLiOmXGlV',annualUpfront:{version:'annual-upfront-first-year-v1',plan:'starter',acceptedAt:'2026-10-08T15:16:51.000Z',used:false},features:{timeCards:false,templates:false}};
-  const file=path.join(dir,'synthetic-pr114-starter.json');
-  writeMissing(file,db);assertPrivateTree(config.directory);
+  const file=path.join(config.directory,'db.json');
+  if(exists(file)){
+    const previous=JSON.parse(fs.readFileSync(file,'utf8'));
+    if(previous.company?.id==='synthetic-pr114-starter')return file;
+    if(previous.company?.id!==ROOT_TENANT || previous.users?.length || previous.sessions?.length)reject('Annual root fixture conflicts with existing state.');
+    const temp=file+'.annual-init';fs.writeFileSync(temp,JSON.stringify(db)+'\n',{flag:'wx',mode:0o600});fs.renameSync(temp,file);
+  }else writeMissing(file,db);
+  assertPrivateTree(config.directory);
   return file;
 }
 function start() {

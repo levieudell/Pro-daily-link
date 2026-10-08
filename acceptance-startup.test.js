@@ -406,13 +406,13 @@ test('annual isolated boot narrows inherited owner mode, creates no credentials,
   const port=await freePort(),base=`http://127.0.0.1:${port}`,password=fixturePassword();
   const env={...enterpriseEnv(),PDL_ACCEPTANCE_ANNUAL_STARTER:'test-only',PDL_ACCEPTANCE_PLATFORM_PASSWORD:password,PORT:String(port),PDL_ACCEPTANCE_DATA_DIR:directory};
   let running=await bootAnnual(env,base);t.after(async()=>running.stop());
-  const platformFile=path.join(directory,'platform.json'),file=path.join(directory,'tenants','synthetic-pr114-starter.json');
+  const platformFile=path.join(directory,'platform.json'),file=path.join(directory,'db.json');
   assert.deepEqual(JSON.parse(fs.readFileSync(platformFile)).users,[]);assert.deepEqual(JSON.parse(fs.readFileSync(platformFile)).sessions,[]);
   assert.equal(fs.existsSync(path.join(directory,OWNER_IDENTITY_FILE)),false);
   const db=JSON.parse(fs.readFileSync(file));assert.deepEqual(db.users,[]);assert.deepEqual(db.sessions,[]);assert.equal(db.company.subscriptionStatus,'Incomplete');
   assert.equal(running.logs().includes(password),false);
   const health=await fetch(base+'/api/health');assert.equal(health.headers.get('x-pdl-candidate'),require('./scripts/start-acceptance').CANDIDATE);
-  assert.equal((await fetch(base+'/api/platform/overview',{headers:{'x-pdl-company':ROOT_TENANT}})).status,401);
+  assert.equal((await fetch(base+'/api/platform/overview')).status,401);
   for(const url of ['/data/platform.json','/scripts/start-acceptance.js','/'+OWNER_IDENTITY_FILE])assert.equal((await fetch(base+url)).status,404);
   db.company.subscriptionStatus='Active';fs.writeFileSync(file,JSON.stringify(db));const before=fs.readFileSync(file,'utf8');
   await running.stop();running=await bootAnnual(env,base);assert.equal(fs.readFileSync(file,'utf8'),before);assert.equal(running.logs().includes(password),false);
