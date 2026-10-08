@@ -39,7 +39,7 @@ module.exports = async function ({ repository, change, request, slowRequest, bas
   const isPolicy = url => url.pathname.endsWith('replace_tenant_policy_records');
 
   let before = await load(); const defaults = await call('GET', root);
-  assert.equal(defaults.data.uiAvailable, false); assert.equal(defaults.data.policyRevision, 0); assert.deepEqual(await load(), before);
+  assert.equal(defaults.data.uiAvailable, true); assert.equal(defaults.data.policyRevision, 0); assert.deepEqual(await load(), before);
   await call('GET', root + '/audit'); assert.deepEqual(await load(), before);
   for (const user of [2, 4, 5, 7, 8, 9]) for (const [method, route, body] of [['GET', root], ['GET', root + '/audit'], ['POST', root + '/preview', {}], ['POST', root + '/confirm', {}]]) await call(method, route, body, user, 403);
   assert.equal((await request(bases[0], 'GET', root, undefined, 1, companyB)).status, 401);

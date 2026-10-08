@@ -171,7 +171,7 @@ function createHandler({ readDb, writeDb, body, json, revision, assertCurrent, b
       if (read) {
         let result;
         if (url.pathname.endsWith('/audit')) { const offset = url.searchParams.get('offset') || '0'; if (!/^(0|[1-9][0-9]*)$/.test(offset) || !integer(Number(offset))) fail(400, 'Use a valid audit offset'); result = { total: state.audit.length, offset: Number(offset), entries: clone(state.audit.slice(Number(offset), Number(offset) + 100)) }; }
-        else result = { version: 1, tenantRevision: revision(), ...configuration(db), defaults: Object.fromEntries(registry.families.map(([id, , , , module]) => [id, Object.fromEntries(module.roles.map(role => [role, module.ceiling(role)]))])), ownerImmutable: true, scopeImmutable: true, assistantEligibilityImmutable: true, uiAvailable: false };
+        else result = { version: 1, tenantRevision: revision(), ...configuration(db), defaults: Object.fromEntries(registry.families.map(([id, , , , module]) => [id, Object.fromEntries(module.roles.map(role => [role, module.ceiling(role)]))])), ownerImmutable: true, scopeImmutable: true, assistantEligibilityImmutable: true, uiAvailable: true };
         await assertCurrent(req, false); owner(req, db); json(res, 200, result); return true;
       }
       const input = preview ? parsePreview(await body(req)) : parseConfirm(await body(req)), inputHash = canonicalHash(input), actorHash = authority(req, db);

@@ -3,6 +3,7 @@
 // typed input, preview/confirmation, immutable protections or SQL CAS.
 const rows = [];
 function add(id, methods, pattern, controls = [], immutable = null) { rows.push(Object.freeze({ id, methods: Object.freeze(methods.split(' ')), pattern, controls: Object.freeze(controls), immutable })); }
+add('workspace.mode', 'GET', /^\/api\/config$/, [], 'public-auth-mode-only');
 add('account.me', 'GET', /^\/api\/auth\/me$/, [], 'authenticated-self');
 add('account.access', 'GET', /^\/api\/account-access$/, [], 'authenticated-self');
 add('account.login', 'POST', /^\/api\/auth\/login$/, [], 'credentials-and-tenant');
@@ -11,6 +12,7 @@ add('accounts.list', 'GET', /^\/api\/users$/, [], 'owner');
 add('accounts.edit', 'PATCH', /^\/api\/users\/\d+$/, [], 'owner-and-owner-protection');
 add('roles.registry', 'GET', /^\/api\/company\/role-capabilities$/, [], 'owner');
 add('roles.policyRead', 'GET', /^\/api\/company\/role-policy(?:\/audit)?$/, [], 'owner');
+add('workspace.navigation', 'GET', /^\/api\/navigation$/, [], 'signed-in-role-and-actual-view-resource-scope');
 add('roles.policyPreview', 'POST', /^\/api\/company\/role-policy\/preview$/, [], 'owner-originating-session-and-durable-preview');
 add('roles.policyConfirm', 'POST', /^\/api\/company\/role-policy\/confirm$/, [], 'owner-explicit-confirmation-and-guarded-CAS');
 for (const [method, action] of [['GET', 'view'], ['POST', 'create']]) add('schedule.' + action, method, /^\/api\/assignments$/, ['scheduling.' + action]);
