@@ -1,6 +1,7 @@
 'use strict';
 const crypto = require('node:crypto');
 const access = require('./time-review-access');
+const profiles = require('./role-profiles');
 const leaveAccess = require('./time-off-access');
 const availability = require('./schedule-availability');
 const { canonicalHash } = require('./database/transactional-repository');
@@ -32,7 +33,7 @@ function parsePreview(input, kind, id) {
 }
 function authority(db, req) {
   const user = req.auth.user;
-  return canonicalHash({ companyId: db.company.id, actorId: user.id, role: user.role, name: user.name, permissions: user.permissions || {}, projectIds: user.projectIds || [], assignedCrews: user.assignedCrews || [], memberId: user.memberId || null, sessionHash: req.auth.session.tokenHash, access: access.access(db, user), leaveAccess: leaveAccess.access(db, user), timeReviewRolePolicy: db.company.timeReviewRolePolicy || null, timeReviewPolicyRequired: Boolean(db.company.timeReviewPolicyRequired), timeOffRolePolicy: db.company.timeOffRolePolicy || null, timeOffPolicyRequired: Boolean(db.company.timeOffPolicyRequired) });
+  return canonicalHash({ companyId: db.company.id, actorId: user.id, role: user.role, name: user.name, permissions: user.permissions || {}, projectIds: user.projectIds || [], assignedCrews: user.assignedCrews || [], memberId: user.memberId || null, sessionHash: req.auth.session.tokenHash, access: access.access(db, user), leaveAccess: leaveAccess.access(db, user), timeReviewRolePolicy: db.company.timeReviewRolePolicy || null, timeReviewPolicyRequired: Boolean(db.company.timeReviewPolicyRequired), timeOffRolePolicy: db.company.timeOffRolePolicy || null, timeOffPolicyRequired: Boolean(db.company.timeOffPolicyRequired), ...(profiles.required(db) ? { roleProfiles: profiles.authority(db, user) } : {}) });
 }
 function createHandler({ readDb, writeDb, body, json, revision, isApproved, statusText, completeCard, overlap, upsert, presentCard, filterCards, mergeCopies, fieldAccess, now = () => new Date(), signingKey = crypto.randomBytes(32) }) {
   const sign = value => { const payload = Buffer.from(JSON.stringify(value)).toString('base64url'); return payload + '.' + crypto.createHmac('sha256', signingKey).update(payload).digest('base64url'); };

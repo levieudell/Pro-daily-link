@@ -11,13 +11,14 @@ const families = Object.freeze([
 ].map(row => Object.freeze(row)));
 const roles = Object.freeze(['admin', 'project_manager', 'foreman', 'field']);
 const normalize = user => user?.role === 'office' ? { ...user, role: 'admin' } : user;
-function actor(db, user, atomic) { for (const [, , , , module] of families) user = module.actor(db, user, atomic); return user; }
+function actor(db, user, atomic) { return require('./role-profiles').evaluate(db, () => { for (const [, , , , module] of families) user = module.actor(db, user, atomic); return user; }); }
 function effective(db, user) {
   user = normalize(user);
-  return Object.fromEntries(families.map(([id, , , , module]) => [id, user?.status === 'Active' ? module.access(db, user) : Object.fromEntries(module.actions.map(action => [action, false]))]));
+  return require('./role-profiles').evaluate(db, () => Object.fromEntries(families.map(([id, , , , module]) => [id, user?.status === 'Active' ? module.access(db, user) : Object.fromEntries(module.actions.map(action => [action, false]))])));
 }
 function baseline(db, user) {
   const clean = { ...db, company: { ...db.company }, users: (db.users || []).map(row => { const copy = { ...row }; delete copy.notesCustomRoleId; delete copy.notesPolicyRequired; return copy; }) };
+  delete clean.company.roleProfiles; delete clean.company.roleProfilesRequired;
   for (const [, , prefix] of families) { delete clean.company[prefix + 'RolePolicy']; delete clean.company[prefix + 'PolicyRequired']; }
   const copy = { ...user }; delete copy.notesCustomRoleId; delete copy.notesPolicyRequired;
   return effective(clean, copy);
@@ -46,6 +47,6 @@ function describe(db) {
     previews: [...Object.entries(require('./daily-admission').definitions).map(([action, [permission, method, path]]) => ({ endpoint: '/api/daily-actions/preview', action, control: permission === 'ownerExport' ? null : 'daily.' + permission, immutable: permission === 'ownerExport' ? 'owner' : null, method, target: typeof path === 'function' ? path('{id}') : path })), ...Object.entries(require('./time-write-admission').definitions).map(([action, [group, permission, method, path]]) => ({ endpoint: group === 'cards' ? '/api/time-cards/action-preview' : '/api/pay-periods/action-preview', action, control: 'timeWrite.' + permission, method, target: typeof path === 'function' ? path('{id}') : path }))],
     immutable: ['owner/tenant/security/user management', 'billing', 'existing pricing policy', 'fixed Forged-only owner/admin/PM assistant eligibility', 'company/project/member/crew scope', 'feature/account locks'],
     unavailable: ['projects/customers/team/subcontractor writers', 'company settings/templates/catalog', 'report flags/rates/deletes and broader changes/tickets/aggregates', 'remaining attachment/public/provider effects and complete backup'],
-    policyWorkflowAvailable: true, policyWorkflow: { read: '/api/company/role-policy', preview: '/api/company/role-policy/preview', confirm: '/api/company/role-policy/confirm', audit: '/api/company/role-policy/audit', ownerOnly: true }, policyEditingAvailable: true };
+    namedProfilesAvailable: true, profileWorkflow: { read: '/api/company/role-policy/profiles', preview: '/api/company/role-policy/profiles/preview', confirm: '/api/company/role-policy/confirm', ownerOnly: true, scopeInheritance: require('./role-profiles').SCOPE }, policyWorkflowAvailable: true, policyWorkflow: { read: '/api/company/role-policy', preview: '/api/company/role-policy/preview', confirm: '/api/company/role-policy/confirm', audit: '/api/company/role-policy/audit', ownerOnly: true }, policyEditingAvailable: true };
 }
-module.exports = { families, roles, normalize, actor, effective, baseline, policyState, validatePolicySet, immutable, describe };
+module.exports = { profilesRequired: require('./role-profiles').required, families, roles, normalize, actor, effective, baseline, policyState, validatePolicySet, immutable, describe };

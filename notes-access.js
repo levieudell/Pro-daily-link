@@ -1,4 +1,5 @@
 'use strict';
+const profiles = require('./role-profiles');
 const { validDate } = require('./schedule-availability');
 const roles = Object.freeze(['admin', 'project_manager', 'foreman', 'field']);
 const actions = Object.freeze(['view', 'create', 'edit', 'complete']);
@@ -28,15 +29,16 @@ function validatePolicy(policy) {
   return policy;
 }
 const required = db => Boolean(db.company?.notesPolicyRequired || Object.hasOwn(db.company || {}, 'notesRolePolicy') || (db.users || []).some(user => user.notesPolicyRequired || user.notesCustomRoleId != null));
-function access(db, user) {
+function roleAccess(db, user) {
   const baseline = ceiling(user?.role);
   if (!known(user?.role) || user.role === 'owner' || !required(db)) return baseline;
   try { if (user.notesCustomRoleId != null) throw Error('Unreconciled profile'); const row = validatePolicy(db.company.notesRolePolicy).roles[user.role]; return Object.fromEntries(actions.map(action => [action, baseline[action] && row[action]])); }
   catch { return ceiling(null); }
 }
+function access(db, user) { return profiles.restrict(db, user, 'notes', roleAccess(db, user)); }
 function actor(db, user, atomic) {
-  if (!user || required(db) && !atomic && user.role !== 'owner') return null;
-  if (!atomic && !required(db)) return user;
+  if (!user || (required(db) || profiles.required(db)) && !atomic && user.role !== 'owner') return null;
+  if (!atomic && !required(db) && !profiles.required(db)) return user;
   let revision = 0; try { if (required(db)) revision = validatePolicy(db.company.notesRolePolicy).revision; } catch { revision = -1; }
   return { ...user, notesPermissions: access(db, user), notesPolicyRevision: revision };
 }

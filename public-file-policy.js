@@ -1,7 +1,7 @@
 'use strict';
 const path=require('node:path');
 const PUBLIC_FILES=new Set([
-  'workspace.html','roles-workspace.js','roles-workspace.css','workspace-actions.js',
+  'role-save-recovery.js','role-profiles-workspace.js','workspace.html','roles-workspace.js','roles-workspace.css','workspace-actions.js',
   'company-timezone.js',
   'schedule-approved-labor.js',
   'project-assistant-access.js',
