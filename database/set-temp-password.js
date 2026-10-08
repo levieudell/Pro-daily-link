@@ -12,6 +12,7 @@ function argument(name) {
 }
 
 async function main() {
+  require('./tenant-admission').blockLegacyWriter('maintenance account writer');
   const email = argument('email').trim().toLowerCase();
   if (!/^\S+@\S+\.\S+$/.test(email)) throw new Error('Use --email user@example.com');
   if (!supabase.configured()) throw new Error('Supabase is not configured');

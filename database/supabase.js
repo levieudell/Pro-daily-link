@@ -32,11 +32,12 @@ async function request(relativePath, options = {}) {
     ...options,
     headers: headers(options.headers)
   });
-  if (!response.ok) throw new Error(`Supabase request failed (${response.status}): ${(await response.text()).slice(0, 300)}`);
+  if (!response.ok) { const message = (await response.text()).slice(0, 300); if (!require('./tenant-admission').enabled()) throw new Error(`Supabase request failed (${response.status}): ${message}`); throw Object.assign(new Error(`Supabase request failed (${response.status}): ${message}`), { statusCode: response.status === 409 ? 409 : 503, code: /PDL_REVISION_CONFLICT/.test(message) ? 'PDL_REVISION_CONFLICT' : 'PDL_STORAGE_UNAVAILABLE', commitRejected: response.status >= 400 && response.status < 500 }); }
   return response;
 }
 
 async function upload(bucket, objectKey, bytes, contentType) {
+  require('./tenant-admission').blockLegacyWriter('upload');
   const safeKey = objectKey.split('/').map(encodeURIComponent).join('/');
   const save = () => request(`/storage/v1/object/${bucket}/${safeKey}`, {
     method: 'POST',
@@ -54,6 +55,7 @@ async function upload(bucket, objectKey, bytes, contentType) {
 }
 
 async function remove(bucket, objectKey) {
+  require('./tenant-admission').blockLegacyWriter('remove');
   if (!configured()) return false;
   const safeKey = objectKey.split('/').map(encodeURIComponent).join('/');
   await request(`/storage/v1/object/${bucket}/${safeKey}`, { method: 'DELETE' });
@@ -61,6 +63,7 @@ async function remove(bucket, objectKey) {
 }
 
 async function ensurePrivateBucket(bucket, fileSizeLimit = 25_000_000, allowedMimeTypes = ['application/json']) {
+  require('./tenant-admission').blockLegacyWriter('ensurePrivateBucket');
   if (!configured()) return false;
   const response = await fetch(`${process.env.SUPABASE_URL}/storage/v1/bucket`, {
     method: 'POST',
@@ -74,6 +77,7 @@ async function ensurePrivateBucket(bucket, fileSizeLimit = 25_000_000, allowedMi
 }
 
 async function createVerifiedBackup(snapshot) {
+  require('./tenant-admission').blockLegacyWriter('createVerifiedBackup');
   if (!configured()) return null;
   await ensurePrivateBucket('tenant-backups');
   const bytes = Buffer.from(JSON.stringify(snapshot));
@@ -126,6 +130,7 @@ async function listCompanySnapshots() {
 }
 
 async function saveCompanySnapshot(snapshot) {
+  require('./tenant-admission').blockLegacyWriter('saveCompanySnapshot');
   if (!configured()) return false;
   const id = snapshot.company.id;
   await request('/rest/v1/companies?on_conflict=id', {
@@ -141,6 +146,7 @@ async function loadSnapshot(id) {
 }
 
 async function saveSnapshot(id, name, data) {
+  require('./tenant-admission').blockLegacyWriter('saveSnapshot');
   if (!configured()) return false;
   await request('/rest/v1/companies?on_conflict=id', {
     method: 'POST',
@@ -160,7 +166,8 @@ async function health() {
   }
 }
 
-async function saveTransactionalSnapshot(snapshot, expectedRevision = 0) {
+async function saveTransactionalSnapshot(snapshot, expectedRevision) {
+  require('./tenant-admission').requireRevision(expectedRevision);
   if (!configured()) throw new Error('Supabase is not configured');
   const { splitSnapshot, canonicalHash, databaseCompanyId } = require('./transactional-repository');
   const companyId = databaseCompanyId(snapshot);
@@ -172,11 +179,17 @@ async function saveTransactionalSnapshot(snapshot, expectedRevision = 0) {
     body: JSON.stringify({ p_company_id: companyId, p_expected_revision: Number(expectedRevision), p_scalar_data: scalarData, p_content_hash: canonicalHash(snapshot), p_records: payload })
   });
   const [result] = await response.json();
+  if (!result || !Number.isSafeInteger(Number(result.revision)) || Number(result.revision) !== expectedRevision + 1 || Number(result.record_count) !== records.length) throw require('./tenant-admission').unknownCommit();
   return { companyId, revision: Number(result.revision), records: Number(result.record_count), contentHash: canonicalHash(snapshot) };
 }
 
 async function loadTransactionalSnapshot(companyId) {
   if (!configured()) return null;
+  if (require('./tenant-admission').enabled()) {
+    const { loadConsistentSnapshot } = require('./tenant-consistent-read');
+    return loadConsistentSnapshot(companyId, request);
+  }
+  // Preserve the existing flag-off adapter during this isolated cutover draft.
   const { assembleSnapshot, databaseCompanyId } = require('./transactional-repository');
   const id = databaseCompanyId(companyId);
   const stateResponse = await request(`/rest/v1/tenant_revisions?company_id=eq.${encodeURIComponent(id)}&select=revision,scalar_data,content_hash&limit=1`);

@@ -31,7 +31,8 @@ function splitSnapshot(snapshot) {
   const scalarData = {};
   const records = [];
   for (const [collection, value] of Object.entries(snapshot || {})) {
-    if (!Array.isArray(value)) {
+    if (['__proto__', 'constructor', 'prototype'].includes(collection)) throw new Error('Unsafe snapshot key');
+    if (!Array.isArray(value) || value.length === 0) {
       scalarData[collection] = value;
       continue;
     }
@@ -41,9 +42,12 @@ function splitSnapshot(snapshot) {
 }
 
 function assembleSnapshot(scalarData, rows) {
+  if (!scalarData || typeof scalarData !== 'object' || Array.isArray(scalarData) || Object.keys(scalarData).some(key => ['__proto__', 'constructor', 'prototype'].includes(key))) throw new Error('Invalid snapshot scalars');
   const snapshot = structuredClone(scalarData || {});
   for (const row of rows || []) {
-    snapshot[row.collection] ||= [];
+    if (typeof row.collection !== 'string' || !/^[a-zA-Z][a-zA-Z0-9_]{0,63}$/.test(row.collection) || ['constructor', 'prototype'].includes(row.collection)) throw new Error('Invalid snapshot collection');
+    if (!Object.hasOwn(snapshot, row.collection)) snapshot[row.collection] = [];
+    if (!Array.isArray(snapshot[row.collection])) throw new Error('Snapshot scalar/collection collision');
     snapshot[row.collection].push(row.data);
   }
   return snapshot;
@@ -88,11 +92,14 @@ class TransactionalTenantRepository {
       if (!state.rowCount) return null;
       const records = await client.query('SELECT collection, data FROM tenant_records WHERE company_id=$1 ORDER BY collection, position', [id]);
       const snapshot = assembleSnapshot(state.rows[0].scalar_data, records.rows);
-      return { snapshot, revision: Number(state.rows[0].revision), contentHash: state.rows[0].content_hash };
-    });
+      const revision = Number(state.rows[0].revision), contentHash = state.rows[0].content_hash;
+      if (!Number.isSafeInteger(revision) || revision < 0 || databaseCompanyId(snapshot) !== id || canonicalHash(snapshot) !== contentHash) throw Object.assign(new Error('Tenant snapshot integrity unavailable'), { code: 'PDL_TENANT_INTEGRITY', statusCode: 503 });
+      return { snapshot, revision, contentHash };
+    }, 'REPEATABLE READ');
   }
 
-  async save(snapshot, expectedRevision = null) {
+  async save(snapshot, expectedRevision) {
+    require('./tenant-admission').requireRevision(expectedRevision);
     const id = databaseCompanyId(snapshot);
     const { scalarData, records } = splitSnapshot(snapshot);
     const hash = canonicalHash(snapshot);
@@ -101,7 +108,7 @@ class TransactionalTenantRepository {
       await client.query("INSERT INTO tenant_revisions(company_id,revision,scalar_data,content_hash,updated_at) VALUES($1,0,'{}'::jsonb,'',now()) ON CONFLICT(company_id) DO NOTHING", [id]);
       const locked = await client.query('SELECT revision FROM tenant_revisions WHERE company_id=$1 FOR UPDATE', [id]);
       const actual = locked.rowCount ? Number(locked.rows[0].revision) : 0;
-      if (expectedRevision != null && Number(expectedRevision) !== actual) throw new RevisionConflictError(Number(expectedRevision), actual);
+      if (expectedRevision !== actual) throw new RevisionConflictError(Number(expectedRevision), actual);
       const revision = actual + 1;
       await client.query(`INSERT INTO tenant_revisions(company_id,revision,scalar_data,content_hash,updated_at)
         VALUES($1,$2,$3,$4,now()) ON CONFLICT(company_id) DO UPDATE SET revision=EXCLUDED.revision,scalar_data=EXCLUDED.scalar_data,content_hash=EXCLUDED.content_hash,updated_at=now()`, [id, revision, scalarData, hash]);
