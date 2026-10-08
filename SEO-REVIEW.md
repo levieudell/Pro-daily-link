@@ -13,7 +13,7 @@ Base: bdbdfe9a8b038d3dbc32327c58f5a529dbe71225. No production changes or trackin
 - Unique factual homepage and founder-page titles/descriptions; canonical homepage/about/privacy/terms URLs.
 - Sitemap lists only the five public information pages. No customer records, accounts, projects, signup queries, dashboard, guest links or fabricated articles.
 - robots permits public crawling, including OAI-SearchBot through its existing wildcard default, while excluding API/upload/token guest paths. No GPTBot-specific training-policy change.
-- Account/workspace/guest/platform/support shells receive noindex metadata. This is indexing guidance, not access control. Existing authentication and public-file allowlist remain in force.
+- All API responses receive X-Robots-Tag: noindex, nofollow. Account/workspace/guest/platform/support shells receive noindex metadata. This is indexing guidance, not access control. Existing authentication and public-file allowlist remain in force.
 - txt/xml content types and allowlist entries make crawler files actually servable.
 - Existing H1, founder claim, prices, entitlements, sample labels, CTA pairs and workflow copy remain intact. Useful search terminology is construction daily report software, field reporting, crew hours, production tracking and extra-work flags, supported by current public product/workflow copy.
 
@@ -32,4 +32,4 @@ Base: bdbdfe9a8b038d3dbc32327c58f5a529dbe71225. No production changes or trackin
 - https://developers.google.com/search/docs/crawling-indexing/block-indexing
 
 ## Validation
-Run node public-search.test.js, node --check server.js and git diff --check. Integration must rerun exact branch checks with GA4 includes and verify robots/sitemap HTTP responses in a synthetic local server before release. This draft has not been deployed.
+Policy and isolated HTTP tests are wired into npm test. Local policy/HTTP tests, server syntax and diff checks pass. HTTP fixtures verify public canonicals, signup query noindex, authenticated public HTML isolation, private API authentication/noindex, invalid guest tokens, static allowlist denials, upload auth redirects and blog query canonical avoidance. Apex redirects are hosting-level: observed publicly, not changed by this source draft. Exact Linux CI and independent review are required before release. This draft has not been deployed.
