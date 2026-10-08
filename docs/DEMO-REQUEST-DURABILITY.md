@@ -18,7 +18,10 @@ before writing; failed reset-email rollback does the same and clears only its ow
 reset token. Concurrent accepted leads and newer account changes are preserved.
 
 This does not schedule meetings, send email alerts, capture campaign attribution,
-or resolve preferred-time timezones. Requests still appear in Platform Operations
+or reserve available slots. New requests capture the visitor's IANA time zone and
+UTC instant; old zone-less requests must be confirmed explicitly. Operator status
+changes await cloud persistence and surface save/load failures with refresh
+recovery. Requests still appear in Platform Operations
 under Onboarding → Demo requests and require a person to confirm the time.
 
 ## Checks
@@ -28,8 +31,10 @@ under Onboarding → Demo requests and require a person to confirm the time.
   older/newer snapshots, preservation of unrelated data, validation, and local-only
   compatibility. No production services or real leads are used.
 - `node demo-request-ui.test.js`: VM checks for retained form values, stable retry
-  IDs, edited requests, lost responses, and duplicate submits.
-- Both are included in `npm test`; run `npm run check` and the complete suite for
+  IDs, edited requests, lost responses, duplicate submits, and time-zone capture.
+- `node platform-demo.test.js`: synthetic queue checks for load/save errors,
+  refresh recovery, escaped data, and explicit requester time-zone display.
+- All are included in `npm test`; run `npm run check` and the complete suite for
   integration regressions before publication.
 
 Ordering and deduplication are single-server-process guarantees. Multiple instances
