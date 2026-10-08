@@ -1,0 +1,43 @@
+'use strict';
+const assert = require('node:assert/strict'), crypto = require('node:crypto');
+const { fixture } = require('./fixtures/project-assistant');
+const access = require('./notes-access'), admission = require('./notes-admission');
+const { createProjectNotesHandler } = require('./project-notes');
+const assistant = require('./project-assistant'), ui = require('./project-notes-ui'), conversation = require('./project-assistant-conversation'), chat = require('./project-assistant-chat');
+const policy = () => ({ version: 1, revision: 1, roles: Object.fromEntries(access.roles.map(role => [role, access.ceiling(role)])) });
+async function main() {
+  let db = fixture(), result, writes = 0, fence = false;
+  const baseline = (current, user, projectId) => ['owner', 'admin'].includes(user.role) || user.role === 'project_manager' && user.projectIds.includes(projectId) || ['field', 'foreman'].includes(user.role) && current.assignments.some(row => row.projectId === projectId && row.memberIds.includes(user.memberId));
+  const readDb = () => db, writeDb = next => { db = next; writes++; }, body = req => Promise.resolve(req.input), json = (_res, status, data) => { result = { status, data }; };
+  const legacy = createProjectNotesHandler({ readDb, writeDb, body, json, authenticatedUser: req => req.auth.user, canAccessProject: baseline });
+  const handle = admission.createHandler({ readDb, writeDb, body, json, run: legacy, response: () => result, baselineProjectAllowed: baseline, assertCurrent: async () => { if (fence) throw Object.assign(Error('Synthetic revoked delivery'), { statusCode: 409 }); } });
+  const call = async (method, input, userId = 2, itemId = '') => { result = null; const user = access.actor(db, db.users.find(row => row.id === userId), true); await handle({ method, input, auth: { user } }, {}, new URL('http://localhost/api/projects/101/notes-todos' + (itemId ? '/' + itemId : ''))); return result; };
+  const input = { kind: 'todo', text: 'Literal <synthetic> note', dueDate: '2098-01-05', requestId: crypto.randomUUID() };
+  const original = structuredClone(db), saved = await call('POST', input); assert.equal(saved.status, 201); const row = saved.data; assert.deepEqual(db.users, original.users); assert.deepEqual(db.projects, original.projects); assert.equal(db.auditLog.length, 1);
+  let before = structuredClone(db), count = writes; assert.equal((await call('POST', input)).status, 200); assert.deepEqual(db, before); assert.equal(writes, count);
+  assert.equal((await call('PATCH', { revision: 0, text: 'bad' }, 2, row.id)).status, 400);
+  db.company.notesRolePolicy = policy(); db.company.notesRolePolicy.roles.project_manager.create = false; before = structuredClone(db); count = writes; assert.equal((await call('POST', input)).status, 403); assert.deepEqual(db, before); assert.equal(writes, count); assert.equal((await call('GET')).data.permissions.create, false);
+  db.company.notesRolePolicy.roles.project_manager.edit = false;
+  for (const patch of [{ revision: row.revision, text: row.text }, { revision: 999, text: 'denied' }, { revision: row.revision, dueDate: null }, { revision: row.revision, text: row.text, completed: true }]) assert.equal((await call('PATCH', patch, 2, row.id)).status, 403);
+  assert.equal((await call('PATCH', { revision: row.revision, completed: true }, 2, row.id)).status, 200); assert.equal(db.auditLog.at(-1).action, 'complete');
+  db.company.notesRolePolicy.roles.project_manager.complete = false; assert.equal((await call('PATCH', { revision: 999, completed: false }, 2, row.id)).status, 403);
+  db.company.notesRolePolicy.roles.project_manager = access.ceiling('project_manager'); fence = true; assert.equal((await call('GET')).status, 409); assert.equal((await call('POST', input)).status, 409); assert.equal((await call('PATCH', { revision: 999, text: 'new' }, 2, row.id)).status, 409); assert.ok(!result.data.item); fence = false;
+  for (const mutate of [value => { value.roles.owner = access.ceiling('owner'); }, value => { value.roles.field.aiAssistant = true; }, value => { value.roles.field.view = false; }, value => { value.roles.field.complete = 'yes'; }, value => { value.profiles = []; }]) { const value = policy(); mutate(value); assert.throws(() => access.validatePolicy(value)); db.company.notesRolePolicy = value; assert.equal((await call('GET')).status, 403); assert.equal((await call('GET', undefined, 1)).status, 200); }
+  delete db.company.notesRolePolicy; db.users[3].notesCustomRoleId = 'unreconciled'; assert.deepEqual(access.access(db, db.users[1]), access.ceiling(null)); delete db.users[3].notesCustomRoleId;
+  assert.equal(access.actor(db, db.users[1], false), db.users[1]); db.company.notesPolicyRequired = true; assert.equal(access.actor(db, db.users[1], false), null); delete db.company.notesPolicyRequired;
+  db.projectNotesTodos.push({ ...db.projectNotesTodos[0], companyId: 'foreign' }); assert.equal((await call('GET')).status, 409); db.projectNotesTodos.pop();
+  db.projectNotesTodos[0].history.push(null); assert.equal((await call('GET')).status, 409); db.projectNotesTodos[0].history.pop();
+  const malformedProject=structuredClone(db);malformedProject.projects[0].name={private:'Private project name sentinel'};assert.throws(()=>access.validateAssistantProject(malformedProject,101),{statusCode:409});
+  const poisoned = structuredClone(db); poisoned.projects[0].name = 'Changed by note handler'; assert.throws(() => admission.validateDelta(db, poisoned, db.users[1], 'PATCH', 101, row.id), { statusCode: 409 });
+  const savedName = db.users[1].name; db.users[1].name={tokenHash:'Private fresh actor sentinel'}; before=structuredClone(db); assert.equal((await call('POST',{...input,requestId:crypto.randomUUID()})).status,409); assert.deepEqual(db,before); assert.equal((await call('PATCH',{revision:2,text:'Bad actor'},2,row.id)).status,409); assert.deepEqual(db,before); db.users[1].name=savedName;
+  const actor = access.actor(db, db.users[1], true); actor.notesPermissions = { view: true, create: false, edit: true, complete: true }; assert.equal(assistant.allowed(db, actor, 101, null, 'note'), false); assert.equal(assistant.allowed(db, actor, 101, 11), true); assert.equal(assistant.minimalContext(db, actor, 101).capabilities.note, false);
+  for (const userId of [4, 5]) { const actor = access.actor(db, db.users.find(row => row.id === userId), true); assert.equal(assistant.allowed(db, actor, 101, null, 'note'), false); }
+  const readOnly = { view: true, create: false, edit: false, complete: false }; assert.ok(!ui.projectNotesList([row], readOnly).includes('data-note-edit')); assert.ok(!ui.projectNotesList([row], readOnly).includes('data-note-toggle')); assert.ok(!ui.projectNotesList([row], access.ceiling(null)).includes(row.text)); assert.deepEqual(ui.projectNotePermissions({ ...readOnly, aiAssistant: true }), access.ceiling(null));
+  assert.equal(conversation.actionAvailable({ capabilities: { note: false, schedule: true } }, 'note'), false); const local = chat.createChat({ projects: db.projects }); local.adopt({ action: 'note', text: 'Ready' }, 101, { capabilities: { note: false } }); assert.equal(local.ready, false); assert.match(local.question(), /unavailable/);
+  for (const value of [false, 0, '', null]) { db.company.notesRolePolicy = value; assert.equal(access.required(db), true); assert.deepEqual(access.access(db, db.users[1]), access.ceiling(null)); assert.deepEqual(access.access(db, db.users[0]), access.ceiling('owner')); } delete db.company.notesRolePolicy;
+  for (const alias of ['011', ' 11 ', 11.0]) { if(alias===11)continue; const poisoned = structuredClone(db); poisoned.team.unshift({id:alias,name:'Private unrelated foreman'}); assert.throws(()=>access.projectAllowed(poisoned,poisoned.users[3],101,()=>true),{statusCode:409}); }
+  for (const key of ['createdByUserId', 'updatedByUserId']) { const poisoned = structuredClone(db); poisoned.projectNotesTodos[0][key]={tokenHash:'Private synthetic sentinel'}; assert.throws(()=>access.validateRows(poisoned,101),{statusCode:409}); }
+  { const poisoned=structuredClone(db);poisoned.projectNotesTodos[0].history[0].userId={sessionHash:'Private synthetic sentinel'};assert.throws(()=>access.validateRows(poisoned,101),{statusCode:409}); }
+  console.log('Notes admission unit passed: exact typed reductions/owner and assistant ceilings, view/create/replay/edit/deadline/complete/mixed gates, stale/no-op delivery fences, global identities/malformed history, unchanged unrelated data, audit only real changes, and finite UI capabilities.');
+}
+main().catch(error => { console.error(error); process.exitCode = 1; });

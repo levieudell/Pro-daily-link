@@ -182,6 +182,7 @@
         node('timezone').value = context.timezone; node('timezone').readOnly = Boolean(context.timezone);
         const option = node('action').querySelector('option[value="schedule"]'); if (option) option.disabled = context.capabilities?.schedule === false;
         const batchOption = node('action').querySelector('option[value="schedule_batch"]'); if (batchOption) batchOption.disabled = context.capabilities?.schedule === false;
+        for (const action of ['note','todo']) { const choice = node('action').querySelector('option[value="' + action + '"]'); if (choice) choice.disabled = context.capabilities?.[action] === false; }
         if (context.capabilities?.schedule === false) node('action').value = 'note';
         chatState.adopt(draftPayload(),projectId,context);
         node('voice').textContent = SpeechRecognition ? 'Dictation may use your browser or device speech service. Start it only when you want to speak; then review the transcript.' : 'Dictation is unavailable on this browser. Type or use your keyboard microphone.';
@@ -213,6 +214,7 @@
     async function makePreview(event, fromConversation = false) {
       event?.preventDefault(); if (busy || uncertain || !projectId) return; stopSpeech(fromConversation); invalidate(); const version = ++sequence;
       const payload = draftPayload();
+        if (!conversationAPI.actionAvailable(authorizedContext, payload.action)) { message('This action is unavailable for your access.', true); return; }
       setBusy(true); message('Checking the preview.');
       try { const result = await boundedRequest(`/api/projects/${projectId}/assistant/preview`, payload); if (!current(version)) return; preview = result;
         node('review').innerHTML = `<h3>Review before saving</h3><p class="assistant-plain-preview">${escape(chatAPI.previewText(result))}</p>${result.conflicts.length?'<p>Nothing can be saved until these conflicts are resolved.</p><ul>'+result.conflicts.map(row=>`<li>${escape(row.memberName||'')} ${escape(row.date||'')}: ${escape(row.message)}</li>`).join('')+'</ul>':'<p>Nothing saved yet. Access and availability will be checked again.</p>'}`; node('review').hidden = false; node('confirm-actions').hidden = !result.token; message(result.token ? 'Nothing saved yet. Confirm only if this exact preview is correct.' : 'Nothing saved. Edit the assignment to resolve the conflicts.');
