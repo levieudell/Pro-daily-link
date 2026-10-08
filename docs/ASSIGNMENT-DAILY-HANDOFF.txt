@@ -1,0 +1,45 @@
+Exact scheduled-assignment handoff
+
+Trigger: two assignments for the same person, project and date, with different
+crews/scopes. Previously Create daily selected the project/date, then report
+context chose the first matching assignment. The second shift could show the
+first shift's crew, scope and times.
+
+The handoff now passes a sourceAssignmentId plus project/date through the normal
+report opener. Context resolves that exact assignment within the visible project,
+date and worker membership. Generic new reports infer a shift only when exactly
+one authorized matching assignment exists. A missing selected assignment never
+falls back to another shift. The form explains unavailable context while keeping
+entered notes, crew and labor/production edits.
+
+Assignment defaults apply on new-report opening, not each context refresh.
+An already-open report is retained when another assignment button is clicked.
+Device recovery and server drafts retain the assignment reference and selected
+crew, including an explicitly empty crew. Delayed close events cannot clear a
+newly reopened report's state.
+
+POST/PATCH validate assignment/project/date and field/foreman membership or
+manager assignment scope. A previously saved reference may survive schedule
+deletion without authorizing or inferring work. Cached clients omitting new
+metadata preserve unchanged references; date changes clear obsolete references.
+Unrelated PATCH operations leave legacy record keys unchanged. Draft deduplication
+distinguishes assignment references so identical notes on two shifts do not merge.
+
+Checks:
+- assignment-daily.test.js exercises actual UI functions and server validator:
+  exact shift, ambiguous generic report, missing/deleted/inaccessible assignment,
+  role/member/project scope, edited/empty crew recovery, repeated clicks and
+  queued-close/reopen behavior.
+- assignment-daily-api.test.js uses authenticated localhost HTTP and wholly
+  synthetic temporary data: POST, state reload, PATCH, distinct-shift drafts,
+  scope failures, deletion recovery and explicit clearing. Providers disabled;
+  all non-local transport rejected.
+- Full-app headless QA uses generated fictional demo records, intercepted APIs
+  and no external network. Exact second-shift context, edited notes/crew, empty
+  crew, refresh recovery, deletion and close/reopen pass at 390 and 320px.
+  Screenshots inspected; no production/customer record changes or owner-tab use.
+
+Scope exclusions: no derived labor-total calculation changes, extra-work UX,
+budget navigation, language features, camera/GPS or offline image storage. No
+customer data migration. Release requires exact-head full Linux CI and independent
+review; existing Windows POSIX file-mode assertions are evaluated by Linux CI.
