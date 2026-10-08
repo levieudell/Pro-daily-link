@@ -92,7 +92,7 @@ async function startBridge() {
       }
       if (req.method === 'GET' && url.pathname === '/rest/v1/tenant_records') return send(200, (await pool.query('SELECT collection,position,data FROM tenant_records WHERE company_id=$1 ORDER BY collection,position LIMIT $2 OFFSET $3', [company, Number(url.searchParams.get('limit')), Number(url.searchParams.get('offset'))])).rows);
       if (req.method === 'POST' && ['/rest/v1/rpc/replace_tenant_records', '/rest/v1/rpc/replace_tenant_policy_records'].includes(url.pathname)) {
-        const chunks = [], collect = chunk => { chunks.push(chunk); if (controls.utf8Probe) controls.utf8Probe.count++; }; req.on('data', collect);
+        const chunks = [], collect = chunk => { chunks.push(chunk); if (controls.utf8Probe) controls.utf8Probe.receivedBytes = (controls.utf8Probe.receivedBytes || 0) + chunk.length; }; req.on('data', collect);
         const input = await readJsonBody(req); req.off('data', collect); commits++;
         const formerlyDecoded = chunks.map(chunk => chunk.toString('utf8')).join('');
         const former = JSON.parse(formerlyDecoded), formerHash = canonicalHash(assembleSnapshot(former.p_scalar_data, former.p_records));
@@ -171,7 +171,7 @@ async function main() {
       utf8Request.on('error', reject); utf8Request.setTimeout(15000, () => utf8Request.destroy(Error('Synthetic UTF-8 body timeout')));
     });
     controls.utf8Probe = checkpoint(); utf8Request.write(utf8Bytes.subarray(0, utf8Split));
-    await waitFor(() => controls.utf8Probe.count > 0); utf8Request.end(utf8Bytes.subarray(utf8Split));
+    await waitFor(() => controls.utf8Probe.receivedBytes >= utf8Split); utf8Request.end(utf8Bytes.subarray(utf8Split));
     const utf8Saved = await utf8Result, utf8Observed = controls.utf8Probe; controls.utf8Probe = null; assert.equal(utf8Saved.status, 200); assert.equal(utf8Observed.legacyChanged, true, 'Real fragmented delivery must reproduce the former decoder corruption');
     const afterUtf8 = await repository.load(companyA); assert.deepEqual(afterUtf8.snapshot, utf8Candidate); assert.equal(afterUtf8.contentHash, canonicalHash(utf8Candidate));
     await repository.save(beforeUtf8.snapshot, afterUtf8.revision); assert.deepEqual((await repository.load(companyA)).snapshot, beforeUtf8.snapshot);
