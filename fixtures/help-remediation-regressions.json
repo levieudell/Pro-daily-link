@@ -1,0 +1,316 @@
+[
+  {
+    "case": 1,
+    "turn": 2,
+    "role": "owner",
+    "question": "How do I add that job?",
+    "previousQuestions": [
+      "I just signed up. What should I do first?"
+    ],
+    "actualAnswer": "To add a job/project: first create the customer in Customers, then go to Projects and add a new project. Select the customer you just created. If you’re tracking production, add the estimate scope with quantity, unit, and budget hours. ",
+    "actualClarification": "Do you mean adding a project/job in Projects, or entering a daily report for a job?",
+    "failureNote": "Context already identifies adding a job; unnecessary project-versus-daily clarification."
+  },
+  {
+    "case": 1,
+    "turn": 3,
+    "role": "owner",
+    "question": "And what scope do I enter?",
+    "previousQuestions": [
+      "I just signed up. What should I do first?",
+      "How do I add that job?"
+    ],
+    "actualAnswer": "For a new project/job, enter the estimate scope with:\n- quantity\n- unit\n- budget hours\n\nThat’s the scope info to add when you’re tracking production. Start by creating the customer in Customers, then create the project in Projects and select that customer. [project-setup]",
+    "actualClarification": null,
+    "failureNote": "Correct scope fields, but repeats initial customer/project instructions and exposes raw source tag."
+  },
+  {
+    "case": 2,
+    "turn": 1,
+    "role": "owner",
+    "question": "How do I invite my crew?",
+    "previousQuestions": [],
+    "actualAnswer": "To bring a crew member into the system, there are two parts:\n\n1. Add the employee record for the person in your team/crew area.\n2. If they need to log in, the Account Owner must create user access and send them a temporary password securely.\n\nAdmins can manage employees and crews, but login permissions should be handled by the Account Owner.",
+    "actualClarification": "Do you want steps for adding an employee record, or for creating login access for them?",
+    "failureNote": "Supported answer; no material defect identified for this prepared turn."
+  },
+  {
+    "case": 2,
+    "turn": 3,
+    "role": "owner",
+    "question": "How should I share the temporary password?",
+    "previousQuestions": [
+      "How do I invite my crew?",
+      "Does adding an employee give them a login?"
+    ],
+    "actualAnswer": "Share it securely with the new user using a private, trusted channel. The guidance only says to share the temporary password securely; it does not specify one approved method. If you want, I can also explain the steps for the Account Owner to create user access first.",
+    "actualClarification": null,
+    "failureNote": "Supported answer; no material defect identified for this prepared turn."
+  },
+  {
+    "case": 3,
+    "turn": 1,
+    "role": "admin",
+    "question": "I need to add a new crew",
+    "previousQuestions": [],
+    "actualAnswer": "Admins can manage crews, but the supplied sources do not include the exact steps for creating a new crew. If you’re on the Team area, tell me which screen you see (Employees, Crews, or a modal) and I’ll give the exact navigation from there.",
+    "actualClarification": "Which screen are you on right now: Team, Employees, or Crews?",
+    "failureNote": "Coverage gap plus unsupported promise. Give verified Team/Create crew steps or honest escalation."
+  },
+  {
+    "case": 4,
+    "turn": 1,
+    "role": "field",
+    "question": "Where do I file today's work on my phone?",
+    "previousQuestions": [],
+    "actualAnswer": "On your phone, open **My Day** and choose the accessible **job** and **date** for today. Then add your work notes and photos, review quantities and labor, and **Save draft** if it’s not ready yet. When finished, **Submit to office** sends it for review. Help can’t submit or approve it for you. If today’s job is missing, ask the office to check your assignment and account access.",
+    "actualClarification": null,
+    "failureNote": "Supported answer; no material defect identified for this prepared turn."
+  },
+  {
+    "case": 4,
+    "turn": 3,
+    "role": "field",
+    "question": "Will the office see my draft?",
+    "previousQuestions": [
+      "Where do I file today's work on my phone?",
+      "Can I finish it later?"
+    ],
+    "actualAnswer": "I can confirm that **Save draft** keeps the work incomplete, and **Submit to office** sends the daily for review. The provided help does **not** say whether the office can see a draft before you submit it.",
+    "actualClarification": null,
+    "failureNote": "Honest draft-visibility unknown; fails to give a concrete office/Support next step."
+  },
+  {
+    "case": 5,
+    "turn": 1,
+    "role": "foreman",
+    "question": "I can't see the job I'm working on",
+    "previousQuestions": [],
+    "actualAnswer": "Open **My Day** and check the list of permitted field work for your account. If the job is missing there, it usually means the office needs to confirm your assignment and account access. Please ask the office to review that for you. I can’t reveal other jobs or change access from here.",
+    "actualClarification": "Are you looking in My Day, and is the job missing from that list?",
+    "failureNote": "Usually means is an unsupported diagnostic-frequency inference; office assignment/access check itself is correct. Reasks a clear missing-job question."
+  },
+  {
+    "case": 5,
+    "turn": 3,
+    "role": "foreman",
+    "question": "What should I ask the office to check?",
+    "previousQuestions": [
+      "I can't see the job I'm working on",
+      "Can you unlock it?"
+    ],
+    "actualAnswer": "Ask the office to check whether your job is assigned to your account and whether you have access to that field work in **My Day**. If the job is missing from My Day, that usually means the office needs to confirm your assignment and account access. I can’t change access or reveal other jobs or crew private data.",
+    "actualClarification": null,
+    "failureNote": "Unsupported usually-means inference and repetitive explanation after direct request."
+  },
+  {
+    "case": 6,
+    "turn": 1,
+    "role": "project_manager",
+    "question": "How do I review a daily?",
+    "previousQuestions": [],
+    "actualAnswer": "For a Project Manager, start in **Projects** and open an assigned project. Then open the daily/report form for the job and date you want to review. Check the work notes, photos, quantities, and labor, then **Save draft** if it’s not ready to send. When it’s complete, **Submit to office** sends the daily for review. Help cannot submit or approve it for you.",
+    "actualClarification": "Do you mean reviewing a daily before submitting it, or checking a daily that was already submitted?",
+    "failureNote": "Assigned Projects is correct, but already-submitted daily review is conflated with composing/saving/submitting. Corpus lacks actual office-review path."
+  },
+  {
+    "case": 6,
+    "turn": 2,
+    "role": "project_manager",
+    "question": "Why has the actual quantity not changed?",
+    "previousQuestions": [
+      "How do I review a daily?"
+    ],
+    "actualAnswer": "Actual quantity changes only when the daily’s production has been approved. For a Project Manager, open the assigned project in **Projects**, then review the daily/report form for the job and date. If the daily is still a draft or has been submitted but not approved, it will not contribute to actual totals yet. Help cannot approve it for you.\n\nIf the expected daily is missing from Projects, ask the Account Owner to check project and crew access.",
+    "actualClarification": null,
+    "failureNote": "Approved-only totals is correct; unnecessary assumed Projects-to-daily-form path and missing-daily access advice."
+  },
+  {
+    "case": 6,
+    "turn": 3,
+    "role": "project_manager",
+    "question": "Can you approve it now?",
+    "previousQuestions": [
+      "How do I review a daily?",
+      "Why has the actual quantity not changed?"
+    ],
+    "actualAnswer": "I can’t approve it for you. For a Project Manager, the daily must be opened from **Projects** on the assigned project, then reviewed and approved by the appropriate reviewer process. Only after the daily’s production is approved will it count toward actual totals. If the project or daily isn’t visible, ask the Account Owner to check project and crew access.",
+    "actualClarification": null,
+    "failureNote": "Correctly refuses action; states daily must be opened from Projects, stronger than verified sources establish, and vague reviewer process."
+  },
+  {
+    "case": 7,
+    "turn": 1,
+    "role": "owner",
+    "question": "Why isn't today's production in the totals?",
+    "previousQuestions": [],
+    "actualAnswer": "Today’s production may not be in the totals yet if the daily is still a draft or waiting for office approval. Only approved production contributes to the actual totals. To check: open the daily report for the correct job and date, then confirm it has been submitted to the office and approved. If it’s still incomplete, you can save it as a draft and finish adding work notes, photos, quantities, and labor before submitting. Help can’t submit or approve it for you.",
+    "actualClarification": null,
+    "failureNote": "Supported answer; no material defect identified for this prepared turn."
+  },
+  {
+    "case": 8,
+    "turn": 1,
+    "role": "field",
+    "question": "Help me with that",
+    "previousQuestions": [],
+    "actualAnswer": "I’m not sure what “that” refers to. If you mean Daily Review, go to a permitted job in My Day, choose the date, add work notes/photos, review quantities and labor, then save a draft or submit to the office for review. If you mean a missing job in My Day, ask the office to check your assignment and account access.",
+    "actualClarification": "Which one do you need help with: Daily Review or a missing job in My Day?",
+    "failureNote": "Should ask one short open clarification; instead gives two lengthy speculative workflows and uses unverified Daily Review label."
+  },
+  {
+    "case": 8,
+    "turn": 2,
+    "role": "field",
+    "question": "I'm looking at My Day",
+    "previousQuestions": [
+      "Help me with that"
+    ],
+    "actualAnswer": "Got it — in My Day, you should only see permitted field work. If a job is missing, the office needs to check your assignment and account access. I can help with either the My Day job list or the Daily Review steps.",
+    "actualClarification": "Are you asking about a missing job in My Day, or how to use Daily Review from My Day?",
+    "failureNote": "Permitted-work statement is correct; still asks similar choice after My Day context and uses Daily Review terminology."
+  },
+  {
+    "case": 8,
+    "turn": 3,
+    "role": "field",
+    "question": "Where should I start?",
+    "previousQuestions": [
+      "Help me with that",
+      "I'm looking at My Day"
+    ],
+    "actualAnswer": "Start in My Day and look for a permitted job. From there, Daily Review begins by choosing an accessible job and date, then adding work notes and photos, reviewing quantities and labor, and saving a draft or submitting to the office for review. If the job you expect is missing from My Day, the office needs to check your assignment and account access.",
+    "actualClarification": "Do you want the steps for Daily Review, or are you asking about a missing job in My Day?",
+    "failureNote": "Practical starting step present, but another unnecessary clarification and Daily Review terminology."
+  },
+  {
+    "case": 9,
+    "turn": 1,
+    "role": "admin",
+    "question": "How do I turn email tips off?",
+    "previousQuestions": [],
+    "actualAnswer": "If you’re an owner or admin, email tips are controlled in Help Center preferences. Turning them off withdraws your email-tips preference, and field users do not receive this email campaign. I don’t have the exact button path in the verified sources, so if you want, I can help you locate the Help Center preferences screen.",
+    "actualClarification": "Are you asking about the draft email setup tips in Help Center preferences?",
+    "failureNote": "Corpus lacks exact checkbox/Save labels; answer admits gap, then reasks a clear email-tips question."
+  },
+  {
+    "case": 9,
+    "turn": 2,
+    "role": "admin",
+    "question": "Can I keep the in-app tips?",
+    "previousQuestions": [
+      "How do I turn email tips off?"
+    ],
+    "actualAnswer": "Help Center preferences control the in-app tips. The verified source also says owners and admins may opt into the draft email setup tips, and turning email tips off withdraws that email preference. I can’t confirm from the source whether there’s a separate setting to keep in-app tips while turning off email tips.",
+    "actualClarification": "Do you mean the draft email setup tips, or the in-app tips in Help Center preferences?",
+    "failureNote": "Cannot answer keep-in-app question; verified implementation has independent preferences, omitted by corpus. Clarification ignores explicit question."
+  },
+  {
+    "case": 9,
+    "turn": 3,
+    "role": "admin",
+    "question": "Will this cancel password reset emails?",
+    "previousQuestions": [
+      "How do I turn email tips off?",
+      "Can I keep the in-app tips?"
+    ],
+    "actualAnswer": "I can’t confirm that from the verified sources. The only email setting documented here is Help Center preferences for draft email setup tips, and turning that off only withdraws that email-tips preference. The sources do not say it affects password reset emails.\n\nIf you mean the draft email setup tips in Help Center preferences, I can help with that; if you mean actual account password reset emails, please check with the Account Owner or Support.",
+    "actualClarification": "Do you mean draft email setup tips, or password reset emails?",
+    "failureNote": "Safe unknown about reset mail, but no verified separation passage, repeated clarification despite explicit password-reset wording, irrelevant crew-access source."
+  },
+  {
+    "case": 10,
+    "turn": 2,
+    "role": "field",
+    "question": "Can I still get a helpful daily tip?",
+    "previousQuestions": [
+      "Will I get marketing emails every day?"
+    ],
+    "actualAnswer": "If you mean in-app Help Center tips, those are controlled by Help Center preferences. The verified info only mentions draft email setup tips for owners and admins, and says email delivery is disabled. It does not mention a daily tip schedule. If you mean email tips, field users do not receive that email campaign.",
+    "actualClarification": "Do you mean in-app Help Center tips or email tips?",
+    "failureNote": "Fails core daily-tip question because corpus omits cadence; unnecessarily revisits email after field campaign exclusion."
+  },
+  {
+    "case": 10,
+    "turn": 3,
+    "role": "field",
+    "question": "Can I dismiss it?",
+    "previousQuestions": [
+      "Will I get marketing emails every day?",
+      "Can I still get a helpful daily tip?"
+    ],
+    "actualAnswer": "I’m not sure which tip you mean. The verified info says Help Center preferences control in-app tips, and owners/admins can turn off draft email setup tips; field users do not receive that email campaign. If you mean the email tips, turning them off withdraws that preference. If you mean an in-app tip, I don’t have a verified step for dismissing it.",
+    "actualClarification": "Do you mean an in-app Help Center tip or the email setup tips?",
+    "failureNote": "Fails dismissal question because corpus omits Dismiss this tip; repeated ambiguity despite in-app context."
+  },
+  {
+    "case": 11,
+    "turn": 1,
+    "role": "owner",
+    "question": "Can I get a discount?",
+    "previousQuestions": [],
+    "actualAnswer": "I can’t help with discounts or pricing offers from the available help sources. If you need pricing changes or a discount review, please contact your account owner or Support.",
+    "actualClarification": null,
+    "failureNote": "Supported answer; no material defect identified for this prepared turn."
+  },
+  {
+    "case": 11,
+    "turn": 2,
+    "role": "owner",
+    "question": "What if I buy today?",
+    "previousQuestions": [
+      "Can I get a discount?"
+    ],
+    "actualAnswer": "I don’t have any verified help info about purchase incentives or “buy today” offers. I can’t confirm discounts or special pricing from the available sources. For any pricing or discount questions, please contact your account owner or Support.",
+    "actualClarification": null,
+    "failureNote": "Supported answer; no material defect identified for this prepared turn."
+  },
+  {
+    "case": 11,
+    "turn": 3,
+    "role": "owner",
+    "question": "Can you change my plan?",
+    "previousQuestions": [
+      "Can I get a discount?",
+      "What if I buy today?"
+    ],
+    "actualAnswer": "I can’t change your plan from here, and I don’t have any verified help info about plan changes in the supplied sources. Please contact your account owner or Support for plan updates.",
+    "actualClarification": null,
+    "failureNote": "Supported answer; no material defect identified for this prepared turn."
+  },
+  {
+    "case": 12,
+    "turn": 1,
+    "role": "owner",
+    "question": "Does PDL work offline?",
+    "previousQuestions": [],
+    "actualAnswer": "I don’t have a verified source for offline support, so I can’t confirm whether PDL works offline. Please check with your account owner or PDL Support for the current product capability.",
+    "actualClarification": null,
+    "failureNote": "Supported answer; no material defect identified for this prepared turn."
+  },
+  {
+    "case": 12,
+    "turn": 2,
+    "role": "owner",
+    "question": "What about without cell service?",
+    "previousQuestions": [
+      "Does PDL work offline?"
+    ],
+    "actualAnswer": "I don’t have a verified source that says whether PDL works without cell service, so I can’t confirm offline behavior. Please check with your Account Owner or PDL Support for the current product capability.",
+    "actualClarification": null,
+    "failureNote": "Supported answer; no material defect identified for this prepared turn."
+  },
+  {
+    "case": 12,
+    "turn": 3,
+    "role": "owner",
+    "question": "Can you guarantee it saves?",
+    "previousQuestions": [
+      "Does PDL work offline?",
+      "What about without cell service?"
+    ],
+    "actualAnswer": "I can’t guarantee offline saving. The only verified note I have is that on the Daily Review form, **Save draft keeps incomplete work**. I don’t have a verified source for saving without cell service or in other screens. If you need confirmation for offline behavior, check with your Account Owner or PDL Support.",
+    "actualClarification": "Are you asking about saving a Daily Review draft, or another screen in PDL?",
+    "failureNote": "Correctly declines offline-save guarantee; unnecessary other-screen clarification after explicit no-cell-service context."
+  }
+]
