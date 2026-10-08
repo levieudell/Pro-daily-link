@@ -29,6 +29,7 @@ jobs:
           node-version: 20
           cache: npm
       - run: npm ci
+      - run: node capability-registry.test.js
       - run: node notes-admission.test.js
       - run: node notes-assistant-policy.test.js
       - run: node photo-admission.test.js

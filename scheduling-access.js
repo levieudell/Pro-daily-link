@@ -14,7 +14,7 @@ function validatePolicy(value) {
   }
   return value;
 }
-function required(db) { return Boolean(db.company?.schedulingPolicyRequired || db.company?.schedulingRolePolicy); }
+function required(db) { return Boolean(db.company?.schedulingPolicyRequired || Object.hasOwn(db.company || {}, 'schedulingRolePolicy')); }
 function access(db, user) {
   if (!user || !known(user.role)) return denied();
   const baseline = ceiling(user.role);

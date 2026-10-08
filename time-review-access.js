@@ -15,7 +15,7 @@ function validatePolicy(value) {
   }
   return value;
 }
-function required(db) { return Boolean(db.company?.timeReviewPolicyRequired || db.company?.timeReviewRolePolicy); }
+function required(db) { return Boolean(db.company?.timeReviewPolicyRequired || Object.hasOwn(db.company || {}, 'timeReviewRolePolicy')); }
 function access(db, user) {
   if (!user || !known(user.role)) return denied();
   const maximum = ceiling(user.role), manage = user.role === 'owner' || office(user.role) && user.permissions?.manageTime === true;

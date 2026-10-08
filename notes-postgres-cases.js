@@ -45,7 +45,7 @@ module.exports = async function ({ repository, change, request, slowRequest, bas
   await change(db => { db.company.notesRolePolicy = policy(); });
   const name = (await load()).snapshot.users.find(row => row.id === 2).name;
   await change(db => { db.users.find(row => row.id === 2).name = { tokenHash: 'Private fresh actor sentinel' }; }); before = await load();
-  for (const [method, route, body, expected] of [['POST', path, input(), 409], ['PATCH', path + '/' + id, { revision: 2, text: 'Bad actor' }, 409], ['POST', '/api/projects/101/assistant/preview', { action: 'note', text: 'Bad actor', deadline: 'none', dueDate: '' }, 403]]) { const result = await call(method, route, body, 2, expected); assert.ok(!JSON.stringify(result.data).includes('Private fresh actor sentinel')); assert.deepEqual(await load(), before); }
+  for (const [method, route, body, expected] of [['POST', path, input(), 409], ['PATCH', path + '/' + id, { revision: 2, text: 'Bad actor' }, 409], ['POST', '/api/projects/101/assistant/preview', { action: 'note', text: 'Bad actor', deadline: 'none', dueDate: '' }, 409]]) { const result = await call(method, route, body, 2, expected); assert.ok(!JSON.stringify(result.data).includes('Private fresh actor sentinel')); assert.deepEqual(await load(), before); }
   await change(db => { db.users.find(row => row.id === 2).name = name; });
   // Fresh buffered delivery fences cover list, conflict disclosure, no-op and create replay.
   for (const [method, route, body] of [['GET', path, undefined], ['POST', path, payload], ['PATCH', path + '/' + id, { revision: 999, text: 'Conflict' }], ['PATCH', path + '/' + id, { revision: 2, completed: true }]]) {

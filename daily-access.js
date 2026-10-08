@@ -11,7 +11,7 @@ function validatePolicy(policy) {
   for (const role of roles) { const row = policy.roles[role], maximum = ceiling(role); if (!object(row, actions) || Object.keys(row).length !== actions.length || actions.some(action => typeof row[action] !== 'boolean' || row[action] && !maximum[action]) || (row.createReports || row.editReports || row.approveReports) && !row.viewReports || row.runWorkdays && (!row.viewWorkdays || !row.createReports)) throw Error('Invalid daily actions'); }
   return policy;
 }
-const required = db => Boolean(db.company?.dailyPolicyRequired || db.company?.dailyRolePolicy);
+const required = db => Boolean(db.company?.dailyPolicyRequired || Object.hasOwn(db.company || {}, 'dailyRolePolicy'));
 function access(db, user) {
   const denied = () => Object.fromEntries(actions.map(action => [action, false]));
   if (!user || !known(user.role)) return denied();

@@ -14,7 +14,7 @@ function validatePolicy(value) {
   }
   return value;
 }
-function required(db) { return Boolean(db.company?.timeOffPolicyRequired || db.company?.timeOffRolePolicy); }
+function required(db) { return Boolean(db.company?.timeOffPolicyRequired || Object.hasOwn(db.company || {}, 'timeOffRolePolicy')); }
 function access(db, user) {
   if (!user || !known(user.role)) return denied();
   const baseline = ceiling(user.role);

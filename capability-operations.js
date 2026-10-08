@@ -1,0 +1,60 @@
+'use strict';
+// Admission/coverage metadata only. A listed control never replaces handler scope,
+// typed input, preview/confirmation, immutable protections or SQL CAS.
+const rows = [];
+function add(id, methods, pattern, controls = [], immutable = null) { rows.push(Object.freeze({ id, methods: Object.freeze(methods.split(' ')), pattern, controls: Object.freeze(controls), immutable })); }
+add('account.me', 'GET', /^\/api\/auth\/me$/, [], 'authenticated-self');
+add('account.access', 'GET', /^\/api\/account-access$/, [], 'authenticated-self');
+add('account.login', 'POST', /^\/api\/auth\/login$/, [], 'credentials-and-tenant');
+add('account.logout', 'POST', /^\/api\/auth\/logout$/, [], 'authenticated-self');
+add('accounts.list', 'GET', /^\/api\/users$/, [], 'owner');
+add('accounts.edit', 'PATCH', /^\/api\/users\/\d+$/, [], 'owner-and-owner-protection');
+add('roles.registry', 'GET', /^\/api\/company\/role-capabilities$/, [], 'owner');
+for (const [method, action] of [['GET', 'view'], ['POST', 'create']]) add('schedule.' + action, method, /^\/api\/assignments$/, ['scheduling.' + action]);
+for (const [method, action] of [['PATCH', 'edit'], ['DELETE', 'remove']]) add('schedule.' + action, method, /^\/api\/assignments\/\d+$/, ['scheduling.' + action]);
+add('schedule.acknowledge', 'POST', /^\/api\/assignments\/\d+\/acknowledge$/, ['scheduling.acknowledge']);
+add('schedule.availability', 'GET', /^\/api\/schedule-availability$/, ['scheduling.view']);
+add('leave.view', 'GET', /^\/api\/time-off-requests$/, ['timeOff.viewRequests']);
+add('leave.create', 'POST', /^\/api\/time-off-requests$/, ['timeOff.createRequest']);
+add('leave.review', 'POST', /^\/api\/time-off-requests\/[^/]+\/(review-preview|approve|decline)$/, ['timeReview.reviewLeave', 'timeOff.viewRequests']);
+add('cards.view', 'GET', /^\/api\/time-cards$/, ['timeReview.viewCards']);
+add('cards.approve', 'POST', /^\/api\/time-cards\/(approve|\d+\/approve)$/, ['timeReview.approveCards']);
+add('cards.unapprove', 'POST', /^\/api\/time-cards\/\d+\/unapprove$/, ['timeReview.unapproveCards']);
+add('cards.reviewPreview', 'POST', /^\/api\/time-cards\/review-preview$/, ['timeReview.approveCards', 'timeReview.unapproveCards']);
+add('cards.actionPreview', 'POST', /^\/api\/time-cards\/action-preview$/, ['timeWrite.createCards', 'timeWrite.correctCards', 'timeWrite.removeCards', 'timeWrite.submitCards', 'timeWrite.clockCards']);
+add('cards.create', 'POST', /^\/api\/time-cards$/, ['timeWrite.createCards']);
+add('cards.correct', 'PATCH', /^\/api\/time-cards\/\d+$/, ['timeWrite.correctCards']);
+add('cards.remove', 'DELETE', /^\/api\/time-cards\/\d+$/, ['timeWrite.removeCards']);
+add('cards.submit', 'POST', /^\/api\/time-cards\/\d+\/submit$/, ['timeWrite.submitCards']);
+add('cards.clock', 'POST', /^\/api\/time-cards\/(company-clock|\d+\/clock-out)$/, ['timeWrite.clockCards']);
+add('cards.download', 'GET', /^\/api\/time-cards\.csv$/, ['timeWrite.downloadCards']);
+add('cards.laborSuggestions', 'GET', /^\/api\/report-labor-suggestions$/, ['timeWrite.correctCards']);
+add('cards.activities', 'GET', /^\/api\/company-activities$/, ['timeWrite.viewActivities']);
+add('payroll.view', 'GET', /^\/api\/pay-periods(?:\/[0-9a-f-]{36}\/summary)?$/, ['timeWrite.viewPayroll']);
+add('payroll.preview', 'POST', /^\/api\/pay-periods\/action-preview$/, ['timeWrite.configurePeriods', 'timeWrite.captureExports']);
+add('payroll.createPeriod', 'POST', /^\/api\/pay-periods$/, ['timeWrite.configurePeriods']);
+add('payroll.editPeriod', 'PATCH', /^\/api\/pay-periods\/[0-9a-f-]{36}$/, ['timeWrite.configurePeriods']);
+add('payroll.capture', 'POST', /^\/api\/pay-periods\/[0-9a-f-]{36}\/exports$/, ['timeWrite.captureExports']);
+add('payroll.download', 'GET', /^\/api\/pay-periods\/[0-9a-f-]{36}\/exports(?:\/[0-9a-f-]{36}(?:\.csv)?)?$/, ['timeWrite.downloadExports']);
+add('daily.preview', 'POST', /^\/api\/daily-actions\/preview$/, ['daily.createReports', 'daily.editReports', 'daily.approveReports', 'daily.runWorkdays'], 'owner-only-reporting-export-when-selected');
+add('daily.view', 'GET', /^\/api\/reports(?:\/\d+)?$/, ['daily.viewReports']);
+add('daily.create', 'POST', /^\/api\/reports$/, ['daily.createReports']);
+add('daily.edit', 'PATCH', /^\/api\/reports\/\d+$/, ['daily.editReports', 'daily.approveReports'], 'approved-source-requires-approval');
+add('daily.approve', 'PATCH', /^\/api\/reports\/\d+\/approve$/, ['daily.approveReports']);
+add('workdays.view', 'GET', /^\/api\/workdays(?:\/\d+)?$/, ['daily.viewWorkdays']);
+add('workdays.run', 'POST', /^\/api\/workdays\/(start|\d+\/end)$/, ['daily.runWorkdays']);
+add('reporting.capture', 'POST', /^\/api\/reporting-exports$/, [], 'owner');
+add('reporting.download', 'GET', /^\/api\/reporting-exports(?:\/[0-9a-f-]{36}(?:\.csv)?)?$/, [], 'owner');
+add('photos.upload', 'POST', /^\/api\/photos(?:\/upload-preview)?$/, ['daily.editReports', 'daily.runWorkdays'], 'source-dependent-workday-and-draft-bindings');
+add('photos.view', 'GET', /^\/api\/photos\/\d+(?:\/file)?$/, ['daily.viewReports', 'daily.viewWorkdays'], 'source-dependent-workday-bindings');
+add('photos.file', 'GET', /^\/api\/files\/project-photos\/[0-9a-f-]{36}\/atomic-photos\/[0-9a-f-]{36}\/photo\.(jpg|png|webp)$/, ['daily.viewReports', 'daily.viewWorkdays'], 'committed-private-object');
+add('photos.export', 'GET', /^\/api\/photos\/(recovery-manifest|\d+\/export)$/, [], 'owner');
+add('notes.view', 'GET', /^\/api\/projects\/\d+\/notes-todos(?:\/[^/]+)?$/, ['notes.view']);
+add('notes.create', 'POST', /^\/api\/projects\/\d+\/notes-todos(?:\/[^/]+)?$/, ['notes.view', 'notes.create']);
+add('notes.change', 'PATCH', /^\/api\/projects\/\d+\/notes-todos(?:\/[^/]+)?$/, ['notes.view', 'notes.edit', 'notes.complete'], 'input-dependent-edit-or-complete');
+add('assistant.context', 'GET', /^\/api\/projects\/\d+\/assistant\/context$/, [], 'fixed-tenant-role-and-project-scope');
+add('assistant.action', 'POST', /^\/api\/projects\/\d+\/assistant\/(preview|confirm)$/, ['scheduling.create', 'notes.view', 'notes.create'], 'action-dependent-fixed-tenant-role-scope-and-proof');
+Object.freeze(rows);
+function classify(method, pathname) { return rows.find(row => row.methods.includes(method) && row.pattern.test(pathname)) || null; }
+function describe() { return rows.map(({ pattern, ...row }) => ({ ...row, pathPattern: pattern.source, controlsMeaning: 'Potential typed checks; selected action/input/source determines required checks in the actual handler.' })); }
+module.exports = { classify, describe };
