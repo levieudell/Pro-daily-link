@@ -89,7 +89,7 @@ module.exports = async function ({ repository, change, request, slowRequest, bas
   before = await load(); await commit(startPre, '/api/workdays/start', 'POST', 4, 0, 200, started.conf); assert.deepEqual(await load(), before);
   // Anchor synthetic existing start 68 minutes ago; preserve .01 report elapsed
   // versus .25 card rounding without changing the original computation helpers.
-  const startAt = new Date(Date.now() - 68 * 60000).toISOString(); await change(db => { db.workdays[0].startedAt = startAt; db.timeCards.forEach(row => { row.inAt = startAt; }); });
+  let startAt = new Date(Date.now() - 68 * 60000).toISOString(); await change(db => { db.workdays[0].startedAt = startAt; db.timeCards.forEach(row => { row.inAt = startAt; }); });
   for (const corrupt of [row => { row.projectId = 102; }, row => { row.memberId = 13; }, row => { row.deletedAt = '2026-01-01'; }, row => { row.status = 'approved'; }, row => { row.Status = 'approved'; }, row => { row.state = 'submitted'; }, row => { row.payrollLockedAt = '2026-01-01'; }]) {
     const original = structuredClone((await load()).snapshot.timeCards[0]); await change(db => { corrupt(db.timeCards[0]); }); before = await load(); await preview('endWorkday', { notes: 'Synthetic completed work' }, dayId, 4, 0, 409); assert.deepEqual(await load(), before); await change(db => { db.timeCards[0] = original; });
   }
@@ -98,9 +98,12 @@ module.exports = async function ({ repository, change, request, slowRequest, bas
     const intactDay = structuredClone((await load()).snapshot.workdays[0]); await change(corrupt); before = await load(); await preview('endWorkday', { notes: 'Needs source reconciliation' }, dayId, 4, 0, 409); assert.deepEqual(await load(), before); await change(db => { db.timeCards = structuredClone(intactCards); db.workdays[0] = intactDay; });
   }
   await change(db => { db.company.timeWriteRolePolicy = policy(time); db.company.timeWriteRolePolicy.roles.field.clockCards = false; }); before = await load(); await preview('endWorkday', { notes: 'No policy bypass' }, dayId, 4, 0, 403); assert.deepEqual(await load(), before); await change(db => { delete db.company.timeWriteRolePolicy; });
+  // Reanchor after adversarial source checks; clocks still use actual confirmation
+  // time, so a slower worker may legitimately cross a hundredth-hour boundary.
+  startAt = new Date(Date.now() - 68 * 60000).toISOString(); await change(db => { db.workdays[0].startedAt = startAt; db.timeCards.forEach(row => { row.inAt = startAt; }); });
   const endPre = await preview('endWorkday', { notes: 'Synthetic completed work', foreman: 'Synthetic user 4' }, dayId, 4), ended = await commit(endPre, '/api/workdays/' + dayId + '/end', 'POST', 4);
   const elapsed = Math.max(0, Math.round((Date.parse(ended.result.data.workday.endedAt) - Date.parse(startAt)) / 3600000 * 100) / 100);
-  assert.equal(ended.result.data.report.status, 'Draft'); assert.equal(ended.result.data.report.signature, ''); assert.deepEqual(ended.result.data.report.productionEntries, []); assert.ok(ended.result.data.report.laborEntries.every(row => row.hours === elapsed)); assert.equal(elapsed, 1.13);
+  assert.equal(ended.result.data.report.status, 'Draft'); assert.equal(ended.result.data.report.signature, ''); assert.deepEqual(ended.result.data.report.productionEntries, []); assert.ok(ended.result.data.report.laborEntries.every(row => row.hours === elapsed)); assert.notEqual(elapsed, 1.25, 'Report elapsed hundredths remain distinct from gross card quarter rounding');
   current = await load(); assert.ok(current.snapshot.timeCards.every(row => row.hours === 1.25 && row.status === 'draft' && row.reportId === ended.result.data.report.id));
   before = current; await commit(endPre, '/api/workdays/' + dayId + '/end', 'POST', 4, 0, 200, ended.conf); assert.deepEqual(await load(), before);
 
