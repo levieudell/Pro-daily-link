@@ -6,13 +6,17 @@
     const url = new URL(href);
     if (!Object.hasOwn(pages, url.pathname) || !config.hosts.includes(url.hostname) || url.protocol !== 'https:') return null;
     const safe = new URL(url.origin + url.pathname);
-    // Reject the entire visit when a URL contains unknown or sensitive values.
-    // A character regex alone cannot distinguish campaign labels from personal data.
+    // Campaign values need explicit review for attribution. Unreviewed UTM values
+    // are discarded, so a consenting public visit can still count canonically.
+    // Other unknown/private query values suppress the entire visit.
     for (const [key, value] of url.searchParams) {
       if (key === 'plan' && ['starter', 'growth', 'pro'].includes(value)) continue;
       if (url.pathname === '/blog.html' && key === 'post' && config.blogSlugs?.includes(value)) { safe.searchParams.set(key, value); continue; }
-      if (!config.campaignValues[key]?.includes(value)) return null;
-      safe.searchParams.set(key, value);
+      if (/^utm_(source|medium|campaign|term|content)$/.test(key)) {
+        if (config.campaignValues[key]?.includes(value)) safe.searchParams.set(key, value);
+        continue;
+      }
+      return null;
     }
     if (url.hash && !['#how', '#demo', '#features', '#pricing', '#faq', '#book-demo', '#onboarding'].includes(url.hash)) return null;
     return { location: safe.href, title: pages[url.pathname] };

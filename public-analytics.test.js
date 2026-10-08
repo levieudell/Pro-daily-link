@@ -7,7 +7,8 @@ const config = { enabled: true, measurementId: 'G-TEST123', hosts: ['prodailylin
 const base = 'https://prodailylink.com';
 assert.equal(safePage(base+'/app?tenant=secret',config),null);
 for(const path of ['/index.html','/guest/abc','/login.html','/platform.html','/reset-password.html']) assert.equal(safePage(base+path,config),null);
-for(const query of ['token=secret','email=person%40example.com','utm_source=person%40example.com','utm_campaign=customer-name','gclid=secret','slug=customer','utm_content=secret']) assert.equal(safePage(base+'/?'+query,config),null);
+for(const query of ['token=secret','tenant=secret','email=person%40example.com','gclid=secret','slug=customer','unknown=secret']) assert.equal(safePage(base+'/?'+query,config),null);
+for(const query of ['utm_source=person%40example.com','utm_campaign=customer-name','utm_content=secret','utm_term=private-name']) assert.equal(safePage(base+'/?'+query,config).location,base+'/');
 assert.equal(safePage(base+'/#customer-secret',config),null);
 assert.ok(safePage(base+'/#how',config)); assert.ok(safePage(base+'/#demo',config));
 assert.equal(safePage(base+'/blog.html?post=customer-secret',config),null);
@@ -45,6 +46,13 @@ b.win.history.replaceState({},'', '/about.html#pricing'); assert.equal(b.views()
 b.win.history.pushState({},'', '/app?tenant=secret'); assert.equal(b.views().length,2); assert.equal(b.win['ga-disable-G-TEST123'],true);
 assert.ok(!JSON.stringify(b.win.dataLayer).includes('secret'));
 const attributed=browser({choice:'accepted',href:base+campaign}); assert.equal(new URL(attributed.links[0].href).searchParams.get('utm_campaign'),'launch');
+const unreviewed=browser({choice:'accepted',href:base+'/?utm_source=person%40example.com&utm_campaign=customer-secret&utm_content=private-secret'});
+assert.equal(unreviewed.views().length,1,'unreviewed campaign visit still counts canonical public page');
+assert.equal(unreviewed.views()[0][2].page_location,base+'/');
+assert.equal(new URL(unreviewed.links[0].href).searchParams.get('utm_campaign'),null,'unreviewed labels never copied to signup');
+for(const value of ['person@example.com','person%40example.com','customer-secret','private-secret','utm_content'])assert.ok(!JSON.stringify(unreviewed.win.dataLayer).includes(value),'unreviewed query never reaches tag commands');
+const mixedPrivate=browser({choice:'accepted',href:base+campaign+'&tenant=secret'});assert.equal(mixedPrivate.views().length,0);
+const defaultsOnly={...config,campaignValues:{utm_source:[],utm_medium:[],utm_campaign:[]},blogSlugs:[]};assert.equal(safePage(base+campaign,defaultsOnly).location,base+'/');
 const revoke=browser({choice:'accepted',cookie:'_ga=abc; _ga_TEST123=def'});
 revoke.panel().onclick({target:{dataset:{choice:'declined'}}});
 assert.equal(revoke.win['ga-disable-G-TEST123'],true); assert.equal(revoke.win.reloaded,true); assert.ok(revoke.cookies.some(v=>v.startsWith('_ga=;')));
