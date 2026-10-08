@@ -133,6 +133,8 @@ async function startBridge() {
         if (controls.gate && (!controls.commitFilter || controls.commitFilter(url, input))) { const current = controls.gate; current.count++; if (current.count === current.expected) current.resolve(); await current.promise; }
         if (controls.rejectCommit) return send(400, { message: 'Synthetic commit rejected before SQL' });
         const policy = url.pathname.endsWith('replace_tenant_policy_records');
+        const wireHash = canonicalHash(assembleSnapshot(input.p_scalar_data, input.p_records));
+        if (wireHash !== input.p_content_hash) console.error('SYNTHETIC_RPC_HASH_DIAGNOSTIC=' + JSON.stringify({ revision: input.p_expected_revision, suppliedHash: input.p_content_hash, wireHash }));
         const result = await pool.query(policy ? 'SELECT * FROM replace_tenant_policy_records($1,$2,$3,$4,$5,$6)' : 'SELECT * FROM replace_tenant_records($1,$2,$3,$4,$5)', [input.p_company_id, input.p_expected_revision, input.p_scalar_data, input.p_content_hash, JSON.stringify(input.p_records), ...(policy ? [input.p_policy_guard] : [])]);
         rememberCommit(input.p_company_id, result.rows[0].revision, assembleSnapshot(input.p_scalar_data, input.p_records));
         if (controls.dropAck) return req.socket.destroy();
@@ -159,13 +161,18 @@ async function startWorker({ dispatch = false } = {}) {
   const env = { ...process.env };
   for (const name of Object.keys(env)) if (/^(SENTRY_|RESEND_|OPENAI_|STRIPE_|SUPABASE_|DATABASE_URL$|PDL_)/.test(name)) delete env[name];
   Object.assign(env, { PDL_DB_FILE: localFile, PDL_PLATFORM_FILE: path.join(temp, 'platform.json'), PDL_REQUIRE_AUTH: '1', PDL_SUPABASE_ENABLED: '1', PDL_TRANSACTIONAL_DB: 'primary', PDL_TENANT_ATOMIC: '1', SUPABASE_URL: bridgeBase, SUPABASE_SECRET_KEY: 'synthetic-only-atomic-stub', PDL_ASSISTANT_AI_ENABLED: '0', PDL_AUTH_FAIL_LIMIT: '3', RESEND_API_KEY: 'synthetic-localhost-only', PDL_ASSIGNMENT_OUTBOX_DISPATCH: dispatch ? '1' : '0' });
-  const script = `const original=global.fetch;global.fetch=(url,options)=>{if(String(url)==='https://api.resend.com/emails')return original(${JSON.stringify(bridgeBase + '/synthetic-resend')},options);if(new URL(url).origin!==${JSON.stringify(bridgeBase)})throw Error('External network forbidden');return original(url,options)};const{server}=require('./server');server.listen(0,'127.0.0.1',()=>console.log('ATOMIC_PORT='+server.address().port));`;
+  const script = `const original=global.fetch;global.fetch=(url,options)=>{if(String(url)==='https://api.resend.com/emails')return original(${JSON.stringify(bridgeBase + '/synthetic-resend')},options);if(new URL(url).origin!==${JSON.stringify(bridgeBase)})throw Error('External network forbidden');return original(url,options)};require('./fixtures/snapshot-wire-diagnostics').observeWrites();const{server}=require('./server');server.listen(0,'127.0.0.1',()=>console.log('ATOMIC_PORT='+server.address().port));`;
   const child = spawn(process.execPath, ['-e', script], { cwd: __dirname, env, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] });
   children.push(child);
   return new Promise((resolve, reject) => {
     let log = ''; const timeout = setTimeout(() => reject(Error('Worker start timeout: ' + log)), 15000);
     child.stdout.on('data', bytes => { log += bytes; const match = log.match(/ATOMIC_PORT=(\d+)/); if (match) { clearTimeout(timeout); resolve('http://127.0.0.1:' + match[1]); } });
-    child.stderr.on('data', bytes => { log += bytes; });
+    let diagnosticBuffer = '';
+    child.stderr.on('data', bytes => {
+      log += bytes; diagnosticBuffer += bytes;
+      const lines = diagnosticBuffer.split('\n'); diagnosticBuffer = lines.pop();
+      for (const line of lines) if (line.startsWith('SYNTHETIC_WRITE_DIAGNOSTIC=')) console.error(line);
+    });
     child.once('error', error => { clearTimeout(timeout); reject(error); });
     child.once('exit', code => { clearTimeout(timeout); reject(Error('Worker exit ' + code + ': ' + log)); });
   });
