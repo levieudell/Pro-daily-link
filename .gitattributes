@@ -1,0 +1,3 @@
+artifacts/pdl-help-evaluator-v2.cjs -text
+help-evaluation-v2*.js text eol=lf
+scripts/build-help-evaluator-v2.js text eol=lf
