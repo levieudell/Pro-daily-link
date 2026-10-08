@@ -137,6 +137,13 @@ try{
     const first=invoice(sub,'starter'),renew=invoice(sub,'starter',false);
     invoices.set(first.id,first);invoices.set(renew.id,renew);sub.latest_invoice=renew.id;
     invoicePages=url=>url.searchParams.get('starting_after')===renew.id?{data:[first],has_more:false}:{data:[renew],has_more:true};
+    const paginatedHistory=invoicePages;
+    for(const badHistory of [()=>({data:[],has_more:false}),()=>({data:[],has_more:true}),()=>({data:[renew],has_more:true}),()=>({data:[first,{...first,id:'in_ambiguous'}],has_more:false}),()=>({data:[first]})]){
+      invoicePages=badHistory;
+      assert.equal((await webhook(sub,'history_reject_'+(++index))).status,409);
+      assert.equal(delayed.read().company.annualUpfront.paidAt,undefined);
+    }
+    invoicePages=paginatedHistory;
     for(const bad of [{currency:'eur'},{customer:'cus_foreign'},{subscription:'sub_foreign'},{livemode:true},{status:'open'},{amount_paid:0},{amount_remaining:1},{subtotal:1},{total_excluding_tax:1},{total_discount_amounts:[]}]){
       const original={...first};Object.assign(first,bad);
       assert.equal((await webhook(sub,'delayed_forged_'+Object.keys(bad)[0])).status,409);
@@ -147,7 +154,7 @@ try{
     for(const status of ['past_due','unpaid','incomplete_expired','canceled']){
       sub.status=status;assert.equal((await webhook(sub,'delayed_'+status)).status,200);
       assert.notEqual(delayed.read().company.subscriptionStatus,'Active');
-      assert.equal(delayed.read().company.annualUpfront.used,false);
+      assert.equal(delayed.read().company.annualUpfront.paidAt,undefined);
     }
     sub.status='active';assert.equal((await webhook(sub,'delayed_recovered')).status,200);
     assert.equal(delayed.read().company.subscriptionStatus,'Active');assert.equal(delayed.read().company.planPrice,990);
@@ -158,6 +165,14 @@ try{
     sub.status='canceled';assert.equal((await webhook(sub,'delayed_cancel_after_paid')).status,200);
     assert.equal(delayed.read().company.subscriptionStatus,'Cancelled');
     invoicePages=null;
+  }
+  for(const status of ['canceled','incomplete_expired']){
+    const {c:terminal}=await newAnnual();
+    const sub=providerSubscription(terminal,status,'sub_terminal_'+status,'price_starter_annual');sub.metadata.offer=offerPolicy.VERSION;
+    assert.equal((await webhook(sub,'terminal_'+status)).status,200);
+    assert.equal(terminal.read().company.annualUpfront.paidAt,undefined);
+    assert.equal((await terminal.request('/api/billing/checkout','POST',{plan:'starter',billingCycle:'annual'})).status,200);
+    assert.equal(terminal.read().company.pendingCheckout.params['discounts[0][coupon]'],undefined);
   }
   const {c}=await newAnnual();assert.equal((await c.request('/api/billing/checkout','POST',{plan:'growth',billingCycle:'annual'})).status,409);assert.equal((await c.request('/api/billing/checkout','POST',{plan:'starter',billingCycle:'monthly'})).status,409);
   const good={...coupon};for(const bad of [{duration:'forever'},{percent_off:20},{livemode:true},{max_redemptions:5},{redeem_by:1800000000},{valid:false},{amount_off:99},{applies_to:{products:['foreign']}}]){coupon={...good,...bad};assert.equal((await c.request('/api/billing/checkout','POST',{plan:'starter',billingCycle:'annual'})).status,503);}coupon=good;

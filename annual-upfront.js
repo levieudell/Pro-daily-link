@@ -71,6 +71,6 @@ async function fulfill(db,subscription,info,request){
     if((first||recoveredFirst)&&!offer.firstInvoiceId)offer.firstInvoiceId=recoveredFirst?.id||invoice.id;
     offer.paidAt ||= new Date().toISOString();info.amount=expected/100;
   }
-  if(subscription.status==='active'){offer.used=true;offer.subscriptionId=subscription.id;}
+  offer.used=true;offer.subscriptionId=subscription.id;
 }
 module.exports={VERSION,amounts,configured,enroll,checkout,fulfill};
