@@ -13,6 +13,8 @@ module.exports = async function runTimeReviewCases({ repository, change, request
   const leave = (id = 'synthetic-review-leave', date = '2098-12-01') => ({ id, memberId: 11, startDate: date, endDate: date, allDay: false, startTime: '09:00', endTime: '10:00', type: 'sick', note: 'PRIVATE-LEAVE', status: 'pending', history: [] });
   const leavePath = id => '/api/time-off-requests/' + id;
   const confirmation = preview => ({ token: preview.data.token, version: preview.data.version, confirmed: true, requestId: crypto.randomUUID() });
+  const tampered = token => { const [payload, signature] = token.split('.'); return payload + '.' + (signature[0] === 'A' ? 'B' : 'A') + signature.slice(1); };
+  const alias = token => { const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_'; return token.slice(0, -1) + alphabet[alphabet.indexOf(token.at(-1)) + 1]; };
   const previewLeave = async (worker = 0, id = 'synthetic-review-leave', decision = 'approve', user = 2, note = 'Exact synthetic review') => {
     const result = await request(bases[worker], 'POST', leavePath(id) + '/review-preview', { decision, note }, user); assert.equal(result.status, 200, JSON.stringify(result.data)); return result;
   };
@@ -50,7 +52,10 @@ module.exports = async function runTimeReviewCases({ repository, change, request
   assert.equal((await request(bases[1], 'POST', '/api/time-cards/501/approve', conf, 2)).status, 409, 'First confirmation on another worker requires that worker to produce a fresh preview');
   assert.deepEqual(await load(), noWrites);
   const targetPreview = await previewCards(1); assert.equal(targetPreview.status, 200); assert.deepEqual(await load(), noWrites);
-  for (const extra of [{ confirmed: false }, { hours: 100 }, { token: conf.token.slice(0, -1) + 'x' }, { requestId: '' }]) assert.ok([400, 409].includes((await request(bases[0], 'POST', '/api/time-cards/501/approve', { ...conf, ...extra }, 2)).status));
+  for (const extra of [{ confirmed: false }, { hours: 100 }, { token: tampered(conf.token) }, { token: alias(conf.token) }, { requestId: '' }]) {
+    const denied = await request(bases[0], 'POST', '/api/time-cards/501/approve', { ...conf, ...extra }, 2);
+    assert.ok([400, 409].includes(denied.status), 'Closed input/canonical signed token must reject before writes: ' + denied.status);
+  }
   assert.deepEqual(await load(), noWrites);
 
   // Both previews bind one tenant revision; opposite decisions have one winner.

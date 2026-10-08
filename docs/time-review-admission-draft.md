@@ -32,6 +32,8 @@ Durable replay checks current session, actor/grants/scopes/policies, exact reque
 
 Globally ambiguous IDs reject before decision mutation, including an allowed copy paired with a hidden copy. Legacy upsert removes every same-ID copy, so admission cannot safely approve duplicates until separate reconciliation proves their identity. Reads are side-effect-free and project known fields/history only; private receipts/session hashes and unknown nested history/metadata stay out of read, preview, confirmation, broad workspace and customer export responses.
 
+Signed payload and signature must use canonical base64url encoding. Alternative padding-bit representations cannot acquire separate token identities; tests reject these aliases and deterministic signature tampering before any write.
+
 ## Preserved time computations and workflow
 
 Approve only submitted, complete, non-overlapping pending cards using the existing status aliases, completeCard and whole-tenant overlap helpers. Bulk deduplicates bounded IDs and validates every selected pending card before any mutation; already-approved cards are skipped. A confirmed already-approved review records only its review receipt/audit, never another card history or computation. Unapprove requires approved, returns draft, clears submission/approval attribution, and appends the existing history shape. Approval/unapproval change no hours, breaks, report labor, workdays, schedules or frozen export snapshots. They do not apply field-edit pay-period locks: existing office review permits closed/exported-period cards. Payroll rules, period decisions/exports and correction/submit behavior are not expanded here.

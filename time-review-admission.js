@@ -41,8 +41,9 @@ function createHandler({ readDb, writeDb, body, json, revision, isApproved, stat
     try {
       const [payload, signature, extra] = token.split('.');
       if (!payload || !signature || extra) return null;
+      if (Buffer.from(payload, 'base64url').toString('base64url') !== payload) return null;
       const expected = crypto.createHmac('sha256', signingKey).update(payload).digest(), actual = Buffer.from(signature, 'base64url');
-      if (actual.length !== expected.length || !crypto.timingSafeEqual(actual, expected)) return null;
+      if (actual.length !== expected.length || actual.toString('base64url') !== signature || !crypto.timingSafeEqual(actual, expected)) return null;
       return JSON.parse(Buffer.from(payload, 'base64url').toString('utf8'));
     } catch { return null; }
   };
