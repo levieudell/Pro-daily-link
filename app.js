@@ -692,7 +692,13 @@ renderCatalog=function(filter=''){const result=renderCatalogBeforeDerivedScopes(
 const loadRoleBeforeBillingReconcile=loadRole;
 loadRole=async function(role){const result=await loadRoleBeforeBillingReconcile(role);if(role==='office'&&currentUser?.role==='owner')await loadBilling().catch(()=>{});return result};
 $('#report-next-step').addEventListener('click',()=>{if($('#field-notes').value.trim())return;const message=$('#report-language').value.startsWith('es')?'Cuéntanos qué pasó hoy antes de continuar.':'Add a quick note about what happened today before continuing.';notify(message);requestAnimationFrame(()=>$('#field-notes').scrollIntoView({behavior:matchMedia('(prefers-reduced-motion: reduce)').matches?'auto':'smooth',block:'center'}))},{capture:true});
-boot();
+// The page gate owns initial authentication and any scoped-workspace redirect.
+// Starting the legacy bootstrap before it finishes can race session renewal.
+async function startWorkspaceAfterGate(gate, start) {
+  if (gate !== undefined && await gate !== true) return;
+  return start();
+}
+startWorkspaceAfterGate(window.pdlWorkspaceGate, boot);
 
 // Pricing access is company-controlled. The server is the authority; this only
 // presents the approved policy clearly in the workspace.

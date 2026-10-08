@@ -30,6 +30,7 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npx playwright install --with-deps chromium
+      - run: node workspace-bootstrap.test.js
       - run: node tenant-activation.test.js
       - run: node tenant-readiness.test.js
       - run: node workspace-options.test.js

@@ -36,7 +36,11 @@ module.exports = async function ({ repository, change, request, bases, providerE
   }
   try {
     await test('desktop: entry point, exact unchanged defaults, protected limits and real impact/save/audit', async () => {
-      const before = await load(); await page.goto(base + '/app'); await page.waitForURL('**/workspace.html?tenant=*#roles'); await page.locator('#policy-reason').waitFor();
+      const before = await load(), started = barrier(), released = barrier(); holds.push(released); let bootstrapRequests = 0, configRequests = 0, firstBootstrap = true;
+      page.on('request', row => { const pathname = new URL(row.url()).pathname; if (pathname === '/api/auth/me') bootstrapRequests++; if (pathname === '/api/config') configRequests++; });
+      await page.route('**/api/auth/me', async route => { if (!firstBootstrap) return route.continue(); firstBootstrap = false; const response = await route.fetch(); assert.equal(response.status(), 200); started.resolve(); await released.promise; await route.fulfill({ response }); });
+      const opening = page.goto(base + '/app'); await started.promise; await opening; await page.waitForFunction(() => typeof window.startWorkspaceAfterGate === 'function' && typeof window.reportHasUnsavedInput === 'function' && window.reportHasUnsavedInput.toString().includes('reportSavedSignature')); assert.equal(configRequests, 1); assert.equal(bootstrapRequests, 1); released.resolve();
+      await page.waitForURL('**/workspace.html?tenant=*#roles'); await page.locator('#policy-reason').waitFor(); assert.equal(bootstrapRequests, 1, 'One page gate owns initial session renewal; the legacy app must not start during scoped redirect');
       // Original auth bootstrap renews only its synthetic session; the editor itself is read-only.
       const opened = await load(), business = value => { value = structuredClone(value); delete value.sessions; return value; }; assert.deepEqual(business(opened.snapshot), business(before.snapshot));
       assert.equal(await page.locator('.matrix input').count(), 128); assert.equal(await page.locator('[data-role="owner"]').count(), 0); assert.equal(await page.locator('[data-family="scheduling"][data-role="field"][data-action="create"]').isDisabled(), true);
