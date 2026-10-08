@@ -1,4 +1,5 @@
 'use strict';
+const profiles = require('./role-profiles');
 const leave = require('./time-off-access');
 const roles = Object.freeze(['admin', 'project_manager', 'foreman', 'field']);
 const actions = Object.freeze(['viewCards', 'reviewLeave', 'approveCards', 'unapproveCards']);
@@ -16,7 +17,7 @@ function validatePolicy(value) {
   return value;
 }
 function required(db) { return Boolean(db.company?.timeReviewPolicyRequired || Object.hasOwn(db.company || {}, 'timeReviewRolePolicy')); }
-function access(db, user) {
+function roleAccess(db, user) {
   if (!user || !known(user.role)) return denied();
   const maximum = ceiling(user.role), manage = user.role === 'owner' || office(user.role) && user.permissions?.manageTime === true;
   const baseline = { viewCards: user.role === 'owner' || ['field', 'foreman'].includes(user.role) || manage || user.role === 'project_manager' && user.permissions?.viewTime === true, reviewLeave: manage && leave.access(db, user).viewRequests, approveCards: manage, unapproveCards: manage };
@@ -27,9 +28,10 @@ function access(db, user) {
   if (db.company?.features?.timeCards !== true) for (const action of ['viewCards', 'approveCards', 'unapproveCards']) baseline[action] = false;
   return baseline;
 }
+function access(db, user) { return profiles.restrict(db, user, 'timeReview', roleAccess(db, user)); }
 function actor(db, user, atomic) {
-  if (!user || required(db) && !atomic && user.role !== 'owner') return null;
-  return !atomic && !required(db) ? user : { ...user, timeReviewAccess: access(db, user) };
+  if (!user || (required(db) || profiles.required(db)) && !atomic && user.role !== 'owner') return null;
+  return !atomic && !required(db) && !profiles.required(db) ? user : { ...user, timeReviewAccess: access(db, user) };
 }
 function crewAllowed(db, user, memberId) {
   const member = (db.team || []).find(row => Number(row.id) === Number(memberId));

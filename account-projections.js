@@ -68,13 +68,14 @@ function dto(db, storedUser, { current = false, directory = false } = {}) {
     status: user.status, preferredLanguage: user.preferredLanguage || 'en', permissions, storedPermissions: { ...permissions },
     effectiveCapabilities, capabilityPolicyState: states, immutableAccess: registry.immutable(db, user), scopeState,
     availability: user.status !== 'Active' ? 'inactive' : !['owner', ...registry.roles].includes(user.role) ? 'unsupported-role' : 'active' };
+  if (registry.profilesRequired(db)) result.roleProfile = require('./role-profiles').binding(db, user);
   for (const [id, , , property] of registry.families) result[property] = effectiveCapabilities[id];
   result.notesPolicyRevision = states.notes.state === 'invalid' || states.notes.state === 'required-missing' ? -1 : states.notes.revision;
   if (directory) result.baselineCapabilities = registry.baseline(db, user); else result.preferences = preferences;
   return result;
 }
 function directory(db) {
-  return (db.users || []).map(user => dto(db, user, { directory: true }));
+  return require('./role-profiles').evaluate(db, () => (db.users || []).map(user => dto(db, user, { directory: true })));
 }
 function createHandler({ readDb, writeDb, authenticate, token, flags, json, jsonHeaders, assertCurrent, accountAccess }) {
   return async function handle(req, res, url) {

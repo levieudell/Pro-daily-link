@@ -1,4 +1,5 @@
 'use strict';
+const profiles = require('./role-profiles');
 const time = require('./time-write-access');
 const roles = Object.freeze(['admin', 'project_manager', 'foreman', 'field']);
 const actions = Object.freeze(['viewReports', 'createReports', 'editReports', 'approveReports', 'viewWorkdays', 'runWorkdays']);
@@ -12,7 +13,7 @@ function validatePolicy(policy) {
   return policy;
 }
 const required = db => Boolean(db.company?.dailyPolicyRequired || Object.hasOwn(db.company || {}, 'dailyRolePolicy'));
-function access(db, user) {
+function roleAccess(db, user) {
   const denied = () => Object.fromEntries(actions.map(action => [action, false]));
   if (!user || !known(user.role)) return denied();
   const view = user.role !== 'project_manager' || user.permissions?.viewDailies === true || user.permissions?.approveDailies === true;
@@ -23,7 +24,8 @@ function access(db, user) {
   }
   return result;
 }
-function actor(db, user, atomic) { return !user || required(db) && !atomic && user.role !== 'owner' ? null : !atomic && !required(db) ? user : { ...user, dailyAccess: access(db, user) }; }
+function access(db, user) { return profiles.restrict(db, user, 'daily', roleAccess(db, user)); }
+function actor(db, user, atomic) { return !user || (required(db) || profiles.required(db)) && !atomic && user.role !== 'owner' ? null : !atomic && !required(db) && !profiles.required(db) ? user : { ...user, dailyAccess: access(db, user) }; }
 function memberAllowed(db, user, id) {
   const member = (db.team || []).find(row => Number(row.id) === Number(id)); if (!member) return false;
   if (['owner', 'admin'].includes(user.role)) return true;

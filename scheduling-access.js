@@ -1,4 +1,5 @@
 'use strict';
+const profiles = require('./role-profiles');
 const roles = ['admin', 'project_manager', 'foreman', 'field'];
 const actions = ['view', 'create', 'edit', 'remove', 'acknowledge'];
 const office = role => ['owner', 'admin', 'project_manager'].includes(role);
@@ -15,7 +16,7 @@ function validatePolicy(value) {
   return value;
 }
 function required(db) { return Boolean(db.company?.schedulingPolicyRequired || Object.hasOwn(db.company || {}, 'schedulingRolePolicy')); }
-function access(db, user) {
+function roleAccess(db, user) {
   if (!user || !known(user.role)) return denied();
   const baseline = ceiling(user.role);
   if (user.role === 'owner') return baseline; // Owner/security controls are immutable.
@@ -24,10 +25,11 @@ function access(db, user) {
   try { const row = validatePolicy(db.company.schedulingRolePolicy).roles[user.role]; return Object.fromEntries(actions.map(action => [action, baseline[action] && row[action]])); }
   catch { return denied(); }
 }
+function access(db, user) { return profiles.restrict(db, user, 'scheduling', roleAccess(db, user)); }
 function actor(db, storedUser, atomic) {
   if (!storedUser) return null;
-  if (required(db) && !atomic && storedUser.role !== 'owner') return null;
-  if (!atomic && !required(db)) return storedUser;
+  if ((required(db) || profiles.required(db)) && !atomic && storedUser.role !== 'owner') return null;
+  if (!atomic && !required(db) && !profiles.required(db)) return storedUser;
   return { ...storedUser, schedulingAccess: access(db, storedUser) };
 }
 function inScope(db, user, assignment, action) {

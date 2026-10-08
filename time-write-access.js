@@ -1,4 +1,5 @@
 'use strict';
+const profiles = require('./role-profiles');
 const review = require('./time-review-access');
 const roles = Object.freeze(['admin', 'project_manager', 'foreman', 'field']);
 const actions = Object.freeze(['createCards', 'correctCards', 'removeCards', 'submitCards', 'clockCards', 'downloadCards', 'viewPayroll', 'configurePeriods', 'captureExports', 'downloadExports', 'viewActivities']);
@@ -19,7 +20,7 @@ function validatePolicy(value) {
   return value;
 }
 function required(db) { return Boolean(db.company?.timeWritePolicyRequired || Object.hasOwn(db.company || {}, 'timeWriteRolePolicy')); }
-function access(db, user) {
+function roleAccess(db, user) {
   if (!user || !known(user.role) || db.company?.features?.timeCards !== true) return denied();
   const maximum = ceiling(user.role), manage = user.role === 'owner' || office(user.role) && user.permissions?.manageTime === true, view = review.access(db, user).viewCards;
   const result = { ...maximum, createCards: manage && view, correctCards: (manage || own(user.role)) && view, removeCards: manage && view, submitCards: (manage || own(user.role)) && view, clockCards: own(user.role) && view, downloadCards: office(user.role) && view, viewPayroll: office(user.role) && view, configurePeriods: maximum.configurePeriods && manage && view, captureExports: maximum.captureExports && manage && view, downloadExports: maximum.downloadExports && manage && view };
@@ -29,9 +30,10 @@ function access(db, user) {
   }
   return result;
 }
+function access(db, user) { return profiles.restrict(db, user, 'timeWrite', roleAccess(db, user)); }
 function actor(db, user, atomic) {
-  if (!user || required(db) && !atomic && user.role !== 'owner') return null;
-  return !atomic && !required(db) ? user : { ...user, timeWriteAccess: access(db, user) };
+  if (!user || (required(db) || profiles.required(db)) && !atomic && user.role !== 'owner') return null;
+  return !atomic && !required(db) && !profiles.required(db) ? user : { ...user, timeWriteAccess: access(db, user) };
 }
 function inScope(db, user, row, action) {
   if (!access(db, user)[action]) return false;

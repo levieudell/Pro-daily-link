@@ -38,6 +38,7 @@ jobs:
       - run: node json-request-body.test.js
       - run: node scoped-navigation.test.js
       - run: node roles-workspace.test.js
+      - run: node role-profiles.test.js
       - run: node role-policy-api.test.js
       - run: node capability-registry.test.js
       - run: node notes-admission.test.js
