@@ -33,5 +33,6 @@ assert.ok(!JSON.stringify(projection).includes('PRIVATE')); assert.equal(project
 const source = fs.readFileSync('server.js', 'utf8');
 assert.ok(source.includes('!dbContext.getStore().dailyCandidate'));
 assert.ok(source.includes('delete safe.dailyActionPreviews;delete safe.dailyActionReceipts;'));
+for (const [method, route] of [['POST', '/api/daily-actions/preview'], ['POST', '/api/reports'], ['PATCH', '/api/reports/51'], ['PATCH', '/api/reports/51/approve'], ['POST', '/api/workdays/start'], ['POST', '/api/workdays/81/end'], ['GET', '/api/reports/51'], ['GET', '/api/workdays/81'], ['POST', '/api/reporting-exports'], ['GET', '/api/reporting-exports/11111111-1111-4111-8111-111111111111.csv']]) assert.equal(require('./database/tenant-atomic-routes').supportedRoute(method, route), true);
 for (const route of ['/api/photos', '/api/state', '/api/action-center', '/api/exceptions', '/api/production', '/api/insights', '/api/reports/51/safety', '/api/reports/51/disposition']) assert.equal(require('./database/tenant-atomic-routes').supportedRoute('POST', route), false);
 console.log('Daily admission unit: closed roles/actions/inputs, owner/assistant protections, entire crew/duplicate bindings, typed-time intersection, immutable compound rows, signature/private projection and unsupported effects passed.');
