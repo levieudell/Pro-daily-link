@@ -24,7 +24,7 @@ const repository = new TransactionalTenantRepository({ pool });
 const children = [], temp = fs.mkdtempSync(path.join(os.tmpdir(), 'pdl-atomic-http-'));
 const localFile = path.join(temp, 'db.json');
 let bridge, bridgeBase, commits = 0, legacyRequests = 0;
-const controls = { gate: null, dropAck: false, rejectCommit: false, providerMode: 'success', providerCompleted: false };
+const controls = { gate: null, readGate: null, dropAck: false, rejectCommit: false, providerMode: 'success', providerCompleted: false };
 const providerEvents = [];
 function checkpoint() {
   let resolve; const promise = new Promise(done => { resolve = done; });
@@ -65,7 +65,10 @@ async function startBridge() {
     const send = (status, value) => { res.writeHead(status, { 'Content-Type': 'application/json' }); res.end(JSON.stringify(value)); };
     try {
       const company = String(url.searchParams.get('company_id') || '').replace(/^eq\./, '');
-      if (req.method === 'GET' && url.pathname === '/rest/v1/tenant_revisions') return send(200, (await pool.query('SELECT revision, scalar_data, content_hash FROM tenant_revisions WHERE company_id=$1', [company])).rows);
+      if (req.method === 'GET' && url.pathname === '/rest/v1/tenant_revisions') {
+        if (controls.readGate && company === companyA) { const gate = controls.readGate; if (++gate.count === 3) await gate.promise; }
+        return send(200, (await pool.query('SELECT revision, scalar_data, content_hash FROM tenant_revisions WHERE company_id=$1', [company])).rows);
+      }
       if (req.method === 'GET' && url.pathname === '/rest/v1/tenant_records') return send(200, (await pool.query('SELECT collection,position,data FROM tenant_records WHERE company_id=$1 ORDER BY collection,position LIMIT $2 OFFSET $3', [company, Number(url.searchParams.get('limit')), Number(url.searchParams.get('offset'))])).rows);
       if (req.method === 'POST' && url.pathname === '/rest/v1/rpc/replace_tenant_records') {
         let raw = ''; for await (const chunk of req) raw += chunk;
@@ -110,7 +113,7 @@ async function startWorker({ dispatch = false } = {}) {
 }
 async function request(base, method, url, input, user = 1, company = companyA, credentialCompany = companyA, credentialToken) {
   const response = await fetch(base + url, { method, headers: { 'Content-Type': 'application/json', 'X-PDL-Company': company, Authorization: 'Bearer ' + (credentialToken || token(credentialCompany, user)) }, ...(input === undefined ? {} : { body: JSON.stringify(input) }), signal: AbortSignal.timeout(15000) });
-  return { status: response.status, headers: response.headers, data: await response.json() };
+  return { status: response.status, headers: response.headers, data: response.headers.get('content-type')?.startsWith('text/csv') ? await response.text() : await response.json() };
 }
 async function change(mutator, company = companyA) { const loaded = await repository.load(company); mutator(loaded.snapshot); await repository.save(loaded.snapshot, loaded.revision); }
 async function waitFor(predicate) { const end = Date.now() + 10000; while (!predicate()) { if (Date.now() > end) throw Error('Synthetic barrier timeout'); await new Promise(resolve => setTimeout(resolve, 20)); } }
@@ -246,6 +249,7 @@ async function main() {
     await require('./scheduling-postgres-cases')({ repository, change, request, slowRequest, bases, startWorker, checkpoint, waitFor, controls, providerEvents });
     await require('./time-off-postgres-cases')({ repository, change, request, slowRequest, bases, checkpoint, waitFor, controls, providerEvents });
     await require('./time-review-postgres-cases')({ repository, change, request, slowRequest, bases, checkpoint, waitFor, controls, providerEvents });
+    await require('./time-write-postgres-cases')({ repository, change, request, slowRequest, bases, startWorker, checkpoint, waitFor, controls, providerEvents });
     for (let attempt = 0; attempt < 3; attempt++) assert.equal((await request(bases[0], 'POST', '/api/auth/login', { email: 'user1@example.invalid', password: 'invalid-synthetic-password' })).status, 401);
     assert.equal((await request(bases[0], 'POST', '/api/auth/login', { email: 'user1@example.invalid', password: 'invalid-synthetic-password' })).status, 429, 'Atomic failed logins retain the credential lockout');
     assert.deepEqual(await repository.load(companyB), foreignBefore);
@@ -253,6 +257,7 @@ async function main() {
     console.log('Synthetic PostgreSQL and two-worker HTTP: pagination/empty collections, mandatory SQL CAS, races/rollback, stale actor/slow body/inflight revocation, owner protection, IDOR, assistant pilot/replay, rejected effects and lost acknowledgement passed.');
   } finally {
     controls.gate?.resolve();
+    controls.readGate?.resolve();
     await Promise.all(children.map(async child => { if (child.exitCode == null) { const ended = once(child, 'exit'); child.kill(); await ended; } }));
     if (bridge) { bridge.closeAllConnections(); await new Promise(resolve => bridge.close(resolve)); }
     await pool.end();

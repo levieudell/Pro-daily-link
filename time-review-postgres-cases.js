@@ -45,7 +45,7 @@ module.exports = async function runTimeReviewCases({ repository, change, request
   assert.equal((await request(bases[0], 'POST', leavePath('synthetic-foreign-leave') + '/review-preview', { decision: 'approve', note: '' }, 2)).status, 404);
   assert.equal((await request(bases[0], 'GET', '/api/time-cards', undefined, 2, companyB)).status, 401);
   const unsupportedBefore = await load();
-  for (const [method, route] of [['POST', '/api/time-cards'], ['PATCH', '/api/time-cards/501'], ['DELETE', '/api/time-cards/501'], ['POST', '/api/time-cards/501/submit'], ['POST', '/api/time-cards/501/clock-out'], ['POST', '/api/time-cards/company-clock'], ['GET', '/api/time-cards.csv'], ['GET', '/api/report-labor-suggestions'], ['GET', '/api/pay-periods'], ['POST', '/api/pay-periods'], ['POST', '/api/company-activities']]) assert.equal((await request(bases[0], method, route, method === 'GET' ? undefined : {})).status, 503);
+  assert.equal((await request(bases[0], 'POST', '/api/company-activities', {})).status, 503);
   assert.deepEqual(await load(), unsupportedBefore);
   const noWrites = await load(), pre = await previewCards(); assert.deepEqual(await load(), noWrites, 'Preview does not change a tenant revision or business row');
   const conf = confirmation(pre);
