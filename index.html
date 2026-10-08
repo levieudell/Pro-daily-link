@@ -30,15 +30,17 @@
     .workspace-loader-bar::after{content:"";display:block;width:55%;height:100%;border-radius:inherit;background:#ef6c19;animation:workspace-loading 1s ease-in-out infinite alternate}
     @keyframes workspace-loading{from{transform:translateX(-80%)}to{transform:translateX(160%)}}
   </style>
+  <script src="workspace-entry.js"></script>
   <script>
     window.pdlWorkspaceGate=(async()=>{
       try{
         const config=await fetch('/api/config',{credentials:'include',cache:'no-store'}).then(response=>response.json());
         if(config.authRequired){
-          const response=await fetch('/api/auth/me',{credentials:'include',cache:'no-store'});
-          if(!response.ok){location.replace('/');return false}
+          const selected=new URLSearchParams(location.search).get('tenant')||'';
+          const response=await fetch('/api/auth/me',{credentials:'include',cache:'no-store',headers:config.scopedWorkspace&&selected?{'X-PDL-Company':selected}:{}});
+          if(!response.ok){location.replace(config.scopedWorkspace?window.WorkspaceEntry.login(selected,location.hash):'/');return false}
           window.pdlAuthenticatedUser=await response.json();
-          if(config.scopedWorkspace){location.replace('/workspace.html?tenant='+encodeURIComponent(window.pdlAuthenticatedUser.companyId)+'#'+(window.pdlAuthenticatedUser.accessRole==='owner'?'roles':'projects'));return false}
+          if(config.scopedWorkspace){location.replace(window.WorkspaceEntry.workspace(window.pdlAuthenticatedUser,location.hash));return false}
         }
         document.documentElement.classList.add('workspace-authenticated');
         return true;

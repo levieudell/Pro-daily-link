@@ -124,16 +124,19 @@ async function startBridge() {
   await new Promise(resolve => bridge.listen(0, '127.0.0.1', resolve));
   bridgeBase = 'http://127.0.0.1:' + bridge.address().port;
 }
-async function startWorker({ dispatch = false, companyId } = {}) {
+async function startWorker({ dispatch = false, companyId, legacyFile } = {}) {
   const env = { ...process.env };
   for (const name of Object.keys(env)) if (/^(SENTRY_|RESEND_|OPENAI_|STRIPE_|SUPABASE_|DATABASE_URL$|PDL_)/.test(name)) delete env[name];
   Object.assign(env, { PDL_DB_FILE: localFile, PDL_PLATFORM_FILE: path.join(temp, 'platform.json'), PDL_REQUIRE_AUTH: '1', PDL_SUPABASE_ENABLED: '1', PDL_TRANSACTIONAL_DB: 'primary', PDL_TENANT_ATOMIC: '1', PDL_TENANT_ATOMIC_SYNTHETIC: '1', SUPABASE_URL: bridgeBase, SUPABASE_SECRET_KEY: 'synthetic-only-atomic-stub', PDL_ASSISTANT_AI_ENABLED: '0', PDL_AUTH_FAIL_LIMIT: '3', RESEND_API_KEY: 'synthetic-localhost-only', PDL_ASSIGNMENT_OUTBOX_DISPATCH: dispatch ? '1' : '0' });
   if (companyId) env.PDL_TENANT_ATOMIC_COMPANY = companyId;
+  if (legacyFile) { delete env.PDL_TENANT_ATOMIC_COMPANY; delete env.SUPABASE_URL; delete env.SUPABASE_SECRET_KEY; Object.assign(env, { PDL_DB_FILE: legacyFile, PDL_SUPABASE_ENABLED: '0', PDL_TRANSACTIONAL_DB: 'off', PDL_TENANT_ATOMIC: '0', PDL_ASSIGNMENT_OUTBOX_DISPATCH: '0' }); }
   const script = `const original=global.fetch;global.fetch=(url,options)=>{if(String(url)==='https://api.resend.com/emails')return original(${JSON.stringify(bridgeBase + '/synthetic-resend')},options);if(new URL(url).origin!==${JSON.stringify(bridgeBase)})throw Error('External network forbidden');return original(url,options)};const{server,ready}=require('./server');ready.then(()=>server.listen(0,'127.0.0.1',()=>console.log('ATOMIC_PORT='+server.address().port))).catch(error=>{console.error(error.code);process.exitCode=1});`;
   const child = spawn(process.execPath, ['-e', script], { cwd: __dirname, env, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] });
   children.push(child);
   return new Promise((resolve, reject) => {
-    let log = ''; const timeout = setTimeout(() => reject(Error('Worker start timeout: ' + log)), 15000);
+    // Cold dependency imports on Windows can exceed 15s; admission and every
+    // test assertion remain identical. Linux CI retains its original budget.
+    let log = ''; const timeout = setTimeout(() => reject(Error('Worker start timeout: ' + log)), process.platform === 'win32' ? 60000 : 15000);
     child.stdout.on('data', bytes => { log += bytes; const match = log.match(/ATOMIC_PORT=(\d+)/); if (match) { clearTimeout(timeout); resolve('http://127.0.0.1:' + match[1]); } });
     child.stderr.on('data', bytes => { log += bytes; });
     child.once('error', error => { clearTimeout(timeout); reject(error); });
@@ -305,6 +308,7 @@ async function main() {
     await require('./role-policy-postgres-cases')({ repository, change, request, slowRequest, bases, startWorker, checkpoint, waitFor, controls, providerEvents, pool });
     await require('./role-profiles-postgres-cases')({ repository, change, request, slowRequest, bases, startWorker, checkpoint, waitFor, controls, providerEvents });
     await require('./navigation-postgres-cases')({ repository, change, request, bases, checkpoint, waitFor, controls, providerEvents });
+    await require('./entry-postgres-cases')({ repository, change, startWorker, controls, checkpoint, waitFor, providerEvents });
     if (process.env.PDL_ROLES_BROWSER_TESTS === '1') {
       // Browser journeys get a fresh real process: native adversarial cases
       // must not consume their process-local request/cache/clock state.
@@ -312,6 +316,7 @@ async function main() {
       await require('./roles-browser-postgres-cases')({ repository, change, request, bases: browserBases, providerEvents });
       await require('./operational-browser-postgres-cases')({ repository, change, request, bases: browserBases, providerEvents });
       await require('./role-profiles-browser-postgres-cases')({ repository, change, request, bases: browserBases, providerEvents });
+      await require('./entry-browser-postgres-cases')({ repository, change, startWorker, temp, providerEvents });
     }
     for (let attempt = 0; attempt < 3; attempt++) assert.equal((await request(bases[0], 'POST', '/api/auth/login', { email: 'user1@example.invalid', password: 'invalid-synthetic-password' })).status, 401);
     assert.equal((await request(bases[0], 'POST', '/api/auth/login', { email: 'user1@example.invalid', password: 'invalid-synthetic-password' })).status, 429, 'Atomic failed logins retain the credential lockout');
