@@ -1,0 +1,16 @@
+'use strict';
+const assert=require('node:assert/strict'),{template,score}=require('./scripts/help-score-evaluation');
+const sheet=template();assert.equal(sheet.turns.length,60);assert.throws(()=>score(sheet),/Incomplete/);
+Object.assign(sheet,{commit:'e24aeaf575215b8cbc0a220b3224cdfd705698c7',primaryReviewer:'synthetic-reviewer-a',independentReviewer:'synthetic-reviewer-b',reviewResolved:true});
+for(const row of sheet.turns)Object.assign(row,{answer:'Synthetic scoring fixture only',sourceIds:['daily-review'],status:'completed',inputTokens:1000,outputTokens:100,latencyMs:1000,scores:Object.fromEntries(Object.keys(row.scores).map(d=>[d,2]))});
+assert.equal(score(sheet).passed,true);sheet.turns[0].criticalFailure='invented feature';assert.equal(score(sheet).passed,false);sheet.turns[0].criticalFailure=null;
+sheet.turns[0].scores.grounding=1;assert.equal(score(sheet).passed,false);sheet.turns[0].scores.grounding=2;
+for(let i=0;i<7;i++)sheet.turns[i].scores.usefulness=1;assert.equal(score(sheet).passed,false);for(let i=0;i<7;i++)sheet.turns[i].scores.usefulness=2;
+sheet.turns[0].latencyMs=15001;assert.equal(score(sheet).passed,false);sheet.turns[0].latencyMs=1000;
+sheet.turns[0].answer='';assert.throws(()=>score(sheet),/Missing completed/);sheet.turns[0].answer='Synthetic scoring fixture only';
+sheet.turns[0].sourceIds=[];assert.throws(()=>score(sheet),/Missing completed/);sheet.turns[0].sourceIds=['daily-review'];
+sheet.turns[9].sourceIds=['crew-access'];assert.throws(()=>score(sheet),/role-scoped/);sheet.turns[9].sourceIds=['daily-review'];
+sheet.turns[0].turn=1.5;delete sheet.turns[0].question;assert.throws(()=>score(sheet),/altered/);sheet.turns[0].turn=1;sheet.turns[0].question=template().turns[0].question;
+Object.assign(sheet.turns[0],{status:'timeout',answer:'',inputTokens:null,outputTokens:null});const failed=score(sheet);assert.equal(failed.passed,false);assert.equal(failed.attempts,60);assert.equal(failed.unknownUsageAttempts,1);
+sheet.turns[0].question='Different question';assert.throws(()=>score(sheet),/altered/);
+console.log('Evaluation scoring tests passed: unscored/missing/altered turn rejection, critical fail, usefulness/grounding and latency thresholds. Synthetic scores do not establish model quality.');
