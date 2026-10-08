@@ -37,13 +37,38 @@ async function fulfill(db,subscription,info,request){
     const invoice=id?await request('/invoices/'+encodeURIComponent(id),null,'GET'):null;
     if(offer.paidAt&&offer.used&&offer.subscriptionId===subscription.id&&invoice?.billing_reason==='subscription_update'&&invoice.id===id&&invoice.status==='paid'&&invoice.customer===(typeof subscription.customer==='string'?subscription.customer:subscription.customer?.id)&&invoice.livemode===subscription.livemode&&invoice.currency==='usd'&&(invoice.subscription||invoice.parent?.subscription_details?.subscription)===subscription.id)return;
     const first=invoice?.billing_reason==='subscription_create',expected=(first?a.first:a.renewal)*100;
-    if(!offer.paidAt&&!first||first&&offer.firstInvoiceId&&offer.firstInvoiceId!==id)throw fail('The discounted first annual invoice must be verified before activation.',409);
+    let recoveredFirst=null;
+    if(!offer.paidAt&&!first){
+      let cursor=null,complete=false;
+      for(let page=0;page<100;page++){
+        const query=new URLSearchParams({subscription:subscription.id,limit:'100',...(cursor?{starting_after:cursor}:{})});
+        const history=await request('/invoices?'+query,null,'GET');
+        if(!Array.isArray(history?.data)||typeof history.has_more!=='boolean')throw fail('Unable to verify annual invoice history.',409);
+        for(const item of history.data){
+          if(item.billing_reason!=='subscription_create')continue;
+          if(recoveredFirst&&recoveredFirst.id!==item.id)throw fail('Annual invoice history is ambiguous.',409);
+          recoveredFirst=item;
+        }
+        if(!history.has_more){complete=true;break;}
+        const next=history.data.at(-1)?.id;
+        if(!next||next===cursor)throw fail('Unable to verify annual invoice history.',409);
+        cursor=next;
+      }
+      if(!complete||!recoveredFirst?.id)throw fail('The discounted first annual invoice must be verified before activation.',409);
+      const recoveredId=recoveredFirst.id;
+      recoveredFirst=await request('/invoices/'+encodeURIComponent(recoveredId),null,'GET');
+      if(recoveredFirst?.id!==recoveredId)throw fail('Annual invoice identity does not match.',409);
+      const firstSub=recoveredFirst?.subscription||recoveredFirst?.parent?.subscription_details?.subscription;
+      const customer=typeof subscription.customer==='string'?subscription.customer:subscription.customer?.id;
+      if(!recoveredFirst||recoveredFirst.billing_reason!=='subscription_create'||recoveredFirst.livemode!==subscription.livemode||recoveredFirst.currency!=='usd'||firstSub!==subscription.id||recoveredFirst.customer!==customer||recoveredFirst.status!=='paid'||recoveredFirst.subtotal!==a.renewal*100||recoveredFirst.total_excluding_tax!==a.first*100||recoveredFirst.amount_paid<a.first*100||recoveredFirst.amount_remaining!==0||(recoveredFirst.total_discount_amounts||[]).reduce((n,d)=>n+d.amount,0)!==(a.renewal-a.first)*100||offer.firstInvoiceId&&offer.firstInvoiceId!==recoveredFirst.id)throw fail('The discounted first annual invoice must be verified before activation.',409);
+    }
+    if(first&&offer.firstInvoiceId&&offer.firstInvoiceId!==id)throw fail('The discounted first annual invoice must be verified before activation.',409);
     const invoiceSub=invoice?.subscription||invoice?.parent?.subscription_details?.subscription;
     const customer=typeof subscription.customer==='string'?subscription.customer:subscription.customer?.id;
     if(!invoice||invoice.id!==id||invoice.livemode!==subscription.livemode||invoice.currency!=='usd'||invoiceSub!==subscription.id||invoice.customer!==customer||invoice.status!=='paid'||invoice.subtotal!==a.renewal*100||invoice.total_excluding_tax!==expected||invoice.amount_paid<expected||invoice.amount_remaining!==0)throw fail('Waiting for a verified upfront annual invoice payment.',409);
     const discounts=(invoice.total_discount_amounts||[]).reduce((n,d)=>n+d.amount,0);
     if(discounts!==(first?(a.renewal-a.first)*100:0))throw fail('Annual invoice discount does not match the accepted offer.',409);
-    if(first&&!offer.firstInvoiceId)offer.firstInvoiceId=invoice.id;
+    if((first||recoveredFirst)&&!offer.firstInvoiceId)offer.firstInvoiceId=recoveredFirst?.id||invoice.id;
     offer.paidAt ||= new Date().toISOString();info.amount=expected/100;
   }
   offer.used=true;offer.subscriptionId=subscription.id;

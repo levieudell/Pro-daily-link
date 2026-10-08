@@ -1,9 +1,9 @@
 name: Annual isolated acceptance
 on:
   pull_request:
-    branches: [qa/paid-launch-acceptance-20261005]
+    branches: [qa/paid-launch-acceptance-20261005, qa/annual-offer-acceptance-20261008]
   push:
-    branches: [qa/annual-offer-acceptance-20261008, qa/paid-launch-acceptance-20261005]
+    branches: [qa/annual-offer-acceptance-20261008, qa/annual-recovery-acceptance-20261009, qa/paid-launch-acceptance-20261005]
 permissions:
   contents: read
 jobs:

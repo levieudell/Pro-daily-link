@@ -5,7 +5,7 @@ const path = require('node:path');
 const crypto = require('node:crypto');
 
 const ROOT = path.resolve(__dirname, '..');
-const CANDIDATE = 'dd56284d7212ebb11da5fc4ab09d98ec97e8ad98';
+const CANDIDATE = '6b52fbcba0426a2cde858725f67bb2d4cbc82853';
 const EXPECTED_STRIPE_ACCOUNT = 'acct_1SqHF1FsPiiIUxge';
 const ROOT_TENANT = '00000000-0000-4000-8000-000000000001';
 const MARKER = '.pdl-acceptance.json';
