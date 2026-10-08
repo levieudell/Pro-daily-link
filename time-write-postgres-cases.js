@@ -142,6 +142,14 @@ module.exports = async function ({ repository, change, request, slowRequest, bas
   controls.readGate.resolve(); const expiredCsv = await expiringCsv; controls.readGate = null;
   assert.equal(expiredCsv.status, 401); assert.ok(!expiredCsv.headers.get('content-type').includes('text/csv')); assert.deepEqual(await load(), before, 'Natural session expiry changes no tenant revision');
   await change(db => { Object.assign(db.sessions.find(row => row.tokenHash === pmSession.tokenHash), pmSession); });
+  const unlockedCompany = structuredClone((await load()).snapshot.company), trialEnd = Date.now() + 3000;
+  await change(db => { Object.assign(db.company, { demo: false, billingExempt: false, subscriptionStatus: 'Trial', trialEndsAt: new Date(trialEnd).toISOString() }); });
+  before = await load(); controls.readGate = checkpoint();
+  const expiringTrialCsv = request(bases[0], 'GET', '/api/time-cards.csv', undefined, 2);
+  await waitFor(() => controls.readGate.count === 3); await waitFor(() => Date.now() > trialEnd);
+  controls.readGate.resolve(); const endedTrialCsv = await expiringTrialCsv; controls.readGate = null;
+  assert.equal(endedTrialCsv.status, 402); assert.ok(!endedTrialCsv.headers.get('content-type').includes('text/csv')); assert.deepEqual(await load(), before, 'Natural account lock changes no tenant revision');
+  await change(db => { db.company = unlockedCompany; });
   for (const user of [2, 4, 5, 6, 8, 9]) { await preview('captureExport', {}, periodId, user, 0, 403); assert.equal((await request(bases[0], 'GET', '/api/pay-periods/' + periodId + '/exports', undefined, user)).status, 403); }
   const exportPre = await preview('captureExport', {}, periodId, 7), exportSaved = await commit(exportPre, '/api/pay-periods/' + periodId + '/exports', 'POST', 7, 1, 201), fixed = exportSaved.result.data;
   assert.equal(fixed.version, 1); assert.equal(fixed.summary.approvedCount, 3); assert.ok(!JSON.stringify(fixed).includes('PRIVATE-METADATA'));
@@ -160,7 +168,9 @@ module.exports = async function ({ repository, change, request, slowRequest, bas
   const beforeFailure = await load(); controls.rejectCommit = true;
   await preview('captureExport', { supersedesId: correctedExport.result.data.id, reason: 'Rejected preview persistence' }, periodId, 7, 0, 503); controls.rejectCommit = false; assert.deepEqual(await load(), beforeFailure);
   await change(db => { db.payPeriodExports.push({ ...db.payPeriodExports[0], id: crypto.randomUUID(), companyId: companyB }); });
-  before = await load(); assert.equal((await request(bases[0], 'GET', '/api/pay-periods/' + periodId + '/exports', undefined, 7)).status, 409); assert.deepEqual(await load(), before);
+  before = await load();
+  for (const route of ['/api/pay-periods', '/api/pay-periods/' + periodId + '/summary', '/api/pay-periods/' + periodId + '/exports']) assert.equal((await request(bases[0], 'GET', route, undefined, 7)).status, 409);
+  assert.deepEqual(await load(), before);
   await change(db => { db.payPeriodExports = db.payPeriodExports.filter(row => row.companyId === companyA); });
   await change(db => { db.company.timeWriteRolePolicy = policy(); db.company.timeWriteRolePolicy.roles.admin.downloadExports = false; });
   before = await load(); assert.equal((await request(bases[0], 'GET', fixedPath + '.csv', undefined, 7)).status, 403); assert.deepEqual(await load(), before);

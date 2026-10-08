@@ -128,7 +128,7 @@ function validateDelta(before, after, user, operation) {
 }
 function periodProjection(row) { return pick(row, ['id', 'label', 'from', 'to', 'timeZone', 'status', 'createdAt', 'updatedAt', 'closedAt', 'exportCount']); }
 function summaryProjection(row) {
-  return { ...pick(row, ['datePolicy', 'approvedHours', 'approvedCount', 'ready', 'latestExport']), period: periodProjection(row.period || {}), review: pick(row.review || {}, ['draft', 'submitted', 'running', 'invalid', 'undated', 'missingScheduledEntries']), people: (row.people || []).map(item => pick(item, ['memberId', 'name', 'hours', 'cardCount'])), missingEntries: (row.missingEntries || []).map(item => pick(item, ['date', 'memberId', 'projectId', 'person', 'project'])), records: (row.records || []).map(item => pick(item, ['id', 'memberId', 'person', 'projectId', 'project', 'date', 'inAt', 'outAt', 'hours', 'approvedBy', 'approvedAt'])) };
+  return { ...pick(row, ['datePolicy', 'approvedHours', 'approvedCount', 'ready']), ...(Object.hasOwn(row, 'latestExport') ? { latestExport: row.latestExport ? pick(row.latestExport, ['id', 'version', 'changed']) : null } : {}), period: periodProjection(row.period || {}), review: pick(row.review || {}, ['draft', 'submitted', 'running', 'invalid', 'undated', 'missingScheduledEntries']), people: (row.people || []).map(item => pick(item, ['memberId', 'name', 'hours', 'cardCount'])), missingEntries: (row.missingEntries || []).map(item => pick(item, ['date', 'memberId', 'projectId', 'person', 'project'])), records: (row.records || []).map(item => pick(item, ['id', 'memberId', 'person', 'projectId', 'project', 'date', 'inAt', 'outAt', 'hours', 'approvedBy', 'approvedAt'])) };
 }
 function exportProjection(row) { return { ...pick(row, ['id', 'companyId', 'periodId', 'version', 'supersedesId', 'reason', 'createdAt', 'createdBy', 'sourceHash']), ...(row.summary ? { summary: summaryProjection(row.summary) } : {}) }; }
 function projectResponse(response, operation) {
@@ -165,11 +165,15 @@ function createHandler({ readDb, writeDb, body, json, raw, revision, run, activi
           if (url.searchParams.get('reportId')) { const report = unique(db.reports, url.searchParams.get('reportId'), 'Report'); if (Number(report.project) !== (db.projects || []).indexOf(project)) fail(404, 'Report not found'); }
         }
         const periodId = url.pathname.split('/')[3];
+        if (url.pathname.startsWith('/api/pay-periods') && (db.payPeriodExports || []).some(row => row.companyId !== db.company.id)) fail(409, 'Fixed exports need tenant reconciliation');
         if (url.pathname.startsWith('/api/pay-periods/') && periodId) unique(db.payPeriods, periodId, 'Pay period');
         const exportId = url.pathname.split('/')[5]?.replace(/\.csv$/, '');
         if (url.pathname.includes('/exports')) {
           if ((db.payPeriodExports || []).some(row => row.periodId === periodId && row.companyId !== db.company.id)) fail(409, 'Fixed exports need tenant reconciliation');
-          if (exportId) unique(db.payPeriodExports, exportId, 'Export');
+          if (exportId) {
+            const record = unique(db.payPeriodExports, exportId, 'Export');
+            if (record.periodId !== periodId || record.summary?.period?.id !== periodId) fail(404, 'Export not found');
+          }
         }
         const executed = await run(req, { method: 'GET', path: url.pathname + url.search, kind: url.pathname.startsWith('/api/pay-periods') ? 'payroll' : url.pathname === '/api/company-activities' ? 'activities' : 'cards', details: {} });
         if (executed.response.status >= 400) fail(executed.response.status, 'Time view is unavailable');
