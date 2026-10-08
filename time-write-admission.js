@@ -56,7 +56,18 @@ function authorize(db, user, operation, activities, replay = false) {
   if (operation.id) {
     const rows = (db.timeCards || []).filter(row => key(row.id) === operation.id);
     if (!rows.some(row => (!row.deletedAt || replay && operation.action === 'remove') && access.inScope(db, user, { ...row, deletedAt: null }, operation.permission))) fail(404, 'Time card not found');
-    unique(db.timeCards, operation.id, 'Time card');
+    const card = unique(db.timeCards, operation.id, 'Time card');
+    unique(db.team, card.memberId, 'Team member');
+    if (card.projectId != null) unique(db.projects, card.projectId, 'Project');
+    if (['correct', 'remove'].includes(operation.action)) {
+      const day = card.workdayId ? unique(db.workdays, card.workdayId, 'Workday') : null;
+      if (day && (Number(day.projectId) !== Number(card.projectId) || !(day.memberIds || []).map(Number).includes(Number(card.memberId)))) fail(409, 'Workday binding needs reconciliation');
+      const reportId = card.reportId || day?.reportId;
+      if (reportId) {
+        const report = unique(db.reports, reportId, 'Report');
+        if (Number(report.project) !== (db.projects || []).findIndex(row => Number(row.id) === Number(card.projectId)) || field && card.reportId && day?.reportId && Number(card.reportId) !== Number(day.reportId)) fail(409, 'Report binding needs reconciliation');
+      }
+    }
     if (field && Object.hasOwn(operation.details, 'activityCodeId')) fail(400, 'Only office accounts can change the activity');
   }
   if (operation.action === 'create') {

@@ -35,6 +35,11 @@ assert.throws(() => admission.validateDelta(db, after, pm, operation), { statusC
 assert.throws(() => admission.authorize(db, pm, admission.parse({ action: 'create', details: { memberId: 13, projectId: 101 } }, 'cards'), () => []), { statusCode: 403 });
 db.timeCards.push({ ...db.timeCards[0], id: ' 501 ', memberId: 13, projectId: 102 });
 assert.throws(() => admission.authorize(db, pm, operation, () => []), { statusCode: 409 });
+db.timeCards.pop(); db.timeCards[0].workdayId = 81;
+db.workdays = [{ id: 81, projectId: 102, memberIds: [11] }];
+assert.throws(() => admission.authorize(db, pm, operation, () => []), { statusCode: 409 }, 'A cross-project workday cannot be reached through an own card');
+db.workdays[0].projectId = 101; db.workdays[0].memberIds = [13];
+assert.throws(() => admission.authorize(db, pm, operation, () => []), { statusCode: 409 }, 'A card cannot use another member\'s workday');
 for (const path of ['/api/time-cards/action-preview', '/api/time-cards/company-clock', '/api/pay-periods/action-preview']) assert.equal(supportedRoute('POST', path), true);
 for (const path of ['/api/company-activities', '/api/workdays/start', '/api/company/roles', '/api/billing/checkout']) assert.equal(supportedRoute('POST', path), false);
 console.log('Time writers: exact ceilings, fail-closed typed policy, immutable owner/assistant boundaries, closed inputs, compound delta and global duplicate-ID guards passed.');
