@@ -1,0 +1,17 @@
+{
+  "baseCommit": "bdbdfe9a8b038d3dbc32327c58f5a529dbe71225",
+  "viewports": [
+    "1440x1000",
+    "390x844"
+  ],
+  "assertions": [
+    "real synthetic cookie signup",
+    "help opens",
+    "no horizontal page overflow",
+    "single preferences form",
+    "email opt-in previews disabled copy",
+    "dismiss survives reopen",
+    "no page exceptions"
+  ],
+  "providerCalls": 0
+}

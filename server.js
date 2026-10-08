@@ -1,4 +1,5 @@
 const http = require('node:http');
+const helpGuidance = require('./help-guidance');
 const fs = require('node:fs');
 const path = require('node:path');
 const crypto = require('node:crypto');
@@ -879,6 +880,18 @@ async function api(req,res,url){
   if(await handleAssistantAI(req,res,url))return;
   if(await handleProjectAssistant(req,res,url))return;
   if(process.env.PDL_REQUIRE_AUTH==='1'&&!url.pathname.startsWith('/api/guest/')){const db=readDb(),{auth,status}=authenticateRequestAccount(req,db),user=auth?.user;if(!auth)return json(res,status,{error:status===404?'Resource not found':'Authentication required'});const access=accountAccess(db.company),accessRoute=url.pathname==='/api/account-access'||url.pathname.startsWith('/api/billing');if(access.locked&&!accessRoute)return json(res,402,{error:access.reason,code:'subscription_required',access});const ownerRoute=url.pathname==='/api/users'||/^\/api\/users\//.test(url.pathname);if(ownerRoute&&user.role!=='owner')return json(res,403,{error:'Account owner permission required'});const officeRoute=['/api/production','/api/insights','/api/exceptions','/api/action-center','/api/changes','/api/catalog','/api/estimate-imports'].some(route=>url.pathname.startsWith(route))||url.pathname.includes('/approve')||url.pathname.includes('/disposition');if(officeRoute&&!['owner','admin','project_manager'].includes(user.role))return json(res,403,{error:'Office permission required'})}
+  if(url.pathname==='/api/help-guidance'){
+    if(process.env.PDL_HELP_DRAFT!=='1')return json(res,404,{error:'Not found'});
+    const db=readDb(),user=projectNotesUser(req,db);
+    if(!user)return json(res,401,{error:'Authentication required'});
+    const stored=db.users.find(row=>row.id===user.id),day=companyDateIso(db.company,new Date());
+    if(req.method==='PATCH'){
+      try{const effective={...stored,role:user.role};helpGuidance.update(effective,await body(req),day,helpGuidance.guidance(db,user,day).tip);stored.helpGuidance=effective.helpGuidance}catch(error){return json(res,400,{error:error.message})}
+      writeDb(db);
+    }else if(req.method!=='GET')return json(res,405,{error:'Method not allowed'});
+    const result=helpGuidance.guidance(db,{...stored,role:user.role},day);
+    return json(res,200,{...result,emailPreview:helpGuidance.emailPreview(db,{...stored,role:user.role},day)});
+  }
   if(await handleProjectNotes(req,res,url))return;
   if(process.env.PDL_REQUIRE_AUTH==='1'&&(subcontractorCreate||subcontractorUpdate||subcontractorProfile||subcontractorReminder||subcontractorArchive)&&!['owner','admin'].includes(req.auth?.user?.role))return json(res,403,{error:'Account Owner or Admin permission required'});
   if(process.env.PDL_REQUIRE_AUTH==='1'&&(subcontractorLinkCreate||subcontractorLinkRevoke)&&!['owner','admin','project_manager'].includes(req.auth?.user?.role))return json(res,403,{error:'Office permission required'});
