@@ -1,0 +1,44 @@
+name: Synthetic Help email cross-worker verification
+on:
+  pull_request:
+    paths:
+      - 'help-email*'
+      - 'scripts/help-email-postgres-test.js'
+      - '.github/workflows/help-email-draft.yml'
+permissions:
+  contents: read
+jobs:
+  isolated-postgres:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: pdl_help_test
+          POSTGRES_HOST_AUTH_METHOD: trust
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d pdl_help_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+      - run: npm ci
+      - name: Record exact head
+        run: git rev-parse HEAD
+      - name: Fake-only email integration
+        run: node help-email-integration.test.js
+      - name: Independent-process PostgreSQL verification
+        env:
+          PDL_HELP_DB_TEST: '1'
+          PDL_HELP_TEST_DATABASE_URL: postgresql://postgres@127.0.0.1:5432/pdl_help_test
+        run: node scripts/help-email-postgres-test.js
