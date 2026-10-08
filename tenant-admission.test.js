@@ -51,7 +51,7 @@ async function main() {
     if (expected === 'degraded') assert.deepEqual(await boundary.finish(context), { committed: true, revision: 4, mirrored: false });
     else await assert.rejects(boundary.finish(context), expected === 'unknown' ? { code: 'PDL_COMMIT_OUTCOME_UNKNOWN' } : /Rejected/);
   }
-  for (const path of ['/api/signup', '/api/billing/webhook', '/api/billing/checkout', '/api/guest/token', '/api/platform/companies/x', '/api/assignments', '/api/company/logo', '/api/photos', '/api/estimate-imports/analyze', '/api/action-center', '/api/company/export', '/api/assistant/interpret', '/api/projects/101/assistant/chat']) assert.equal(supportedRoute('POST', path), false);
+  for (const path of ['/api/signup', '/api/billing/webhook', '/api/billing/checkout', '/api/guest/token', '/api/platform/companies/x', '/api/company/logo', '/api/photos', '/api/estimate-imports/analyze', '/api/action-center', '/api/company/export', '/api/assistant/interpret', '/api/projects/101/assistant/chat']) assert.equal(supportedRoute('POST', path), false);
   assert.equal(supportedRoute('POST', '/api/projects/101/assistant/confirm'), true);
   assert.equal(supportedRoute('PATCH', '/api/users/2'), true);
   const priorFlag = process.env.PDL_TENANT_ATOMIC, originalFetch = global.fetch;

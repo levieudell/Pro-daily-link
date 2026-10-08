@@ -23,7 +23,9 @@ const pool = new Pool({ connectionString: rawUrl, max: 12, connectionTimeoutMill
 const repository = new TransactionalTenantRepository({ pool });
 const children = [], temp = fs.mkdtempSync(path.join(os.tmpdir(), 'pdl-atomic-http-'));
 const localFile = path.join(temp, 'db.json');
-let bridge, bridgeBase, commits = 0, legacyRequests = 0, gate, dropAck = false, rejectCommit = false;
+let bridge, bridgeBase, commits = 0, legacyRequests = 0;
+const controls = { gate: null, dropAck: false, rejectCommit: false, providerMode: 'success', providerCompleted: false };
+const providerEvents = [];
 function checkpoint() {
   let resolve; const promise = new Promise(done => { resolve = done; });
   return { promise, resolve, count: 0 };
@@ -68,11 +70,22 @@ async function startBridge() {
       if (req.method === 'POST' && url.pathname === '/rest/v1/rpc/replace_tenant_records') {
         let raw = ''; for await (const chunk of req) raw += chunk;
         const input = JSON.parse(raw); commits++;
-        if (gate) { const current = gate; current.count++; if (current.count === current.expected) current.resolve(); await current.promise; }
-        if (rejectCommit) return send(400, { message: 'Synthetic commit rejected before SQL' });
+        if (controls.gate) { const current = controls.gate; current.count++; if (current.count === current.expected) current.resolve(); await current.promise; }
+        if (controls.rejectCommit) return send(400, { message: 'Synthetic commit rejected before SQL' });
         const result = await pool.query('SELECT * FROM replace_tenant_records($1,$2,$3,$4,$5)', [input.p_company_id, input.p_expected_revision, input.p_scalar_data, input.p_content_hash, JSON.stringify(input.p_records)]);
-        if (dropAck) return req.socket.destroy();
+        if (controls.dropAck) return req.socket.destroy();
         return send(200, result.rows);
+      }
+      if (req.method === 'POST' && url.pathname === '/synthetic-resend') {
+        let raw = ''; for await (const chunk of req) raw += chunk;
+        const email = JSON.parse(raw), current = await repository.load(companyA), key = req.headers['idempotency-key'];
+        const job = current.snapshot.assignmentEmailOutbox.find(row => key === 'pdl-assignment/' + row.id);
+        assert.ok(job, 'Only a durable fixed assignment email job may reach transport'); assert.equal(job.status, 'dispatching');
+        assert.deepEqual(email.to, [job.payload.to]); assert.ok(email.html.includes(job.payload.projectName));
+        assert.ok(job.assignmentIds.every(id => current.snapshot.assignments.some(row => row.id === id)));
+        providerEvents.push({ key, assignmentId: job.assignmentIds[0] }); controls.providerCompleted = true;
+        if (controls.providerMode === 'drop') return req.socket.destroy();
+        return send(200, { id: 'synthetic-resend-id' });
       }
       legacyRequests++; return send(500, { message: 'Legacy or external effect forbidden' });
     } catch (error) { send(error.code === '40001' ? 409 : 400, { message: error.message }); }
@@ -80,11 +93,11 @@ async function startBridge() {
   await new Promise(resolve => bridge.listen(0, '127.0.0.1', resolve));
   bridgeBase = 'http://127.0.0.1:' + bridge.address().port;
 }
-async function startWorker() {
+async function startWorker({ dispatch = false } = {}) {
   const env = { ...process.env };
   for (const name of Object.keys(env)) if (/^(SENTRY_|RESEND_|OPENAI_|STRIPE_|SUPABASE_|DATABASE_URL$|PDL_)/.test(name)) delete env[name];
-  Object.assign(env, { PDL_DB_FILE: localFile, PDL_PLATFORM_FILE: path.join(temp, 'platform.json'), PDL_REQUIRE_AUTH: '1', PDL_SUPABASE_ENABLED: '1', PDL_TRANSACTIONAL_DB: 'primary', PDL_TENANT_ATOMIC: '1', SUPABASE_URL: bridgeBase, SUPABASE_SECRET_KEY: 'synthetic-only-atomic-stub', PDL_ASSISTANT_AI_ENABLED: '0', PDL_AUTH_FAIL_LIMIT: '3' });
-  const script = `const original=global.fetch;global.fetch=(url,options)=>{if(new URL(url).origin!==${JSON.stringify(bridgeBase)})throw Error('External network forbidden');return original(url,options)};const{server}=require('./server');server.listen(0,'127.0.0.1',()=>console.log('ATOMIC_PORT='+server.address().port));`;
+  Object.assign(env, { PDL_DB_FILE: localFile, PDL_PLATFORM_FILE: path.join(temp, 'platform.json'), PDL_REQUIRE_AUTH: '1', PDL_SUPABASE_ENABLED: '1', PDL_TRANSACTIONAL_DB: 'primary', PDL_TENANT_ATOMIC: '1', SUPABASE_URL: bridgeBase, SUPABASE_SECRET_KEY: 'synthetic-only-atomic-stub', PDL_ASSISTANT_AI_ENABLED: '0', PDL_AUTH_FAIL_LIMIT: '3', RESEND_API_KEY: 'synthetic-localhost-only', PDL_ASSIGNMENT_OUTBOX_DISPATCH: dispatch ? '1' : '0' });
+  const script = `const original=global.fetch;global.fetch=(url,options)=>{if(String(url)==='https://api.resend.com/emails')return original(${JSON.stringify(bridgeBase + '/synthetic-resend')},options);if(new URL(url).origin!==${JSON.stringify(bridgeBase)})throw Error('External network forbidden');return original(url,options)};const{server}=require('./server');server.listen(0,'127.0.0.1',()=>console.log('ATOMIC_PORT='+server.address().port));`;
   const child = spawn(process.execPath, ['-e', script], { cwd: __dirname, env, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] });
   children.push(child);
   return new Promise((resolve, reject) => {
@@ -101,11 +114,11 @@ async function request(base, method, url, input, user = 1, company = companyA, c
 }
 async function change(mutator, company = companyA) { const loaded = await repository.load(company); mutator(loaded.snapshot); await repository.save(loaded.snapshot, loaded.revision); }
 async function waitFor(predicate) { const end = Date.now() + 10000; while (!predicate()) { if (Date.now() > end) throw Error('Synthetic barrier timeout'); await new Promise(resolve => setTimeout(resolve, 20)); } }
-async function slowRequest(base, user, input) {
-  const bytes = JSON.stringify(input), address = new URL(base + notePath);
+async function slowRequest(base, user, input, route = notePath, method = 'POST') {
+  const bytes = JSON.stringify(input), address = new URL(base + route);
   let done;
   const result = new Promise((resolve, reject) => {
-    const req = http.request(address, { method: 'POST', headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(bytes), 'X-PDL-Company': companyA, Authorization: 'Bearer ' + token(companyA, user) } }, res => {
+    const req = http.request(address, { method, headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(bytes), 'X-PDL-Company': companyA, Authorization: 'Bearer ' + token(companyA, user) } }, res => {
       let raw = ''; res.on('data', chunk => { raw += chunk; }); res.on('end', () => resolve({ status: res.statusCode, data: JSON.parse(raw) }));
     });
     req.on('error', reject); req.setTimeout(15000, () => req.destroy(Error('Slow-body timeout')));
@@ -162,13 +175,13 @@ async function main() {
 
     // Two real workers share PostgreSQL, without sharing their JS request queue.
     const beforeRace = await repository.load(companyA), a = newNote('Atomic candidate A'), b = newNote('Atomic candidate B');
-    gate = checkpoint(); gate.expected = 99;
+    controls.gate = checkpoint(); controls.gate.expected = 99;
     let responsesSent = 0;
     const pendingResponses = [request(bases[0], 'POST', notePath, a), request(bases[1], 'POST', notePath, b)].map(promise => promise.then(value => { responsesSent++; return value; }));
-    await waitFor(() => gate.count === 2);
+    await waitFor(() => controls.gate.count === 2);
     assert.equal(responsesSent, 0, 'No successful or conflict response is sent before SQL CAS');
     assert.equal((await repository.load(companyA)).revision, beforeRace.revision);
-    gate.resolve(); const outputs = await Promise.all(pendingResponses); gate = null;
+    controls.gate.resolve(); const outputs = await Promise.all(pendingResponses); controls.gate = null;
     assert.deepEqual(outputs.map(row => row.status).sort(), [201, 409]);
     const raceAfter = await repository.load(companyA); assert.equal(raceAfter.revision, beforeRace.revision + 1);
     assert.equal(raceAfter.snapshot.projectNotesTodos.length, 1);
@@ -179,11 +192,11 @@ async function main() {
     assert.equal((await repository.load(companyA)).revision, raceAfter.revision);
 
     // Revocation after admission but before SQL commit invalidates the candidate.
-    gate = checkpoint(); gate.expected = 99;
+    controls.gate = checkpoint(); controls.gate.expected = 99;
     const inflight = request(bases[0], 'POST', notePath, newNote('Revoked inflight write'), 2);
-    await waitFor(() => gate.count === 1);
+    await waitFor(() => controls.gate.count === 1);
     await change(db => { db.users.find(row => row.id === 2).projectIds = []; });
-    gate.resolve(); const deniedInflight = await inflight; gate = null;
+    controls.gate.resolve(); const deniedInflight = await inflight; controls.gate = null;
     assert.equal(deniedInflight.status, 409);
     assert.equal((await request(bases[1], 'POST', notePath, newNote('Stale client grant'), 2)).status, 404);
     assert.equal((await repository.load(companyA)).snapshot.projectNotesTodos.length, 1);
@@ -216,12 +229,12 @@ async function main() {
     assert.equal(degraded.status, 201); assert.equal(degraded.headers.get('x-pdl-mirror-status'), 'degraded');
     fs.unlinkSync(mirrorDirectory); fs.renameSync(heldMirror, mirrorDirectory);
     const beforeRejection = await repository.load(companyA), mirrorBytes = fs.readFileSync(path.join(temp, '.atomic-mirrors', companyA + '.json'));
-    rejectCommit = true;
-    assert.equal((await request(bases[1], 'POST', notePath, newNote('Rejected commit'))).status, 503); rejectCommit = false;
+    controls.rejectCommit = true;
+    assert.equal((await request(bases[1], 'POST', notePath, newNote('Rejected commit'))).status, 503); controls.rejectCommit = false;
     assert.deepEqual(await repository.load(companyA), beforeRejection);
     assert.deepEqual(fs.readFileSync(path.join(temp, '.atomic-mirrors', companyA + '.json')), mirrorBytes);
-    dropAck = true; const uncertainInput = newNote('Commit acknowledged by replay');
-    const uncertain = await request(bases[1], 'POST', notePath, uncertainInput); dropAck = false;
+    controls.dropAck = true; const uncertainInput = newNote('Commit acknowledged by replay');
+    const uncertain = await request(bases[1], 'POST', notePath, uncertainInput); controls.dropAck = false;
     assert.equal(uncertain.status, 503); assert.equal(uncertain.data.code, 'COMMIT_OUTCOME_UNKNOWN');
     const afterUnknown = await repository.load(companyA); assert.equal(afterUnknown.revision, beforeRejection.revision + 1);
     assert.deepEqual(fs.readFileSync(path.join(temp, '.atomic-mirrors', companyA + '.json')), mirrorBytes);
@@ -230,13 +243,14 @@ async function main() {
     await pool.query('UPDATE tenant_revisions SET content_hash=$1 WHERE company_id=$2', ['f'.repeat(64), companyA]);
     assert.equal((await request(bases[0], 'GET', notePath)).status, 503, 'Corrupt authority cannot fall back to the stale local file');
     await pool.query('UPDATE tenant_revisions SET content_hash=$1 WHERE company_id=$2', [afterUnknown.contentHash, companyA]);
+    await require('./scheduling-postgres-cases')({ repository, change, request, slowRequest, bases, startWorker, checkpoint, waitFor, controls, providerEvents });
     for (let attempt = 0; attempt < 3; attempt++) assert.equal((await request(bases[0], 'POST', '/api/auth/login', { email: 'user1@example.invalid', password: 'invalid-synthetic-password' })).status, 401);
     assert.equal((await request(bases[0], 'POST', '/api/auth/login', { email: 'user1@example.invalid', password: 'invalid-synthetic-password' })).status, 429, 'Atomic failed logins retain the credential lockout');
     assert.deepEqual(await repository.load(companyB), foreignBefore);
     assert.equal(legacyRequests, 0); assert.equal(fs.readFileSync(localFile, 'utf8'), originalLocal);
     console.log('Synthetic PostgreSQL and two-worker HTTP: pagination/empty collections, mandatory SQL CAS, races/rollback, stale actor/slow body/inflight revocation, owner protection, IDOR, assistant pilot/replay, rejected effects and lost acknowledgement passed.');
   } finally {
-    gate?.resolve();
+    controls.gate?.resolve();
     await Promise.all(children.map(async child => { if (child.exitCode == null) { const ended = once(child, 'exit'); child.kill(); await ended; } }));
     if (bridge) { bridge.closeAllConnections(); await new Promise(resolve => bridge.close(resolve)); }
     await pool.end();
