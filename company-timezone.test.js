@@ -1,0 +1,12 @@
+'use strict';
+const assert=require('node:assert/strict');
+const {valid,change,fields}=require('./company-timezone');
+for(const zone of ['America/Los_Angeles','America/Denver','America/Chicago','America/New_York','UTC','America/Phoenix'])assert.equal(valid(zone),true);
+for(const zone of [undefined,null,'',{},'not/a-zone'])assert.equal(valid(zone),false);
+for(const stored of [undefined,'America/New_York','UTC','not/a-zone'])for(const input of [{},{timezone:''},{timezone:stored}])assert.deepEqual(change({timezone:stored},input),{patch:{}},'omitted/blank/unchanged timezone never applies a default');
+for(const zone of ['America/Los_Angeles','America/Denver','America/Chicago','America/New_York'])assert.deepEqual(change({}, {timezone:zone,timezoneSelected:true}),{patch:{timezone:zone}});
+for(const zone of ['not/a-zone',{},null,'America/Phoenix'])assert.ok(change({}, {timezone:zone,timezoneSelected:true}).error,'unsupported new choice fails without applying Pacific');
+for(const stored of [undefined,'America/New_York','UTC'])assert.deepEqual(change({timezone:stored},{timezone:'America/Los_Angeles'}),{patch:{}},'old bundles cannot silently choose their displayed default');
+assert.deepEqual(fields(undefined,''),{});assert.deepEqual(fields('UTC','UTC'),{});assert.deepEqual(fields(undefined,'America/Los_Angeles'),{timezone:'America/Los_Angeles',timezoneSelected:true});
+assert.deepEqual(change({timezone:'America/Phoenix'},{timezone:'America/Phoenix'}),{patch:{}},'valid saved legacy zones remain intact');
+console.log('Company timezone policy passed: explicit supported choices only, no default on omitted/blank/unrelated saves, existing legacy zones retained.');
