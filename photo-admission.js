@@ -81,9 +81,16 @@ function createHandler({ readDb, writeDb, body, json, raw, revision, assertCurre
     const manifest = req.method === 'GET' && url.pathname === '/api/photos/recovery-manifest';
     const idMatch = req.method === 'GET' && url.pathname.match(/^\/api\/photos\/(\d+)(?:\/(file|export))?$/);
     const keyMatch = req.method === 'GET' && url.pathname.match(/^\/api\/files\/project-photos\/([0-9a-f-]{36})\/atomic-photos\/([0-9a-f-]{36})\/photo\.(jpg|png|webp)$/);
-    if (!preview && !confirm && !manifest && !idMatch && !keyMatch) return false;
+    const reportList = req.method === 'GET' && url.pathname.match(/^\/api\/reports\/(\d+)\/photos$/);
+    if (!preview && !confirm && !manifest && !idMatch && !keyMatch && !reportList) return false;
     const db = readDb(), user = req.auth.user;
     try {
+      if (reportList) {
+        const report = unique(db.reports, reportList[1], 'Report'); if (!daily.reportInScope(db, user, report, 'viewReports')) fail(404, 'Report photos not found');
+        const records = Object.hasOwn(db, 'photos') ? db.photos : []; if (!Array.isArray(records) || records.length > 10000) fail(409, 'Photo identities need reconciliation'); for (const photo of records) require('./notes-access').uniqueNumeric(records, photo?.id, 'Photo', db.company.id);
+        const photos = records.filter(row => Number(row.reportId) === Number(report.id)).map(photo => { const value = photoDescriptor(db, photo), intent = db.photoUploadIntents.find(row => row.key === value.key); authorize(db, user, intent.details, false); return present(photo); });
+        await assertCurrent(req); json(res, 200, photos); return true;
+      }
       if (manifest) {
         if (user.role !== 'owner') fail(403, 'Account owner permission required');
         const objects = (db.photoUploadIntents || []).map(intent => { validateIntent(db, intent); return { id: intent.id, referenceState: intent.state === 'committed' ? 'committed' : 'reserved-uncommitted', objectPresence: 'not-certified-by-manifest', photoId: intent.photoId || null, projectId: intent.details.projectId, reportId: intent.details.reportId, workdayId: intent.details.workdayId || null, ...descriptor(intent) }; });

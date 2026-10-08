@@ -11,7 +11,7 @@ module.exports = async function ({ repository, change, request, bases, providerE
   const clean = workspace(); clean.users.push({ id: 10, companyId: companyA, name: 'Synthetic second owner', email: 'owner10@example.invalid', role: 'owner', status: 'Active' }); clean.sessions.push({ userId: 10, companyId: companyA, tokenHash: crypto.createHash('sha256').update(token(companyA, 10)).digest('hex'), expiresAt: '2099-01-01T00:00:00Z' });
   const reset = async () => change(db => { for (const key of Object.keys(db)) delete db[key]; Object.assign(db, structuredClone(clean)); });
   const browser = await chromium.launch({ headless: true, ...(process.env.PDL_ROLES_BROWSER_EXECUTABLE ? { executablePath: process.env.PDL_ROLES_BROWSER_EXECUTABLE } : {}), args: ['--disable-background-networking', '--disable-component-update', '--no-first-run'] });
-  const cases = [], holds = []; let page, context, posts, pageErrors, external = [];
+  const cases = [], holds = []; let page, context, posts, pageErrors, bootstrapResponses, external = [];
   async function cookies(company = companyA, user = 1, session = token(company, user)) {
     await context.addCookies([{ name: 'pdl_session', value: session, url: base, httpOnly: true, sameSite: 'Strict' }, { name: 'pdl_company', value: company, url: base, sameSite: 'Strict' }]);
   }
@@ -24,16 +24,23 @@ module.exports = async function ({ repository, change, request, bases, providerE
   async function recoveryReady() { await page.locator('#recover-request').waitFor(); await page.waitForFunction(() => !document.querySelector('#recover-request')?.disabled); }
   async function reopen() { await page.locator('#close-editor').click(); await page.getByRole('heading', { name: 'Projects', exact: true }).waitFor(); await page.locator('[data-route="roles"]').click(); }
   async function test(name, run, viewport = { width: 1440, height: 1000 }) {
-    await reset(); context = await browser.newContext({ viewport }); posts = []; pageErrors = [];
+    // Independent contexts model distinct clients behind the existing proxy header.
+    // Keep the ordinary rate budget and one address throughout each journey.
+    const clientAddress = '192.0.2.' + (cases.length + 1);
+    await reset(); context = await browser.newContext({ viewport, extraHTTPHeaders: { 'X-Forwarded-For': clientAddress } }); posts = []; pageErrors = []; bootstrapResponses = [];
     await context.route('**/*', async route => { if (new URL(route.request().url()).origin !== base) { external.push(route.request().url()); return route.abort(); } return route.continue(); });
-    page = await context.newPage(); page.setDefaultTimeout(15000); page.on('pageerror', error => pageErrors.push(error.message)); page.on('request', row => { if (row.method() === 'POST' && new URL(row.url()).pathname.startsWith(ROOT)) posts.push({ path: new URL(row.url()).pathname, body: row.postDataJSON() }); });
-    try { await cookies(); await run(); assert.deepEqual(pageErrors, []); cases.push({ name, viewport, passed: true }); console.log('Roles browser passed: ' + name); }
-    catch (error) { await page.screenshot({ path: path.join(artifacts, 'failure.png') }).catch(() => {}); cases.push({ name, passed: false, error: error.message }); throw error; }
+    page = await context.newPage(); page.setDefaultTimeout(15000); page.on('response', response => { const pathname = new URL(response.url()).pathname; if (['/api/config', '/api/auth/me'].includes(pathname)) bootstrapResponses.push({ pathname, status: response.status() }); }); page.on('pageerror', error => pageErrors.push(error.message)); page.on('request', row => { if (row.method() === 'POST' && new URL(row.url()).pathname.startsWith(ROOT)) posts.push({ path: new URL(row.url()).pathname, body: row.postDataJSON() }); });
+    try { await cookies(); await run(); assert.deepEqual(pageErrors, []); cases.push({ name, viewport, clientAddress, passed: true }); console.log('Roles browser passed: ' + name); }
+    catch (error) { await page.screenshot({ path: path.join(artifacts, 'failure.png') }).catch(() => {}); cases.push({ name, passed: false, error: error.message, clientAddress, bootstrapResponses }); throw error; }
     finally { for (const hold of holds.splice(0)) hold.resolve(); await context.close(); }
   }
   try {
     await test('desktop: entry point, exact unchanged defaults, protected limits and real impact/save/audit', async () => {
-      const before = await load(); await page.goto(base + '/app'); await page.waitForURL('**/workspace.html?tenant=*#roles'); await page.locator('#policy-reason').waitFor();
+      const before = await load(), started = barrier(), released = barrier(); holds.push(released); let bootstrapRequests = 0, configRequests = 0, firstBootstrap = true;
+      page.on('request', row => { const pathname = new URL(row.url()).pathname; if (pathname === '/api/auth/me') bootstrapRequests++; if (pathname === '/api/config') configRequests++; });
+      await page.route('**/api/auth/me', async route => { if (!firstBootstrap) return route.continue(); firstBootstrap = false; const response = await route.fetch(); assert.equal(response.status(), 200); started.resolve(); await released.promise; await route.fulfill({ response }); });
+      const opening = page.goto(base + '/app'); await started.promise; await opening; await page.waitForFunction(() => typeof window.startWorkspaceAfterGate === 'function' && typeof window.reportHasUnsavedInput === 'function' && window.reportHasUnsavedInput.toString().includes('reportSavedSignature')); assert.equal(configRequests, 1); assert.equal(bootstrapRequests, 1); released.resolve();
+      await page.waitForURL('**/workspace.html?tenant=*#roles'); await page.locator('#policy-reason').waitFor(); assert.equal(bootstrapRequests, 1, 'One page gate owns initial session renewal; the legacy app must not start during scoped redirect');
       // Original auth bootstrap renews only its synthetic session; the editor itself is read-only.
       const opened = await load(), business = value => { value = structuredClone(value); delete value.sessions; return value; }; assert.deepEqual(business(opened.snapshot), business(before.snapshot));
       assert.equal(await page.locator('.matrix input').count(), 128); assert.equal(await page.locator('[data-role="owner"]').count(), 0); assert.equal(await page.locator('[data-family="scheduling"][data-role="field"][data-action="create"]').isDisabled(), true);

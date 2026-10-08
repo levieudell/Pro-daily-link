@@ -26,7 +26,7 @@ const $=id=>{if(id==='[data-approve-report]'){const match=node('#report-detail')
 const c={$,$$:selector=>selector==='dialog'?[node('#report-modal')]:[],document:{getElementById:id=>node('#'+id),addEventListener:(kind,handler,capture)=>node('#document').addEventListener(kind,handler,capture)},window:{confirm(){confirmations++;return allowDiscard}},
  projects:[{id:101,name:'Synthetic job',code:'SYN'}],reports:[],photos:[],team:[],preferredLanguage:'en',
  currentUser:{id:1,name:'Synthetic author'},company:{id:'synthetic'},signedInCompanyId:()=> 'synthetic',
- editingReportId:null,reportAnalyzeSequence:0,extractedDraft:null,activeNoteLaborEvidence:null,reportSavedNotes:'',suppressReportOpenUntil:0,
+ editingReportId:null,reportSourceAssignmentId:null,reportAnalyzeSequence:0,extractedDraft:null,activeNoteLaborEvidence:null,reportSavedNotes:'',suppressReportOpenUntil:0,
  localDateIso:()=> '2026-10-01',updateReportReviewDateBanner(){},applyReportLanguage(){},populateReportLabor(){},
  renderReportCustomFields(){},showReportStep(){},offerOfflineReportDraft(){},unmeasuredWorkSuggestions:()=>[],
  addProductionRow(){},DailyWorkExtraction:{groundReviewSuggestions:rows=>rows},statusClass:()=>'',reportWorkDate:()=> 'Oct 1',
@@ -35,7 +35,7 @@ const c={$,$$:selector=>selector==='dialog'?[node('#report-modal')]:[],document:
  reportWorkSuggestions:()=>[],offlineReportDraftKey:()=> 'report-1',offlineReportStorageKey:key=>key,
  localStorage:{removeItem:key=>storage.delete(key)},clearActiveReportRecovery(){},rememberActiveReport(){},
  renderProjectCards(){},showPage(){},syncActionCenter:async()=>{},notify(){},
- showReportMessage:message=>messages.push(message),applyReportType(){},
+ showReportMessage:message=>messages.push(message),applyReportType(){},renderReportJobContext(){},
  api:async(route,options)=>{if(route.endsWith('/approve'))return {...c.reports[0],status:'Approved'};const payload=JSON.parse(options.body);requests.push({route,payload});if(apiFailure)throw Error('Synthetic offline');
   return {...payload,id:1,project:0,history:[],signature:payload.signature};},
  uploadPhotos:async()=>{if(photoFailure)throw Error('Synthetic photo failure');return[];}
