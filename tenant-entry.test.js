@@ -1,0 +1,17 @@
+'use strict';
+const assert = require('node:assert/strict'), entry = require('./tenant-entry'), ui = require('./workspace-entry');
+const { companyA, companyB } = require('./fixtures/project-assistant');
+const bound = { enabled: true, companyId: companyA, synthetic: false }, req = headers => ({ headers });
+for (const email of ['user1@example.invalid', 'unknown@example.invalid', 'foreign@example.invalid']) assert.deepEqual(entry.discovery(req({}), bound, { email }), { companyId: companyA });
+assert.throws(() => entry.discovery(req({}), { enabled: true, companyId: null, synthetic: true }, { email: 'a@example.invalid' }), { statusCode: 503 });
+for (const headers of [{ 'x-pdl-company': companyB }, { cookie: 'pdl_company=' + companyB }, { 'x-pdl-company': 'bad' }, { 'x-pdl-company': companyA, cookie: 'pdl_company=' + companyB }]) assert.throws(() => entry.discovery(req(headers), bound, { email: 'a@example.invalid' }));
+for (const input of [null, [], { email: '' }, { email: 'a'.repeat(5001) }, { email: 'a', role: 'owner' }, { email: 'a', companyId: companyB }, { email: 'a', __proto__: null, token: 'forged' }]) assert.throws(() => entry.discovery(req({}), bound, input), { statusCode: 400 });
+for (const input of [{ email: 'a', password: {} }, { email: 'a', password: 'x'.repeat(16_000_001) }, { email: 'a', password: 'x', permissions: {} }]) assert.throws(() => entry.input(input, 'login', companyA), { statusCode: 400 });
+assert.equal(entry.input({ email: 'a'.repeat(400), password: 'x'.repeat(1500) }, 'login', companyA).password.length, 1500);
+assert.equal(entry.company(req({}), bound, { entry: true }), companyA); assert.throws(() => entry.company(req({}), bound), { statusCode: 400 });
+assert.throws(() => entry.company(req({ 'x-pdl-company': companyA }), { enabled: false, companyId: companyA }), { statusCode: 401 });
+assert.throws(() => entry.input({ userId: 2 }, 'logout', companyA), { statusCode: 400 });
+for (const [hash, expected] of [['#schedule', 'schedule'], ['#timecards', 'cards'], ['#timeoff', 'leave'], ['#myday', 'workdays'], ['#my-day', 'workdays'], ['#timeoverview', 'cards'], ['#constructor', 'roles'], ['#__proto__', 'roles'], ['#toString', 'roles'], ['#https://outside.invalid', 'roles'], ['#dashboard', 'roles']]) assert.equal(ui.route(hash, 'owner'), expected);
+assert.equal(ui.workspace({ companyId: companyA, accessRole: 'field' }, '#notes'), '/workspace.html?tenant=' + companyA + '#notes');
+assert.equal(ui.login(companyA, '#schedule'), '/login.html?tenant=' + companyA + '#schedule');
+console.log('Tenant entry passed: fixed no-account discovery, canonical/foreign/conflicting identity rejection, closed credential/logout payloads and bounded internal navigation.');

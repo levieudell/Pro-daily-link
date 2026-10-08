@@ -1396,13 +1396,20 @@ async function atomicRequest(req, res, url, requestId) {
   // Public mode metadata only: no tenant read, session renewal or CAS.
   if (req.method === 'GET' && url.pathname === '/api/config') return json(res, 200, { authRequired: true, scopedWorkspace: true });
   if (!atomicRouteSupported(req.method, url.pathname)) return json(res, 503, { error: 'This route is outside the atomic admission draft.', code: 'ATOMIC_ROUTE_UNSUPPORTED', requestId });
-  const header = String(req.headers['x-pdl-company'] || '').trim(), stored = cookie(req, 'pdl_company');
-  const companyId = header || stored;
+  const entry = require('./tenant-entry');
+  let companyId;
+  try {
+    if (req.method === 'POST' && url.pathname === '/api/auth/company') return json(res, 200, entry.discovery(req, activation, await body(req)));
+    companyId = entry.company(req, activation);
+  } catch (error) { if (![400, 401, 503].includes(error.statusCode)) throw error; return json(res, error.statusCode, { error: error.message, requestId }); }
   boundAtomicCompany(companyId);
-  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(companyId) || (header && stored && header !== stored)) return json(res, 400, { error: 'A matching explicit company identifier is required.', requestId });
   // Fully receive input before loading the authoritative actor. A slow request
   // must not retain authorization captured before a revocation or role change.
   if (['POST', 'PATCH', 'PUT', 'DELETE'].includes(req.method)) { const input = await body(req); if (input?.companyId != null && input.companyId !== companyId) return json(res, 400, { error: 'Conflicting company identity', requestId }); }
+  if (req.method === 'POST' && ['/api/auth/login', '/api/auth/logout'].includes(url.pathname)) {
+    try { entry.input(await body(req), url.pathname.endsWith('/login') ? 'login' : 'logout', companyId); }
+    catch (error) { if (error.statusCode !== 400) throw error; return json(res, 400, { error: error.message, requestId }); }
+  }
   const context = await atomicAdmission.begin(companyId);
   const result = await dbContext.run(context, async () => {
     if (url.pathname === '/api/auth/login') {
@@ -1410,12 +1417,20 @@ async function atomicRequest(req, res, url, requestId) {
       if (user?.companyId && user.companyId !== context.db.company.id) return json(res, 401, { error: 'Authentication required' });
     } else {
       const { auth, status } = authenticateRequestAccount(req, context.db);
-      if (!auth) return json(res, status, { error: 'Authentication required' });
+      if (!auth) {
+        if (url.pathname === '/api/auth/logout' && [401, 404].includes(status)) {
+          // A revoked/expired session still needs a finite sign-out path. This
+          // clears browser cookies only; it cannot modify any tenant/session.
+          const secure = process.env.NODE_ENV === 'production' ? '; Secure' : '';
+          return jsonHeaders(res, 200, { ok: true }, { 'Set-Cookie': [`pdl_session=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0${secure}`, `pdl_company=; SameSite=Strict; Path=/; Max-Age=0${secure}`] });
+        }
+        return json(res, status, { error: 'Authentication required' });
+      }
     }
     const outcome = await api(req, res, url);
     // A successful buffered read/replay/proposal cannot deliver authority older
     // than a committed policy, role or session change. Mutations retain SQL CAS.
-    if (context.response?.status < 400 && !context.dirty) await assertAccountProjectionCurrent(req, url.pathname === '/api/account-access');
+    if (context.response?.status < 400 && !context.dirty && url.pathname !== '/api/auth/logout') await assertAccountProjectionCurrent(req, url.pathname === '/api/account-access');
     return outcome;
   });
   // Never persist mutations left by a handler that rejected its request.

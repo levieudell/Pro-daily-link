@@ -15,9 +15,9 @@
   const $ = selector => document.querySelector(selector), content = $('#workspace-content'), message = $('#workspace-message');
   const escape = value => String(value ?? '').replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[char]));
   const records = new Map(), recovery = window.RoleSaveRecovery;
-  let nav, identity = '', sequence = 0, loadGeneration = 0, busy = false, route = '', state, registry, audit, proposed, reason = '', proof, stage = 'loading', outcome = '', confirmed = false;
+  let nav, identity = '', sequence = 0, loadGeneration = 0, busy = false, signingOut = false, route = '', state, registry, audit, proposed, reason = '', proof, stage = 'loading', outcome = '', confirmed = false;
   const root = '/api/company/role-policy';
-  const companyId = () => { const value = document.cookie.split(';').map(row => row.trim()).find(row => row.startsWith('pdl_company='))?.slice(12); try { return value ? decodeURIComponent(value) : new URLSearchParams(location.search).get('tenant') || ''; } catch { return ''; } };
+  const companyId = () => { const value = document.cookie.split(';').map(row => row.trim()).find(row => row.startsWith('pdl_company='))?.slice(12); try { return new URLSearchParams(location.search).get('tenant') || (value ? decodeURIComponent(value) : ''); } catch { return ''; } };
   const identityOf = data => JSON.stringify([data.company.id, data.actor.id, data.actor.accessRole, data.sessionBinding]);
   const pending = () => records.get(identity);
   const isCurrent = (ticket, owner = false) => ticket.sequence === sequence && ticket.identity === identity && ticket.companyId === companyId() && (!owner || nav?.settings.roles === true) && route === ticket.route;
@@ -36,9 +36,19 @@
     if (identity && identity !== nextIdentity) { sequence++; state = registry = proposed = proof = audit = null; reason = ''; outcome = ''; confirmed = false; content.replaceChildren(); }
     nav = data; identity = nextIdentity;
     $('#company-label').textContent = data.company.name; $('#actor-label').textContent = data.actor.name;
+    for (const name of ['projects', 'team', 'customers']) $('[data-route="' + name + '"]').hidden = false;
     $('[data-route="roles"]').hidden = !data.settings.roles;
     $('[data-route="role-profiles"]').hidden = !data.settings.roles;
     for (const [name, [, family, action]] of Object.entries(window.WorkspaceActions?.routes || {})) $('[data-route="' + name + '"]').hidden = !data.actor.effectiveCapabilities[family]?.[action];
+  }
+  function clearPrivate() {
+    sequence++; loadGeneration++; nav = null; identity = ''; state = registry = audit = proposed = proof = null; reason = outcome = ''; confirmed = false;
+    window.WorkspaceActions?.leave(); window.RoleProfiles?.leave(); content.replaceChildren();
+    $('#company-label').textContent = 'Your workspace'; $('#actor-label').textContent = '';
+    document.querySelectorAll('[data-route]').forEach(link => { link.hidden = true; link.removeAttribute('aria-current'); });
+  }
+  function signInLink() {
+    const link = document.createElement('a'); link.href = window.WorkspaceEntry.login(companyId(), '#' + route); link.textContent = 'Sign in'; content.append(link);
   }
   async function freshIdentity(expectedRevision, ownerOnly = true) {
     const old = identity, mark = ticket(), data = await request('/api/navigation');
@@ -99,6 +109,7 @@
     }
   }
   async function enter() {
+    if (signingOut) return;
     const next = location.hash.slice(1) || 'roles'; route = ['roles', 'role-profiles', 'projects', 'team', 'customers', ...Object.keys(window.WorkspaceActions?.routes || {})].includes(next) ? next : 'projects';
     window.WorkspaceActions?.leave(); window.RoleProfiles?.leave();
     sequence++; confirmed = false; proof = null; content.replaceChildren(); say('Loading your workspace…');
@@ -110,7 +121,15 @@
       else if (route === 'role-profiles') { if (!nav.settings.roles) { say('Only the active company owner can manage named profiles.', true); return; } window.RoleProfiles.mount({ nav, route, content, escape, say, request, ticket, current: isCurrent, verify: expectedRevision => freshIdentity(expectedRevision) }); }
       else if (window.WorkspaceActions?.routes[route]) { window.WorkspaceActions.mount({ nav, route, content, escape, say, request, ticket, current: isCurrent, companyId, getNav: () => nav, verify: revision => freshIdentity(revision, false) }); }
       else { say(''); directory(); }
-    } catch (error) { if (mark !== sequence && !error.identityChanged) return; content.replaceChildren(); say(error.status === 404 || error.status === 503 ? 'This workspace is not available for this company yet.' : error.message, true); }
+    } catch (error) {
+      if (mark !== sequence && !error.identityChanged) return;
+      clearPrivate(); say(error.status === 404 || error.status === 503 ? 'This workspace is not available for this company yet.' : error.message, true);
+      if (error.status === 402) {
+        const current = sequence;
+        try { const access = await request('/api/account-access'); if (current !== sequence || signingOut) return; say(access.reason || 'Company workspace access is locked.', true); const help = document.createElement('p'); help.textContent = 'Contact your company owner to restore access. Billing changes are unavailable in this draft. You can sign out above.'; content.append(help); }
+        catch (denied) { if (current === sequence && !signingOut) { say(denied.message, true); signInLink(); } }
+      } else if ([401, 403, 404].includes(error.status)) signInLink();
+    }
   }
   async function perform(kind, record) {
     if (busy || route !== 'roles' || !nav?.settings.roles) return;
@@ -185,11 +204,19 @@
   window.addEventListener('hashchange', enter);
   document.querySelector('nav').addEventListener('click', event => { const link = event.target.closest('[data-route]'); if (link?.dataset.route === route && !busy) { event.preventDefault(); enter(); } });
   async function resume() {
+    if (signingOut) return;
     confirmed = false; updateExpiry(); if (!nav) return;
     const old = identity, oldRevision = nav.tenantRevision, mark = ticket();
     try { const data = await request('/api/navigation'); if (mark.companyId !== companyId() || mark.sequence !== sequence) return; applyNavigation(data); if (old !== identity || window.WorkspaceActions?.routes[route] && oldRevision !== data.tenantRevision) await enter(); else if (route === 'role-profiles') window.RoleProfiles?.revalidate(data.tenantRevision); else if (route === 'roles' && proof && data.tenantRevision !== proof.tenantRevision) { proof = null; stage = pending() ? 'recovery' : 'editing'; outcome = 'The company changed. Refresh current permissions and preview again.'; renderEditor(); } }
-    catch (error) { if (mark.sequence === sequence) { sequence++; content.replaceChildren(); state = registry = proposed = proof = null; say('Your session or workspace access changed. Reopen to verify your identity.', true); } }
+    catch (error) { if (mark.sequence === sequence) { clearPrivate(); say('Your session or workspace access changed. Sign in again to verify your identity.', true); signInLink(); } }
   }
+  $('#workspace-sign-out').onclick = async () => {
+    if (signingOut) return;
+    const selected = companyId(), destination = window.WorkspaceEntry.login(selected, '#' + route), button = $('#workspace-sign-out');
+    signingOut = true; button.disabled = true; clearPrivate(); say('Signing out.');
+    try { await request('/api/auth/logout', { method: 'POST', body: '{}' }); try { localStorage.removeItem('pdl-role'); localStorage.removeItem('pdl-company-id'); } catch {} location.replace(destination); }
+    catch { signingOut = false; button.disabled = false; say('The sign-out result could not be verified. Try Sign out again; your workspace data has been cleared from this page.', true); }
+  };
   window.addEventListener('focus', resume);
   window.addEventListener('blur', () => { confirmed = false; const checkbox = $('#explicit-confirm'); if (checkbox) checkbox.checked = false; updateExpiry(); });
   document.addEventListener('visibilitychange', () => { if (document.hidden) { confirmed = false; const checkbox = $('#explicit-confirm'); if (checkbox) checkbox.checked = false; updateExpiry(); } else resume(); });
