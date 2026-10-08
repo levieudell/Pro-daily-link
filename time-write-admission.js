@@ -173,7 +173,7 @@ function createHandler({ readDb, writeDb, body, json, raw, revision, run, activi
         }
         const executed = await run(req, { method: 'GET', path: url.pathname + url.search, kind: url.pathname.startsWith('/api/pay-periods') ? 'payroll' : url.pathname === '/api/company-activities' ? 'activities' : 'cards', details: {} });
         if (executed.response.status >= 400) fail(executed.response.status, 'Time view is unavailable');
-        await assertCurrent();
+        await assertCurrent(req);
         if (Object.hasOwn(executed.response, 'raw')) raw(res, executed.response); else {
           let data = executed.response.data;
           if (url.pathname === '/api/company-activities') data = data.map(row => pick(row, ['id', 'name', 'active']));
@@ -211,7 +211,7 @@ function createHandler({ readDb, writeDb, body, json, raw, revision, run, activi
       if (proof.actorId !== user.id || proof.sessionHash !== req.auth.session.tokenHash || proof.actorHash !== authority(db, req) || proof.version !== input.version || proof.tokenHash !== tokenHash) fail(409, 'Action authority changed; preview again');
       if (prior) {
         if (prior.inputHash !== inputHash || prior.effectHash !== canonicalHash(effect(db, operation, prior.recordId))) fail(409, 'This action was already used or its records changed');
-        await assertCurrent(); json(res, 200, prior.result); return true;
+        await assertCurrent(req); json(res, 200, prior.result); return true;
       }
       if (proof.expiresAt < now() || proof.expectedRevision !== revision()) fail(409, 'Company changed or preview expired; preview again');
       const executed = await run(req, operation);
@@ -222,7 +222,7 @@ function createHandler({ readDb, writeDb, body, json, raw, revision, run, activi
       candidate.timeWriterReceipts ||= []; candidate.timeWriterReceipts.push({ ...proof, inputHash, requestId: input.requestId, recordId, result, effectHash: canonicalHash(effect(candidate, operation, recordId)), at: new Date(now()).toISOString() });
       candidate.auditLog ||= []; candidate.auditLog.push({ id: crypto.randomUUID(), type: 'time_action_confirmed', actorId: user.id, action: operation.action, recordId, at: new Date(now()).toISOString() });
       writeDb(candidate); json(res, executed.response.status, result); return true;
-    } catch (error) { if (![400, 403, 404, 409].includes(error.statusCode)) throw error; json(res, error.statusCode, { error: error.message }); return true; }
+    } catch (error) { if (![400, 401, 402, 403, 404, 409].includes(error.statusCode)) throw error; json(res, error.statusCode, { error: error.message }); return true; }
   };
 }
 // Receipts compare all business collections touched by an action. A later

@@ -11,7 +11,7 @@ const schedulingAccess = require('./scheduling-access');
 const timeOffAccess = require('./time-off-access');
 const timeReviewAccess = require('./time-review-access');
 const timeWriteAccess = require('./time-write-access');
-const handleAtomicTimeWrite = require('./time-write-admission').createHandler({ readDb, writeDb, body, json, revision: () => dbContext.getStore().transactionalRevision, activities: db => companyActivities(structuredClone(db)), run: runTimeWriteCandidate, raw: (res, response) => { dbContext.getStore().response = response; res.statusCode = response.status; }, assertCurrent: async () => { const context = dbContext.getStore(), current = await supabase.loadTransactionalSnapshot(context.companyId); if (!current || current.revision !== context.transactionalRevision) throw Object.assign(Error('Company changed while preparing this time view; refresh'), { statusCode: 409 }); } });
+const handleAtomicTimeWrite = require('./time-write-admission').createHandler({ readDb, writeDb, body, json, revision: () => dbContext.getStore().transactionalRevision, activities: db => companyActivities(structuredClone(db)), run: runTimeWriteCandidate, raw: (res, response) => { dbContext.getStore().response = response; res.statusCode = response.status; }, assertCurrent: assertTimeResponseCurrent });
 const handleAtomicTimeReview = require('./time-review-admission').createHandler({ readDb, writeDb, body, json, revision: () => dbContext.getStore().transactionalRevision, isApproved: timeCardIsApproved, statusText: timeCardStatusText, completeCard: card => payPeriods.completeCard(card), overlap: timeCardOverlap, upsert: upsertTimeCard, presentCard: presentTimeCard, filterCards: filterTimeCards, mergeCopies: mergeTimeCardCopies, fieldAccess: (db, user, card) => fieldTimeCards.access(db, user, card) });
 const handleAtomicTimeOff = require('./time-off-admission').createHandler({ readDb, writeDb, body, json });
 const assignmentEmailOutbox = require('./assignment-email-outbox');
@@ -679,6 +679,14 @@ async function handleTimeRecords(req,res,url){
 }
 // Execute only audited legacy time handlers against a private candidate. Neither
 // their intermediate writes nor CSV bytes can reach the outer admission/client.
+async function assertTimeResponseCurrent(req) {
+  const context = dbContext.getStore(), current = await supabase.loadTransactionalSnapshot(context.companyId);
+  if (!current || current.revision !== context.transactionalRevision) throw Object.assign(Error('Company changed while preparing this time view; refresh'), { statusCode: 409 });
+  const { auth, status } = authenticateRequestAccount(req, current.snapshot);
+  if (!auth) throw Object.assign(Error('Authentication required'), { statusCode: status });
+  const account = accountAccess(current.snapshot.company);
+  if (account.locked) throw Object.assign(Error(account.reason), { statusCode: 402 });
+}
 async function runTimeWriteCandidate(req, operation) {
   const parent = dbContext.getStore();
   const child = { ...parent, db: structuredClone(parent.db), candidate: null, dirty: false, response: null, pending: [], closed: false, deferResponse: true };

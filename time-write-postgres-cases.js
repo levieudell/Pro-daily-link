@@ -134,6 +134,14 @@ module.exports = async function ({ repository, change, request, slowRequest, bas
   controls.readGate.resolve(); const fencedCsv = await readingCsv; controls.readGate = null;
   assert.equal(fencedCsv.status, 409); assert.ok(!fencedCsv.headers.get('content-type').includes('text/csv')); assert.ok(!JSON.stringify(fencedCsv.data).includes('PRIVATE'));
   await change(db => { delete db.company.timeWriteRolePolicy; });
+  const pmSession = structuredClone((await load()).snapshot.sessions.find(row => row.userId === 2)), expiry = Date.now() + 3000;
+  await change(db => { db.sessions.find(row => row.tokenHash === pmSession.tokenHash).expiresAt = new Date(expiry).toISOString(); });
+  before = await load(); controls.readGate = checkpoint();
+  const expiringCsv = request(bases[0], 'GET', '/api/time-cards.csv', undefined, 2);
+  await waitFor(() => controls.readGate.count === 3); await waitFor(() => Date.now() > expiry);
+  controls.readGate.resolve(); const expiredCsv = await expiringCsv; controls.readGate = null;
+  assert.equal(expiredCsv.status, 401); assert.ok(!expiredCsv.headers.get('content-type').includes('text/csv')); assert.deepEqual(await load(), before, 'Natural session expiry changes no tenant revision');
+  await change(db => { Object.assign(db.sessions.find(row => row.tokenHash === pmSession.tokenHash), pmSession); });
   for (const user of [2, 4, 5, 6, 8, 9]) { await preview('captureExport', {}, periodId, user, 0, 403); assert.equal((await request(bases[0], 'GET', '/api/pay-periods/' + periodId + '/exports', undefined, user)).status, 403); }
   const exportPre = await preview('captureExport', {}, periodId, 7), exportSaved = await commit(exportPre, '/api/pay-periods/' + periodId + '/exports', 'POST', 7, 1, 201), fixed = exportSaved.result.data;
   assert.equal(fixed.version, 1); assert.equal(fixed.summary.approvedCount, 3); assert.ok(!JSON.stringify(fixed).includes('PRIVATE-METADATA'));
