@@ -27,7 +27,7 @@ const PRICES = Object.freeze({
 });
 const PRICE_KEYS = Object.keys(PRICES);
 const FORCED = Object.freeze({ PDL_REQUIRE_AUTH: '1', PDL_SUPABASE_ENABLED: '0', PDL_TRANSACTIONAL_DB: 'off', PDL_FOUNDER_ENABLED: '0', PDL_ENTERPRISE_CHECKOUT_ENABLED: '0', PDL_EMAIL_DEV_MODE: '0' });
-const ALLOWED_PDL = new Set([...Object.keys(FORCED), 'PDL_PUBLIC_URL', 'PDL_ACCEPTANCE_DATA_DIR', 'PDL_ACCEPTANCE_ALLOW_LOOPBACK', 'PDL_ACCEPTANCE_PUBLIC_URL', 'PDL_ACCEPTANCE_STRIPE_ACCOUNT_ID', 'PDL_ACCEPTANCE_ENTERPRISE', 'PDL_ACCEPTANCE_PLATFORM_OWNER', 'PDL_ACCEPTANCE_PLATFORM_PASSWORD']);
+const ALLOWED_PDL = new Set([...Object.keys(FORCED), 'PDL_PUBLIC_URL', 'PDL_ACCEPTANCE_DATA_DIR', 'PDL_ACCEPTANCE_ALLOW_LOOPBACK', 'PDL_ACCEPTANCE_PUBLIC_URL', 'PDL_ACCEPTANCE_STRIPE_ACCOUNT_ID', 'PDL_ACCEPTANCE_ENTERPRISE', 'PDL_ACCEPTANCE_PLATFORM_OWNER', 'PDL_ACCEPTANCE_PLATFORM_PASSWORD', 'PDL_ACCEPTANCE_ANNUAL_STARTER']);
 const ALLOWED_STRIPE = new Set(['STRIPE_SECRET_KEY', 'STRIPE_WEBHOOK_SECRET', ...PRICE_KEYS]);
 const BLOCKED = /^(?:SUPABASE_|RESEND_|OPENAI_|SENTRY_|ANTHROPIC_|SMTP_|MAILGUN_|SENDGRID_|POSTMARK_|DATABASE_|PG(?:HOST|PORT|USER|PASSWORD|DATABASE|SERVICE|PASSFILE|SSLMODE)|DOTENV_CONFIG_|NODE_OPTIONS$|NODE_PATH$)/;
 class AcceptanceError extends Error {}
@@ -52,6 +52,7 @@ function origin(raw, local) {
 }
 function validateConfig(env = process.env, root = ROOT) {
   requireNoEnvFiles(root);
+  if(present(env.PDL_ACCEPTANCE_ANNUAL_STARTER) && !annualFixtureTarget(env)) reject('Annual fixture requires its exact opt-in and approved sandbox service.');
   for (const [name, value] of Object.entries(env)) {
     if (!present(value)) continue;
     if (BLOCKED.test(name) || (name.startsWith('PDL_') && !ALLOWED_PDL.has(name)) || (name.startsWith('STRIPE_') && !ALLOWED_STRIPE.has(name))) reject('Inherited integration or path configuration is not permitted. Start with an isolated environment.');
@@ -175,7 +176,7 @@ function prepareStorage(config, password) {
   return { dbFile, platformFile };
 }
 function annualFixtureTarget(env=process.env) {
-  return env.RENDER === 'true' && env.RENDER_SERVICE_ID === APPROVED_SERVICE && env.RENDER_EXTERNAL_URL === APPROVED_ORIGIN;
+  return env.PDL_ACCEPTANCE_ANNUAL_STARTER === 'test-only' && env.RENDER === 'true' && env.RENDER_SERVICE_ID === APPROVED_SERVICE && env.RENDER_EXTERNAL_URL === APPROVED_ORIGIN;
 }
 function prepareAnnualFixture(config) {
   if(config.local || config.publicUrl!==APPROVED_ORIGIN || !annualFixtureTarget()) reject('Annual fixture is restricted to the approved isolated service.');
@@ -235,4 +236,4 @@ if (require.main === module) {
     process.exitCode = 1;
   }
 }
-module.exports = { start, PRICES, CANDIDATE, EXPECTED_STRIPE_ACCOUNT, ROOT_TENANT, PRICE_KEYS, FORCED, ENTERPRISE_OPT_IN, OWNER_OPT_IN, APPROVED_SERVICE, APPROVED_ORIGIN, OWNER, OWNER_IDENTITY_FILE, validateConfig, prepareStorage, seedRoot };
+module.exports = { start, PRICES, CANDIDATE, EXPECTED_STRIPE_ACCOUNT, ROOT_TENANT, PRICE_KEYS, FORCED, ENTERPRISE_OPT_IN, OWNER_OPT_IN, APPROVED_SERVICE, APPROVED_ORIGIN, OWNER, OWNER_IDENTITY_FILE, validateConfig, prepareStorage, seedRoot, annualFixtureTarget, prepareAnnualFixture };

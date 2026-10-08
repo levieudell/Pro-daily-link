@@ -14,5 +14,6 @@ jobs:
       - run: npm ci
       - run: npm run check:acceptance
       - run: env -i PATH="$PATH" HOME="$HOME" npm run test:acceptance
+      - run: node --test annual-acceptance-guard.test.js
       - run: node annual-upfront.test.js
       - run: node annual-upfront-ui.test.js

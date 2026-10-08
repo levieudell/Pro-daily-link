@@ -1,3 +1,11 @@
+# Current annual staging mode
+
+Candidate dd56284d7212ebb11da5fc4ab09d98ec97e8ad98; existing service srv-db1noks9v7es738ebdd0 only. Owner explicitly approved discarding and reconstructing this isolated service's synthetic fixtures. Set PDL_ACCEPTANCE_ANNUAL_STARTER=test-only ONLY on that existing sandbox service. Wrong target/origin/opt-in fails closed. This mode removes inherited Enterprise owner opt-ins/password from the process before validation, disables Enterprise, creates no credentials or sessions and seeds only synthetic-pr114-starter with accepted annualUpfront state and Incomplete status. Original test-mode key, authentication, integration, private filesystem and host guards remain. The new candidate-bound storage identity prevents adopting old fixtures. Do not use for production.
+
+Successful signed webhook processing logs a non-secret state receipt for this one synthetic company. No new HTTP endpoint is added. Existing provider events are retried; no Checkout or charge is initiated. Existing owner's synthetic identity is intentionally not reconstructed. Without the explicit annual flag, the legacy harness behavior below remains available for its original tests.
+
+## Legacy harness background
+
 # Isolated acceptance service
 
 This is a temporary, synthetic signup/billing acceptance harness for paid-launch candidate `c187882db188e67382c551a9d4b064df32a6c1b9`. The application and billing code are unchanged. It is not a production deployment configuration or a completed paid-launch certification.
