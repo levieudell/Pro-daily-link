@@ -2,7 +2,7 @@
 // Existing account buttons enter a bounded server review. Browser storage holds
 // only operation identity, never a password, input, bearer, or preview contents.
 (function () {
-  let current = null, lifecycle = false, retireDirectory = null, busy = false, generation = 0, retire = null;
+  let current = null, lifecycle = false, retired = false, retireDirectory = null, busy = false, generation = 0, retire = null;
   const key = 'pdl-original-account-operation-v1', seenResults = new Set();
   const supported = (method, path) => method === 'POST' && ['/api/users', '/api/team-with-account'].includes(path) || /^\/api\/users\/[1-9]\d*$/.test(path) && method === 'PATCH' || /^\/api\/users\/[1-9]\d*\/reset-code$/.test(path) && method === 'POST' || /^\/api\/users\/[1-9]\d*\/time-access$/.test(path) && method === 'PATCH';
   const privateRead = (method, path) => method === 'GET' && path === '/api/users' || method === 'PATCH' && /^\/api\/users\/[1-9]\d*\/preferences$/.test(path);
@@ -15,9 +15,9 @@
   function assertCurrent(opening, openedAt) { if (openedAt !== generation || !matches(opening)) throw error('Account identity changed. Sign in again to check the original result.'); }
   async function checkIdentity(send, opening, openedAt) { assertCurrent(opening, openedAt); const me = await sendCurrent(send, '/api/account-identity'); assertCurrent(opening, openedAt); if (me.role !== 'owner' || me.id !== opening.ownerId || me.companyId !== opening.companyId || me.accountSessionBinding !== opening.sessionBinding) { retireActions(); retireDeniedData(); current = null; throw error('Account identity changed before result delivery.'); } }
   function retireActions() { generation++; retire?.(); for (const id of ['account-review-dialog', 'account-original-result-dialog']) document.getElementById(id)?.remove(); for (const id of ['setup-code-result', 'password-reset-result', 'team-member-result']) document.getElementById(id)?.replaceChildren(); }
-  function retireDeniedData() { retireDirectory?.(); for (const id of ['account-original-result', 'account-reconcile-result']) document.getElementById(id)?.remove(); for (const id of ['account-list', 'password-reset-copy']) document.getElementById(id)?.replaceChildren(); for (const id of ['user-modal', 'password-reset-modal', 'profile-modal', 'team-member-modal']) { const dialog = document.getElementById(id); if (dialog?.open) dialog.close(); for (const input of dialog?.querySelectorAll('input,textarea') || []) if (input.type !== 'checkbox') input.value = ''; } }
-  addEventListener('pagehide', retireActions);
-  addEventListener('focus', retireActions);
+  function retireDeniedData() { retired = true; retireDirectory?.(); for (const id of ['profile-avatar', 'profile-preview']) { const node = document.getElementById(id); if (node) node.style.backgroundImage = ''; } for (const id of ['account-original-result', 'account-reconcile-result']) document.getElementById(id)?.remove(); for (const id of ['account-list', 'password-reset-copy', 'profile-name', 'profile-role', 'profile-avatar', 'profile-preview']) document.getElementById(id)?.replaceChildren(); for (const id of ['user-modal', 'password-reset-modal', 'profile-modal', 'team-member-modal']) { const dialog = document.getElementById(id); if (dialog?.open) dialog.close(); for (const input of dialog?.querySelectorAll('input,textarea') || []) if (input.type !== 'checkbox') input.value = ''; } }
+  addEventListener('pagehide', () => { if (lifecycle) retireActions(); });
+  addEventListener('focus', () => { if (lifecycle) retireActions(); });
   function error(message) { return new Error(message); }
   function showDialog() {
     const dialog = document.createElement('dialog'); dialog.id = 'account-review-dialog';
@@ -100,7 +100,9 @@
     (document.getElementById('team-page') || document.body).prepend(button);
   }
   window.pdlAccountActions = {
-    configure(config, user, send, clearDirectory) { retireDirectory = typeof clearDirectory === 'function' ? clearDirectory : null; retireActions(); lifecycle = Boolean(config?.compatibilityAccount?.lifecycle); current = lifecycle && user?.role === 'owner' && typeof user.accountSessionBinding === 'string' ? { companyId: user.companyId, ownerId: user.id, sessionBinding: user.accountSessionBinding } : null; refreshRecovery((path, options) => sendCurrent(send, path, options)); },
+    isReviewEnabled() { return lifecycle; },
+    canUseAccountData() { return !lifecycle || !retired; },
+    configure(config, user, send, clearDirectory) { retired = false; retireDirectory = typeof clearDirectory === 'function' ? clearDirectory : null; const wasLifecycle = lifecycle; lifecycle = Boolean(config?.compatibilityAccount?.lifecycle); if (wasLifecycle || lifecycle) retireActions(); current = lifecycle && user?.role === 'owner' && typeof user.accountSessionBinding === 'string' ? { companyId: user.companyId, ownerId: user.id, sessionBinding: user.accountSessionBinding } : null; refreshRecovery((path, options) => sendCurrent(send, path, options)); },
     async request(path, options, send) {
       const method = String(options.method || 'GET').toUpperCase();
       if (!lifecycle || !supported(method, path) && !privateRead(method, path)) return send(path, options);
