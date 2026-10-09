@@ -49,6 +49,13 @@ function createWorkspace(h) {
     return base;
   }
   const helpers = { workspace, canViewPricing: h.canViewPricing };
+  const policyApi=require('./role-policy-api');
+  const policy=policyApi.createHandler({readDb:h.readDb,writeDb:h.writeDb,body:h.body,json:h.json,revision:()=>h.context().transactionalRevision,assertCurrent,
+    baselineProjectAllowed:h.canAccessProject,accountAccess:h.accountAccess,key:options.workspaceKey,
+    queuedEligible:(db,job)=>assignmentDelivery?assignmentDelivery.authorised(db,job):false,
+    workspaceAuthority:(db,req)=>require('./compat-workspace-authority').authority(db,req.auth,h.context().transactionalRevision,options.lifecycle,h.accountAccess).authority,
+    policyTransition:(db,proof,req)=>{const current=require('./compat-workspace-authority').authority(db,req.auth,h.context().transactionalRevision,options.lifecycle,h.accountAccess).authority;if(current===proof.workspaceAuthorityAfter)h.context().workspacePolicyFrom=proof.workspaceAuthorityBefore;},
+    guardCommit:guard=>{const context=h.context();context.guard={deadline:new Date(Math.min(Date.parse(context.guard?.deadline||guard.authorizedUntil),Date.parse(guard.authorizedUntil))).toISOString()};}});
   const alertAllowed=(user,metrics,item,projectIds)=>user.role!=='project_manager'||item.projectId!=null&&projectIds.has(item.projectId)||item.type==='subcontractor_compliance'&&(metrics.subcontractors||[]).some(row=>Number(row.id)===Number(item.subcontractorId));
   function reconcile(db, req) {
     const user=req.auth.user;repairs.valid(db);reconciliation.source(db);
@@ -85,6 +92,7 @@ function createWorkspace(h) {
       if(compliance&&['owner','admin','project_manager'].includes(user.role)){const visible=new Set(data.subcontractors.map(row=>Number(row.id))),pending=compliance.valid(db).filter(row=>['sending','uncertain'].includes(row.status)&&visible.has(row.source.subcontractorId));if(pending.length)data.workspaceDependencies={compliance:{status:'uncertain',count:pending.length}};}
       h.json(res, 200, data); return true;
     }
+    if(url.pathname==='/api/company/role-capabilities'){if(user.role!=='owner')fail(403,'Account owner permission required');if(h.accountAccess(db.company).locked)fail(402,'Company account is locked');await assertCurrent(req);h.json(res,200,registry.describe(db));return true;}
     const plans=url.pathname.match(/^\/api\/projects\/([1-9]\d*)\/plans$/);
     if(plans){const projectId=Number(plans[1]);if(url.search||!db.projects.some(row=>Number(row.id)===projectId)||!h.canAccessProject(db,user,projectId))fail(404,'Project not found.');
       if(['field','foreman'].includes(user.role)&&!['assignments','workdays'].some(name=>(db[name]||[]).some(row=>Number(row.projectId)===projectId&&row.memberIds.map(Number).includes(Number(user.memberId)))))fail(403,'This plan set is not assigned to you.');
@@ -127,6 +135,7 @@ function createWorkspace(h) {
   async function handle(req, res, url) {
     const context = h.context(); context.route = url.pathname; context.openingSnapshot ||= structuredClone(context.db);
     validateWorkspace(context.db);repairs.valid(context.db);
+    policyApi.ledger(context.db,options.workspaceKey);
     for(const [name,handler] of [['workspaceComplianceJobs',compliance],['workspaceBillingJobs',billing],['workspaceAssignmentJobs',assignmentDelivery]]){if(handler)handler.valid(context.db);else if(Object.hasOwn(context.db,name))fail(503,'Stored workspace dependency needs its reviewed contract.');}
     try {
       if (req.method === 'GET' && await read(req, res, url)) return true;
@@ -143,7 +152,7 @@ function createWorkspace(h) {
         if(input.reportId!=null&&(!Number.isSafeInteger(input.reportId)||!report||Number(db.projects[report.project].id)!==input.projectId||!dailyAccess.reportInScope(db,user,report,'editReports'))||input.reportId==null&&!dailyAccess.access(db,user).createReports)fail(403,'Daily draft permission required.');
         await assertCurrent(req);h.json(res,200,dto.localDaily(h.localDailyExtract(input.notes,input.language)));return true;
       }
-      if (await direct(req, res, url) || await leave(req, res, url) || await review(req, res, url) || await writes(req, res, url) || await daily(req, res, url) || await notes(req, res, url)) return true;
+      if (await policy(req,res,url) || await direct(req, res, url) || await leave(req, res, url) || await review(req, res, url) || await writes(req, res, url) || await daily(req, res, url) || await notes(req, res, url)) return true;
       fail(503, 'Workspace operation is outside this source gate.');
     } catch (error) { if (![400, 401, 402, 403, 404, 409, 503].includes(error.statusCode)) throw error; h.json(res, error.statusCode, { error: error.message }); return true; }
   }
@@ -161,6 +170,6 @@ function createWorkspace(h) {
     context.finalizedRevision=loaded.revision;context.finalizedContentHash=loaded.contentHash;
     if(url.pathname!=='/api/assignments')context.response.data=url.pathname.startsWith('/api/billing')?{...dto.billing(h.billingSummary(loaded.snapshot)),...(billingResult?{refresh:{status:billingResult.status,...(billingResult.observed?{observed:billingResult.observed,jobId:billingResult.jobId}:{})}}:{})}:{ok:true};
   }
-  return { supported: routes.supported, handle, finalize };
+  return { supported: routes.supported, handle, finalize, rolePolicies:true };
 }
 module.exports = { createWorkspace };
