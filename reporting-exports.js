@@ -32,7 +32,8 @@ function createReportingExport(db, input, actor, now = new Date().toISOString())
   let laborHours = 0;
   for (const report of reports) {
     for (const entry of report.laborEntries || []) {
-      const hours = Number(entry.hours);
+      const excluded = (report.laborExclusions || []).find(row => Number(row.memberId) === Number(entry.memberId));
+      const hours = Math.max(0, (Number(entry.hours) || 0) - (excluded ? Number(excluded.hours) || Number(entry.hours) || 0 : 0));
       if (!Number.isFinite(hours) || hours < 0) fail('Approved labor contains an invalid value', 409);
       laborHours += hours;
     }
@@ -69,7 +70,9 @@ function reportingExportCsv(record) {
     for (const entry of report.productionEntries || []) rows.push([record.id, record.version || 1, 'Production', report.id, report.dateIso, entry.description || '', entry.quantity, entry.unit || '', entry.laborHours || 0, '', '', '']);
     for (const entry of report.laborEntries || []) {
       const member = (record.snapshot.team || []).find(row => Number(row.id) === Number(entry.memberId));
-      rows.push([record.id, record.version || 1, 'Labor', report.id, report.dateIso, member ? `${member.name} (${member.role || 'Unclassified labor'})` : `Member ${entry.memberId ?? ''}`, '', '', entry.hours, rate ?? '', rate === null ? '' : Number(entry.hours) * rate, status]);
+      const excluded = (report.laborExclusions || []).find(row => Number(row.memberId) === Number(entry.memberId));
+      const counted = Math.max(0, (Number(entry.hours) || 0) - (excluded ? Number(excluded.hours) || Number(entry.hours) || 0 : 0));
+      rows.push([record.id, record.version || 1, 'Labor', report.id, report.dateIso, member ? `${member.name} (${member.role || 'Unclassified labor'})` : `Member ${entry.memberId ?? ''}`, '', '', counted, rate ?? '', rate === null ? '' : Number(counted) * rate, status]);
     }
   }
   return rows.map(row => row.map(csvCell).join(',')).join('\r\n');

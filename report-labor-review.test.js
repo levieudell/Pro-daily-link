@@ -26,4 +26,13 @@ const cardOptions={reports:[own,manual],timeCards:[{id:7,memberId:4,reportId:11,
 assert.deepEqual(review(manual,cardOptions),[],'time-card evidence can establish separate shifts');
 assert.equal(review(manual,{...cardOptions,timeCards:cardOptions.timeCards.map(c=>c.id===8?{...c,deletedAt:'2026-10-07'}:c)}).length,1,'deleted cards cannot establish a separate shift');
 assert.equal(review({...crew,workdayId:null},{...options,reports:[own,crew],timeCards:[{id:7,memberId:4,reportId:11,inAt:'bad',outAt:'bad'}]}).length,1,'invalid evidence cannot hide a possible duplicate');
-console.log('Report labor review passed: duplicate allocations, separate shifts/projects, deleted records, immutable evidence.');
+const {excludedHours,countedHours}=require('./report-labor-review');
+const excludedCrew={...crew,laborExclusions:[{memberId:4,hours:4,sourceReportId:11,by:'Office user',at:'2026-10-06T21:00:00Z'}]};
+assert.equal(excludedHours(excludedCrew,4),4,'the recorded exclusion covers the member hours');
+assert.equal(countedHours(excludedCrew,4),0,'counted hours drop to zero once excluded');
+assert.equal(countedHours(excludedCrew,3),4.2,'other members are untouched');
+assert.equal(countedHours(crew,4),4,'reports without exclusions count every entered hour');
+assert.deepEqual(review(excludedCrew,options),[],'an exclusion on this report resolves its side of the conflict');
+assert.deepEqual(review(own,{...options,reports:[own,excludedCrew]}),[],'an exclusion on the other report resolves the conflict from both sides');
+assert.equal(countedHours({...excludedCrew,laborEntries:[{memberId:4,hours:3}]},4),0,'an exclusion of more hours than recorded never counts negative');
+console.log('Report labor review passed: duplicate allocations, separate shifts/projects, deleted records, immutable evidence, labor exclusions.');
