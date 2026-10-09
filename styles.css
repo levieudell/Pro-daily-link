@@ -481,6 +481,18 @@ button,.project-card,.customer-list-item,.report-list-item{-webkit-tap-highlight
 @media(max-width:640px){#time-off-modal input,#time-off-modal select{font-size:16px;min-height:44px}#time-off-modal .modal-actions button{min-height:44px}.time-off-row>div:only-child{display:grid;grid-auto-flow:row;grid-template-columns:minmax(0,1fr)}}
 
 .report-work-date{font-size:18px;font-weight:750;line-height:1.4;color:var(--text,#182b38);margin:8px 0 14px;overflow-wrap:anywhere}.report-labor-review{border:1px solid #d39c45;border-radius:8px;padding:12px;background:#fff5df;color:#543814;margin:10px 0;line-height:1.5}.report-labor-review strong{display:block}.labor-remove-button{margin:6px 0 0 8px;padding:7px 12px;border:1px solid #8a5a12;border-radius:6px;background:#543814;color:#fff;font-weight:700;font-size:12px;cursor:pointer}.labor-remove-button:hover{background:#6b4716}.labor-resolve-button{margin:6px 0 0;padding:7px 12px;border:1px solid #b97a1e;border-radius:6px;background:#fff;color:#543814;font-weight:700;font-size:12px;cursor:pointer}.labor-resolve-button:hover:not(:disabled){background:#ffe9c2}.labor-resolve-button:disabled{opacity:.6;cursor:default}.report-labor-review p{margin:6px 0 0}.report-gaps .report-labor-review{margin-bottom:0}@media(max-width:640px){.report-work-date{font-size:17px}}
+
+.schedule-live-chip{display:inline-flex;align-items:center;gap:5px;margin-top:6px;padding:3px 9px;border-radius:999px;font-size:11px;font-weight:700;line-height:1.5;white-space:nowrap}
+.schedule-live-chip .pulse{width:7px;height:7px;border-radius:50%;background:#1c9e5b;flex:none;animation:pdl-live-pulse 1.6s ease-out infinite}
+.schedule-live-chip.on-site{background:#e5f6ec;color:#116639;border:1px solid #9ed7b4}
+.schedule-live-chip.done{background:#eef1ef;color:#3c4c43;border:1px solid #ccd6cf}
+.schedule-live-chip.late{background:#fdeeee;color:#8f1d1d;border:1px solid #f2b8b5}
+.schedule-cell .assignment.schedule-live-active{outline:2px solid #1c9e5b;outline-offset:1px}
+.schedule-cell .assignment.schedule-live-late,.month-assignment.schedule-live-late,.schedule-agenda-assignment.schedule-live-late{outline:2px solid #d24b41;outline-offset:1px}
+.month-assignment .schedule-live-chip{margin-top:4px;padding:2px 7px;font-size:10px}
+.schedule-agenda-assignment .schedule-live-chip{margin-top:6px;align-self:flex-start}
+@media(max-width:640px){.schedule-live-chip{font-size:10px;padding:2px 8px}}
+@keyframes pdl-live-pulse{0%{box-shadow:0 0 0 0 rgba(28,158,91,.45)}70%{box-shadow:0 0 0 6px rgba(28,158,91,0)}100%{box-shadow:0 0 0 0 rgba(28,158,91,0)}}
 .activity-report-link{width:100%;border:0;border-top:1px solid #eef1ef;background:transparent;font:inherit;text-align:left;color:inherit;text-decoration:none;min-height:56px;cursor:pointer}.activity-report-link:hover{background:var(--surface,#f7f9f8)}.activity-report-link:focus-visible{outline:3px solid var(--green);outline-offset:-3px}.activity-report-link[aria-busy="true"]{cursor:progress}@media(max-width:480px){.activity-report-link{grid-template-columns:auto minmax(0,1fr);padding:14px 16px}.activity-report-link>.status{grid-column:2;justify-self:start}.activity-report-link strong{overflow-wrap:anywhere}}
 .work-scope-actions,.work-proposal-note{grid-column:1/-1}.work-scope-actions button{min-height:44px;border:1px solid #c5d8fb;background:#eef4ff;color:#1769e0;border-radius:8px;padding:8px 12px;font-size:12px;font-weight:700}.work-proposal-note{line-height:1.5;color:var(--muted)}
 
@@ -611,3 +623,18 @@ dialog[open]{animation:pdl-dialog-in .24s cubic-bezier(.2,.7,.3,1)}
   #report-modal .report-gaps{margin-bottom:10px}
 }
 @media(max-width:760px){.page-heading #timecard-export:not([hidden]){display:inline-flex}}
+/* Repeat week */
+.repeat-week-picker-head{display:flex;gap:14px;margin:2px 0 6px}
+.repeat-week-picker-head .link-button{border:0;background:transparent;color:var(--blue);font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;padding:4px 0;cursor:pointer}
+#repeat-week-list label{display:grid;grid-template-columns:auto 1fr;gap:8px;align-items:start;font-size:11px;line-height:1.4}
+#repeat-week-list .repeat-week-line small{display:block;color:var(--muted);font-size:9px}
+.repeat-week-skip-row{display:grid;grid-template-columns:1fr auto;gap:8px;align-items:center;padding:8px 0;border-bottom:1px solid var(--line);font-size:11px}
+.repeat-week-skip-row:last-child{border-bottom:0}
+.repeat-week-skip-row small{display:block;color:var(--muted);font-size:9px}
+.repeat-week-skip-row .skip-reason{color:var(--red);font-weight:700}
+.repeat-week-skip-row button{white-space:nowrap}
+/* Day action + mark off */
+.day-action-buttons{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:12px 0 4px}
+.mark-off-paid{border:1px solid var(--line);border-radius:8px;padding:10px 12px;margin:10px 0}
+.mark-off-paid legend{font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);padding:0 4px}
+@media(max-width:600px){.day-action-buttons{grid-template-columns:1fr}}

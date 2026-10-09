@@ -50,7 +50,7 @@ function dto(db, storedUser, { current = false, directory = false } = {}) {
     role: current && user.role === 'foreman' ? 'field' : user.role, accessRole: user.role, companyId: db.company.id,
     memberId: user.memberId == null ? null : Number(user.memberId), projectIds: scopeList(user.projectIds, true), assignedCrews: scopeList(user.assignedCrews, false),
     status: user.status, preferredLanguage: user.preferredLanguage || 'en', permissions, storedPermissions: { ...permissions },
-    effectiveCapabilities, capabilityPolicyState: states, immutableAccess: registry.immutable(db, user), scopeState,
+    effectiveCapabilities, scheduleWorkflows: require('./schedule-workflow-access').eligible(db,user), capabilityPolicyState: states, immutableAccess: registry.immutable(db, user), scopeState,
     availability: user.status !== 'Active' ? 'inactive' : !['owner', ...registry.roles].includes(user.role) ? 'unsupported-role' : 'active' };
   if (registry.profilesRequired(db)) result.roleProfile = require('./role-profiles').binding(db, user);
   for (const [id, , , property] of registry.families) result[property] = effectiveCapabilities[id];

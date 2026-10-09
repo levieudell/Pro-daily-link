@@ -2,6 +2,7 @@
 const crypto = require('node:crypto');
 const registry = require('./capability-registry');
 const profiles = require('./role-profiles');
+const workflows = require('./schedule-workflow-access');
 const accounts = require('./role-policy-accounts');
 const notes = require('./notes-access');
 const { canonicalHash } = require('./database/transactional-repository');
@@ -96,8 +97,9 @@ function impacts(db, after, baselineProjectAllowed, at, queuedEligible = () => f
   const projected = beforeAccounts.map((before, index) => {
     const user = db.users[index], next = afterAccounts[index];
     if (user.status === 'Active' && before.scopeState !== 'resolved') fail(409, 'Active account scope needs reconciliation before policy activation');
+    const workflowChanges = workflows.actions.filter(action => before.scheduleWorkflows[action] !== next.scheduleWorkflows[action]).map(action => ({ capability: 'scheduleWorkflows.' + action, before: before.scheduleWorkflows[action], after: next.scheduleWorkflows[action] }));
     const changes = registry.families.flatMap(([id, , , , module]) => module.actions.filter(action => before.effectiveCapabilities[id][action] !== next.effectiveCapabilities[id][action]).map(action => ({ capability: id + '.' + action, before: before.effectiveCapabilities[id][action], after: next.effectiveCapabilities[id][action] })));
-    return { accountId: before.id, name: before.name, role: before.accessRole, status: before.status, scopeState: before.scopeState, before: before.effectiveCapabilities, after: next.effectiveCapabilities, ...(profileImpact ? { profileBefore: profiles.binding(db, registry.normalize(user)), profileAfter: profiles.binding(after, registry.normalize(user)) } : {}), notesProjectsBefore: scopedProjects(db, user, before.effectiveCapabilities), notesProjectsAfter: scopedProjects(after, user, next.effectiveCapabilities), changes };
+    return { accountId: before.id, name: before.name, role: before.accessRole, status: before.status, scopeState: before.scopeState, before: before.effectiveCapabilities, after: next.effectiveCapabilities, scheduleWorkflowsBefore: before.scheduleWorkflows, scheduleWorkflowsAfter: next.scheduleWorkflows, ...(profileImpact ? { profileBefore: profiles.binding(db, registry.normalize(user)), profileAfter: profiles.binding(after, registry.normalize(user)) } : {}), notesProjectsBefore: scopedProjects(db, user, before.effectiveCapabilities), notesProjectsAfter: scopedProjects(after, user, next.effectiveCapabilities), changes: [...changes,...workflowChanges] };
   });
   const queued = (db.workspaceAssignmentJobs || []).filter(row => row.status === 'queued');
   return { accounts: projected, changedAccounts: projected.filter(row => row.changes.length || !equal(row.notesProjectsBefore, row.notesProjectsAfter) || Object.hasOwn(row, 'profileBefore') && !equal(row.profileBefore, row.profileAfter)).length, queuedAssignmentEmails: { queuedCount: queued.length, newlyIneligibleIds: queued.filter(row => queuedEligible(db, row, at) && !queuedEligible(after, row, at)).map(row => row.id) } };
@@ -108,12 +110,17 @@ function validateCapabilities(value) {
 }
 function validateImpact(value) {
   if (!object(value, ['accounts', 'changedAccounts', 'queuedAssignmentEmails']) || !Array.isArray(value.accounts) || value.accounts.length > LIMIT || !integer(value.changedAccounts)) fail(409, 'Policy impact needs reconciliation');
-  const known = registry.families.flatMap(([id, , , , module]) => module.actions.map(action => id + '.' + action)), ids = new Set();
+  const known = [...registry.families.flatMap(([id, , , , module]) => module.actions.map(action => id + '.' + action)),...workflows.actions.map(action => 'scheduleWorkflows.' + action)], ids = new Set();
   for (const row of value.accounts) {
-    if (!(object(row, ['accountId', 'name', 'role', 'status', 'scopeState', 'before', 'after', 'notesProjectsBefore', 'notesProjectsAfter', 'changes']) || object(row, ['accountId', 'name', 'role', 'status', 'scopeState', 'before', 'after', 'notesProjectsBefore', 'notesProjectsAfter', 'changes', 'profileBefore', 'profileAfter'])) || !notes.numericId(row.accountId) || ids.has(Number(row.accountId)) || typeof row.name !== 'string' || row.name.length > 5000 || typeof row.role !== 'string' || row.role.length > 64 || typeof row.status !== 'string' || row.status.length > 64 || !['resolved', 'unresolved'].includes(row.scopeState) || !Array.isArray(row.changes) || row.changes.length > known.length) fail(409, 'Policy impact account needs reconciliation');
+    const keys = ['accountId', 'name', 'role', 'status', 'scopeState', 'before', 'after', 'notesProjectsBefore', 'notesProjectsAfter', 'changes', ...(Object.hasOwn(row,'profileBefore') ? ['profileBefore','profileAfter'] : []), ...(Object.hasOwn(row,'scheduleWorkflowsBefore') ? ['scheduleWorkflowsBefore','scheduleWorkflowsAfter'] : [])];
+    if (!object(row, keys) || !notes.numericId(row.accountId) || ids.has(Number(row.accountId)) || typeof row.name !== 'string' || row.name.length > 5000 || typeof row.role !== 'string' || row.role.length > 64 || typeof row.status !== 'string' || row.status.length > 64 || !['resolved', 'unresolved'].includes(row.scopeState) || !Array.isArray(row.changes) || row.changes.length > known.length) fail(409, 'Policy impact account needs reconciliation');
     ids.add(Number(row.accountId)); validateCapabilities(row.before); validateCapabilities(row.after); if (Object.hasOwn(row, 'profileBefore')) { profiles.validateDescriptor(row.profileBefore); profiles.validateDescriptor(row.profileAfter); }
     for (const key of ['notesProjectsBefore', 'notesProjectsAfter']) if (!Array.isArray(row[key]) || row[key].length > 10000 || row[key].some(id => !notes.numericId(id)) || new Set(row[key].map(Number)).size !== row[key].length) fail(409, 'Policy project impact needs reconciliation');
     const expected = registry.families.flatMap(([id, , , , module]) => module.actions.filter(action => row.before[id][action] !== row.after[id][action]).map(action => ({ capability: id + '.' + action, before: row.before[id][action], after: row.after[id][action] })));
+    if (Object.hasOwn(row,'scheduleWorkflowsBefore')) {
+      for(const key of ['scheduleWorkflowsBefore','scheduleWorkflowsAfter']) if(!object(row[key],workflows.actions)||workflows.actions.some(action=>typeof row[key][action]!=='boolean')) fail(409,'Scheduling workflow impact needs reconciliation');
+      expected.push(...workflows.actions.filter(action=>row.scheduleWorkflowsBefore[action]!==row.scheduleWorkflowsAfter[action]).map(action=>({capability:'scheduleWorkflows.'+action,before:row.scheduleWorkflowsBefore[action],after:row.scheduleWorkflowsAfter[action]})));
+    }
     if (!equal(expected, row.changes)) fail(409, 'Policy impact changes need reconciliation');
   }
   if (value.changedAccounts !== value.accounts.filter(row => row.changes.length || !equal(row.notesProjectsBefore, row.notesProjectsAfter) || Object.hasOwn(row, 'profileBefore') && !equal(row.profileBefore, row.profileAfter)).length) fail(409, 'Policy impact counts need reconciliation');

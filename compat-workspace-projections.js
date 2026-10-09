@@ -22,7 +22,7 @@ function account(row, own = false) {
   return dto;
 }
 function company(row, pricing) {
-  const dto = pick(row, ['id', 'name', 'trade', 'address', 'demo', 'email', 'phone', 'timezone', 'weekStart', 'overtimeRule', 'scheduleGraceMinutes', 'plan', 'subscriptionStatus', 'trialEndsAt', 'billingExempt', 'accountType', 'contractValueTracking', 'defaultTemplateId', 'emailVerificationRequiredAt']);
+  const dto = pick(row, ['id', 'name', 'trade', 'address', 'demo', 'email', 'phone', 'timezone', 'weekStart', 'overtimeRule', 'scheduleGraceMinutes', 'autoAdoptActualTimes', 'plan', 'subscriptionStatus', 'trialEndsAt', 'billingExempt', 'accountType', 'contractValueTracking', 'defaultTemplateId', 'emailVerificationRequiredAt']);
   dto.features = pick(row.features || {}, ['timeCards', 'templates']);
   if (row.logo) dto.logo = pick(row.logo, ['url', 'contentType', 'updatedAt']);
   if (pricing) {
@@ -120,7 +120,7 @@ function scoped(db, user, helpers) {
 }
 function bootstrap(db, user, helpers) {
   const { base } = scoped(db, user, helpers), pricing = helpers.canViewPricing(db, user), gates = registry.effective(db, user);
-  const actor = { ...account(user, true), ...Object.fromEntries(registry.families.map(([id, , , field]) => [field, gates[id]])), effectiveCapabilities: gates };
+  const actor = { ...account(user, true), ...Object.fromEntries(registry.families.map(([id, , , field]) => [field, gates[id]])), effectiveCapabilities: gates, scheduleWorkflows: require('./schedule-workflow-access').eligible(db,user) };
   const projectedProjects=base.projects.map(row=>{const result=project(row,pricing);if(!gates.daily.viewReports){delete result.progress;delete result.production;}return result;}),projectedTeam=base.team.map(row=>{const result=team(row);if(!gates.timeReview.viewCards)delete result.hours;return result;});
   const laborWarnings = {};
   if (['field','foreman'].includes(user.role) && gates.daily.viewReports) {

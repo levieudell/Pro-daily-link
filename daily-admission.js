@@ -1,6 +1,7 @@
 'use strict';
 const crypto = require('node:crypto');
 const access = require('./daily-access');
+const autoAdopt = require('./workday-auto-adopt-admission');
 const fieldCards = require('./time-card-field-access');
 const payPeriods = require('./pay-periods');
 const { authority: timeAuthority } = require('./time-write-admission');
@@ -45,7 +46,7 @@ function parse(input) {
   return { action: input.action, permission, method, path: hasId ? path(id) : path, id, details: structuredClone(details) };
 }
 function unique(rows, id, name) { const selected = (rows || []).filter(row => key(row.id) === key(id)); if (selected.length !== 1) fail(selected.length ? 409 : 404, selected.length ? 'Ambiguous ' + name + ' needs reconciliation' : name + ' not found'); return selected[0]; }
-function authority(db, req) { return canonicalHash({ time: timeAuthority(db, req), access: access.access(db, req.auth.user), dailyRolePolicy: db.company.dailyRolePolicy || null, dailyPolicyRequired: access.required(db), pricingAccess: db.company.pricingAccess || null }); }
+function authority(db, req) { return canonicalHash({ time: timeAuthority(db, req), access: access.access(db, req.auth.user), dailyRolePolicy: db.company.dailyRolePolicy || null, dailyPolicyRequired: access.required(db), pricingAccess: db.company.pricingAccess || null, autoAdoptActualTimes: db.company.autoAdoptActualTimes===true, scheduleView: require('./scheduling-access').access(db,req.auth.user).view }); }
 function validateLaborReferences(db, report, user, requireView = false) {
   if (!Array.isArray(report.laborExclusions || []) || (report.laborExclusions || []).length > 100) fail(409, 'Labor counted on another daily needs reconciliation');
   const members = new Set();
@@ -92,13 +93,14 @@ function authorize(db, user, operation, replay = false) {
 }
 function changed(before, after, name) { const ids = new Set([...(before[name] || []), ...(after[name] || [])].map(row => key(row.id))); return [...ids].filter(id => !equal((before[name] || []).filter(row => key(row.id) === id), (after[name] || []).filter(row => key(row.id) === id))); }
 function validateDelta(before, after, user, operation) {
-  const allowed = operation.action === 'captureExport' ? ['reportingExports', 'auditLog'] : ['reports', 'workdays', 'timeCards', 'projects', 'auditLog'];
+  const allowed = operation.action === 'captureExport' ? ['reportingExports', 'auditLog'] : ['reports', 'workdays', 'timeCards', 'projects', 'auditLog', ...(operation.action==='endWorkday'&&before.company.autoAdoptActualTimes===true?['assignments']:[])];
   if (!equal(omit(before, allowed), omit(after, allowed))) fail(409, 'This daily changes unsupported company data');
   if (!equal(before.auditLog || [], (after.auditLog || []).slice(0, (before.auditLog || []).length))) fail(409, 'Historical audit records cannot change');
   if (operation.action === 'captureExport') {
     if (!equal(before.reportingExports || [], (after.reportingExports || []).slice(0, -1)) || (after.reportingExports || []).length !== (before.reportingExports || []).length + 1) fail(409, 'Fixed reporting exports cannot be rewritten');
     return;
   }
+  if(operation.action==='endWorkday'&&before.company.autoAdoptActualTimes===true)autoAdopt.validate(before,after,user,operation);
   const reportIds = changed(before, after, 'reports'), dayIds = changed(before, after, 'workdays'), cardIds = changed(before, after, 'timeCards'), projectIds = changed(before, after, 'projects');
   // Later source edits and approvals must not invalidate an already recorded
   // decision, even when this request omits the laborExclusions field.
@@ -131,8 +133,18 @@ function reportProjection(db, user, report, presentReport, liveProject = true) {
   return result;
 }
 const dayProjection = row => require('./compat-workspace-projections').workday(row);
-function createHandler({ readDb, writeDb, body, json, raw, revision, run, assertCurrent, presentReport, exportProjection, guardDeadline = () => {}, now = () => Date.now() }) {
-  const present = (db, user, data, operation) => operation.action === 'captureExport' ? exportProjection(db, user, data) : operation.action === 'startWorkday' ? dayProjection(data) : operation.action === 'endWorkday' ? { workday: dayProjection(data.workday), report: reportProjection(db, user, data.report, presentReport) } : reportProjection(db, user, data, presentReport);
+function createHandler({ readDb, writeDb, body, json, raw, revision, run, assertCurrent, presentReport, exportProjection, adoptActual, guardDeadline = () => {}, now = () => Date.now() }) {
+  const present = (db, user, data, operation) => operation.action === 'captureExport' ? exportProjection(db, user, data) : operation.action === 'startWorkday' ? dayProjection(data) : operation.action === 'endWorkday' ? { workday: dayProjection(data.workday), report: reportProjection(db, user, data.report, presentReport), autoAdoptEnabled:db.company.autoAdoptActualTimes===true, ...(Object.hasOwn(data,'adopted')?{adopted:autoAdopt.present(db,user,operation,data.adopted)}:{}) } : reportProjection(db, user, data, presentReport);
+  async function execute(req,operation){
+    const source=readDb(), enabled=operation.action==='endWorkday'&&source.company.autoAdoptActualTimes===true;
+    if(!enabled)return run(req,operation);
+    const base={...source,company:{...source.company,autoAdoptActualTimes:false}},executed=await run(req,operation,base);
+    if(executed.response.status>=400)return executed;
+    if(!equal(executed.candidate.company,base.company))fail(409,'Workday completion cannot change company settings');
+    executed.candidate.company=source.company;
+    executed.response.data.adopted=autoAdopt.apply(executed.candidate,req.auth.user,operation,adoptActual);
+    return executed;
+  }
   return async function handle(req, res, url) {
     const preview = url.pathname === '/api/daily-actions/preview';
     const route = Object.entries(definitions).find(([, [permission, method, path]]) => method === req.method && (typeof path === 'string' ? path === url.pathname : path(url.pathname.match(/\/(\d+)(?:\/[^/]+)?$/)?.[1]) === url.pathname));
@@ -166,7 +178,7 @@ function createHandler({ readDb, writeDb, body, json, raw, revision, run, assert
       const input = await body(req);
       if (preview) {
         const operation = parse(input); authorize(db, user, operation);
-        const executed = await run(req, operation); if (executed.response.status >= 400) fail(executed.response.status, executed.response.data?.error || 'Daily action unavailable');
+        const executed = await execute(req, operation); if (executed.response.status >= 400) fail(executed.response.status, executed.response.data?.error || 'Daily action unavailable');
         validateDelta(db, executed.candidate, user, operation);
         const token = crypto.randomBytes(32).toString('base64url'), tokenHash = canonicalHash(token), actorHash = authority(db, req), expectedRevision = revision() + 1, version = canonicalHash({ operation, actorHash, tokenHash, expectedRevision });
         db.dailyActionPreviews = (db.dailyActionPreviews || []).filter(row => row.expiresAt >= now()); if (db.dailyActionPreviews.length >= 200) fail(409, 'Too many pending daily previews');
@@ -186,7 +198,7 @@ function createHandler({ readDb, writeDb, body, json, raw, revision, run, assert
       }
       if (proof.expectedRevision !== revision() || proof.expiresAt < now()) fail(409, 'Company changed or daily preview expired');
       guardDeadline(new Date(proof.expiresAt).toISOString());
-      const executed = await run(req, operation); if (executed.response.status >= 400) fail(executed.response.status, executed.response.data?.error || 'Daily action unavailable');
+      const executed = await execute(req, operation); if (executed.response.status >= 400) fail(executed.response.status, executed.response.data?.error || 'Daily action unavailable');
       validateDelta(db, executed.candidate, user, operation);
       const candidate = executed.candidate, result = present(candidate, user, executed.response.data, operation);
       candidate.dailyActionPreviews = (candidate.dailyActionPreviews || []).filter(row => row.tokenHash !== tokenHash); candidate.dailyActionReceipts ||= []; candidate.dailyActionReceipts.push({ ...proof, inputHash, requestId: input.requestId, effectHash: effect(candidate, operation), result, at: new Date(now()).toISOString() });
@@ -195,5 +207,5 @@ function createHandler({ readDb, writeDb, body, json, raw, revision, run, assert
     } catch (error) { if (![400, 401, 402, 403, 404, 409].includes(error.statusCode)) throw error; json(res, error.statusCode, { error: error.message }); return true; }
   };
 }
-function effect(db, operation) { return canonicalHash(operation.action === 'captureExport' ? db.reportingExports || [] : { reports: db.reports || [], workdays: db.workdays || [], timeCards: db.timeCards || [], projects: db.projects || [] }); }
+function effect(db, operation) { return canonicalHash(operation.action === 'captureExport' ? db.reportingExports || [] : { reports: db.reports || [], workdays: db.workdays || [], timeCards: db.timeCards || [], projects: db.projects || [], ...(operation.action==='endWorkday'&&db.company.autoAdoptActualTimes===true?{assignments:db.assignments||[]}: {}) }); }
 module.exports = { definitions, parse, unique, authority, authorize, validateDelta, reportProjection, dayProjection, createHandler };

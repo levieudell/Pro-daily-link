@@ -23,12 +23,13 @@ function createWorkspace(h) {
   }
   const common = { readDb: h.readDb, writeDb: h.writeDb, body: h.body, json: h.json, raw: h.raw, revision: () => h.context().transactionalRevision, assertCurrent, run: h.run, guardDeadline: value => { const ctx=h.context();ctx.businessDeadline=new Date(Math.min(Date.parse(value),ctx.businessDeadline?Date.parse(ctx.businessDeadline):Infinity)).toISOString(); } };
   const notes = require('./notes-admission').createHandler({ ...common, run: async (req, res, url) => { const result = await h.run(req, { method: req.method, path: url.pathname + url.search, details: ['POST', 'PATCH'].includes(req.method) ? await h.body(req) : {} }); if (result.dirty && result.response.status < 400) h.writeDb(result.candidate); if (Object.hasOwn(result.response, 'raw')) h.raw(res, result.response); else h.json(res, result.response.status, result.response.data); }, response: () => h.context().response, baselineProjectAllowed: h.canAccessProject });
-  const daily = require('./daily-admission').createHandler({ ...common, presentReport: h.presentReport, exportProjection: h.dailyExportProjection });
+  const daily = require('./daily-admission').createHandler({ ...common, adoptActual: h.adoptAssignmentActualTimes, presentReport: h.presentReport, exportProjection: h.dailyExportProjection });
   const writes = require('./time-write-admission').createHandler({ ...common, activities: db => h.companyActivities(structuredClone(db)) });
   const review = require('./time-review-admission').createHandler({ ...common, isApproved: h.timeCardIsApproved, statusText: h.timeCardStatusText, completeCard: h.completeCard, overlap: h.timeCardOverlap, upsert: h.upsertTimeCard, presentCard: h.presentTimeCard, filterCards: h.filterTimeCards, mergeCopies: h.mergeTimeCardCopies, fieldAccess: h.fieldAccess, signingKey: options.workspaceKey });
   const leave = require('./time-off-admission').createHandler(common);
   const assignmentDelivery=options.assignmentSend?require('./compat-assignment-delivery').createDelivery({repository:options.repository,companyId:options.companyId,send:options.assignmentSend,authenticateSession:h.authenticateSession,accountAccess:h.accountAccess,key:options.workspaceKey}):null;
   const assignmentIds=data=>(data.assignments||[data]).map(row=>row.id);
+  const scheduleWorkflows=require('./schedule-workflow-admission').createHandler({...common,key:options.workspaceKey,stageAssignments:(db,req,ids)=>{if(assignmentDelivery)h.context().workspaceAssignmentJobIds=assignmentDelivery.stage(db,req,ids);}});
   const direct = require('./workspace-direct-admission').createHandler({...common,key:options.workspaceKey,projectAllowed:h.canAccessProject,
     stageAssignmentDelivery:(db,req,data)=>{if(assignmentDelivery)h.context().workspaceAssignmentJobIds=assignmentDelivery.stage(db,req,assignmentIds(data));},
     resumeAssignmentDelivery:(db,data)=>{if(assignmentDelivery)h.context().workspaceAssignmentJobIds=assignmentDelivery.valid(db).filter(job=>job.status==='queued'&&job.source.assignments.some(row=>assignmentIds(data).includes(row.id))).map(job=>job.id);}});
@@ -135,7 +136,7 @@ function createWorkspace(h) {
   async function handle(req, res, url) {
     const context = h.context(); context.route = url.pathname; context.openingSnapshot ||= structuredClone(context.db);
     validateWorkspace(context.db);repairs.valid(context.db);
-    policyApi.ledger(context.db,options.workspaceKey);
+    policyApi.ledger(context.db,options.workspaceKey);scheduleWorkflows.ledger(context.db);
     for(const [name,handler] of [['workspaceComplianceJobs',compliance],['workspaceBillingJobs',billing],['workspaceAssignmentJobs',assignmentDelivery]]){if(handler)handler.valid(context.db);else if(Object.hasOwn(context.db,name))fail(503,'Stored workspace dependency needs its reviewed contract.');}
     try {
       if (req.method === 'GET' && await read(req, res, url)) return true;
@@ -152,13 +153,13 @@ function createWorkspace(h) {
         if(input.reportId!=null&&(!Number.isSafeInteger(input.reportId)||!report||Number(db.projects[report.project].id)!==input.projectId||!dailyAccess.reportInScope(db,user,report,'editReports'))||input.reportId==null&&!dailyAccess.access(db,user).createReports)fail(403,'Daily draft permission required.');
         await assertCurrent(req);h.json(res,200,dto.localDaily(h.localDailyExtract(input.notes,input.language)));return true;
       }
-      if (await policy(req,res,url) || await direct(req, res, url) || await leave(req, res, url) || await review(req, res, url) || await writes(req, res, url) || await daily(req, res, url) || await notes(req, res, url)) return true;
+      if (await policy(req,res,url) || await scheduleWorkflows.handle(req,res,url) || await direct(req, res, url) || await leave(req, res, url) || await review(req, res, url) || await writes(req, res, url) || await daily(req, res, url) || await notes(req, res, url)) return true;
       fail(503, 'Workspace operation is outside this source gate.');
     } catch (error) { if (![400, 401, 402, 403, 404, 409, 503].includes(error.statusCode)) throw error; h.json(res, error.statusCode, { error: error.message }); return true; }
   }
   async function finalize(req,context,url) {
     if(!context.workspaceDeliveryIds?.length&&!context.workspaceBillingJobId&&!context.workspaceAssignmentJobIds?.length)return;
-    if(!['/api/workspace-prepare','/api/billing','/api/billing/recover','/api/assignments'].includes(url.pathname)||context.workspaceDeliveryIds?.length&&!compliance||context.workspaceBillingJobId&&!billing||context.workspaceAssignmentJobIds?.length&&!assignmentDelivery)fail(409,'Unexpected dashboard dependency.');
+    if(!['/api/workspace-prepare','/api/billing','/api/billing/recover','/api/assignments','/api/schedule/repeat-week'].includes(url.pathname)||context.workspaceDeliveryIds?.length&&!compliance||context.workspaceBillingJobId&&!billing||context.workspaceAssignmentJobIds?.length&&!assignmentDelivery)fail(409,'Unexpected dashboard dependency.');
     let expected={revision:context.savedRevision??context.transactionalRevision,contentHash:canonicalHash(context.candidate??context.openingSnapshot)};
     let billingResult;
     if(context.workspaceBillingJobId){billingResult=await billing.dispatch(context.workspaceBillingJobId,expected,context.workspaceBillingRecover===true);expected=billingResult;}
@@ -168,7 +169,7 @@ function createWorkspace(h) {
     if(loaded.revision!==expected.revision||loaded.contentHash!==expected.contentHash)fail(409,'Dashboard changed during delivery. Refresh current records.');
     const auth=h.authenticate(req,loaded.snapshot).auth;if(!auth||Date.parse(auth.session.expiresAt)<=Date.now()||!url.pathname.startsWith('/api/billing')&&h.accountAccess(loaded.snapshot.company).locked)fail(401,'Current dashboard access could not be verified.');
     context.finalizedRevision=loaded.revision;context.finalizedContentHash=loaded.contentHash;
-    if(url.pathname!=='/api/assignments')context.response.data=url.pathname.startsWith('/api/billing')?{...dto.billing(h.billingSummary(loaded.snapshot)),...(billingResult?{refresh:{status:billingResult.status,...(billingResult.observed?{observed:billingResult.observed,jobId:billingResult.jobId}:{})}}:{})}:{ok:true};
+    if(!['/api/assignments','/api/schedule/repeat-week'].includes(url.pathname))context.response.data=url.pathname.startsWith('/api/billing')?{...dto.billing(h.billingSummary(loaded.snapshot)),...(billingResult?{refresh:{status:billingResult.status,...(billingResult.observed?{observed:billingResult.observed,jobId:billingResult.jobId}:{})}}:{})}:{ok:true};
   }
   return { supported: routes.supported, handle, finalize, rolePolicies:true };
 }
