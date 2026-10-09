@@ -58,5 +58,7 @@ revoke.panel().onclick({target:{dataset:{choice:'declined'}}});
 assert.equal(revoke.win['ga-disable-G-TEST123'],true); assert.equal(revoke.win.reloaded,true); assert.ok(revoke.cookies.some(v=>v.startsWith('_ga=;')));
 const otherTab=browser({choice:'accepted'}); otherTab.listeners.storage({key:'pdl-public-analytics-consent-v1'}); assert.equal(otherTab.win.reloaded,true);
 for(const page of ['index.html','guest.html','login.html','platform.html','support.html','reset-password.html','verify-email.html'])assert.ok(!fs.readFileSync(page,'utf8').includes('/public-analytics.js'));
-const defaults=fs.readFileSync('public-analytics-config.js','utf8'); assert.match(defaults,/enabled: false/); assert.match(defaults,/measurementId: 'G-BDXQC0Z07E'/);
+const defaults=fs.readFileSync('public-analytics-config.js','utf8'); assert.match(defaults,/enabled: true/); assert.match(defaults,/measurementId: 'G-BDXQC0Z07E'/);
 console.log('Public analytics consent, URL privacy, scope, navigation, campaign and opt-out tests passed');
+
+const privacyCopy=fs.readFileSync('privacy.html','utf8');assert(privacyCopy.includes('visitor identifier cookie expires 30 days after creation'));assert(privacyCopy.includes("session-state cookie can renew during activity"));assert(!privacyCopy.includes('analytics cookies are limited to 30 days without renewal'));

@@ -1,6 +1,6 @@
 /* Activation requires owner review; measurement IDs are public, never API secrets. */
 window.PDL_PUBLIC_ANALYTICS = Object.freeze({
-  enabled: false,
+  enabled: true,
   measurementId: 'G-BDXQC0Z07E',
   hosts: ['prodailylink.com', 'www.prodailylink.com', 'app.prodailylink.com'],
   // Only owner-reviewed campaign labels may reach Google. Never add customer names.
