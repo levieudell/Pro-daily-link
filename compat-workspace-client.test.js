@@ -14,6 +14,20 @@ async function main(){
  company=A;configure('foreman');next=identity(A,'foreman');assert.equal((await actions.identity()).role,'foreman');
  next={...next,locked:true};await assert.rejects(actions.identity(),/access changed/);assert.ok(retired>=3);
  await assert.rejects(actions.verifyResponse({ok:false,status:402,headers:{get:()=>null}},'/api/time-cards.csv'),error=>error.status===402);
+ company=A;next=identity();configure();const root={style:{visibility:''}};box.document.getElementById=()=>root;
+ const beforePrepare=retired;let ran=0;box.workspaceApi=async()=>{throw Object.assign(Error('Synthetic prepare unavailable'),{status:503});};
+ await assert.rejects(actions.load(async()=>ran++),error=>error.status===503);assert.equal(ran,0);assert.equal(retired,beforePrepare+1);assert.equal(actions.displayedRevision(),null);assert.equal(root.style.visibility,'');
+ box.workspaceApi=async()=>({ready:true});assert.equal(await actions.load(async()=>++ran),1);assert.equal(actions.displayedRevision(),10);assert.equal(root.style.visibility,'');
+ let releasePrepare,prepareStarted;const preparing=new Promise(resolve=>prepareStarted=resolve),prepareHold=new Promise(resolve=>releasePrepare=resolve);let preparationCount=0,visible='current',olderRuns=0;
+ box.workspaceApi=async()=>{if(++preparationCount===1){prepareStarted();await prepareHold;}return {ready:true};};
+ const older=actions.load(async()=>{olderRuns++;visible='older';}).catch(error=>error);await preparing;
+ const newer=actions.load(async()=>{visible='newer';});releasePrepare();assert.match((await older).message,/changed while preparing/);await newer;
+ assert.equal(olderRuns,0);assert.equal(visible,'newer');assert.equal(actions.displayedRevision(),10);assert.equal(root.style.visibility,'');
+ let releaseRun,runStarted,binding;const running=new Promise(resolve=>runStarted=resolve),runHold=new Promise(resolve=>releaseRun=resolve);box.workspaceApi=async()=>({ready:true});
+ const runningOlder=actions.load(async()=>{binding=actions.capture();runStarted();await runHold;visible='older';}).catch(error=>error);await running;
+ const queuedNewer=actions.load(async()=>{visible='newer';});
+ await assert.rejects(actions.verifyResponse({ok:true,headers:{get:key=>key.includes('Revision')?'10':hash}},'/api/state',binding),/earlier load/);
+ releaseRun();assert.match((await runningOlder).message,/changed during loading/);await queuedNewer;assert.equal(visible,'newer');assert.equal(root.style.visibility,'');
  const reviewBox={window:{},location:{origin:'http://127.0.0.1'},URL,crypto:require('node:crypto').webcrypto};vm.createContext(reviewBox);vm.runInContext(fs.readFileSync('workspace-action-review.js','utf8'),reviewBox);
  const operation=reviewBox.window.pdlWorkspaceReview.operation;
  const clock=operation('/api/time-cards/1/clock-out',{method:'POST',body:'{}'});assert.equal(clock.preview.action,'clockOut');assert.equal(clock.action,'clockCards');assert.equal(operation('/api/time-cards/approve',{method:'POST',body:'{"ids":[1]}'}).action,'approveCards');
@@ -23,6 +37,10 @@ async function main(){
  vm.createContext(apiBox);vm.runInContext(source.slice(begin,end),apiBox);
  assert.equal((await apiBox.api('/api/reports/501/approve',{method:'PATCH',onAcknowledged:()=>ack++})).id,501);assert.equal(ack,1);assert.equal(posts,1);assert.ok(notices.some(value=>value.startsWith('Saved.')));
  refreshStatus=403;await assert.rejects(apiBox.api('/api/reports/501/approve',{method:'PATCH',onAcknowledged:()=>ack++}),error=>error.saved===true&&error.message.startsWith('Saved.'));assert.equal(ack,2);assert.equal(clears,1);
+ apiBox.fetch=async()=>{throw Error('Synthetic acknowledgement lost');};
+ await assert.rejects(apiBox.api('/api/time-cards',{method:'POST',onAcknowledged:()=>ack++}),error=>error.code==='PDL_WORKSPACE_SAVE_UNKNOWN'&&/unknown.*original save result/.test(error.message));assert.equal(ack,2);
+ apiBox.window.pdlWorkspaceActions.enabled=()=>false;
+ await assert.rejects(apiBox.api('/api/time-cards',{method:'POST',onAcknowledged:()=>ack++}),/Nothing was saved/);
  console.log('workspace client: tenant/configure epoch, Foreman, natural lock, denied CSV, clock/bulk routing and known-save refresh failures passed');
 }
 main().catch(error=>{console.error(error);process.exitCode=1;});

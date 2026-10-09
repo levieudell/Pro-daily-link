@@ -1,6 +1,6 @@
 'use strict';
 (function () {
-  let enabled = false, actor = null, epoch = 0, retire = null, loading = 0, loadRevision = null, loadSequence = 0, configured = false, expected = null, displayedRevision = null;
+  let enabled = false, actor = null, epoch = 0, retire = null, loading = 0, loadRevision = null, loadSequence = 0, configured = false, expected = null, displayedRevision = null, loadTail = Promise.resolve();
   const failure = message => Object.assign(Error(message), { status: 409, code: 'PDL_WORKSPACE_STALE' });
   function clear() { epoch++; actor = null; displayedRevision = null; retire?.(); document.querySelectorAll('[data-workspace-dialog]').forEach(node => node.remove()); }
   function headers() { const companyId = localStorage.getItem('pdl-company-id'); return companyId ? { 'X-PDL-Company': companyId } : {}; }
@@ -15,9 +15,11 @@
     if (actor && ['companyId', 'actorId', 'role', 'sessionBinding', 'authority', 'locked'].some(key => actor[key] !== current[key])) { clear(); throw failure('Your workspace access changed. Refresh current records.'); }
     actor = current; return current;
   }
-  async function verifyResponse(response, path) {
+  function capture() { return enabled ? { epoch, generation: loading } : null; }
+  async function verifyResponse(response, path, binding) {
     const revision = response.headers.get('X-PDL-Workspace-Revision'), authority = response.headers.get('X-PDL-Workspace-Authority');
     if (!enabled && revision === null) return;
+    if (binding && (binding.epoch !== epoch || binding.generation && (binding.generation !== loading || binding.generation !== loadSequence))) throw failure('Workspace response belongs to an earlier load. Refresh current records.');
     if(!response.ok && path.startsWith('/api/') && [401,402,403,409].includes(response.status)){clear();throw Object.assign(Error('Workspace access changed. Refresh current records.'),{status:response.status});}
     if (path === '/api/workspace-identity' || !response.ok || !path.startsWith('/api/') || ['/api/config', '/api/auth/company', '/api/auth/logout', '/api/auth/forgot', '/api/auth/reset', '/api/auth/claim'].includes(path)) return;
     enabled = true;
@@ -28,6 +30,34 @@
   }
   function configure(config, me, onRetire) { epoch++; displayedRevision = null; if (configured && enabled) retire?.(); configured = true; enabled = config?.compatibilityAccount?.workspace === true; retire = onRetire; actor = null; expected = enabled ? { companyId: config.compatibilityAccount.companyId, actorId: me?.id, role: (me?.accessRole || me?.role) === 'office' ? 'admin' : (me?.accessRole || me?.role), sessionBinding: me?.accountSessionBinding } : null; if (!enabled) return; window.pdlWorkspaceSave?.draw(); }
   window.addEventListener('focus', () => { if (enabled) identity().catch(() => {}); });
-  async function load(run) { if (!enabled) return run(); const generation = ++loadSequence; loading = generation; displayedRevision = null; const opening = epoch; loadRevision=null; await identity(); if(typeof workspaceApi!=='function')throw failure('Workspace preparation is unavailable.');await workspaceApi('/api/workspace-prepare'); const root = document.getElementById('main-content') || document.querySelector('main'); if (root) root.style.visibility = 'hidden'; try { const value = await run(); const final=await identity();if(loadRevision!==null&&final.revision!==loadRevision)throw failure('Workspace records changed during loading. Refresh current records.'); if (generation !== loading || opening !== epoch) throw failure('Workspace changed during loading. Refresh current records.'); displayedRevision = final.revision; return value; } catch (error) { if (opening === epoch) clear(); throw error; } finally { if (generation === loading){loading=0;loadRevision=null;if(root) root.style.visibility = '';} } }
-  window.pdlWorkspaceActions = { configure, verifyResponse, load, identity, clear, displayedRevision: () => displayedRevision, enabled: () => enabled };
+  function load(run) {
+    if (!enabled) return run();
+    const generation = ++loadSequence, opening = epoch;
+    const result = loadTail.catch(() => {}).then(() => runLoad(run, generation, opening));
+    loadTail = result; return result;
+  }
+  async function runLoad(run, generation, opening) {
+    const current = () => generation === loadSequence && opening === epoch;
+    if (!current()) throw failure('Workspace changed before loading. Refresh current records.');
+    loading = generation; displayedRevision = null; loadRevision = null;
+    const root = document.getElementById('main-content') || document.querySelector('main');
+    if (root) root.style.visibility = 'hidden';
+    try {
+      await identity();
+      if (!current()) throw failure('Workspace changed while checking access. Refresh current records.');
+      if (typeof workspaceApi !== 'function') throw failure('Workspace preparation is unavailable.');
+      await workspaceApi('/api/workspace-prepare');
+      if (!current()) throw failure('Workspace changed while preparing. Refresh current records.');
+      const value = await run(), final = await identity();
+      if (loadRevision !== null && final.revision !== loadRevision) throw failure('Workspace records changed during loading. Refresh current records.');
+      if (!current()) throw failure('Workspace changed during loading. Refresh current records.');
+      displayedRevision = final.revision; return value;
+    } catch (error) {
+      if (generation === loading && current()) clear();
+      throw error;
+    } finally {
+      if (generation === loading) { loading = 0; loadRevision = null; if (root && generation === loadSequence) root.style.visibility = ''; }
+    }
+  }
+  window.pdlWorkspaceActions = { configure, capture, verifyResponse, load, identity, clear, displayedRevision: () => displayedRevision, enabled: () => enabled };
 })();
