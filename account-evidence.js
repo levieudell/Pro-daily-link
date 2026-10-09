@@ -19,7 +19,16 @@ function validateAccounts(db) {
     if (user.assignedCrews !== undefined && (!Array.isArray(user.assignedCrews) || user.assignedCrews.some(value => typeof value !== 'string' || !value.trim()) || new Set(user.assignedCrews).size !== user.assignedCrews.length)) throw failure();
     if (user.permissions !== undefined && (!object(user.permissions) || Object.entries(user.permissions).some(([name, value]) => !FLAGS.has(name) || typeof value !== 'boolean'))) throw failure();
     if (user.mustSetPassword !== undefined && typeof user.mustSetPassword !== 'boolean') throw failure();
-    for (const name of ['passwordHash', 'passwordSalt', 'setupHash', 'setupSalt', 'resetTokenHash', 'emailVerificationTokenHash', 'accountResetGeneration']) if (user[name] !== undefined && (typeof user[name] !== 'string' || !user[name])) throw failure();
+    for (const name of ['passwordHash', 'passwordSalt', 'setupHash', 'setupSalt', 'resetTokenHash', 'emailVerificationTokenHash']) if (user[name] !== undefined && (typeof user[name] !== 'string' || !user[name])) throw failure();
+    for (const name of ['accountResetGeneration', 'accountVerificationGeneration', 'setupGeneration']) if (Object.hasOwn(user, name) && !uuid(user[name])) throw failure();
+    if (Object.hasOwn(user, 'setupIssuedEmail') && (typeof user.setupIssuedEmail !== 'string' || user.setupIssuedEmail !== user.email)) throw failure();
+    for (const name of ['setupExpiresAt', 'resetExpiresAt', 'resetRequestedAt', 'emailVerificationExpiresAt', 'emailVerifiedAt']) if (Object.hasOwn(user, name) && user[name] !== null && (typeof user[name] !== 'string' || !Number.isFinite(Date.parse(user[name])))) throw failure();
+    if (user.preferences !== undefined && !object(user.preferences)) throw failure();
+    if (user.preferredLanguage !== undefined && !['en', 'es'].includes(user.preferredLanguage)) throw failure();
+    const preferences = user.preferences || {};
+    for (const name of ['scheduleCrew', 'displayName', 'profilePhoto']) if (Object.hasOwn(preferences, name) && typeof preferences[name] !== 'string') throw failure();
+    if (Object.hasOwn(preferences, 'scheduleShowOffice') && typeof preferences.scheduleShowOffice !== 'boolean') throw failure();
+    if (Object.hasOwn(preferences, 'theme') && !['light', 'dark', 'system'].includes(preferences.theme)) throw failure();
   }
   const sessions = db.sessions === undefined ? [] : db.sessions, sessionIds = new Set(), hashes = new Set();
   if (!Array.isArray(sessions)) throw failure();
@@ -29,4 +38,5 @@ function validateAccounts(db) {
   }
   return db;
 }
-module.exports = { validateAccounts };
+function publicPreferences(user) { return Object.fromEntries(['scheduleCrew', 'scheduleShowOffice', 'displayName', 'theme', 'profilePhoto'].filter(name => Object.hasOwn(user.preferences || {}, name)).map(name => [name, user.preferences[name]])); }
+module.exports = { validateAccounts, publicPreferences };

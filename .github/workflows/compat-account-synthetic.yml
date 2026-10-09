@@ -39,12 +39,15 @@ jobs:
       - run: npm ci
       - run: node compat-account-postgres.test.js
       - run: node compat-account-slice.test.js
+      - run: node compat-lifecycle-postgres.test.js
+      - run: node account-lifecycle.test.js
       - name: Install isolated browser test dependency
         run: |
           npm install --prefix "$RUNNER_TEMP/compat-browser" --no-save --ignore-scripts playwright@1.63.0
           "$RUNNER_TEMP/compat-browser/node_modules/.bin/playwright" install --with-deps chromium
           echo "PLAYWRIGHT_MODULE=$RUNNER_TEMP/compat-browser/node_modules/playwright" >> "$GITHUB_ENV"
       - run: node compat-account-browser.test.js
+      - run: node compat-lifecycle-browser.test.js
       - uses: actions/upload-artifact@v4
         if: always()
         with:

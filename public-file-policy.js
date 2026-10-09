@@ -1,7 +1,7 @@
 'use strict';
 const path=require('node:path');
 const PUBLIC_FILES=new Set([
-  'company-timezone.js',
+  'company-timezone.js', 'account-actions-ui.js',
   'schedule-approved-labor.js',
   'project-assistant-access.js',
   'project-assistant-ui.js','project-assistant-ui.css','project-assistant-voice.js','project-assistant-conversation.js','project-assistant-chat.js','project-assistant-names.js',

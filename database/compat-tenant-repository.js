@@ -64,6 +64,7 @@ class CompatTenantRepository {
       const result = await client.query('SELECT * FROM public.replace_tenant_records($1,$2,$3::jsonb,$4,$5::jsonb)', [this.companyId, expectedRevision, JSON.stringify(scalarData), hash, JSON.stringify(payload)]);
       const row = result.rows[0];
       if (result.rowCount !== 1 || Number(row.revision) !== expectedRevision + 1 || Number(row.record_count) !== records.length) throw unavailable();
+      if (guard) { const checked = await client.query('SELECT clock_timestamp() < $1::timestamptz AS valid', [guard.deadline]); if (checked.rows[0]?.valid !== true) throw new RevisionConflictError(expectedRevision, expectedRevision); }
       return { revision: Number(row.revision), contentHash: hash };
     });
   }

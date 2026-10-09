@@ -3,6 +3,7 @@
 const crypto = require('node:crypto');
 const { Pool } = require('pg');
 const { stableUuid } = require('./migrate-json');
+const compatibilityBoundary = require('../compat-account-boundary');
 
 class RevisionConflictError extends Error {
   constructor(expected, actual) {
@@ -65,6 +66,7 @@ class TransactionalTenantRepository {
   }
 
   async withTenant(companyId, task, isolation = 'READ COMMITTED') {
+    compatibilityBoundary.assertLegacy(companyId);
     const client = await this.pool.connect();
     try {
       await client.query('BEGIN');
@@ -93,6 +95,7 @@ class TransactionalTenantRepository {
   }
 
   async save(snapshot, expectedRevision = null) {
+    compatibilityBoundary.assertLegacySnapshot(snapshot);
     const id = databaseCompanyId(snapshot);
     const { scalarData, records } = splitSnapshot(snapshot);
     const hash = canonicalHash(snapshot);

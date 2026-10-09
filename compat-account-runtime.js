@@ -2,6 +2,7 @@
 const { canonicalHash } = require('./database/transactional-repository');
 const { stripPrivate, validateOrigin, expires } = require('./account-credential-delivery');
 const { validateAccounts } = require('./account-evidence');
+const { lifecycleRoute } = require('./compat-route-inventory');
 const PUBLIC_CREDENTIALS = new Set(['/api/config', '/api/auth/company', '/api/auth/logout', '/api/auth/login', '/api/auth/forgot', '/api/auth/reset', '/api/auth/claim', '/api/auth/email-verification/confirm']);
 const EXPLICIT_CREDENTIALS = new Set(['/api/auth/login', '/api/auth/forgot', '/api/auth/reset', '/api/auth/claim', '/api/auth/email-verification/confirm']);
 const PATHS = new Set(['/api/config', '/api/auth/company', '/api/auth/login', '/api/auth/forgot', '/api/auth/reset', '/api/auth/me', '/api/auth/logout', '/api/state', '/api/account-access']);
@@ -13,7 +14,7 @@ function assertSynthetic(options) {
 }
 function createRuntime(options) {
   assertSynthetic(options);
-  const { companyId, repository, credentials } = options, origin = validateOrigin(options.origin), globalOrigin = validateOrigin(options.globalOrigin);
+  const { companyId, repository, credentials, lifecycle } = options, origin = validateOrigin(options.origin), globalOrigin = validateOrigin(options.globalOrigin);
   const clock = options.clock || Date.now;
   function selected(req, path) {
     const header = String(req.headers['x-pdl-company'] || ''), cookieCompany = String(req.headers.cookie || '').split(';').map(value => value.trim()).find(value => value.startsWith('pdl_company='))?.slice(12) || '';
@@ -30,7 +31,7 @@ function createRuntime(options) {
     context.db = db; context.candidate = structuredClone(db); context.dirty = true;
   }
   async function handle(req, res, url, hooks) {
-    if (!PATHS.has(url.pathname)) {
+    if (!PATHS.has(url.pathname) && !(lifecycle && lifecycleRoute(req.method, url.pathname))) {
       // This install hook is a quarantined synthetic proof, never a normal
       // product mode. No private selected-tenant path may fall back to legacy.
       if (url.pathname.startsWith('/api/') && !['/api/signup', '/api/founder-offer', '/api/demo-requests'].includes(url.pathname)) throw Object.assign(unavailable(), { code: 'PDL_COMPAT_WRITER_UNCLOSED' });
@@ -38,20 +39,25 @@ function createRuntime(options) {
     }
     if (['POST', 'PATCH', 'PUT', 'DELETE'].includes(req.method)) await hooks.body(req);
     if (!selected(req, url.pathname)) { hooks.json(res, 404, { error: 'Company workspace not found' }); return true; }
-    if (req.method === 'GET' && url.pathname === '/api/config') { hooks.json(res, 200, { authRequired: true, compatibilityAccount: { companyId, globalOrigin }, productionReady: false }); return true; }
-    if (req.method === 'POST' && url.pathname === '/api/auth/company') { hooks.json(res, 200, { companyId }); return true; }
+    if (req.method === 'GET' && url.pathname === '/api/config') { hooks.json(res, 200, { authRequired: true, compatibilityAccount: { companyId, globalOrigin, ...(lifecycle ? { lifecycle: true } : {}) }, productionReady: false }); return true; }
+    if (!lifecycle && req.method === 'POST' && url.pathname === '/api/auth/company') { hooks.json(res, 200, { companyId }); return true; }
     const loaded = await repository.load(companyId);
     if (!loaded || !Number.isSafeInteger(loaded.revision) || loaded.revision < 0 || loaded.snapshot?.company?.id !== companyId || loaded.contentHash !== canonicalHash(loaded.snapshot)) throw unavailable();
     validateAccounts(loaded.snapshot);
     const context = { compatAccount: true, companyId, db: structuredClone(loaded.snapshot), transactionalRevision: loaded.revision, deferResponse: true, pending: [], effects: [], dirty: false, closed: false };
     await hooks.run(context, async () => {
+      if (lifecycle && req.method === 'POST' && url.pathname === '/api/auth/company') {
+        const input = await hooks.body(req); require('./account-lifecycle-plan').closed(input, ['email']);
+        if (typeof input.email !== 'string' || input.email.length > 5000) return hooks.json(res, 400, { error: 'Enter a valid email address' });
+        return hooks.json(res, 200, { companyId: context.db.users.some(user => user.status === 'Active' && user.email.trim().toLowerCase() === input.email.trim().toLowerCase()) ? companyId : null });
+      }
       if (req.method === 'POST' && url.pathname === '/api/auth/login') {
         const input = await hooks.body(req);
         if (!input || Array.isArray(input) || Object.keys(input).some(name => !['email', 'password'].includes(name)) || typeof input.email !== 'string' || typeof input.password !== 'string') return hooks.json(res, 400, { error: 'Invalid sign-in request' });
         const matches = (context.db.users || []).filter(user => String(user.email || '').trim().toLowerCase() === input.email.trim().toLowerCase() && user.status === 'Active');
         if (matches.length !== 1 || matches[0].companyId && matches[0].companyId !== companyId) return hooks.json(res, 401, { error: 'Invalid email or password' });
       }
-      if (!PUBLIC_CREDENTIALS.has(url.pathname) && url.pathname !== '/api/auth/logout') {
+      if (!PUBLIC_CREDENTIALS.has(url.pathname) && url.pathname !== '/api/auth/logout' && !(lifecycle && url.pathname === '/api/health')) {
         const { auth, status } = hooks.authenticate(req, context.db);
         if (!auth || (context.db.users || []).filter(user => user.id === auth.user.id).length !== 1) return hooks.json(res, status === 404 ? 404 : 401, { error: 'Authentication required' });
         context.guard = { deadline: auth.session.expiresAt };
@@ -72,10 +78,16 @@ function createRuntime(options) {
         const credential = hooks.credentialHash(input.password), user = authorized.user;
         user.passwordHash = credential.hash; user.passwordSalt = credential.salt; user.mustSetPassword = false;
         credentials.consumeReset(context.db, user); context.guard = { deadline: authorized.deadline };
+        if (lifecycle) { lifecycle.invalidateManual(context.db, user.id); for (const name of ['setupHash', 'setupSalt', 'setupExpiresAt', 'setupGeneration', 'setupIssuedEmail']) delete user[name]; }
         stage(context, context.db); return hooks.json(res, 200, { ok: true });
       }
+      if (lifecycle && lifecycleRoute(req.method, url.pathname)) {
+        if (!PUBLIC_CREDENTIALS.has(url.pathname) && url.pathname !== '/api/health' && hooks.accountAccess(context.db.company).locked) return hooks.json(res, 402, { error: 'Account access requires owner billing review' });
+        if (!PUBLIC_CREDENTIALS.has(url.pathname) && url.pathname !== '/api/health' && hooks.accountAccess(context.db.company).status === 'Trial') context.businessDeadline = context.db.company.trialEndsAt;
+        if (await lifecycle.handle(req, res, url, context, { ...hooks, stage })) return;
+      }
       // Existing handlers/UI remain the implementation, not an alternate app.
-      if (url.pathname === '/api/state' && (context.db.projectTickets || []).some(ticket => ticket.deletedAt && !ticket.purgedAt && ticket.retainedUntil && (!Number.isFinite(Date.parse(ticket.retainedUntil)) || Date.parse(ticket.retainedUntil) <= Number(clock())))) {
+      if (!lifecycle && url.pathname === '/api/state' && (context.db.projectTickets || []).some(ticket => ticket.deletedAt && !ticket.purgedAt && ticket.retainedUntil && (!Number.isFinite(Date.parse(ticket.retainedUntil)) || Date.parse(ticket.retainedUntil) <= Number(clock())))) {
         // Explicit source-slice stopping criterion: the legacy state handler's
         // precommit file deletion is not certified by account snapshot staging.
         throw Object.assign(unavailable(), { code: 'PDL_COMPAT_RETENTION_UNCLOSED' });
@@ -87,13 +99,14 @@ function createRuntime(options) {
     if (context.response.status >= 400) context.dirty = false;
     if (context.dirty) {
       validateAccounts(context.candidate);
+      if (context.businessDeadline) context.guard = { deadline: new Date(Math.min(Date.parse(context.guard?.deadline || context.businessDeadline), Date.parse(context.businessDeadline))).toISOString() };
       if (context.guard && !expires(context.guard.deadline, Number(clock()))) throw Object.assign(unavailable(), { statusCode: 409 });
       const result = await repository.commit(context.candidate, loaded.revision, context.guard);
       if (result?.revision !== loaded.revision + 1 || result.contentHash !== canonicalHash(context.candidate)) throw unavailable();
       res.setHeader('X-PDL-Tenant-Revision', String(result.revision));
       context.savedRevision = result.revision;
     }
-    if (context.response.status < 400 && (!PUBLIC_CREDENTIALS.has(url.pathname) || url.pathname === '/api/auth/login')) {
+    if (context.response.status < 400 && (!PUBLIC_CREDENTIALS.has(url.pathname) || url.pathname === '/api/auth/login') && !(lifecycle && url.pathname === '/api/health')) {
       const current = await repository.load(companyId);
       if (!current || current.revision !== (context.savedRevision ?? loaded.revision) || current.contentHash !== (context.dirty ? canonicalHash(context.candidate) : loaded.contentHash)) throw Object.assign(unavailable(), { statusCode: 409, code: 'PDL_COMPAT_RESPONSE_STALE' });
       validateAccounts(current.snapshot);
@@ -102,6 +115,10 @@ function createRuntime(options) {
       if (!auth || !expires(auth.session.expiresAt, Number(clock()))) throw Object.assign(unavailable(), { statusCode: 401, code: 'PDL_COMPAT_RESPONSE_EXPIRED' });
       if (!['/api/auth/me', '/api/auth/login', '/api/account-access'].includes(url.pathname) && hooks.accountAccess(current.snapshot.company).locked) throw Object.assign(unavailable(), { statusCode: 402, code: 'PDL_COMPAT_RESPONSE_LOCKED' });
       if (url.pathname === '/api/account-access') context.response.data = hooks.accountAccess(current.snapshot.company);
+      if (lifecycle && ['/api/auth/me', '/api/auth/login'].includes(url.pathname)) {
+        context.response.data = { ...context.response.data, preferences: require('./account-evidence').publicPreferences(auth.user), ...Object.fromEntries(require('./capability-registry').families.map(([, , , field]) => [field, auth.user[field]])), accountSessionBinding: lifecycle.sessionBinding(auth) };
+      }
+      if (context.accountReturn) lifecycle.deliver(context, current.snapshot, auth);
     }
     // All responses, including generic state/user DTOs, omit private custody.
     context.response.data = stripPrivate(context.response.data);
@@ -116,6 +133,6 @@ function createRuntime(options) {
     // Normal signup page is hosted by the existing global legacy service.
     res.writeHead(302, { Location: new URL('/signup.html', globalOrigin).href, 'Cache-Control': 'no-store' }); res.end(); return true;
   }
-  return { handle, stage, publicEntry, companyId, origin, globalOrigin, sourceOnly: true };
+  return { handle, stage, publicEntry, companyId, origin, globalOrigin, sourceOnly: true, lifecycle, actor: lifecycle?.actor };
 }
 module.exports = { createRuntime, assertSynthetic, PATHS };
