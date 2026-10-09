@@ -46,6 +46,6 @@ function createDelivery({repository,companyId,send,authenticateSession,accountAc
     if(job.status==='sent'||job.status==='rejected')for(const record of job.source.assignments){const row=db.assignments.find(r=>r.id===record.id);row.notifications||={};row.notifications[job.source.memberId]||={};row.notifications[job.source.memberId].emailStatus=job.status==='sent'?'sent':'failed';}
     return {status:job.status,...await commit(db,loaded.revision,job.status==='sent'?deadline:undefined)};
   }
-  return {stage,dispatch,valid};
+  return {stage,dispatch,valid,authorised:(db,job)=>Boolean(current(db,job))};
 }
 module.exports={createDelivery,descriptor,validateSource,jobs};

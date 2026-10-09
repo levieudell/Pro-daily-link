@@ -4,6 +4,8 @@
 const read = new Set(['/api/state', '/api/workspace-identity', '/api/action-center', '/api/production', '/api/insights', '/api/exceptions', '/api/audit-log', '/api/catalog', '/api/company-activities', '/api/daily-templates', '/api/schedule-availability', '/api/time-cards', '/api/time-cards.csv', '/api/time-off-requests', '/api/pay-periods', '/api/reporting-exports', '/api/billing', '/api/assignments', '/api/reports', '/api/workdays', '/api/report-labor-suggestions']);
 const post = new Set(['/api/assignments', '/api/time-off-requests', '/api/time-cards/action-preview', '/api/time-cards/review-preview', '/api/time-cards/approve', '/api/time-cards', '/api/time-cards/company-clock', '/api/pay-periods/action-preview', '/api/pay-periods', '/api/daily-actions/preview', '/api/reports', '/api/workdays/start', '/api/reporting-exports']);
 function supported(method, path) {
+  if(method==='GET'&&['/api/company/role-capabilities','/api/company/role-policy','/api/company/role-policy/audit','/api/company/role-policy/profiles'].includes(path))return true;
+  if(method==='POST'&&['/api/company/role-policy/preview','/api/company/role-policy/profiles/preview','/api/company/role-policy/confirm'].includes(path))return true;
   if(method==='POST'&&path==='/api/workspace-direct-preview')return true;
   if(method==='POST'&&path==='/api/billing/recover')return true;
   if(method==='POST'&&path==='/api/ai/extract')return true;

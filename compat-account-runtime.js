@@ -39,7 +39,7 @@ function createRuntime(options) {
     }
     if (['POST', 'PATCH', 'PUT', 'DELETE'].includes(req.method)) await hooks.body(req);
     if (!selected(req, url.pathname)) { hooks.json(res, 404, { error: 'Company workspace not found' }); return true; }
-    if (req.method === 'GET' && url.pathname === '/api/config') { hooks.json(res, 200, { authRequired: true, compatibilityAccount: { companyId, globalOrigin, ...(lifecycle ? { lifecycle: true } : {}), ...(workspace ? { workspace: true } : {}) }, productionReady: false }); return true; }
+    if (req.method === 'GET' && url.pathname === '/api/config') { hooks.json(res, 200, { authRequired: true, compatibilityAccount: { companyId, globalOrigin, ...(lifecycle ? { lifecycle: true } : {}), ...(workspace ? { workspace: true, rolePolicies: workspace.rolePolicies===true } : {}) }, productionReady: false }); return true; }
     if (!lifecycle && req.method === 'POST' && url.pathname === '/api/auth/company') { hooks.json(res, 200, { companyId }); return true; }
     const loaded = await repository.load(companyId);
     if (!loaded || !Number.isSafeInteger(loaded.revision) || loaded.revision < 0 || loaded.snapshot?.company?.id !== companyId || loaded.contentHash !== canonicalHash(loaded.snapshot)) throw unavailable();
@@ -122,7 +122,7 @@ function createRuntime(options) {
         context.response.data = { ...context.response.data, preferences: require('./account-evidence').publicPreferences(auth.user), ...Object.fromEntries(require('./capability-registry').families.map(([, , , field]) => [field, auth.user[field]])), accountSessionBinding: lifecycle.sessionBinding(auth) };
       }
       if (context.accountReturn) lifecycle.deliver(context, current.snapshot, auth);
-      if(workspace){const identity=require('./compat-workspace-authority').authority(current.snapshot,auth,current.revision,lifecycle,hooks.accountAccess);res.setHeader('X-PDL-Workspace-Revision',String(identity.revision));res.setHeader('X-PDL-Workspace-Authority',identity.authority);if(context.workspaceReconciliationFrom)res.setHeader('X-PDL-Workspace-Reconciled-From',context.workspaceReconciliationFrom);if(url.pathname==='/api/workspace-identity')context.response.data=identity;}
+      if(workspace){const identity=require('./compat-workspace-authority').authority(current.snapshot,auth,current.revision,lifecycle,hooks.accountAccess);res.setHeader('X-PDL-Workspace-Revision',String(identity.revision));res.setHeader('X-PDL-Workspace-Authority',identity.authority);if(context.workspaceReconciliationFrom)res.setHeader('X-PDL-Workspace-Reconciled-From',context.workspaceReconciliationFrom);if(url.pathname==='/api/company/role-policy/confirm'&&context.workspacePolicyFrom&&auth.user.role==='owner')res.setHeader('X-PDL-Workspace-Policy-From',context.workspacePolicyFrom);if(url.pathname==='/api/workspace-identity')context.response.data=identity;}
     }
     // All responses, including generic state/user DTOs, omit private custody.
     if (!Object.hasOwn(context.response,'raw')) context.response.data = stripPrivate(context.response.data);

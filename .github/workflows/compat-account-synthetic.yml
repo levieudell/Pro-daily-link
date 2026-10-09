@@ -46,6 +46,7 @@ jobs:
       - run: node compat-account-slice.test.js
       - run: node compat-lifecycle-postgres.test.js
       - run: node account-lifecycle.test.js
+      - run: node compat-role-policy.test.js
       - run: node compat-workspace-postgres.test.js
       - run: node compat-platform-sink-postgres.test.js
       - run: node compat-workspace-compliance-postgres.test.js
@@ -71,6 +72,7 @@ jobs:
       - run: node compat-workspace-work-journeys.test.js --group=notes
       - run: node compat-workspace-work-journeys.test.js --group=daily
       - run: node compat-workspace-recovery-browser.test.js
+      - run: node compat-company-roles-browser.test.js
       - uses: actions/upload-artifact@v4
         if: always()
         with:

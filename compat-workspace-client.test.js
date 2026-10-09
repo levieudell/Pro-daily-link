@@ -40,6 +40,12 @@ async function main(){
  const reviewBox={window:{},location:{origin:'http://127.0.0.1'},URL,crypto:require('node:crypto').webcrypto};vm.createContext(reviewBox);vm.runInContext(fs.readFileSync('workspace-action-review.js','utf8'),reviewBox);
  const operation=reviewBox.window.pdlWorkspaceReview.operation;
  const clock=operation('/api/time-cards/1/clock-out',{method:'POST',body:'{}'});assert.equal(clock.preview.action,'clockOut');assert.equal(clock.action,'clockCards');assert.equal(operation('/api/time-cards/approve',{method:'POST',body:'{"ids":[1]}'}).action,'approveCards');
+ // Only the exact policy-confirm route and an Owner may accept the signed
+ // current-authority transition; the header cannot broaden any other route.
+ const policyHeader=(from=hash)=>({ok:true,headers:{get:key=>key==='X-PDL-Workspace-Revision'?'10':key==='X-PDL-Workspace-Authority'?other:key==='X-PDL-Workspace-Policy-From'?from:null}});
+ company=A;next=identity(A);configure();await actions.identity();next={...identity(A),authority:other};await actions.verifyResponse(policyHeader(),'/api/company/role-policy/confirm');assert.equal((await actions.identity()).authority,other);
+ for(const [role,route,from]of [['owner','/api/company/role-policy/preview',hash],['owner','/api/state',hash],['admin','/api/company/role-policy/confirm',hash],['owner','/api/company/role-policy/confirm','c'.repeat(64)]]){next=identity(A,role);configure(role);await actions.identity();next={...identity(A,role),authority:other};await assert.rejects(actions.verifyResponse(policyHeader(from),route),/access changed/);}
+ next=identity(A);configure();await actions.identity();
  const source=fs.readFileSync('app.js','utf8'),begin=source.indexOf('async function api(path,options={})'),end=source.indexOf('\nconst workspaceApi=api;',begin);assert.ok(begin>0&&end>begin);
  let ack=0,posts=0,clears=0,refreshStatus=503;const notices=[];
  const apiBox={window:{pdlWorkspaceActions:{enabled:()=>true,clear:()=>clears++,verifyResponse:async()=>{}}},signedInCompanyId:()=>A,wakeService:async()=>{},fetch:async(path,request)=>{if(request.method==='PATCH')posts++;const status=path==='/api/state'?refreshStatus:200;return {ok:status===200,status,headers:{get:()=> 'application/json'},json:async()=>status===200?{id:501,status:'Approved'}:{error:'Synthetic refresh failure'}};},notify:value=>notices.push(value),location:{},Error};
