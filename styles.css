@@ -622,3 +622,13 @@ dialog[open]{animation:pdl-dialog-in .24s cubic-bezier(.2,.7,.3,1)}
   #report-modal .report-review-summary{margin-top:2px}
   #report-modal .report-gaps{margin-bottom:10px}
 }
+/* Repeat week */
+.repeat-week-picker-head{display:flex;gap:14px;margin:2px 0 6px}
+.repeat-week-picker-head .link-button{border:0;background:transparent;color:var(--blue);font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;padding:4px 0;cursor:pointer}
+#repeat-week-list label{display:grid;grid-template-columns:auto 1fr;gap:8px;align-items:start;font-size:11px;line-height:1.4}
+#repeat-week-list .repeat-week-line small{display:block;color:var(--muted);font-size:9px}
+.repeat-week-skip-row{display:grid;grid-template-columns:1fr auto;gap:8px;align-items:center;padding:8px 0;border-bottom:1px solid var(--line);font-size:11px}
+.repeat-week-skip-row:last-child{border-bottom:0}
+.repeat-week-skip-row small{display:block;color:var(--muted);font-size:9px}
+.repeat-week-skip-row .skip-reason{color:var(--red);font-weight:700}
+.repeat-week-skip-row button{white-space:nowrap}
