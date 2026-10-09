@@ -128,7 +128,7 @@ else {
   async function downloadPayExport(id){
     const context=timeContext(),period=paySelected,tenant=signedInCompanyId();
     const response=await fetch('/api/pay-periods/'+encodeURIComponent(period)+'/exports/'+encodeURIComponent(id)+'.csv',{credentials:'same-origin',headers:{'X-PDL-Company':tenant},cache:'no-store'});
-    if(!response.ok)throw Error('Export could not be downloaded');const blob=await response.blob();if(context!==timeContext()||period!==paySelected)return;
+    await window.pdlWorkspaceActions?.verifyResponse(response,'/api/pay-periods/'+encodeURIComponent(period)+'/exports/'+encodeURIComponent(id)+'.csv');if(!response.ok)throw Error('Export could not be downloaded');const blob=await response.blob();await window.pdlWorkspaceActions?.verifyResponse(response,'/api/pay-periods/'+encodeURIComponent(period)+'/exports/'+encodeURIComponent(id)+'.csv');if(context!==timeContext()||period!==paySelected)return;
     const url=URL.createObjectURL(blob),link=document.createElement('a');link.href=url;link.download='pay-period-'+period+'-'+id+'.csv';link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
   }
   $('#pay-period-form').onsubmit=async event=>{
