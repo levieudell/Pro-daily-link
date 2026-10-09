@@ -692,7 +692,7 @@ renderCatalog=function(filter=''){const result=renderCatalogBeforeDerivedScopes(
 const loadRoleBeforeBillingReconcile=loadRole;
 loadRole=async function(role){const result=await loadRoleBeforeBillingReconcile(role);if(role==='office'&&currentUser?.role==='owner')await loadBilling().catch(()=>{});return result};
 $('#report-next-step').addEventListener('click',()=>{if($('#field-notes').value.trim())return;const message=$('#report-language').value.startsWith('es')?'Cuéntanos qué pasó hoy antes de continuar.':'Add a quick note about what happened today before continuing.';notify(message);requestAnimationFrame(()=>$('#field-notes').scrollIntoView({behavior:matchMedia('(prefers-reduced-motion: reduce)').matches?'auto':'smooth',block:'center'}))},{capture:true});
-boot();
+if(window.pdlWorkspaceGate===undefined)boot();else Promise.resolve(window.pdlWorkspaceGate).then(allowed=>{if(allowed===true)boot()},()=>{});
 
 // Pricing access is company-controlled. The server is the authority; this only
 // presents the approved policy clearly in the workspace.
