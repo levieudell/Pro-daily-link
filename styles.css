@@ -574,3 +574,20 @@ dialog[open]{animation:pdl-dialog-in .24s cubic-bezier(.2,.7,.3,1)}
 .field-assignment,.activity-item{transition:background var(--t-fast)}
 .activity-report-link{transition:background var(--t-fast)}
 .project-view-tabs button,.team-tabs button,.project-detail-tabs button{transition:background var(--t-fast),color var(--t-fast),border-color var(--t-fast)}
+
+/* --- Mobile report sheet: true edge-to-edge + structural compaction --- */
+@media(max-width:760px){
+  dialog{margin:0}
+  #report-modal .modal-header{position:sticky;top:0;z-index:3;background:var(--panel,#fff);padding-top:max(14px,env(safe-area-inset-top))}
+  :root[data-theme="dark"] #report-modal .modal-header{background:var(--panel)}
+  .report-job-context{padding:11px 12px;border-radius:10px}
+  .report-job-context dl{grid-template-columns:repeat(2,minmax(0,1fr));gap:6px 10px;margin-top:9px;padding-top:8px}
+  .report-job-context dd{font-size:11px;overflow-wrap:anywhere}
+  #report-project-picker{padding:11px 12px;border-radius:10px}
+  #field-notes{min-height:24vh}
+  .photo-actions input[type=file]::file-selector-button,
+  #report-modal input[type=file]::file-selector-button{border:0;border-radius:8px;background:linear-gradient(180deg,#ff7c33,#ff6b1a);color:#fff;font:700 12px "DM Sans",sans-serif;padding:10px 14px;cursor:pointer;box-shadow:0 1px 2px rgba(255,107,26,.35),0 6px 16px -6px rgba(255,107,26,.5)}
+  .photo-actions input[type=file]::file-selector-button:hover,
+  #report-modal input[type=file]::file-selector-button:hover{background:#e85c10}
+  #report-modal .modal-actions{background:var(--panel,#fff);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px)}
+}
