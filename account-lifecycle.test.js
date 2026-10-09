@@ -88,6 +88,11 @@ async function main() {
     assert.throws(() => boundary.adapterRequest('/rest/v1/tenant_records', {}), /current service/);
     const emptyWrite = new Response(null, { status: 204 }); assert.equal(await boundary.adapterResponse('/rest/v1/companies', emptyWrite, { method: 'POST' }), emptyWrite);
     const readRows = await boundary.adapterResponse('/rest/v1/companies', new Response(JSON.stringify([{ id: A, data: snapshot() }, { id: B, data: legacy }]), { status: 200 })); assert.deepEqual(await readRows.json(), [{ id: B, data: legacy }]);
+    // A bounded cloud search cannot prove the absence of another company with
+    // this email. Require explicit selected intent while preserving old defaults.
+    const vm = require('node:vm'), source = fs.readFileSync(path.join(__dirname, 'server.js'), 'utf8'), start = source.indexOf('async function companyIdForEmail('), end = source.indexOf('\nfunction ', start + 1); assert.ok(start >= 0 && end > start);
+    const discoveryContext = { tenantDatabases: () => [], supabase: { configured: () => true, findCompanyByUserEmail: async () => null }, compatibilityBoundary: { boundary: () => ({ companyId: A }), discoverEmail: async () => A } }; vm.createContext(discoveryContext); vm.runInContext(source.slice(start, end), discoveryContext);
+    await assert.rejects(discoveryContext.companyIdForEmail('owner@example.invalid'), error => error.code === 'PDL_COMPAT_TENANT_AMBIGUOUS'); assert.equal(await discoveryContext.companyIdForEmail('owner@example.invalid', A), A); discoveryContext.compatibilityBoundary.boundary = () => null; discoveryContext.tenantDatabases = () => [snapshot()]; assert.equal(await discoveryContext.companyIdForEmail('owner@example.invalid'), A);
     // The legacy primary may itself be selected. No supplied tenant hint must
     // not allow a rejected fresh snapshot to fall back to that stale file.
     uninstall(); uninstall = null; const stalePrimary = snapshot(), staleToken = 'synthetic-selected-primary-session'; stalePrimary.sessions = [{ id: crypto.randomUUID(), companyId: A, userId: 1, tokenHash: crypto.createHash('sha256').update(staleToken).digest('hex'), expiresAt: '2099-01-01T00:00:00.000Z' }]; fs.writeFileSync(file, JSON.stringify(stalePrimary)); const staleBytes = fs.readFileSync(file);

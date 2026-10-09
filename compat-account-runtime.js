@@ -129,6 +129,11 @@ function createRuntime(options) {
     return true;
   }
   function publicEntry(req, res, url) {
+    if (lifecycle && req.method === 'GET' && ['/login.html', '/forgot-password.html', '/reset-password.html', '/verify-email.html', '/app'].includes(url.pathname) && url.searchParams.has('tenant') && url.searchParams.get('tenant') !== companyId) {
+      if (url.searchParams.getAll('tenant').length !== 1 || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(url.searchParams.get('tenant')) || url.searchParams.getAll('token').length > 1) throw unavailable();
+      const destination = new URL(url.pathname, globalOrigin); for (const [name, value] of url.searchParams) { if (!['tenant', 'token'].includes(name)) throw unavailable(); destination.searchParams.set(name, value); }
+      res.writeHead(302, { Location: destination.href, 'Cache-Control': 'no-store', 'Referrer-Policy': 'no-referrer' }); res.end(); return true;
+    }
     if (req.method !== 'GET' || url.pathname !== '/signup.html') return false;
     // Normal signup page is hosted by the existing global legacy service.
     res.writeHead(302, { Location: new URL('/signup.html', globalOrigin).href, 'Cache-Control': 'no-store' }); res.end(); return true;
