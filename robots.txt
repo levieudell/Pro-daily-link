@@ -1,0 +1,7 @@
+User-agent: *
+Allow: /
+Disallow: /app
+Disallow: /api/
+Disallow: /guest/
+
+Sitemap: https://app.prodailylink.com/sitemap.xml
