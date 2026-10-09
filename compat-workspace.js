@@ -101,8 +101,14 @@ function createWorkspace(h) {
     if (!['owner', 'admin', 'project_manager'].includes(user.role)) fail(403, 'Office permission required');
     const { metrics } = dto.scoped(db, user, helpers);
     if (url.pathname === '/api/action-center') {
-      const result = h.buildActionCenter(metrics), projectIds = new Set(metrics.projects.map(row => row.id));
-      result.items = result.items.filter(item => alertAllowed(user,metrics,item,projectIds) && (gates.daily.viewReports || !['exception', 'approval', 'missing_data', 'missing_daily', 'project_risk', 'safety_followup', 'safety_incident_review'].includes(item.type)) && (gates.scheduling.view || item.type !== 'missing_daily') && (item.type!=='scheduled_no_show'||gates.scheduling.view&&gates.daily.viewWorkdays&&gates.timeReview.viewCards&&gates.timeOff.viewRequests)).map(row => dto.pick(row, ['id', 'type', 'severity', 'title', 'detail', 'reportId', 'projectId', 'subcontractorId']));
+      // Disabled time cards do not disable the existing workday-based alert.
+      // Historic presence remains internal and scoped; typed/profile denials
+      // still suppress this derived view even when the feature is disabled.
+      const cardSource = db.company.features?.timeCards === true ? db : { ...db, company: { ...db.company, features: { ...db.company.features, timeCards: true } } };
+      const cardAuthority = require('./time-review-access').access(cardSource,user).viewCards;
+      const alertMetrics = db.company.features?.timeCards === true ? metrics : { ...metrics, timeCards: (db.timeCards||[]).filter(row=>require('./time-review-access').cardInScope(cardSource,user,row)) };
+      const result = h.buildActionCenter(alertMetrics), projectIds = new Set(metrics.projects.map(row => row.id));
+      result.items = result.items.filter(item => alertAllowed(user,metrics,item,projectIds) && (gates.daily.viewReports || !['exception', 'approval', 'missing_data', 'missing_daily', 'project_risk', 'safety_followup', 'safety_incident_review'].includes(item.type)) && (gates.scheduling.view || item.type !== 'missing_daily') && (item.type!=='scheduled_no_show'||gates.scheduling.view&&gates.daily.viewWorkdays&&cardAuthority&&gates.timeOff.viewRequests)).map(row => dto.pick(row, ['id', 'type', 'severity', 'title', 'detail', 'reportId', 'projectId', 'subcontractorId']));
       result.counts = Object.fromEntries(['urgent', 'high', 'medium'].map(level => [level, result.items.filter(item => item.severity === level).length])); result.counts.total = result.items.length;
       h.json(res, 200, result); return true;
     }

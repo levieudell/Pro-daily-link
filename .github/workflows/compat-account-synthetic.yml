@@ -52,6 +52,7 @@ jobs:
       - run: node compat-workspace-policy-matrix.test.js
       - run: node compat-workspace-reconciliation.test.js
       - run: node compat-workspace-labor-exclusions.test.js
+      - run: node compat-workspace-main-parity.test.js
       - run: node compat-workspace-client.test.js
       - run: node compat-workspace-delivery.test.js
       - run: node compat-workspace.test.js
