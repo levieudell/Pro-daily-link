@@ -33,7 +33,11 @@
   <script>
     window.pdlWorkspaceGate=(async()=>{
       try{
-        const config=await fetch('/api/config',{credentials:'include',cache:'no-store'}).then(response=>response.json());
+        const configResponse=await fetch('/api/config',{credentials:'include',cache:'no-store'});
+        if(!configResponse.ok)throw Error('Workspace configuration is unavailable.');
+        const config=await configResponse.json();
+        if(!config||typeof config.authRequired!=='boolean')throw Error('Workspace configuration could not be verified.');
+        window.pdlWorkspaceConfig=config;
         if(config.authRequired){
           const response=await fetch('/api/auth/me',{credentials:'include',cache:'no-store'});
           if(!response.ok){location.replace('/');return false}

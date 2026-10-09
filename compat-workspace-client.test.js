@@ -6,6 +6,7 @@ async function main(){
  let company=A,next=identity(),retired=0,hold,started;const events={};
  const box={window:{addEventListener:(name,fn)=>events[name]=fn},document:{querySelectorAll:()=>[],getElementById:()=>null,querySelector:()=>null},localStorage:{getItem:()=>company},Date,Error,URL,fetch:async()=>({ok:true,json:async()=>{if(hold){started?.();await hold;}return next;}})};
  vm.createContext(box);vm.runInContext(fs.readFileSync('workspace-actions-ui.js','utf8'),box);const actions=box.window.pdlWorkspaceActions;
+ await assert.rejects(actions.verifyResponse({ok:true,headers:{get:key=>key.includes('Revision')?'10':hash}},'/api/state'),/configuration is required/);assert.equal(actions.enabled(),false);
  const configure=(role='owner')=>actions.configure({compatibilityAccount:{workspace:true,companyId:company}},{id:1,role:role==='foreman'?'field':role,accessRole:role,accountSessionBinding:company===A?hash:other},()=>retired++);
  configure();await actions.identity();
  let release;hold=new Promise(resolve=>release=resolve);let begun;const ready=new Promise(resolve=>begun=resolve);started=begun;
@@ -44,6 +45,17 @@ async function main(){
  await assert.rejects(apiBox.api('/api/time-cards',{method:'POST',onAcknowledged:()=>ack++}),error=>error.code==='PDL_WORKSPACE_SAVE_UNKNOWN'&&/unknown.*original save result/.test(error.message));assert.equal(ack,2);
  apiBox.window.pdlWorkspaceActions.enabled=()=>false;
  await assert.rejects(apiBox.api('/api/time-cards',{method:'POST',onAcknowledged:()=>ack++}),/Nothing was saved/);
+ const bootBegin=source.indexOf('async function boot(){'),bootEnd=source.indexOf('\nfunction showEmailVerificationNotice',bootBegin);assert.ok(bootBegin>0&&bootEnd>bootBegin);
+ let privateLoads=0,configuredLoads=0,configFetches=0,bootRetired=0;
+ const me={id:1,role:'owner',companyId:A},bootBox={window:{pdlWorkspaceConfig:{authRequired:true,compatibilityAccount:{workspace:true,companyId:A}},pdlAuthenticatedUser:me,pdlWorkspaceActions:{configure:(config,user,onRetire)=>{assert.equal(config.authRequired,true);assert.equal(user.companyId,A);assert.equal(typeof onRetire,'function');configuredLoads++;}}},fetch:async()=>{configFetches++;throw Error('Second config unavailable');},api:async path=>path==='/api/auth/me'?me:{locked:false},workspaceApi:async()=>{},retireWorkspaceData:()=>bootRetired++,loadRole:async()=>{privateLoads++;},handleBillingReturn:async()=>{},localStorage:{getItem:()=>A,setItem(){}},$:()=>({hidden:true}),location:{search:''},URLSearchParams,notify(){},currentUser:null};
+ vm.createContext(bootBox);vm.runInContext(source.slice(bootBegin,bootEnd),bootBox);await bootBox.boot();assert.equal(configFetches,0);assert.equal(configuredLoads,1);assert.equal(privateLoads,1);
+ delete bootBox.window.pdlWorkspaceConfig;await bootBox.boot();assert.equal(privateLoads,1);assert.equal(bootRetired,1);assert.equal(bootBox.window.pdlAuthenticatedUser,null);
+ bootBox.fetch=async()=>({ok:true,json:async()=>({})});await bootBox.boot();assert.equal(privateLoads,1);assert.equal(bootRetired,2);
+ bootBox.fetch=async()=>({ok:true,json:async()=>({authRequired:false})});await bootBox.boot();assert.equal(privateLoads,2);assert.equal(configuredLoads,1);
+ const declaration=name=>{const line=source.split('\n').find(line=>line.startsWith('function '+name+'(')||line.startsWith('async function '+name+'('));assert.ok(line,name);return line;};
+ const reads=[],refreshBox={window:{pdlWorkspaceActions:{enabled:()=>true}},currentRole:'office',currentUser:{role:'project_manager',permissions:{viewTime:true,manageTime:true},effectiveCapabilities:{timeReview:{viewCards:false},timeWrite:{viewActivities:false},timeOff:{viewRequests:false}}},company:{features:{timeCards:true}},document:{body:{classList:{toggle(){}}}},timeCards:[{id:9}],timeOffRequests:[{id:'private'}],companyActivityCodes:[{id:'private'}],api:async path=>{reads.push(path);return[];},$:()=>({classList:{contains:()=>false},value:'',innerHTML:''}),renderTimeCards(){},renderTimeCardWarnings(){},renderTimeOverview(){},renderProjectCards(){},renderCompanyClockStatus(){},renderTimeOff(){},notify(){},escapeHtml:value=>value};
+ vm.createContext(refreshBox);vm.runInContext(['timeCardsOn','canViewTime','refreshTimeCards','refreshCompanyActivities','refreshTimeOff'].map(declaration).join('\n'),refreshBox);
+ assert.equal(refreshBox.canViewTime(),false);await refreshBox.refreshTimeCards();await refreshBox.refreshCompanyActivities();await refreshBox.refreshTimeOff();assert.equal(reads.length,0);assert.equal(refreshBox.timeCards.length,0);assert.equal(refreshBox.timeOffRequests.length,0);assert.equal(refreshBox.companyActivityCodes.length,0);
  console.log('workspace client: tenant/configure epoch, Foreman, natural lock, denied CSV, clock/bulk routing and known-save refresh failures passed');
 }
 main().catch(error=>{console.error(error);process.exitCode=1;});

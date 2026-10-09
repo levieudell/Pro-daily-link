@@ -19,10 +19,10 @@
   async function verifyResponse(response, path, binding) {
     const revision = response.headers.get('X-PDL-Workspace-Revision'), authority = response.headers.get('X-PDL-Workspace-Authority');
     if (!enabled && revision === null) return;
+    if (!configured || !enabled) throw failure('Authenticated workspace configuration is required before loading records.');
     if (binding && (binding.epoch !== epoch || binding.generation && (binding.generation !== loading || binding.generation !== loadSequence))) throw failure('Workspace response belongs to an earlier load. Refresh current records.');
     if(!response.ok && path.startsWith('/api/') && [401,402,403,409].includes(response.status)){clear();throw Object.assign(Error('Workspace access changed. Refresh current records.'),{status:response.status});}
     if (path === '/api/workspace-identity' || !response.ok || !path.startsWith('/api/') || ['/api/config', '/api/auth/company', '/api/auth/logout', '/api/auth/forgot', '/api/auth/reset', '/api/auth/claim'].includes(path)) return;
-    enabled = true;
     const opening = epoch, current = await identity();
     if (binding && (binding.epoch !== epoch || binding.generation && (binding.generation !== loading || binding.generation !== loadSequence))) throw failure('Workspace response belongs to an earlier load. Refresh current records.');
     if(loading && path==='/api/state')loadRevision=current.revision;
