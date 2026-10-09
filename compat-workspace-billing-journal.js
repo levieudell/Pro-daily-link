@@ -1,0 +1,15 @@
+'use strict';
+// Append-only observed billing outcomes survive loss of tenant-CAS ownership.
+// These facts do not grant access or authorize another provider attempt.
+const crypto=require('node:crypto');
+const {canonicalHash}=require('./database/transactional-repository');
+const fail=()=>{throw Object.assign(Error('Billing outcome journal needs reconciliation.'),{statusCode:409});};
+function createJournal(storage,key) {
+  if(process.env.NODE_ENV!=='test'||process.env.PDL_COMPAT_ACCOUNT_SYNTHETIC!=='1'||storage.synthetic!==true||typeof storage.insert!=='function'||typeof storage.read!=='function'||!Buffer.isBuffer(key)||key.length!==32)throw Error('Explicit synthetic billing journal required.');
+  const signature=row=>{const copy={...row};delete copy.proof;return crypto.createHmac('sha256',key).update('billing-provider-fact-v1:'+canonicalHash(copy)).digest('hex');};
+  function valid(row) {if(!row||Array.isArray(row)||Object.keys(row).sort().join(',')!=='admissionHash,attemptId,companyId,descriptorHash,jobId,kind,proof,status,value'||!['subscription','invoice','scheduleRead','scheduleCreate','configurePhases'].includes(row.kind)||!['accepted','rejected','unknown'].includes(row.status)||!/^[-a-f0-9]{36}$/.test(row.companyId)||![row.jobId,row.attemptId].every(v=>typeof v==='string'&&/^[-a-f0-9]{36}$/.test(v))||![row.admissionHash,row.descriptorHash,row.proof].every(v=>typeof v==='string'&&/^[a-f0-9]{64}$/.test(v))||row.status!=='accepted'&&row.value!==null||row.status==='accepted'&&(!row.value||typeof row.value!=='object'||Array.isArray(row.value))||signature(row)!==row.proof)fail();return row;}
+  return {async record(value){const row={...value,proof:signature(value)};valid(row);await storage.insert(row);return row;},async read(companyId,attemptId){const row=await storage.read(companyId,attemptId);return row?valid(row):null;}};
+}
+function memoryStorage(){const rows=new Map();return {synthetic:true,rows,async insert(row){const prior=rows.get(row.attemptId);if(prior&&canonicalHash(prior)!==canonicalHash(row))fail();rows.set(row.attemptId,structuredClone(row));},async read(companyId,id){const row=rows.get(id);if(row&&row.companyId!==companyId)fail();return row?structuredClone(row):null;}};}
+function nativeStorage(pool){return {synthetic:true,async insert(row){const result=await pool.query('INSERT INTO public.compat_billing_provider_facts(attempt_id,company_id,data,content_hash) VALUES($1,$2,$3::jsonb,$4) ON CONFLICT(attempt_id) DO UPDATE SET attempt_id=EXCLUDED.attempt_id WHERE compat_billing_provider_facts.company_id=EXCLUDED.company_id AND compat_billing_provider_facts.content_hash=EXCLUDED.content_hash RETURNING attempt_id',[row.attemptId,row.companyId,JSON.stringify(row),canonicalHash(row)]);if(result.rowCount!==1)fail();},async read(companyId,id){const result=await pool.query('SELECT data,content_hash FROM public.compat_billing_provider_facts WHERE attempt_id=$1 AND company_id=$2',[id,companyId]);if(result.rowCount!==1)return null;if(canonicalHash(result.rows[0].data)!==result.rows[0].content_hash)fail();return result.rows[0].data;}};}
+module.exports={createJournal,memoryStorage,nativeStorage};

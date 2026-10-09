@@ -55,7 +55,15 @@ class CompatTenantRepository {
     const { scalarData, records } = split(snapshot), hash = canonicalHash(snapshot);
     const payload = records.map(row => ({ collection: row.collection, record_key: row.recordKey, position: row.position, data: row.data }));
     return this.transaction(async client => {
+      // Stabilize the reviewed trigger contract through COMMIT. RowExclusive
+      // permits other tenant writers, but conflicts with trigger disable/DDL.
+      if (guard) await client.query('LOCK TABLE public.tenant_revisions IN ROW EXCLUSIVE MODE');
       const locked = await client.query('SELECT revision FROM public.tenant_revisions WHERE company_id=$1 FOR UPDATE', [this.companyId]);
+      if (guard) {
+        const contract = await client.query("SELECT EXISTS(SELECT 1 FROM pg_trigger WHERE tgname='compat_tenant_deadline' AND tgrelid='public.tenant_revisions'::regclass AND tgfoid='public.compat_tenant_deadline_guard()'::regprocedure AND tgdeferrable AND tginitdeferred AND tgenabled='O' AND tgtype=21 AND tgqual IS NULL AND tgnargs=0 AND tgattr=''::int2vector AND NOT tgisinternal) AS enabled");
+        if (contract.rows[0]?.enabled !== true) throw unavailable();
+        await client.query('SELECT set_config($1,$2,true)', ['app.compat_tenant_deadline',guard.deadline]);
+      }
       if (locked.rowCount !== 1) throw unavailable();
       if (Number(locked.rows[0].revision) !== expectedRevision) throw new RevisionConflictError(expectedRevision, Number(locked.rows[0].revision));
       // Evaluate deadline AFTER the actual database row lock. A blocked worker

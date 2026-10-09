@@ -13,7 +13,7 @@ permissions:
 jobs:
   account:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 45
     services:
       postgres:
         image: postgres:16
@@ -30,19 +30,30 @@ jobs:
     env:
       TEST_COMPAT_DATABASE_URL: postgresql://postgres:synthetic_compat_fixture@127.0.0.1:5432/compat_test
       PDL_COMPAT_BROWSER_EVIDENCE: compat-account-browser-evidence
+      NODE_ENV: test
       PDL_COMPAT_SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
           cache: npm
       - run: npm ci
       - run: node compat-account-postgres.test.js
+      - run: node compat-tenant-deadline-postgres.test.js
       - run: node compat-account-slice.test.js
       - run: node compat-lifecycle-postgres.test.js
       - run: node account-lifecycle.test.js
       - run: node compat-workspace-postgres.test.js
+      - run: node compat-platform-sink-postgres.test.js
+      - run: node compat-workspace-compliance-postgres.test.js
+      - run: node compat-workspace-dependencies.test.js
+      - run: node compat-workspace-policy-matrix.test.js
+      - run: node compat-workspace-reconciliation.test.js
+      - run: node compat-workspace-labor-exclusions.test.js
+      - run: node compat-workspace-main-parity.test.js
       - run: node compat-workspace-client.test.js
       - run: node compat-workspace-delivery.test.js
       - run: node compat-workspace.test.js
@@ -55,6 +66,11 @@ jobs:
       - run: node compat-lifecycle-browser.test.js
       - run: node compat-workspace-browser.test.js
       - run: node compat-workspace-browser.test.js --restricted-entry-only
+      - run: node compat-workspace-time-journeys.test.js
+      - run: node compat-workspace-work-journeys.test.js --group=scheduling
+      - run: node compat-workspace-work-journeys.test.js --group=notes
+      - run: node compat-workspace-work-journeys.test.js --group=daily
+      - run: node compat-workspace-recovery-browser.test.js
       - uses: actions/upload-artifact@v4
         if: always()
         with:

@@ -1,0 +1,33 @@
+'use strict';
+// This sink has independent storage and authority. It cannot edit a company or
+// a platform account. Only the legacy Assisted Setup order can be inserted.
+const {canonicalHash}=require('./database/transactional-repository');
+const fail=()=>{throw Object.assign(Error('Platform setup requires explicit reconciliation.'),{statusCode:409});};
+const fields=['companyId','companyName','subscriptionId','id','package'];
+function validate(value) {if(!value||Array.isArray(value)||Object.keys(value).length!==fields.length||Object.keys(value).some(k=>!fields.includes(k))||!/^[-a-f0-9]{36}$/.test(value.companyId)||typeof value.companyName!=='string'||value.companyName.length>500||!/^sub_[a-zA-Z0-9_]{1,100}$/.test(value.subscriptionId)||value.id!=='assisted-setup-'+value.subscriptionId||value.package!=='Assisted Setup')fail();}
+function order(value,at) {validate(value);return {id:value.id,companyId:value.companyId,companyName:value.companyName,package:'Assisted Setup',status:'Paid - scheduling needed',owner:'Unassigned',dueDate:'',notes:'$499 paid with founder checkout. Includes one 90-minute remote session for one project/crew and a 30-minute follow-up within 14 days. No travel or extensive data entry.',tasks:[{name:'Schedule setup session',done:false},{name:'Complete setup and training',done:false},{name:'Complete follow-up',done:false}],createdAt:at};}
+function receipt(value, row) {if(!row)return null;if(!row.receipt||row.companyId!==value.companyId||row.sourceHash!==canonicalHash(value)||Object.keys(row.receipt).sort().join(',')!=='companyId,id,sourceHash,status,subscriptionId'||row.receipt.id!==value.id||row.receipt.companyId!==value.companyId||row.receipt.subscriptionId!==value.subscriptionId||row.receipt.sourceHash!==canonicalHash(value)||row.receipt.status!=='accepted')fail();return structuredClone(row.receipt);}
+function createSink(storage) {
+  if(process.env.NODE_ENV!=='test'||process.env.PDL_COMPAT_ACCOUNT_SYNTHETIC!=='1'||storage.synthetic!==true||typeof storage.ensure!=='function')throw Error('Explicit independent synthetic platform storage required.');
+  return {async read(value) {validate(value);if(typeof storage.read!=='function')fail();return receipt(value,await storage.read(value.id));},async ensure(value,guard) {validate(value);if(!guard||guard.idempotencyKey!==value.id||typeof guard.assertCurrent!=='function'||!Number.isFinite(Date.parse(guard.deadline)))fail();await guard.assertCurrent();const saved=await storage.ensure(structuredClone(value),order(value,new Date().toISOString()),{deadline:guard.deadline,idempotencyKey:guard.idempotencyKey,sourceHash:canonicalHash(value),assertCurrent:guard.assertCurrent});await guard.assertCurrent();return receipt(value,{companyId:value.companyId,sourceHash:canonicalHash(value),receipt:saved});}};
+}
+function memoryStorage() {
+  const rows=new Map();let tail=Promise.resolve();
+  return {synthetic:true,rows,async read(id){return structuredClone(rows.get(id)||null);},ensure(value,created,guard) {const task=tail.then(async()=>{await guard.assertCurrent();if(Date.parse(guard.deadline)<=Date.now())fail();const previous=rows.get(value.id);if(previous){if(previous.sourceHash!==guard.sourceHash||previous.companyId!==value.companyId)fail();return structuredClone(previous.receipt);}
+      const receipt={id:value.id,companyId:value.companyId,subscriptionId:value.subscriptionId,sourceHash:guard.sourceHash,status:'accepted'};rows.set(value.id,{companyId:value.companyId,sourceHash:guard.sourceHash,order:created,receipt});return receipt;});tail=task.catch(()=>{});return task;}};
+}
+function nativeStorage(pool) {
+  // The owning fixture creates this dedicated synthetic table. There is no
+  // production schema initializer or platform-file fallback in this adapter.
+  return {synthetic:true,async read(id){const result=await pool.query('SELECT company_id,source_hash,receipt FROM public.compat_assisted_setup_receipts WHERE id=$1',[id]);if(!result.rowCount)return null;if(result.rowCount!==1)fail();const row=result.rows[0];return {companyId:row.company_id,sourceHash:row.source_hash,receipt:row.receipt};},async ensure(value,created,guard) {const client=await pool.connect();try{await client.query('BEGIN');await client.query('SELECT set_config($1,$2,true)',['app.company_id',value.companyId]);await client.query('SELECT set_config($1,$2,true)',['app.compat_platform_deadline',guard.deadline]);
+      await client.query('LOCK TABLE public.compat_assisted_setup_receipts IN ROW EXCLUSIVE MODE');
+      const schema=await client.query("SELECT 1 FROM pg_trigger WHERE tgrelid='public.compat_assisted_setup_receipts'::regclass AND tgname='compat_assisted_setup_deadline' AND tgfoid='public.compat_assisted_setup_deadline_guard()'::regprocedure AND tgdeferrable AND tginitdeferred AND tgenabled='O' AND tgtype=21 AND tgqual IS NULL AND tgnargs=0 AND tgattr=''::int2vector AND NOT tgisinternal");if(schema.rowCount!==1)fail();await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1,0))',[value.id]);
+      // Keep the selected tenant stable until this independent effect commits.
+      // Tenant writers acquire FOR UPDATE on this row. A guard read on another
+      // connection alone cannot prevent revocation between validation and INSERT.
+      const locked=await client.query('SELECT revision FROM public.tenant_revisions WHERE company_id=$1 FOR SHARE',[value.companyId]);if(locked.rowCount!==1)fail();await guard.assertCurrent();
+      const deadline=async()=>{const time=await client.query('SELECT clock_timestamp() < $1::timestamptz AS current',[guard.deadline]);if(time.rows[0].current!==true)fail();};await deadline();const previous=await client.query('SELECT company_id,source_hash,receipt FROM public.compat_assisted_setup_receipts WHERE id=$1',[value.id]);if(previous.rowCount){const row=previous.rows[0];if(row.company_id!==value.companyId||row.source_hash!==guard.sourceHash)fail();await deadline();await client.query('COMMIT');return row.receipt;}
+      const receipt={id:value.id,companyId:value.companyId,subscriptionId:value.subscriptionId,sourceHash:guard.sourceHash,status:'accepted'};await client.query('INSERT INTO public.compat_assisted_setup_receipts(id,company_id,source_hash,order_data,receipt) VALUES($1,$2,$3,$4::jsonb,$5::jsonb)',[value.id,value.companyId,guard.sourceHash,JSON.stringify(created),JSON.stringify(receipt)]);await deadline();await client.query('COMMIT');return receipt;
+    }catch(error){await client.query('ROLLBACK').catch(()=>{});if(error.code==='23514')fail();throw error;}finally{client.release();}}};
+}
+module.exports={createSink,memoryStorage,nativeStorage,validate,order};

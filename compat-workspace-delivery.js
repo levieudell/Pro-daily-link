@@ -35,7 +35,7 @@ function createCompliance({ repository, companyId, requirements, send, authentic
   function valid(db) {
     validateAccounts(db); validateWorkspace(db);
     const values = db[jobs] === undefined ? [] : db[jobs], seen = new Set();
-    if (!Array.isArray(values) || values.length > 50000) fail();
+    if (!Array.isArray(values) || values.length > 50000 || Buffer.byteLength(JSON.stringify(values))>5000000) fail();
     for (const row of values) {
       const fields = ['id','companyId','purpose','actorId','sessionHash','actorBinding','generation','sourceHash','source','status','createdAt','expiresAt','proof', ...(Object.hasOwn(row || {}, 'attemptId') ? ['attemptId'] : []), ...(Object.hasOwn(row || {}, 'finishedAt') ? ['finishedAt'] : [])];
       if (!object(row, fields) || !uuid(row.id) || seen.has(row.id) || row.companyId !== companyId || row.purpose !== purpose || !Number.isSafeInteger(row.actorId) || row.actorId < 1 || ![row.sessionHash,row.actorBinding,row.generation,row.sourceHash,row.proof].every(hash) || !['queued','sending','sent','uncertain','rejected','cancelled'].includes(row.status) || !Number.isFinite(Date.parse(row.createdAt)) || !Number.isFinite(Date.parse(row.expiresAt)) || Date.parse(row.expiresAt) <= Date.parse(row.createdAt) || Date.parse(row.expiresAt) > Date.parse(row.createdAt) + 10 * 60000 || row.attemptId !== undefined && !uuid(row.attemptId) || row.finishedAt !== undefined && !Number.isFinite(Date.parse(row.finishedAt)) || row.status === 'queued' && (row.attemptId !== undefined || row.finishedAt !== undefined) || ['sending','sent','uncertain','rejected'].includes(row.status) && !row.attemptId || !crypto.timingSafeEqual(Buffer.from(row.proof, 'hex'), Buffer.from(proof(row), 'hex'))) fail();
@@ -55,11 +55,14 @@ function createCompliance({ repository, companyId, requirements, send, authentic
     if(!actor||!['owner','admin','project_manager'].includes(actor.user.role)||actor.companyId!==companyId||actorBinding(db,actor)!==actorBinding(db,req.auth)||Date.parse(actor.session.expiresAt)<=clock()||accountAccess(db.company).locked)fail();
     for (const sub of db.subcontractors || []) {
       const source = descriptor(db, sub, requirements, at); if (!source) continue; validateDescriptor(source, companyId);
+      // A changed recipient or requirement must not manufacture a new retry
+      // while an earlier attempt for this subcontractor has an unknown result.
+      if(ledger.some(row=>row.source.subcontractorId===sub.id&&['sending','uncertain'].includes(row.status)))continue;
       const sourceGeneration = generation(source);
       if (ledger.some(row => row.generation === sourceGeneration && !['cancelled','rejected'].includes(row.status))) continue;
       ledger.push(sign({ id: crypto.randomUUID(), companyId, purpose, actorId: req.auth.user.id, sessionHash: req.auth.session.tokenHash, actorBinding: actorBinding(db, req.auth), generation: sourceGeneration, sourceHash: canonicalHash(source), source, status: 'queued', createdAt: at.toISOString(), expiresAt: new Date(Math.min(+at + 10 * 60000, Date.parse(req.auth.session.expiresAt))).toISOString() })); changed = true;
     }
-    if (changed) db[jobs] = ledger; return changed;
+    if (changed) db[jobs] = ledger;valid(db);return changed;
   }
   async function load(expected) { const loaded = await repository.load(companyId); if (!loaded || loaded.snapshot?.company?.id !== companyId || loaded.contentHash !== canonicalHash(loaded.snapshot) || expected && (loaded.revision !== expected.revision || loaded.contentHash !== expected.contentHash)) fail(); valid(loaded.snapshot); return loaded; }
   async function commit(db, revision, guard) { const result = await repository.commit(db, revision, guard); if (result.revision !== revision + 1 || result.contentHash !== canonicalHash(db)) fail(); return result; }
@@ -89,4 +92,4 @@ function createCompliance({ repository, companyId, requirements, send, authentic
   }
   return { stage, dispatch, valid };
 }
-module.exports = { createCompliance, descriptor, validateDescriptor, jobs };
+module.exports = { createCompliance, descriptor, validateDescriptor, jobs, actorBinding };

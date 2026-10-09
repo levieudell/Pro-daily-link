@@ -15,7 +15,7 @@ if(typeof module!=='undefined'&&module.exports)module.exports={projectNoteEscape
 else {
   let sequence=0,active=null,identity='';
   function context(){return JSON.stringify([signedInCompanyId(),company?.id,currentUser?.id,currentUser?.role,currentUser?.memberId,currentUser?.projectIds,currentUser?.permissions,currentRole])}
-  function permitted(){return Boolean(currentUser?.id&&['owner','admin','project_manager','foreman','field'].includes(currentUser.role))}
+  function permitted(){return Boolean(currentUser?.id&&['owner','admin','project_manager','foreman','field'].includes(currentUser.role)&&(!window.pdlWorkspaceActions?.enabled()||currentUser.effectiveCapabilities?.notes?.view===true))}
   function clear(){sequence++;$('#project-detail-content')?.classList.remove('project-notes-active');if(active){active.controller?.abort();active.pane?.remove();active.tab?.remove();active.items=[];active.editor=null}active=null}
   function leaveProject(){clear();const dialog=$('#project-detail-modal');if(dialog?.open)dialog.close()}
   function current(state){return Boolean(active===state&&state.sequence===sequence&&state.identity===context()&&permitted()&&$('#project-detail-modal')?.open&&state.pane?.isConnected)}

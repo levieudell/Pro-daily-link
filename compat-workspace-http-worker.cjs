@@ -5,17 +5,25 @@ const { A } = require('./compat-account-fixture'), { services } = require('./com
 const repository = new CompatTenantRepository({ connectionString: process.env.TEST_COMPAT_DATABASE_URL, companyId: A, synthetic: true });
 const key = fs.readFileSync(process.env.TEST_COMPAT_LIFECYCLE_KEY_FILE); if (key.length !== 32) throw Error('Synthetic worker key required');
 let heldCommit = false, releaseCommit, loseAck = false, holdFinal = false, loadCount = 0, releaseFinal;
+let effectCount=0,holdEffect=false,releaseEffect,effectOutcome='accepted';
+async function fakeSend(){effectCount++;if(holdEffect){process.send({event:'effect-held',count:effectCount});await new Promise(resolve=>{releaseEffect=resolve;});holdEffect=false;}return {status:effectOutcome};}
+const sinkModule=require('./compat-workspace-platform-sink'),facts=require('./compat-workspace-billing-journal');
+const billingProvider=require('./compat-workspace-synthetic-provider').createProvider({readCompany:async()=>(await repository.load(A)).snapshot.company,onAttempt:fakeSend});
 const store = {
   async load(id) { loadCount++; if (holdFinal && loadCount === 2) { process.send({ event: 'final-held' }); await new Promise(resolve => { releaseFinal = resolve; }); holdFinal = false; } return repository.load(id); },
   async commit(...args) { if (heldCommit) { process.send({ event: 'commit-held' }); await new Promise(resolve => { releaseCommit = resolve; }); heldCommit = false; } const result = await repository.commit(...args); if (loseAck) { loseAck = false; throw Object.assign(Error('Synthetic lost COMMIT acknowledgement'), { code: 'PDL_COMMIT_OUTCOME_UNKNOWN', statusCode: 503 }); } return result; }
 };
 const { server, installCompatibilityAccountTests } = require('./server'); let uninstall;
-server.listen(0, '127.0.0.1', () => { const origin = 'http://127.0.0.1:' + server.address().port; const fixture = services(store, process.env.TEST_COMPAT_LIFECYCLE_ORIGIN || origin, { key }); uninstall = installCompatibilityAccountTests({ synthetic: true, companyId: A, origin: process.env.TEST_COMPAT_LIFECYCLE_ORIGIN || origin, globalOrigin: 'http://localhost:4999', repository: store, ...fixture, workspace:true, workspaceKey:key }); process.send({ event: 'ready', origin }); });
+server.listen(0, '127.0.0.1', () => { const origin = 'http://127.0.0.1:' + server.address().port; const fixture = services(store, process.env.TEST_COMPAT_LIFECYCLE_ORIGIN || origin, { key }); uninstall = installCompatibilityAccountTests({ synthetic: true, companyId: A, origin: process.env.TEST_COMPAT_LIFECYCLE_ORIGIN || origin, globalOrigin: 'http://localhost:4999', repository: store, ...fixture, workspace:true, workspaceKey:key,assignmentSend:fakeSend,complianceSend:fakeSend,billingProvider,billingPlatformSink:sinkModule.createSink(sinkModule.nativeStorage(repository.pool)),billingJournal:facts.createJournal(facts.nativeStorage(repository.pool),key) }); process.send({ event: 'ready', origin }); });
 process.on('message', async message => {
   if (message.event === 'hold-commit') { heldCommit = true; process.send({ event: 'armed' }); }
   if (message.event === 'release-commit') releaseCommit?.();
   if (message.event === 'hold-final') { holdFinal = true; loadCount = 0; process.send({ event: 'armed' }); }
   if (message.event === 'release-final') releaseFinal?.();
   if (message.event === 'lose-ack') { loseAck = true; process.send({ event: 'armed' }); }
+  if(message.event==='hold-effect'){holdEffect=true;process.send({event:'armed'});}
+  if(message.event==='release-effect')releaseEffect?.();
+  if(message.event==='effect-outcome'){effectOutcome=message.status;process.send({event:'armed'});}
+  if(message.event==='effect-count')process.send({event:'effect-count',count:effectCount});
   if (message.event === 'close') { uninstall?.(); server.close(async () => { await repository.close(); process.disconnect(); }); }
 });

@@ -116,13 +116,13 @@ function createRuntime(options) {
       const request = url.pathname === '/api/auth/login' ? { ...req, headers: { ...req.headers, cookie: '', authorization: 'Bearer ' + context.response.data.token } } : req;
       const { auth } = hooks.authenticate(request, current.snapshot);
       if (!auth || !expires(auth.session.expiresAt, Number(clock()))) throw Object.assign(unavailable(), { statusCode: 401, code: 'PDL_COMPAT_RESPONSE_EXPIRED' });
-      if (!['/api/auth/me', '/api/auth/login', '/api/account-access', ...(workspace ? ['/api/billing','/api/workspace-identity'] : [])].includes(url.pathname) && hooks.accountAccess(current.snapshot.company).locked) throw Object.assign(unavailable(), { statusCode: 402, code: 'PDL_COMPAT_RESPONSE_LOCKED' });
+      if (!['/api/auth/me', '/api/auth/login', '/api/account-access', ...(workspace ? ['/api/billing','/api/billing/recover','/api/workspace-identity'] : [])].includes(url.pathname) && hooks.accountAccess(current.snapshot.company).locked) throw Object.assign(unavailable(), { statusCode: 402, code: 'PDL_COMPAT_RESPONSE_LOCKED' });
       if (url.pathname === '/api/account-access') context.response.data = hooks.accountAccess(current.snapshot.company);
       if (lifecycle && ['/api/auth/me', '/api/auth/login'].includes(url.pathname)) {
         context.response.data = { ...context.response.data, preferences: require('./account-evidence').publicPreferences(auth.user), ...Object.fromEntries(require('./capability-registry').families.map(([, , , field]) => [field, auth.user[field]])), accountSessionBinding: lifecycle.sessionBinding(auth) };
       }
       if (context.accountReturn) lifecycle.deliver(context, current.snapshot, auth);
-      if(workspace){const identity=require('./compat-workspace-authority').authority(current.snapshot,auth,current.revision,lifecycle,hooks.accountAccess);res.setHeader('X-PDL-Workspace-Revision',String(identity.revision));res.setHeader('X-PDL-Workspace-Authority',identity.authority);if(url.pathname==='/api/workspace-identity')context.response.data=identity;}
+      if(workspace){const identity=require('./compat-workspace-authority').authority(current.snapshot,auth,current.revision,lifecycle,hooks.accountAccess);res.setHeader('X-PDL-Workspace-Revision',String(identity.revision));res.setHeader('X-PDL-Workspace-Authority',identity.authority);if(context.workspaceReconciliationFrom)res.setHeader('X-PDL-Workspace-Reconciled-From',context.workspaceReconciliationFrom);if(url.pathname==='/api/workspace-identity')context.response.data=identity;}
     }
     // All responses, including generic state/user DTOs, omit private custody.
     if (!Object.hasOwn(context.response,'raw')) context.response.data = stripPrivate(context.response.data);

@@ -20,6 +20,7 @@
       if(id(projectId)==null)return;
       const byMember=new Map();
       for(const entry of report.laborEntries||[]){const memberId=id(entry.memberId),hours=Number(entry.hours);if(memberId!=null&&Number.isFinite(hours))byMember.set(memberId,(byMember.get(memberId)||0)+hours)}
+      for(const excluded of report.laborExclusions||[]){const memberId=id(excluded.memberId);if(memberId==null)continue;const total=byMember.get(memberId);if(total==null)continue;byMember.set(memberId,Math.max(0,total-Math.min(Number(excluded.hours)||total,total)))}
       for(const [memberId,hours] of byMember){
         const group=groups.get(key(report.dateIso,projectId,memberId));if(!group)continue;
         const reportKey=id(report.id)==null?'row:'+index:'id:'+id(report.id),evidenceKey=JSON.stringify([reportKey,memberId]);
