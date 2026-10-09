@@ -632,3 +632,8 @@ dialog[open]{animation:pdl-dialog-in .24s cubic-bezier(.2,.7,.3,1)}
 .repeat-week-skip-row small{display:block;color:var(--muted);font-size:9px}
 .repeat-week-skip-row .skip-reason{color:var(--red);font-weight:700}
 .repeat-week-skip-row button{white-space:nowrap}
+/* Day action + mark off */
+.day-action-buttons{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:12px 0 4px}
+.mark-off-paid{border:1px solid var(--line);border-radius:8px;padding:10px 12px;margin:10px 0}
+.mark-off-paid legend{font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);padding:0 4px}
+@media(max-width:600px){.day-action-buttons{grid-template-columns:1fr}}

@@ -1203,6 +1203,26 @@ async function api(req,res,url){
     if(process.env.RESEND_API_KEY&&recipients.length)await Promise.all(recipients.map(async user=>{try{await sendAssignmentEmail({to:user.email,name:user.name,companyName:db.company.name,projectName:project.name,assignments:created});for(const row of created)row.notifications[user.memberId].emailStatus='sent'}catch(error){for(const row of created)row.notifications[user.memberId].emailStatus='failed';console.error('Assignment notification email failed',error.message)}}));
     writeDb(db);return json(res,201,created.length===1?created[0]:{assignments:created});
   }
+  if(req.method==='POST'&&url.pathname==='/api/schedule/mark-off'){
+    const input=await body(req),db=readDb(),user=req.auth?.user;
+    if(process.env.PDL_REQUIRE_AUTH==='1'&&!['owner','admin'].includes(user?.role)&&!(user?.role==='project_manager'&&user?.permissions?.scheduleCrews===true))return json(res,403,{error:'Office permission required'});
+    const member=db.team.find(m=>m.id===Number(input.memberId));
+    if(!member||!scheduleAvailability.validDate(input.date))return json(res,400,{error:'Choose a person and a valid date'});
+    if(user?.role==='project_manager'&&!managerScope(db,user).memberIds.has(Number(member.id)))return json(res,403,{error:'You can only mark off your assigned crews'});
+    const reasonLabels={sick:'Called in sick',personal:'Personal day',no_work:'No work',other:'Other'};
+    const reasonKey=Object.hasOwn(reasonLabels,input.reason)?input.reason:'other';
+    const detail=String(input.note||'').trim().slice(0,500);
+    const note=`${reasonLabels[reasonKey]}${detail?` — ${detail}`:''}`.slice(0,500);
+    const paid=input.paid!==false;
+    const type=!paid?'unpaid':reasonKey==='sick'?'sick':reasonKey==='personal'?'vacation':'other';
+    db.timeOffRequests ||= [];
+    const approvedRows=scheduleAvailability.approved(db.timeOffRequests,[Number(member.id)]);
+    if(scheduleAvailability.onDate(approvedRows,Number(member.id),input.date))return json(res,409,{error:`${member.name} already has approved time off on that date`});
+    const now=new Date().toISOString(),row={id:crypto.randomUUID(),memberId:Number(member.id),startDate:input.date,endDate:input.date,allDay:true,type,note,status:'approved',requestedAt:now,reviewedAt:now,reviewedBy:user?.name||'Office',history:[{action:'Marked off',by:user?.name||'Office',at:now,note}]};
+    db.timeOffRequests.unshift(row);writeDb(db);
+    const overlapping=(db.assignments||[]).filter(a=>a.date===input.date&&(a.memberIds||[]).map(Number).includes(Number(member.id)));
+    return json(res,201,{row,overlapping:overlapping.length});
+  }
   if(req.method==='POST'&&url.pathname==='/api/schedule/repeat-week'){
     const input=await body(req),db=readDb(),user=req.auth?.user;
     if(process.env.PDL_REQUIRE_AUTH==='1'&&!['owner','admin'].includes(user?.role)&&!(user?.role==='project_manager'&&user?.permissions?.scheduleCrews===true))return json(res,403,{error:'Office permission required'});
