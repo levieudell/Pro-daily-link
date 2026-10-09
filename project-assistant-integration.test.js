@@ -6,7 +6,7 @@ const {fixture,companyA,companyB,token}=require('./fixtures/project-assistant');
 const {createProjectAssistantHandler}=require('./project-assistant');
 const source=fs.readFileSync('server.js','utf8'),start=source.indexOf('function authenticateRequestAccount('),end=source.indexOf('function projectNotesUser(',start);
 assert.ok(start>=0&&end>start);
-const context={crypto,bearer:req=>req.token,cookie:()=>null};vm.createContext(context);vm.runInContext(source.slice(start,end),context);
+const context={crypto,bearer:req=>req.token,cookie:()=>null,compatibilityAccountRuntime:null};vm.createContext(context);vm.runInContext(source.slice(start,end),context);
 const authenticate=context.authenticateRequestAccount;
 const single={action:'schedule',memberId:11,date:'2098-10-12',start:'08:00',end:'16:00',timezone:'America/Los_Angeles',activity:'Frame',instructions:'Check layout'};
 const batch={action:'schedule_batch',memberIds:[11,12],startDate:'2098-10-12',endDate:'2098-10-13',weekdays:[0,1,2,3,4,5,6],start:'08:00',end:'16:00',timezone:'America/Los_Angeles',activity:'Frame',instructions:'Check layout each day'};
@@ -18,6 +18,7 @@ async function main(){
   const stale={token:token(companyA,2),auth:{user:{role:'owner'}}};assert.equal(authenticate(stale,db).auth.user.role,'project_manager');assert.equal(stale.auth.user.id,2,'fresh authenticated actor replaces inherited authority');
   for(const change of [current=>current.users.find(row=>row.id===2).status='Inactive',current=>current.sessions.find(row=>row.userId===2).expiresAt='2000-01-01']){const current=fixture();change(current);const req={token:token(companyA,2),auth:{user:{role:'owner'}}};assert.equal(authenticate(req,current).status,401);assert.equal(req.auth,null);}
   const foreign=fixture();foreign.sessions.find(row=>row.userId===2).companyId=companyB;const foreignReq={token:token(companyA,2),auth:{user:{role:'owner'}}};assert.equal(authenticate(foreignReq,foreign).status,404);assert.equal(foreignReq.auth,null);
+  const assembled=fixture();context.compatibilityAccountRuntime={companyId:companyA,actor:(_db,user)=>({...user,schedulingAccess:{view:true,create:false,edit:false,remove:false,acknowledge:false}})};const effective=authenticate({token:token(companyA,2)},assembled).auth.user;assert.equal(effective.permissions.scheduleCrews,true);assert.equal(effective.schedulingAccess.create,false,'typed restrictions assembled before req.auth');context.compatibilityAccountRuntime=null;
   const legacy=fixture();legacy.users.find(row=>row.id===2).role='office';assert.equal(authenticate({token:token(companyA,2)},legacy).auth.user.role,'admin');
   for(const proposal of [single,batch]){
     db=fixture();writes=0;restrict=user=>user;const preview=(await call('preview',proposal)).data,confirmation={token:preview.token,version:preview.version,confirmed:true};assert.ok(preview.token);

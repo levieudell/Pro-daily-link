@@ -1,5 +1,6 @@
 const fs = require('node:fs');
 const path = require('node:path');
+const compatibilityBoundary = require('./compat-account-boundary');
 
 function loadLocalEnv(root) {
   const file = path.join(root, '.env.local');
@@ -27,12 +28,13 @@ function headers(extra = {}) {
 }
 
 async function request(relativePath, options = {}) {
+  compatibilityBoundary.adapterRequest(relativePath, options);
   const response = await fetch(`${process.env.SUPABASE_URL}${relativePath}`, {
     ...options,
     headers: headers(options.headers)
   });
   if (!response.ok) throw new Error(`Supabase request failed (${response.status}): ${(await response.text()).slice(0, 300)}`);
-  return response;
+  return compatibilityBoundary.adapterResponse(relativePath, response, options);
 }
 
 async function upload(bucket, objectKey, bytes, contentType) {
@@ -66,6 +68,7 @@ async function download(bucket, objectKey) {
 }
 
 async function loadCompanySnapshot(companyId) {
+  compatibilityBoundary.assertLegacy(companyId);
   if (!configured()) return null;
   const response = await request(`/rest/v1/companies?id=eq.${encodeURIComponent(companyId)}&select=data&limit=1`);
   const rows = await response.json();
@@ -73,6 +76,7 @@ async function loadCompanySnapshot(companyId) {
 }
 
 async function saveCompanySnapshot(snapshot) {
+  compatibilityBoundary.assertLegacySnapshot(snapshot);
   if (!configured()) return false;
   const id = snapshot.company.id;
   await request('/rest/v1/companies?on_conflict=id', {

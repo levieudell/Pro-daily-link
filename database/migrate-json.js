@@ -28,6 +28,8 @@ function roleFor(value) {
 }
 
 function buildTenantSnapshot(source) {
+  require('../compat-account-boundary').assertLegacySnapshot(source);
+  require('../compat-account-boundary').assertLegacy(stableUuid('company', source.company.id));
   const companyId = stableUuid('company', source.company.id);
   const idFor = (table, id) => stableUuid(`${source.company.id}:${table}`, id);
   const projectId = id => idFor('projects', id);
@@ -94,6 +96,7 @@ async function countRows(baseUrl, secretKey, table, companyId) {
 }
 
 async function applySnapshot(snapshot, env) {
+  require('../compat-account-boundary').assertLegacySnapshot(snapshot);
   const order = ['company', 'users', 'memberships', 'customers', 'projects', 'team_members', 'subcontractors', 'reports', 'assignments', 'photos', 'workdays', 'changes'];
   for (const key of order) await upsert(env.SUPABASE_URL, env.SUPABASE_SECRET_KEY, key === 'company' ? 'companies' : key, key === 'company' ? [snapshot.company] : snapshot[key]);
   const reconciliation = {};
