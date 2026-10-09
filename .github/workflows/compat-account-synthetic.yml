@@ -1,0 +1,53 @@
+name: Compatibility account synthetic proof
+on:
+  pull_request:
+    paths:
+      - '**.js'
+      - '**.cjs'
+      - 'database/*.sql'
+      - 'package*.json'
+      - '.github/workflows/compat-account-synthetic.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  account:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: synthetic_compat_fixture
+          POSTGRES_DB: compat_test
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      TEST_COMPAT_DATABASE_URL: postgresql://postgres:synthetic_compat_fixture@127.0.0.1:5432/compat_test
+      PDL_COMPAT_BROWSER_EVIDENCE: compat-account-browser-evidence
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - run: node compat-account-postgres.test.js
+      - run: node compat-account-slice.test.js
+      - name: Install isolated browser test dependency
+        run: |
+          npm install --prefix "$RUNNER_TEMP/compat-browser" --no-save --ignore-scripts playwright@1.63.0
+          "$RUNNER_TEMP/compat-browser/node_modules/.bin/playwright" install --with-deps chromium
+          echo "PLAYWRIGHT_MODULE=$RUNNER_TEMP/compat-browser/node_modules/playwright" >> "$GITHUB_ENV"
+      - run: node compat-account-browser.test.js
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: compat-account-browser-evidence
+          path: compat-account-browser-evidence
+          if-no-files-found: error
