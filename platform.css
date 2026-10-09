@@ -26,3 +26,15 @@
 @media(max-width:1300px){.company-filters{grid-template-columns:repeat(4,minmax(0,1fr))}.company-filters .company-search{grid-column:span 2}.company-filters>button{align-self:end}}
 @media(max-width:800px){.account-context{align-items:start;flex-direction:column}#view-title{scroll-margin-top:145px}}
 @media(max-width:560px){.company-filters{grid-template-columns:repeat(2,minmax(0,1fr))}.company-filters .company-search{grid-column:1/-1}.company-filters>button{grid-column:1/-1}.account-shortcuts .small,.account-actions .small{flex:1 1 auto}.customer-card .account-shortcuts,.customer-card .account-actions{margin-right:0}.customer-card{align-items:start}.customer-card>.health{align-self:start}}
+
+/* One Actions menu per customer card keeps the scan surface clean. */
+.account-menu{position:relative;display:inline-block;margin-top:10px}
+.account-menu>summary{list-style:none;display:inline-flex;align-items:center;gap:6px}
+.account-menu>summary::-webkit-details-marker{display:none}
+.account-menu>summary::after{content:"\25BE";font-size:11px}
+.account-menu[open]>summary::after{content:"\25B4"}
+.account-menu-panel{position:absolute;right:0;top:calc(100% + 6px);z-index:30;display:grid;gap:2px;min-width:240px;padding:8px;background:#fff;border:1px solid #d7d4cc;border-radius:10px;box-shadow:0 12px 32px #11141626}
+.account-menu-section{display:grid;gap:4px;padding:4px}
+.account-menu-section+.account-menu-section{border-top:1px solid #eee}
+.account-menu-panel .small{width:100%;text-align:left}
+@media(max-width:560px){.account-menu-panel{right:auto;left:0;min-width:210px}}
