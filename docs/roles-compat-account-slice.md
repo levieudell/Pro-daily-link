@@ -1,5 +1,7 @@
 # In-place compatibility account source slice
 
+This document records the earlier PR134 checkpoint. The later account lifecycle extension and its current acceptance evidence are described in [roles-account-lifecycle.md](roles-account-lifecycle.md); the unimplemented-route statements below remain historical to PR134.
+
 Isolated draft based on main `bdbdfe9a8b038d3dbc32327c58f5a529dbe71225`. All prior Roles, profile, entry, Assistant and employee archive drafts remain separate. No production schema, credential, grant, account, setting, email, provider, data, activation, migration, merge or deployment change.
 
 ## Actual code milestone

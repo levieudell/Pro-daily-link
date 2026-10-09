@@ -10,7 +10,7 @@ const fail = (status, message) => plan.fail(status, message);
 function privateRows(db, name) { const value = db[name] === undefined ? [] : db[name]; if (!Array.isArray(value)) fail(409, 'Account operation history needs reconciliation'); return value; }
 const sessionBinding = auth => canonicalHash({ id: auth.session.id, hash: auth.session.tokenHash, userId: auth.user.id, companyId: auth.companyId });
 function authorityState(db) { const copy = structuredClone(db); delete copy.accountActionPreviews; delete copy.accountActionReceipts; delete copy.accountSecretEnvelopes; return canonicalHash(copy); }
-function impact(result) { const sanitize = value => value ? { ...value, setupExpiresAt: null } : null; return { before: sanitize(result.before), after: sanitize(result.after), manualTemporaryPassword: Boolean(result.temporaryPassword), expiresAfterHours: result.temporaryPassword ? 72 : null }; }
+function impact(result, credentialRevocations) { const sanitize = value => value ? { ...value, setupExpiresAt: null } : null; return { credentialRevocations, before: sanitize(result.before), after: sanitize(result.after), manualTemporaryPassword: Boolean(result.temporaryPassword), expiresAfterHours: result.temporaryPassword ? 72 : null }; }
 function createAccountLifecycle({ credentials, secretRecovery, proofKey, proofVersion = 'synthetic-review-v1', clock = Date.now }) {
   if (!Buffer.isBuffer(proofKey) || proofKey.length !== 32) fail(503, 'Account review proof is unavailable');
   if (!/^[A-Za-z0-9_-]{1,64}$/.test(proofVersion)) fail(503, 'Account review version is unavailable');
@@ -26,6 +26,7 @@ function createAccountLifecycle({ credentials, secretRecovery, proofKey, proofVe
     }
     return values;
   }
+  const revocations = (db, targetId) => ({ manualPasswordRecovery: secretRecovery.invalidationImpact(db, targetId), ...credentials.invalidationImpact(db, targetId) });
   async function handle(req, res, url, context, hooks) {
     const db = context.db, json = (status, data) => hooks.json(res, status, data), input = req.method === 'GET' ? {} : await hooks.body(req);
     const now = Number(clock()), apiPath = url.pathname;
@@ -63,7 +64,7 @@ function createAccountLifecycle({ credentials, secretRecovery, proofKey, proofVe
       plan.closed(input, ['method', 'path', 'input', 'reason', 'operationId']);
       const op = accountOperation(input.method, input.path); if (!op || op.action === 'preferences' || !uuid(input.operationId) || typeof input.reason !== 'string' || input.reason.trim().length < 8 || input.reason.length > 500) fail(400, 'Choose a supported account action and explain the change');
       if (records(db, 'accountActionPreviews').some(row => row.operationId === input.operationId) || records(db, 'accountActionReceipts').some(row => row.operationId === input.operationId)) fail(409, 'This account operation already exists; check its original result');
-      const simulated = structuredClone(db), result = plan.apply(simulated, auth, op, input.input, { clock, credentialHash: hooks.credentialHash, billingPlan: hooks.billingPlan }, () => 'Preview0'), currentImpact = impact(result);
+      const simulated = structuredClone(db), result = plan.apply(simulated, auth, op, input.input, { clock, credentialHash: hooks.credentialHash, billingPlan: hooks.billingPlan }, () => 'Preview0'), currentImpact = impact(result, revocations(db, result.targetId));
       const record = { id: crypto.randomUUID(), companyId: db.company.id, ownerId: auth.user.id, sessionBinding: sessionBinding(auth), operationId: input.operationId, operation: op, input: result.normalized, reason: input.reason.trim(), impact: currentImpact, impactHash: canonicalHash(currentImpact), authorityHash: authorityState(db), expectedRevision: context.transactionalRevision + 1, expiresAt: new Date(Math.min(now + 15 * 60000, Date.parse(auth.session.expiresAt))).toISOString() };
       db.accountActionPreviews = [...records(db, 'accountActionPreviews'), sign(record)]; hooks.stage(context, db); return json(200, { previewId: record.id, operationId: record.operationId, expectedRevision: record.expectedRevision, expiresAt: record.expiresAt, impact: currentImpact, reason: record.reason });
     }
@@ -75,11 +76,12 @@ function createAccountLifecycle({ credentials, secretRecovery, proofKey, proofVe
       const matches = records(db, 'accountActionPreviews').filter(row => row.id === input.previewId); if (matches.length !== 1) fail(409, 'Account preview needs reconciliation'); const preview = matches[0];
       if (preview.companyId !== db.company.id || preview.ownerId !== auth.user.id || preview.sessionBinding !== sessionBinding(auth) || preview.operationId !== input.operationId || preview.expectedRevision !== input.expectedRevision || preview.expectedRevision !== context.transactionalRevision || preview.authorityHash !== authorityState(db) || !Number.isFinite(Date.parse(preview.expiresAt)) || Date.parse(preview.expiresAt) <= now || preview.impactHash !== canonicalHash(preview.impact)) fail(409, 'Account authority changed; review a new preview');
       const normalized = plan.normalize(db, preview.operation.action, preview.input); if (canonicalHash(normalized) !== canonicalHash(preview.input)) fail(409, 'Account proposal needs reconciliation');
-      const result = plan.apply(db, auth, preview.operation, normalized, { clock, credentialHash: hooks.credentialHash, billingPlan: hooks.billingPlan }); if (canonicalHash(impact(result)) !== preview.impactHash) fail(409, 'Account impact changed; review again');
+      const credentialRevocations = revocations(db, preview.operation.targetId);
+      const result = plan.apply(db, auth, preview.operation, normalized, { clock, credentialHash: hooks.credentialHash, billingPlan: hooks.billingPlan }); if (canonicalHash(impact(result, credentialRevocations)) !== preview.impactHash) fail(409, 'Account impact changed; review again');
       const target = db.users.find(row => row.id === result.targetId); secretRecovery.invalidate(db, target.id); credentials.invalidate(db, target.id);
       const envelopeId = result.temporaryPassword ? secretRecovery.enclose(db, auth, preview.operationId, target, result.temporaryPassword) : null; result.temporaryPassword = null;
       const receipt = sign({ operationId: preview.operationId, previewId: preview.id, companyId: db.company.id, ownerId: auth.user.id, sessionBinding: sessionBinding(auth), action: preview.operation.action, targetId: target.id, targetFingerprint: fingerprint(db, target), reviewRevision: preview.expectedRevision, committedRevision: context.transactionalRevision + 1, status: result.status, result: result.result, envelopeId, at: new Date(now).toISOString() });
-      db.accountActionReceipts = [...records(db, 'accountActionReceipts'), receipt]; db.auditLog ||= []; db.auditLog.push({ id: crypto.randomUUID(), type: 'account_change_confirmed', operationId: receipt.operationId, userId: target.id, actor: auth.user.name, action: receipt.action, reason: preview.reason, before: preview.impact.before, after: preview.impact.after, at: receipt.at });
+      db.accountActionReceipts = [...records(db, 'accountActionReceipts'), receipt]; db.auditLog ||= []; db.auditLog.push({ id: crypto.randomUUID(), type: 'account_change_confirmed', operationId: receipt.operationId, userId: target.id, actor: auth.user.name, action: receipt.action, reason: preview.reason, before: preview.impact.before, after: preview.impact.after, credentialRevocations: preview.impact.credentialRevocations, at: receipt.at });
       context.guard = { deadline: preview.expiresAt }; context.accountReturn = receipt.operationId; hooks.stage(context, db); return json(result.status, result.result);
     }
     if (apiPath === '/api/account-actions/recover') { plan.closed(input, ['operationId']); if (!uuid(input.operationId)) fail(400, 'Choose an original account operation'); return recover(records(db, 'accountActionReceipts').filter(row => row.operationId === input.operationId), auth, context, json); }

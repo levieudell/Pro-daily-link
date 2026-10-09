@@ -41,6 +41,6 @@ function createSecretRecovery({ key, keyVersion = 'synthetic-manual-v1', clock =
     try { const iv = Buffer.from(custody.iv, 'base64url'), tag = Buffer.from(custody.tag, 'base64url'), bytes = Buffer.from(custody.ciphertext, 'base64url'); if (iv.length !== 12 || tag.length !== 16 || bytes.length !== 8) throw fail(); const decipher = crypto.createDecipheriv('aes-256-gcm', key, iv); decipher.setAAD(aad(row)); decipher.setAuthTag(tag); const secret = Buffer.concat([decipher.update(bytes), decipher.final()]).toString('utf8'); if (!/^[A-Za-z0-9_-]{8}$/.test(secret)) throw fail(); return { temporaryPassword: secret, expiresAt: row.expiresAt }; } catch { throw fail(); }
   }
   function invalidate(db, targetId) { for (const row of rows(db)) if (row.targetId === targetId) { row.status = 'invalidated'; delete row.custody; } }
-  return { enclose, recover, invalidate };
+  return { enclose, recover, invalidate, invalidationImpact: (db, targetId) => rows(db).filter(row => row.targetId === targetId && row.status === 'available').length };
 }
 module.exports = { COLLECTION, createSecretRecovery, fingerprint };

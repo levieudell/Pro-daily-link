@@ -189,6 +189,7 @@ function createCredentialDelivery({ key, keyVersion = 'synthetic-v1', origin, lo
     try { await committed(latest, fresh.revision); } catch { return { status: 'uncertain' }; }
     return { status: outcome };
   }
-  return { requestReset, authorizeReset, consumeReset, requestVerification, authorizeVerification, consumeVerification, invalidate, dispatch };
+  function invalidationImpact(db, userId) { const user = db.users.find(row => row.id === userId), jobs = jobsValid(db).filter(row => row.userId === userId); return { passwordResetLinks: user?.resetTokenHash ? 1 : 0, emailVerificationLinks: user?.emailVerificationTokenHash ? 1 : 0, queuedPasswordResetDeliveries: jobs.filter(row => row.purpose === 'password-reset' && row.status === 'queued').length, admittedPasswordResetDeliveries: jobs.filter(row => row.purpose === 'password-reset' && row.status === 'sending').length, queuedVerificationDeliveries: jobs.filter(row => row.purpose === 'email-verification' && row.status === 'queued').length, admittedVerificationDeliveries: jobs.filter(row => row.purpose === 'email-verification' && row.status === 'sending').length }; }
+  return { requestReset, authorizeReset, consumeReset, requestVerification, authorizeVerification, consumeVerification, invalidate, invalidationImpact, dispatch };
 }
 module.exports = { COLLECTION, HISTORY, createCredentialDelivery, stripPrivate, validateOrigin, expires };

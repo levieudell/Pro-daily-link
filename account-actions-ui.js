@@ -2,14 +2,20 @@
 // Existing account buttons enter a bounded server review. Browser storage holds
 // only operation identity, never a password, input, bearer, or preview contents.
 (function () {
-  let current = null, busy = false, generation = 0, retire = null;
+  let current = null, lifecycle = false, retireDirectory = null, busy = false, generation = 0, retire = null;
   const key = 'pdl-original-account-operation-v1', seenResults = new Set();
   const supported = (method, path) => method === 'POST' && ['/api/users', '/api/team-with-account'].includes(path) || /^\/api\/users\/[1-9]\d*$/.test(path) && method === 'PATCH' || /^\/api\/users\/[1-9]\d*\/reset-code$/.test(path) && method === 'POST' || /^\/api\/users\/[1-9]\d*\/time-access$/.test(path) && method === 'PATCH';
+  const privateRead = (method, path) => method === 'GET' && path === '/api/users' || method === 'PATCH' && /^\/api\/users\/[1-9]\d*\/preferences$/.test(path);
+  async function sendCurrent(send, path, options = {}) {
+    try { return await send(path, { ...options, redirectOnUnauthorized: false }); }
+    catch (failure) { if ([401, 402, 403].includes(failure.status)) { retireActions(); retireDeniedData(); current = null; } throw failure; }
+  }
   function read() { try { const value = JSON.parse(sessionStorage.getItem(key)); return value && !seenResults.has(value.operationId) && Object.keys(value).sort().join(',') === 'companyId,operationId,sessionBinding' && /^[a-f0-9-]{36}$/.test(value.operationId) ? value : null; } catch { return null; } }
   function matches(row) { return row && current && row.companyId === current.companyId && row.sessionBinding === current.sessionBinding && (row.ownerId === undefined || row.ownerId === current.ownerId); }
   function assertCurrent(opening, openedAt) { if (openedAt !== generation || !matches(opening)) throw error('Account identity changed. Sign in again to check the original result.'); }
-  async function checkIdentity(send, opening, openedAt) { assertCurrent(opening, openedAt); const me = await send('/api/account-identity', { redirectOnUnauthorized: false }); assertCurrent(opening, openedAt); if (me.role !== 'owner' || me.id !== opening.ownerId || me.companyId !== opening.companyId || me.accountSessionBinding !== opening.sessionBinding) { retireActions(); current = null; throw error('Account identity changed before result delivery.'); } }
-  function retireActions() { generation++; retire?.(); document.getElementById('account-original-result-dialog')?.remove(); for (const id of ['setup-code-result', 'password-reset-result', 'team-member-result']) document.getElementById(id)?.replaceChildren(); }
+  async function checkIdentity(send, opening, openedAt) { assertCurrent(opening, openedAt); const me = await sendCurrent(send, '/api/account-identity'); assertCurrent(opening, openedAt); if (me.role !== 'owner' || me.id !== opening.ownerId || me.companyId !== opening.companyId || me.accountSessionBinding !== opening.sessionBinding) { retireActions(); retireDeniedData(); current = null; throw error('Account identity changed before result delivery.'); } }
+  function retireActions() { generation++; retire?.(); for (const id of ['account-review-dialog', 'account-original-result-dialog']) document.getElementById(id)?.remove(); for (const id of ['setup-code-result', 'password-reset-result', 'team-member-result']) document.getElementById(id)?.replaceChildren(); }
+  function retireDeniedData() { retireDirectory?.(); for (const id of ['account-original-result', 'account-reconcile-result']) document.getElementById(id)?.remove(); for (const id of ['account-list', 'password-reset-copy']) document.getElementById(id)?.replaceChildren(); for (const id of ['user-modal', 'password-reset-modal', 'profile-modal', 'team-member-modal']) { const dialog = document.getElementById(id); if (dialog?.open) dialog.close(); for (const input of dialog?.querySelectorAll('input,textarea') || []) if (input.type !== 'checkbox') input.value = ''; } }
   addEventListener('pagehide', retireActions);
   addEventListener('focus', retireActions);
   function error(message) { return new Error(message); }
@@ -20,7 +26,7 @@
   }
   function describe(impact) {
     const label = value => value ? JSON.stringify(value, null, 2) : 'New account';
-    return 'Before\n' + label(impact.before) + '\n\nAfter\n' + label(impact.after) + (impact.manualTemporaryPassword ? '\n\nA temporary password will be created after confirmation and expires in 72 hours.' : '') + '\n\nAccount access and the original result are checked again when saved.';
+    return 'Before\n' + label(impact.before) + '\n\nAfter\n' + label(impact.after) + (impact.manualTemporaryPassword ? '\n\nA temporary password will be created after confirmation and expires in 72 hours.' : '') + '\n\nCredential and delivery revocations\n' + JSON.stringify(impact.credentialRevocations, null, 2) + '\nQueued deliveries are cancelled; admitted deliveries become uncertain and their links are revoked. Existing setup codes are retained unless replaced or the email changes.\n\nAccount access and the original result are checked again when saved.';
   }
   async function review(path, options, send) {
     if (busy) throw error('An account review is already open.');
@@ -84,7 +90,7 @@
               const check = document.createElement('input'); check.type = 'checkbox'; const label = document.createElement('label'); label.append(check, ' I reviewed the current accounts and original outcome.');
               const confirm = document.createElement('button'); confirm.type = 'button'; confirm.textContent = 'Retain original history and close browser recovery';
               const close = document.createElement('button'); close.type = 'button'; close.textContent = 'Keep recovery open'; close.onclick = () => { dialog.close(); dialog.remove(); };
-              confirm.onclick = async () => { if (!check.checked || reason.value.trim().length < 8) return; confirm.disabled = true; try { await checkIdentity(send, opening, openedAt); await send('/api/account-actions/reconcile', { method: 'POST', body: JSON.stringify({ operationId: row.operationId, expectedRevision: status.currentRevision, confirmed: true, reason: reason.value.trim() }) }); await checkIdentity(send, opening, openedAt); try { sessionStorage.removeItem(key); } catch {} dialog.close(); dialog.remove(); review.remove(); button.remove(); } catch (failure) { confirm.disabled = false; close.textContent = failure.message; } };
+              confirm.onclick = async () => { if (!check.checked || reason.value.trim().length < 8) return; confirm.disabled = true; try { await checkIdentity(send, opening, openedAt); await send('/api/account-actions/reconcile', { method: 'POST', body: JSON.stringify({ operationId: row.operationId, expectedRevision: status.currentRevision, confirmed: true, reason: reason.value.trim() }) }); await checkIdentity(send, opening, openedAt); seenResults.add(row.operationId); try { sessionStorage.removeItem(key); } catch {} dialog.close(); dialog.remove(); review.remove(); button.remove(); } catch (failure) { confirm.disabled = false; close.textContent = failure.message; } };
               dialog.append(text, reason, label, confirm, close); document.body.append(dialog); dialog.showModal();
             } catch (failure) { review.textContent = failure.message; } finally { review.disabled = false; }
           };
@@ -94,7 +100,15 @@
     (document.getElementById('team-page') || document.body).prepend(button);
   }
   window.pdlAccountActions = {
-    configure(config, user, send) { retireActions(); current = config?.compatibilityAccount?.lifecycle && user?.role === 'owner' && typeof user.accountSessionBinding === 'string' ? { companyId: user.companyId, ownerId: user.id, sessionBinding: user.accountSessionBinding } : null; refreshRecovery(send); },
-    request(path, options, send) { return current && supported(String(options.method || 'GET').toUpperCase(), path) ? review(path, options, send) : send(path, options); }
+    configure(config, user, send, clearDirectory) { retireDirectory = typeof clearDirectory === 'function' ? clearDirectory : null; retireActions(); lifecycle = Boolean(config?.compatibilityAccount?.lifecycle); current = lifecycle && user?.role === 'owner' && typeof user.accountSessionBinding === 'string' ? { companyId: user.companyId, ownerId: user.id, sessionBinding: user.accountSessionBinding } : null; refreshRecovery((path, options) => sendCurrent(send, path, options)); },
+    async request(path, options, send) {
+      const method = String(options.method || 'GET').toUpperCase();
+      if (!lifecycle || !supported(method, path) && !privateRead(method, path)) return send(path, options);
+      if (!current) throw error('Account identity needs checking. Sign in again.');
+      const checked = (route, input) => sendCurrent(send, route, input);
+      if (supported(method, path)) return review(path, options, checked);
+      const opening = { ...current }, openedAt = generation, result = await checked(path, options);
+      await checkIdentity(checked, opening, openedAt); return result;
+    }
   };
 })();
