@@ -2,7 +2,7 @@
 // Scheduled-but-not-on-site action-center alerts (server-side rule).
 const assert=require('node:assert/strict'),fs=require('node:fs'),vm=require('node:vm');
 const source=fs.readFileSync('server.js','utf8'),lines=source.split('\n');
-function code(name){const start=lines.findIndex(l=>l.startsWith(`function ${name}(`)||l.startsWith(`async function ${name}(`));assert.ok(start>=0,name);if(lines[start].trimEnd().endsWith('}'))return lines[start];const end=lines.findIndex((l,i)=>i>start&&l.trim()==='}');return lines.slice(start,end+1).join('\n')}
+function code(name){const start=lines.findIndex(l=>l.startsWith(`function ${name}(`)||l.startsWith(`async function ${name}(`));assert.ok(start>=0,name);let depth=0;for(let i=start;i<lines.length;i++){for(const ch of lines[i]){if(ch==='{')depth++;else if(ch==='}')depth--}if(depth<=0)return lines.slice(start,i+1).join('\n')}assert.fail(name+' never closes')}
 const anchor=lines.findIndex(l=>l.startsWith('buildActionCenterBeforeScheduleNoShow=buildActionCenter;'));assert.ok(anchor>=0,'wrapper anchor');
 const start=lines.findIndex((l,i)=>i>anchor&&l.startsWith('buildActionCenter=function'));assert.ok(start>anchor,'wrapper start');
 const end=lines.findIndex((l,i)=>i>start&&l.trim()==='};');assert.ok(end>start,'wrapper end');
@@ -10,7 +10,7 @@ const wrapper=lines.slice(start,end+1).join('\n');
 const scheduleAvailability=require('./schedule-availability.js');
 const context={scheduleAvailability,buildActionCenterBeforeScheduleNoShow:()=>({items:[],counts:{urgent:0,high:0,medium:0,total:0}}),console};
 vm.createContext(context);
-vm.runInContext([code('companyDateIso'),code('companyTime24'),wrapper].join('\n'),context);
+vm.runInContext([code('companyDateIso'),code('companyTime24'),code('scheduleLiveState'),wrapper].join('\n'),context);
 const alerts=(db,now)=>context.buildActionCenter(db,now).items.filter(item=>item.type==='scheduled_no_show');
 const base={company:{id:'syn',timezone:'UTC'},team:[{id:7,name:'Chloe',crew:'A'},{id:8,name:'Andi',crew:'A'}],projects:[{id:101,name:'North Ridge'}],assignments:[{id:1,projectId:101,date:'2026-10-09',start:'13:00',end:'21:00',crew:'A',memberIds:[7,8]}],workdays:[],timeCards:[],timeOffRequests:[]};
 const at=(time)=>new Date(`2026-10-09T${time}:00Z`);
@@ -55,13 +55,20 @@ const db=structuredClone(base),before=JSON.stringify(db),full=context.buildActio
 assert.equal(full.items.filter(item=>item.type==='scheduled_no_show').length,1);
 assert.ok(full.counts.high>=1,'counts include the new alert');
 assert.equal(JSON.stringify(db),before,'alert derivation never alters the database');
+const live=JSON.parse(JSON.stringify(context.scheduleLiveState(structuredClone(base),at('13:20'))));
+assert.equal(live.today,'2026-10-09');assert.equal(live.graceMinutes,15);
+assert.deepEqual(live.byAssignment[1].expected,[7,8]);assert.deepEqual(live.byAssignment[1].onSite,[]);assert.equal(live.byAssignment[1].lateMinutes,20);
+const liveOnSite=JSON.parse(JSON.stringify(context.scheduleLiveState(structuredClone(chloeClockedIn),at('13:20')).byAssignment[1]));
+assert.deepEqual(liveOnSite.active,[7]);assert.deepEqual(liveOnSite.done,[]);assert.equal(liveOnSite.elapsedMinutes,15,'elapsed time comes from the active workday start');
+const liveDone=JSON.parse(JSON.stringify(context.scheduleLiveState(structuredClone(chloeDone),at('21:35')).byAssignment[1]));
+assert.deepEqual(liveDone.done,[7]);assert.equal(liveDone.hours,8.5,'done hours come from the completed workday duration');
 console.log('Scheduled no-show alerts passed: grace default/custom/clamped, escalation, time-off exclusion (all-day, partial, all-excused), workday/time-card presence, wrong-project suppression, date window, counts, no mutation (synthetic VM).');
 
 // API round-trip: the grace setting persists through the company PATCH whitelist,
 // survives saves that do not mention it, and clamps out-of-range values.
 const os=require('node:os'),path=require('node:path'),crypto=require('node:crypto');
 const apiRoot=fs.mkdtempSync(path.join(os.tmpdir(),'pdl-noshow-api-')),apiCompany='aabbccdd-aabb-4a4a-8a8a-aabbccddeeff',apiToken='synthetic-noshow-session';
-const apiDb={company:{id:apiCompany,name:'Synthetic no-show',demo:true,timezone:'UTC'},projects:[],team:[],assignments:[],reports:[],photos:[],workdays:[],timeCards:[],users:[{id:1,name:'Synthetic owner',role:'owner',status:'Active',companyId:apiCompany}],sessions:[{companyId:apiCompany,userId:1,tokenHash:crypto.createHash('sha256').update(apiToken).digest('hex'),expiresAt:'2099-01-01'}],customers:[],changes:[],catalog:[]};
+const apiDb={company:{id:apiCompany,name:'Synthetic no-show',demo:true,timezone:'UTC'},projects:[{id:101,name:'North Ridge'}],team:[{id:7,name:'Chloe',crew:'A'}],assignments:[],reports:[],photos:[],workdays:[],timeCards:[],timeOffRequests:[],users:[{id:1,name:'Synthetic owner',role:'owner',status:'Active',companyId:apiCompany},{id:2,name:'Synthetic field',role:'field',status:'Active',companyId:apiCompany,memberId:7}],sessions:[{companyId:apiCompany,userId:1,tokenHash:crypto.createHash('sha256').update(apiToken).digest('hex'),expiresAt:'2099-01-01'},{companyId:apiCompany,userId:2,tokenHash:crypto.createHash('sha256').update('synthetic-noshow-field').digest('hex'),expiresAt:'2099-01-01'}],customers:[],changes:[],catalog:[]};
 const apiFile=path.join(apiRoot,'db.json');fs.writeFileSync(apiFile,JSON.stringify(apiDb));fs.writeFileSync(path.join(apiRoot,'platform.json'),JSON.stringify({users:[],sessions:[]}));
 Object.assign(process.env,{PDL_DB_FILE:apiFile,PDL_PLATFORM_FILE:path.join(apiRoot,'platform.json'),PDL_REQUIRE_AUTH:'1',PDL_SUPABASE_ENABLED:'0',PDL_TRANSACTIONAL_DB:'off',PDL_EMAIL_DEV_MODE:'1'});for(const name of ['OPENAI_API_KEY','SENTRY_DSN','RESEND_API_KEY','STRIPE_SECRET_KEY','STRIPE_WEBHOOK_SECRET'])delete process.env[name];
 require('./database/supabase').loadLocalEnv=()=>{};
@@ -76,5 +83,10 @@ try{
   state=await call('GET','/api/state');assert.equal(state.data.company.scheduleGraceMinutes,30,'saves that do not mention the setting preserve it');
   saved=await call('PATCH','/api/company',{...settings,scheduleGraceMinutes:99999});assert.equal(saved.status,200);
   state=await call('GET','/api/state');assert.equal(state.data.company.scheduleGraceMinutes,120,'out-of-range values clamp to 120');
-  console.log('Grace setting API round-trip passed: persist, preserve-on-unrelated-save, clamp.');
+  const today=new Date().toISOString().slice(0,10);
+  const storedNow=JSON.parse(fs.readFileSync(apiFile));storedNow.assignments=[{id:1,projectId:101,date:today,start:'00:01',end:'08:00',crew:'A',memberIds:[7]}];fs.writeFileSync(apiFile,JSON.stringify(storedNow));
+  const fieldResponse=await fetch(base+'/api/schedule/today',{headers:{Authorization:'Bearer synthetic-noshow-field','x-pdl-company':apiCompany}});assert.equal(fieldResponse.status,403,'field accounts cannot read the office live-state endpoint');
+  const liveCall=await call('GET','/api/schedule/today');assert.equal(liveCall.status,200);assert.equal(liveCall.data.today,today);assert.equal(liveCall.data.graceMinutes,120);
+  const liveState=liveCall.data.assignments['1'];assert.deepEqual(liveState.expected,[7]);assert.deepEqual(liveState.onSite,[]);assert.ok(liveState.lateMinutes>0,'an assignment that started at 00:01 is late by now');
+  console.log('Grace setting API round-trip passed: persist, preserve-on-unrelated-save, clamp. Live endpoint passed: field 403, today/grace/shape.');
 }finally{server.closeAllConnections();await new Promise(resolve=>server.close(resolve));fs.rmSync(apiRoot,{recursive:true,force:true})}})().catch(error=>{console.error(error);process.exitCode=1;server.close()});
