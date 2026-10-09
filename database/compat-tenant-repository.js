@@ -55,6 +55,11 @@ class CompatTenantRepository {
     const { scalarData, records } = split(snapshot), hash = canonicalHash(snapshot);
     const payload = records.map(row => ({ collection: row.collection, record_key: row.recordKey, position: row.position, data: row.data }));
     return this.transaction(async client => {
+      if (guard) {
+        const contract = await client.query("SELECT EXISTS(SELECT 1 FROM pg_trigger WHERE tgname='compat_tenant_deadline' AND tgrelid='public.tenant_revisions'::regclass AND tgfoid='public.compat_tenant_deadline_guard()'::regprocedure AND tgdeferrable AND tginitdeferred AND tgenabled='O') AS enabled");
+        if (contract.rows[0]?.enabled !== true) throw unavailable();
+        await client.query('SELECT set_config($1,$2,true)', ['app.compat_tenant_deadline',guard.deadline]);
+      }
       const locked = await client.query('SELECT revision FROM public.tenant_revisions WHERE company_id=$1 FOR UPDATE', [this.companyId]);
       if (locked.rowCount !== 1) throw unavailable();
       if (Number(locked.rows[0].revision) !== expectedRevision) throw new RevisionConflictError(expectedRevision, Number(locked.rows[0].revision));

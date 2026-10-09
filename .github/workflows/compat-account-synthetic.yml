@@ -42,6 +42,7 @@ jobs:
           cache: npm
       - run: npm ci
       - run: node compat-account-postgres.test.js
+      - run: node compat-tenant-deadline-postgres.test.js
       - run: node compat-account-slice.test.js
       - run: node compat-lifecycle-postgres.test.js
       - run: node account-lifecycle.test.js

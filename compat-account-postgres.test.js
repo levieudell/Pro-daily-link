@@ -37,7 +37,7 @@ async function main() {
   try {
     await admin.query("DO $$ BEGIN IF NOT EXISTS(SELECT 1 FROM pg_roles WHERE rolname='anon') THEN CREATE ROLE anon NOLOGIN; END IF; IF NOT EXISTS(SELECT 1 FROM pg_roles WHERE rolname='authenticated') THEN CREATE ROLE authenticated NOLOGIN; END IF; IF NOT EXISTS(SELECT 1 FROM pg_roles WHERE rolname='service_role') THEN CREATE ROLE service_role NOLOGIN; END IF; END $$");
     await admin.query("CREATE TABLE IF NOT EXISTS public.companies(id uuid PRIMARY KEY,slug text,name text,data jsonb); CREATE OR REPLACE FUNCTION public.app_company_id() RETURNS uuid LANGUAGE sql STABLE AS $$ SELECT NULLIF(current_setting('app.company_id',true),'')::uuid $$");
-    for (const file of ['007_transactional_records.sql', '008_require_explicit_revision.sql']) await admin.query(fs.readFileSync(path.join(__dirname, 'database', file), 'utf8'));
+    for (const file of ['007_transactional_records.sql', '008_require_explicit_revision.sql', 'compat-synthetic-deadlines.sql']) await admin.query(fs.readFileSync(path.join(__dirname, 'database', file), 'utf8'));
     const privileges = await admin.query("SELECT has_function_privilege('anon','public.replace_tenant_records(uuid,bigint,jsonb,text,jsonb)','EXECUTE') AS anonymous, has_function_privilege('authenticated','public.replace_tenant_records(uuid,bigint,jsonb,text,jsonb)','EXECUTE') AS authenticated");
     assert.deepEqual(privileges.rows[0], { anonymous: false, authenticated: false });
     await admin.query('INSERT INTO public.companies(id,slug,name) VALUES($1,$2,$3) ON CONFLICT(id) DO NOTHING', [companyId, 'synthetic-compat', 'Synthetic native account']);
