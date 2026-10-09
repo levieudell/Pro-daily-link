@@ -281,8 +281,11 @@ async function journey(name, viewport) {
         await page.locator('[data-end-workday="' + started.id + '"]').waitFor(); await screenshot('workday-active');
         await page.reload(); await page.locator('#fieldday-page.active').waitFor(); await page.click('[data-end-workday="' + started.id + '"]');
         await page.fill('#end-day-notes', 'Synthetic crew checked tile and prepared tomorrow\'s work.'); await page.fill('#end-day-next', 'Synthetic continue tile');
+        const endAnalyzed = page.waitForResponse(response => response.request().method() === 'POST' && new URL(response.url()).pathname === '/api/ai/extract');
         await reviewedSave('#confirm-end-day', 'POST', '/api/workdays/' + started.id + '/end', '/api/daily-actions/preview');
         await page.locator('#end-day-modal').waitFor({ state: 'hidden' }); await page.locator('#report-modal').waitFor();
+        const endAnalysis = await endAnalyzed; assert.equal(endAnalysis.status(), 200, await endAnalysis.text());
+        await page.waitForFunction(() => !document.querySelector('#ai-convert').disabled && document.querySelector('#ai-preview').classList.contains('visible'));
         await page.locator('[data-report-step="2"].active').waitFor();
         const ended = (await store.load(A)).snapshot.workdays.find(row => row.id === started.id);
         assert.equal(ended.status, 'complete'); assert.ok(ended.endedAt);
