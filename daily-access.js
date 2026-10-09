@@ -37,12 +37,17 @@ function projectAllowed(db, user, id) {
   if (['owner', 'admin'].includes(user.role)) return true;
   if (user.role === 'project_manager') return (user.projectIds || []).map(Number).includes(Number(id));
   if (!field(user) || !(db.team || []).some(member => Number(member.id) === Number(user.memberId))) return false;
-  return (db.assignments || []).some(row => Number(row.projectId) === Number(id) && (row.memberIds || []).map(Number).includes(Number(user.memberId))) || (db.workdays || []).some(row => Number(row.projectId) === Number(id) && (row.memberIds || []).map(Number).includes(Number(user.memberId))) || (db.reports || []).some(row => Number(db.projects?.[Number(row.project)]?.id) === Number(id) && ((row.laborEntries || []).some(entry => Number(entry.memberId) === Number(user.memberId)) || row.foreman === user.name));
+  return (db.assignments || []).some(row => Number(row.projectId) === Number(id) && (row.memberIds || []).map(Number).includes(Number(user.memberId))) || (db.workdays || []).some(row => Number(row.projectId) === Number(id) && (row.memberIds || []).map(Number).includes(Number(user.memberId))) || (db.reports || []).some(row => Number(db.projects?.[Number(row.project)]?.id) === Number(id) && fieldReportEvidence(db, user, row));
+}
+function fieldReportEvidence(db, user, report) {
+  const member = (db.team || []).find(row => Number(row.id) === Number(user.memberId));
+  return Boolean(member && ((report.laborEntries || []).some(entry => Number(entry.memberId) === Number(member.id)) || report.foreman === member.name || (db.workdays || []).some(row => Number(row.reportId) === Number(report.id) && (row.memberIds || []).map(Number).includes(Number(member.id)))));
 }
 function reportInScope(db, user, report, action = 'viewReports') {
-  if (!access(db, user)[action] || !report || !projectAllowed(db, user, db.projects?.[report.project]?.id) || !(report.laborEntries || []).every(entry => memberAllowed(db, user, entry.memberId))) return false;
+  if (field(user) && action === 'viewReports') return Boolean(access(db, user)[action] && report && projectAllowed(db, user, db.projects?.[report.project]?.id) && fieldReportEvidence(db, user, report));
+  if (!access(db, user)[action] || !report || !projectAllowed(db, user, db.projects?.[report.project]?.id) || !(user.role==='project_manager'&&action==='viewReports'?(report.laborEntries||[]).some(entry=>memberAllowed(db,user,entry.memberId)):(report.laborEntries || []).every(entry => memberAllowed(db, user, entry.memberId)))) return false;
   if (field(user)) return (report.laborEntries || []).some(entry => Number(entry.memberId) === Number(user.memberId)) || report.foreman === user.name;
   return true;
 }
-function workdayInScope(db, user, row, action = 'viewWorkdays') { return Boolean(access(db, user)[action] && row && projectAllowed(db, user, row.projectId) && Array.isArray(row.memberIds) && row.memberIds.length && row.memberIds.every(id => memberAllowed(db, user, id)) && (!field(user) || row.memberIds.map(Number).includes(Number(user.memberId)))); }
+function workdayInScope(db, user, row, action = 'viewWorkdays') { return Boolean(access(db, user)[action] && row && projectAllowed(db, user, row.projectId) && Array.isArray(row.memberIds) && row.memberIds.length && (field(user)&&action==='viewWorkdays'?row.memberIds.map(Number).includes(Number(user.memberId)):user.role==='project_manager'&&action==='viewWorkdays'?row.memberIds.some(id=>memberAllowed(db,user,id)):row.memberIds.every(id => memberAllowed(db, user, id))) && (!field(user) || row.memberIds.map(Number).includes(Number(user.memberId)))); }
 module.exports = { roles, actions, field, ceiling, validatePolicy, required, access, actor, memberAllowed, projectAllowed, reportInScope, workdayInScope };

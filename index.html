@@ -33,7 +33,11 @@
   <script>
     window.pdlWorkspaceGate=(async()=>{
       try{
-        const config=await fetch('/api/config',{credentials:'include',cache:'no-store'}).then(response=>response.json());
+        const configResponse=await fetch('/api/config',{credentials:'include',cache:'no-store'});
+        if(!configResponse.ok)throw Error('Workspace configuration is unavailable.');
+        const config=await configResponse.json();
+        if(!config||typeof config.authRequired!=='boolean')throw Error('Workspace configuration could not be verified.');
+        window.pdlWorkspaceConfig=config;
         if(config.authRequired){
           const response=await fetch('/api/auth/me',{credentials:'include',cache:'no-store'});
           if(!response.ok){location.replace('/');return false}
@@ -277,14 +281,14 @@
         <label id="field-notes-label">Tell us what happened today<textarea id="field-notes" rows="8" placeholder="Example: Concrete crew poured 86 yards on the east foundation with 3 people for 8 hours. Pump arrived 45 minutes late…" required></textarea></label>
         <div class="note-tools"><button type="button" id="voice-notes">🎙 Speak notes</button><button type="button" data-note-chip="No delays today. ">No delays</button><button type="button" data-note-chip="No safety incidents. ">No incidents</button><button type="button" data-note-chip="Tomorrow we plan to ">Tomorrow</button></div>
         <div class="autosave-status" id="autosave-status">Notes save automatically on this device</div>
-        <label>Daily photos<input type="file" id="report-photos" accept="image/jpeg,image/png,image/webp" multiple /><small class="input-help">Add progress, material, issue, or completed-work photos.</small></label><label>Photo tags<input id="report-photo-tags" placeholder="progress, concrete, east wall"><small class="input-help">Separate tags with commas. Date and time are added automatically.</small></label>
+        <label>Daily photos<input type="file" id="report-photos" accept="image/jpeg,image/png,image/webp" multiple /><small class="input-help">Add progress, material, issue, or completed-work photos.</small></label><label id="report-photo-tags-field">Photo tags<input id="report-photo-tags" placeholder="progress, concrete, east wall"><small class="input-help">Separate tags with commas. Date and time are added automatically.</small></label>
         <button type="button" class="ai-button" id="ai-convert"><span>✦</span><b>Analyze notes and build report</b><small>AI will propose production, labor, delays, materials, equipment, and safety details</small></button>
         <div class="modal-actions"><button type="button" id="cancel-report" value="cancel" class="secondary">Cancel</button><button type="button" class="secondary" id="save-report-draft">Save notes as draft</button><button type="button" class="primary" id="report-next-step">Next: production & labor →</button></div>
       </div>
       <div class="report-step" data-report-step="2">
         <div id="approved-report-edit-warning" class="verify-banner report-edit-warning" hidden><b>Approved report correction</b><span>Saving changes returns this daily to office review. Production and exceptions will be checked again before approval.</span></div>
         <div id="ai-preview" class="ai-preview"></div>
-        <div class="verify-banner"><b>Verify before submitting</b><span>AI suggestions can be changed. Confirm every quantity and hour.</span></div>
+        <div class="verify-banner"><b>Verify before submitting</b><span>AI suggestions can be changed. Confirm every quantity and hour.</span><span id="verify-gold-hint" class="verify-gold-hint" hidden></span></div>
         <div class="report-review-summary" id="report-review-summary" aria-live="polite"></div>
         <div class="report-gaps" id="report-gaps"></div>
         <label>Office summary<textarea id="report-summary" rows="3" placeholder="AI will draft this summary. Tap here to correct it."></textarea></label>
@@ -468,8 +472,12 @@
   <script src="report-labor-review.js?v=20261007-labor-review"></script>
   <script src="company-timezone.js?v=20261008-saved-zone"></script>
   <script src="schedule-approved-labor.js?v=20261008-approved-evidence"></script>
+  <script src="workspace-actions-ui.js?v=20261009-g2-draft"></script>
+  <script src="workspace-save-recovery.js?v=20261009-g2-source"></script>
+  <script src="workspace-action-review.js?v=20261009-g2-source"></script>
   <script src="account-actions-ui.js"></script>
     <script src="app.js?v=20261008-saved-zone-schedule-delay-facts"></script>
+  <script src="workspace-controls.js?v=20261009-g2-source"></script>
   <script src="estimate-mobile.js"></script>
   <script src="time-approval-controls.js?v=20261007-pay-presets-person-total"></script>
   <script src="company-settings-tabs.js?v=20261004-pay-periods"></script>

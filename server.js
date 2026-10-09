@@ -72,7 +72,8 @@ let compatibilityAccountRuntime=null;
 function installCompatibilityAccountTests(options){
   // No environment-only activation: normal/production startup cannot enable
   // this unfinished slice. The complete writer inventory remains release work.
-  const runtime=createCompatibilityAccountRuntime(options);
+  const workspace=options.workspace===true?createCompatibilityWorkspace(options):null;
+  const runtime=createCompatibilityAccountRuntime({...options,workspace});
   compatibilityAccountRuntime=runtime;
   return ()=>{if(compatibilityAccountRuntime===runtime)compatibilityAccountRuntime=null};
 }
@@ -781,6 +782,9 @@ async function handleTimeCards(req,res,url){
 function authenticateRequestAccount(req, db) {
   const token = bearer(req) || cookie(req, 'pdl_session');
   const tokenHash = token && crypto.createHash('sha256').update(token).digest('hex');
+  return authenticateAccountSession(req, db, tokenHash);
+}
+function authenticateAccountSession(req, db, tokenHash) {
   const session = (db.sessions || []).find(row => row.tokenHash === tokenHash && new Date(row.expiresAt) > new Date());
   const wrongTenant = session && session.companyId !== db.company.id;
   const storedUser = !wrongTenant && session && (db.users || []).find(row => row.id === session.userId && row.status === 'Active' && (!row.companyId || row.companyId === db.company.id));
@@ -790,6 +794,11 @@ function authenticateRequestAccount(req, db) {
   if (user && db.company.id === compatibilityAccountRuntime?.companyId && compatibilityAccountRuntime.actor) user = compatibilityAccountRuntime.actor(db, user);
   req.auth = user ? { session, user, companyId: session.companyId } : null;
   return { auth: req.auth, status: wrongTenant ? 404 : user ? 200 : 401 };
+}
+function authenticateWorkspaceSession(db, tokenHash) {
+  require('./account-evidence').validateAccounts(db);
+  require('./compat-workspace-evidence').validateWorkspace(db);
+  return authenticateAccountSession({headers:{}}, db, tokenHash).auth;
 }
 function projectNotesUser(req, db) { return authenticateRequestAccount(req, db).auth?.user || null; }
 const handleProjectAssistant = createProjectAssistantHandler({
@@ -803,15 +812,16 @@ const handleAssistantAI = createAIHandler({
   readFreshDb: async req => { const database = await authenticatedRequestDatabase(req); if (!database) throw new Error('Unavailable'); return freshestTenantSnapshot(database); },
   body, json, authenticatedUser: projectNotesUser, accountAccess, supabase
 });
-const handleProjectNotes = createProjectNotesHandler({
-  readDb, writeDb, body, json, authenticatedUser: projectNotesUser,
-  canAccessProject(db, user, projectId) {
+function projectNotesCanAccessProject(db, user, projectId) {
     if (['owner', 'admin'].includes(user.role)) return true;
     if (user.role === 'project_manager') return managerScope(db, user).projectIds.has(projectId);
     if (!fieldRole(user)) return false;
     const member = (db.team || []).find(row => Number(row.id) === Number(user.memberId));
     return Boolean(member && fieldProjectIds(db, member).allowedIds.has(projectId));
   }
+const handleProjectNotes = createProjectNotesHandler({
+  readDb, writeDb, body, json, authenticatedUser: projectNotesUser,
+  canAccessProject: projectNotesCanAccessProject
 });
 
 async function salesDemoRecoveryBackup(snapshot){
@@ -832,6 +842,45 @@ const handleSalesDemo=createSalesDemoHandler({
   readBody:body,reply:json,companyToday:()=>companyDateIso({timezone:'America/Los_Angeles'}),
   contextRun:(context,run)=>dbContext.run(context,run),writeDb,backup:salesDemoRecoveryBackup
 });
+
+function dailyExportProjection(db, user, record) {
+  const pick = (row, keys) => Object.fromEntries(keys.filter(key => Object.hasOwn(row || {}, key)).map(key => [key, row[key]]));
+  const result = pick(record, ['id', 'companyId', 'schemaVersion', 'seriesId', 'version', 'supersedesId', 'reason', 'kind', 'createdAt', 'snapshotSha256']);
+  result.filters = pick(record.filters, ['projectId', 'from', 'to', 'status']); result.createdBy = pick(record.createdBy, ['id', 'name', 'role']);
+  result.includedApprovals = (record.includedApprovals || []).map(row => ({ reportId: row.reportId, history: (row.history || []).map(entry => pick(entry, ['action', 'by', 'actorId', 'at'])) }));
+  if (record.snapshot) {
+    const snapshot = record.snapshot, project = snapshot.project || {};
+    result.snapshot = { project: pick(project, ['id', 'name', 'code', 'status', 'contractType', 'contractValue', 'budget', 'progress', 'production']), reports: (snapshot.reports || []).map(row => require('./daily-admission').reportProjection(db, user, row, presentReport, false)), team: (snapshot.team || []).map(row => pick(row, ['id', 'name', 'role', 'crew'])), totals: pick(snapshot.totals, ['approvedReports', 'laborHours']) };
+    result.snapshot.project.estimateItems = (project.estimateItems || []).map(row => pick(row, ['id', 'name', 'description', 'unit', 'plannedQuantity', 'budgetHours', 'cost']));
+    if (project.tmSettings) result.snapshot.project.tmSettings = pick(project.tmSettings, ['defaultLaborRate', 'materialMarkup', 'equipmentMarkup']);
+    result.snapshot.totals.production = (snapshot.totals?.production || []).map(row => pick(row, ['estimateItemId', 'description', 'unit', 'quantity']));
+    // Captured financial calculation stays private to the immutable owner gate.
+    if (Object.hasOwn(snapshot.totals || {}, 'financial')) {
+      const financial = snapshot.totals.financial;
+      result.snapshot.totals.financial = financial === null ? null : { ...pick(financial, ['approvedDailies', 'laborHours', 'complete', 'laborAmount', 'knownLaborAmount']), labor: (financial.labor || []).map(row => pick(row, ['classification', 'rate', 'hours', 'amount'])), missingRateReports: (financial.missingRateReports || []).map(row => pick(row, ['reportId', 'dateIso', 'reason'])) };
+    }
+  }
+  return result;
+}
+
+function compatibilityRaw(res,response){const context=dbContext.getStore();context.response={...response};res.statusCode=response.status}
+async function runCompatibilityCandidate(req,operation){
+  const parent=dbContext.getStore();
+  if(!parent?.compatWorkspace)throw Object.assign(Error('Synthetic workspace candidate required'),{statusCode:503});
+  const child={...parent,db:structuredClone(parent.db),candidate:null,dirty:false,response:null,pending:[],effects:[],closed:false,deferResponse:true,workspaceCandidate:true};
+  const request={method:operation.method,auth:req.auth,headers:req.headers,parsedBodyPromise:Promise.resolve(structuredClone(operation.details||{}))};
+  const response={headersSent:false,statusCode:200,writeHead(status,headers){child.response={status,headers,raw:''}},end(bytes){child.response.raw=String(bytes)}};
+  await dbContext.run(child,()=>api(request,response,new URL(operation.path,'http://localhost')));
+  if(!child.response||child.pending.length||child.effects.length)throw Object.assign(Error('Unsupported workspace candidate effect'),{statusCode:503});
+  return {candidate:child.db,response:child.response,dirty:child.dirty};
+}
+function createCompatibilityWorkspace(options){
+  const {createWorkspace}=require('./compat-workspace');
+  return createWorkspace({options,readDb,writeDb,body,json,raw:compatibilityRaw,context:()=>dbContext.getStore(),run:runCompatibilityCandidate,
+    authenticate:authenticateRequestAccount,authenticateSession:authenticateWorkspaceSession,accountAccess,prepareWorkspace,ensureOwnerTeamMember,publicCompanyLogo,canViewPricing,fieldWorkspace,managerWorkspace,scopedScheduleAvailability,scopedTemplateList,
+    presentReport,dailyExportProjection,canAccessProject:projectNotesCanAccessProject,companyActivities,presentTimeCard,filterTimeCards,timeCardIsApproved,timeCardStatusText,timeCardOverlap,upsertTimeCard,mergeTimeCardCopies,
+    completeCard:payPeriods.completeCard,fieldAccess:fieldTimeCards.access,buildActionCenter,billingSummary,subcontractorRequirements});
+}
 
 async function api(req,res,url){
   const subcontractorCreate=req.method==='POST'&&url.pathname==='/api/subcontractors';
@@ -905,7 +954,8 @@ async function api(req,res,url){
   if(req.method==='POST'&&url.pathname==='/api/auth/logout'){const db=readDb(),token=bearer(req)||cookie(req,'pdl_session'),tokenHash=token&&crypto.createHash('sha256').update(token).digest('hex');db.sessions=(db.sessions||[]).filter(row=>row.tokenHash!==tokenHash);writeDb(db);const secure=process.env.NODE_ENV==='production'?'; Secure':'';return jsonHeaders(res,200,{ok:true},{'Set-Cookie':[`pdl_session=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0${secure}`,`pdl_company=; SameSite=Strict; Path=/; Max-Age=0${secure}`]})}
   if(await handleAssistantAI(req,res,url))return;
   if(await handleProjectAssistant(req,res,url))return;
-  if(process.env.PDL_REQUIRE_AUTH==='1'&&!url.pathname.startsWith('/api/guest/')){const db=readDb(),{auth,status}=authenticateRequestAccount(req,db),user=auth?.user;if(!auth)return json(res,status,{error:status===404?'Resource not found':'Authentication required'});const access=accountAccess(db.company),accessRoute=url.pathname==='/api/account-access'||url.pathname.startsWith('/api/billing');if(access.locked&&!accessRoute)return json(res,402,{error:access.reason,code:'subscription_required',access});const ownerRoute=url.pathname==='/api/users'||/^\/api\/users\//.test(url.pathname);if(ownerRoute&&user.role!=='owner')return json(res,403,{error:'Account owner permission required'});const officeRoute=['/api/production','/api/insights','/api/exceptions','/api/action-center','/api/changes','/api/catalog','/api/estimate-imports'].some(route=>url.pathname.startsWith(route))||url.pathname.includes('/approve')||url.pathname.includes('/disposition');if(officeRoute&&!['owner','admin','project_manager'].includes(user.role))return json(res,403,{error:'Office permission required'})}
+  if(process.env.PDL_REQUIRE_AUTH==='1'&&!url.pathname.startsWith('/api/guest/')){const db=readDb(),{auth,status}=authenticateRequestAccount(req,db),user=auth?.user;if(!auth)return json(res,status,{error:status===404?'Resource not found':'Authentication required'});const access=accountAccess(db.company),accessRoute=url.pathname==='/api/account-access'||url.pathname.startsWith('/api/billing')||(dbContext.getStore()?.compatWorkspace&&url.pathname==='/api/workspace-identity');if(access.locked&&!accessRoute)return json(res,402,{error:access.reason,code:'subscription_required',access});const ownerRoute=url.pathname==='/api/users'||/^\/api\/users\//.test(url.pathname);if(ownerRoute&&user.role!=='owner')return json(res,403,{error:'Account owner permission required'});const officeRoute=['/api/production','/api/insights','/api/exceptions','/api/action-center','/api/changes','/api/catalog','/api/estimate-imports'].some(route=>url.pathname.startsWith(route))||url.pathname.includes('/approve')||url.pathname.includes('/disposition');if(officeRoute&&!['owner','admin','project_manager'].includes(user.role))return json(res,403,{error:'Office permission required'})}
+  if(dbContext.getStore()?.compatWorkspace&&!dbContext.getStore()?.workspaceCandidate&&compatibilityAccountRuntime.workspace.supported(req.method,url.pathname)&&await compatibilityAccountRuntime.workspace.handle(req,res,url))return;
   if(await handleProjectNotes(req,res,url))return;
   if(process.env.PDL_REQUIRE_AUTH==='1'&&(subcontractorCreate||subcontractorUpdate||subcontractorProfile||subcontractorReminder||subcontractorArchive)&&!['owner','admin'].includes(req.auth?.user?.role))return json(res,403,{error:'Account Owner or Admin permission required'});
   if(process.env.PDL_REQUIRE_AUTH==='1'&&(subcontractorLinkCreate||subcontractorLinkRevoke)&&!['owner','admin','project_manager'].includes(req.auth?.user?.role))return json(res,403,{error:'Office permission required'});

@@ -483,3 +483,130 @@ button,.project-card,.customer-list-item,.report-list-item{-webkit-tap-highlight
 .report-work-date{font-size:18px;font-weight:750;line-height:1.4;color:var(--text,#182b38);margin:8px 0 14px;overflow-wrap:anywhere}.report-labor-review{border:1px solid #d39c45;border-radius:8px;padding:12px;background:#fff5df;color:#543814;margin:10px 0;line-height:1.5}.report-labor-review strong{display:block}.report-labor-review p{margin:6px 0 0}.report-gaps .report-labor-review{margin-bottom:0}@media(max-width:640px){.report-work-date{font-size:17px}}
 .activity-report-link{width:100%;border:0;border-top:1px solid #eef1ef;background:transparent;font:inherit;text-align:left;color:inherit;text-decoration:none;min-height:56px;cursor:pointer}.activity-report-link:hover{background:var(--surface,#f7f9f8)}.activity-report-link:focus-visible{outline:3px solid var(--green);outline-offset:-3px}.activity-report-link[aria-busy="true"]{cursor:progress}@media(max-width:480px){.activity-report-link{grid-template-columns:auto minmax(0,1fr);padding:14px 16px}.activity-report-link>.status{grid-column:2;justify-self:start}.activity-report-link strong{overflow-wrap:anywhere}}
 .work-scope-actions,.work-proposal-note{grid-column:1/-1}.work-scope-actions button{min-height:44px;border:1px solid #c5d8fb;background:#eef4ff;color:#1769e0;border-radius:8px;padding:8px 12px;font-size:12px;font-weight:700}.work-proposal-note{line-height:1.5;color:var(--muted)}
+
+/* ============================================================
+   Visual upgrade layer — depth, motion, and surface refinement
+   ============================================================ */
+
+/* --- Design tokens: elevation tiers, radii, motion --- */
+:root{
+  --elev-1:0 1px 2px rgba(16,37,30,.05),0 10px 28px -10px rgba(16,37,30,.10);
+  --elev-2:0 2px 4px rgba(16,37,30,.05),0 18px 44px -14px rgba(16,37,30,.16);
+  --elev-3:0 4px 8px rgba(16,37,30,.06),0 28px 64px -18px rgba(16,37,30,.22);
+  --r-sm:10px;
+  --r-md:14px;
+  --r-lg:18px;
+  --ring:0 0 0 3px rgba(30,106,80,.16);
+  --t-fast:140ms cubic-bezier(.2,.7,.3,1);
+  --t-med:220ms cubic-bezier(.2,.7,.3,1);
+}
+:root[data-theme="dark"]{
+  --elev-1:0 1px 2px #0006,0 12px 30px -10px #0008;
+  --elev-2:0 2px 4px #0007,0 20px 48px -14px #000a;
+  --elev-3:0 4px 8px #0008,0 30px 70px -18px #000c;
+  --ring:0 0 0 3px rgba(188,227,93,.18);
+}
+
+/* --- Global rendering polish --- */
+body{-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility}
+::selection{background:rgba(255,107,26,.22)}
+:root[data-theme="dark"] ::selection{background:rgba(255,140,66,.32)}
+*{scrollbar-width:thin;scrollbar-color:rgba(16,37,30,.28) transparent}
+:root[data-theme="dark"] *{scrollbar-color:rgba(238,242,240,.22) transparent}
+::-webkit-scrollbar{width:9px;height:9px}
+::-webkit-scrollbar-thumb{background:rgba(16,37,30,.22);border-radius:99px;border:2px solid transparent;background-clip:content-box}
+:root[data-theme="dark"] ::-webkit-scrollbar-thumb{background:rgba(238,242,240,.18);border:2px solid transparent;background-clip:content-box}
+::-webkit-scrollbar-track{background:transparent}
+
+/* --- Buttons: press, lift, brand shadow --- */
+.primary,.secondary,.icon-button,.danger-button,.note-tools button{transition:transform var(--t-fast),box-shadow var(--t-fast),background var(--t-fast),border-color var(--t-fast),color var(--t-fast)}
+.primary{background:linear-gradient(180deg,#ff7c33,#ff6b1a);box-shadow:0 1px 2px rgba(255,107,26,.35),0 6px 16px -6px rgba(255,107,26,.5)}
+.primary:hover{box-shadow:0 2px 4px rgba(255,107,26,.35),0 10px 22px -6px rgba(255,107,26,.55)}
+.primary:active{transform:translateY(1px) scale(.99)}
+.secondary:hover,.icon-button:hover{border-color:#b9c6bf;box-shadow:var(--elev-1)}
+.secondary:active,.icon-button:active{transform:translateY(1px)}
+.danger-button{transition:transform var(--t-fast),box-shadow var(--t-fast)}
+.danger-button:active{transform:translateY(1px)}
+button:disabled{transform:none!important;box-shadow:none!important;opacity:.62;cursor:not-allowed}
+
+/* --- Inputs: hover + focus rings --- */
+label input,label select,label textarea{transition:border-color var(--t-fast),box-shadow var(--t-fast)}
+label input:hover,label select:hover,label textarea:hover{border-color:#c3cfc8}
+input:focus-visible,select:focus-visible,textarea:focus-visible{outline:0;box-shadow:var(--ring)}
+
+/* --- Cards and panels: consistent radius + elevation --- */
+.stat-card,.panel,.report-list-item,.customer-list-item{border-radius:var(--r-md);box-shadow:var(--elev-1);transition:box-shadow var(--t-med),transform var(--t-med),border-color var(--t-fast)}
+.report-list-item,.customer-list-item{cursor:pointer}
+.report-list-item:hover,.customer-list-item:hover{box-shadow:var(--elev-2);transform:translateY(-1px)}
+.stat-card:hover{box-shadow:var(--elev-2)}
+.project-card[data-project-card]:hover{border-color:#7fae9c;box-shadow:var(--elev-2)}
+.project-card[data-project-card]:focus-visible{outline:3px solid var(--green);outline-offset:3px}
+
+/* --- Sidebar: refined active state --- */
+.nav-item{transition:background var(--t-fast),color var(--t-fast),transform var(--t-fast)}
+.nav-item:active{transform:translateX(1px)}
+.trial-card{border-radius:var(--r-sm)}
+
+/* --- Topbar: glassy sticky header --- */
+.topbar{background:rgba(255,255,255,.86);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px)}
+:root[data-theme="dark"] .topbar{background:rgba(23,27,25,.82)}
+
+/* --- Dialogs: softer, deeper --- */
+dialog{border-radius:var(--r-lg);border:1px solid var(--line);box-shadow:var(--elev-3)}
+dialog::backdrop{background:rgba(16,37,30,.55);backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px)}
+
+/* --- Chart trend badge: proper pill --- */
+.chart-summary{align-items:center;gap:14px}
+.trend{border-radius:99px;padding:4px 10px;font-weight:700;white-space:nowrap}
+.chart.is-empty .chart-empty-note{background:var(--bg);border-radius:8px;padding:6px 10px;left:50%;right:auto;transform:translateX(-50%);max-width:calc(100% - 32px)}
+
+/* --- Toast: softer entry --- */
+.toast{border-radius:12px;box-shadow:var(--elev-2)}
+
+/* --- Tables --- */
+th{letter-spacing:.04em}
+
+/* --- Field-mode + dialog motion polish --- */
+dialog[open]{animation:pdl-dialog-in .24s cubic-bezier(.2,.7,.3,1)}
+@keyframes pdl-dialog-in{from{opacity:0;transform:translateY(12px) scale(.98)}}
+.hero-start-button{transition:transform var(--t-fast),box-shadow var(--t-fast)}
+.hero-start-button:active{transform:scale(.95)}
+.field-assignment,.activity-item{transition:background var(--t-fast)}
+.activity-report-link{transition:background var(--t-fast)}
+.project-view-tabs button,.team-tabs button,.project-detail-tabs button{transition:background var(--t-fast),color var(--t-fast),border-color var(--t-fast)}
+
+/* --- Mobile report sheet: true edge-to-edge + structural compaction --- */
+@media(max-width:760px){
+  dialog{margin:0}
+  #report-modal .modal-header{position:sticky;top:0;z-index:3;background:var(--panel,#fff);padding-top:max(14px,env(safe-area-inset-top))}
+  :root[data-theme="dark"] #report-modal .modal-header{background:var(--panel)}
+  .report-job-context{padding:11px 12px;border-radius:10px}
+  .report-job-context dl{grid-template-columns:repeat(2,minmax(0,1fr));gap:6px 10px;margin-top:9px;padding-top:8px}
+  .report-job-context dd{font-size:11px;overflow-wrap:anywhere}
+  #report-project-picker{padding:11px 12px;border-radius:10px}
+  #field-notes{min-height:24vh}
+  .photo-actions input[type=file]::file-selector-button,
+  #report-modal input[type=file]::file-selector-button{border:0;border-radius:8px;background:linear-gradient(180deg,#ff7c33,#ff6b1a);color:#fff;font:700 12px "DM Sans",sans-serif;padding:10px 14px;cursor:pointer;box-shadow:0 1px 2px rgba(255,107,26,.35),0 6px 16px -6px rgba(255,107,26,.5)}
+  .photo-actions input[type=file]::file-selector-button:hover,
+  #report-modal input[type=file]::file-selector-button:hover{background:#e85c10}
+  #report-modal .modal-actions{background:var(--panel,#fff);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px)}
+}
+
+/* --- Step 1 declutter (mobile) --- */
+@media(max-width:760px){
+  #report-type~small.input-help{display:none}
+  #report-crew-field small.input-help{display:none}
+  .report-step .note-tools{margin:2px 0 4px}
+  .report-step .autosave-status{margin-bottom:8px}
+}
+
+/* --- Step 2 banner consolidation (mobile) --- */
+@media(max-width:760px){
+  #report-modal .verify-banner{padding:9px 12px;margin:8px 0 10px;gap:4px}
+  #report-modal .verify-banner b{font-size:11px}
+  #report-modal .verify-banner span{font-size:10px}
+  #report-modal .ai-preview:empty{display:none}
+  .verify-gold-hint{display:block;color:#8a5a10;font-weight:700}
+  #report-modal .report-review-summary{margin-top:2px}
+  #report-modal .report-gaps{margin-bottom:10px}
+}

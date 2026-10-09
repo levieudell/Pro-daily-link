@@ -41,7 +41,7 @@ function inScope(db, user, row, action = 'viewRequests') {
 }
 function present(row) {
   const keys = ['id', 'memberId', 'startDate', 'endDate', 'allDay', 'startTime', 'endTime', 'type', 'note', 'status', 'requestedAt', 'reviewNote', 'reviewedAt', 'reviewedBy'];
-  return { ...Object.fromEntries(keys.filter(key => Object.hasOwn(row, key)).map(key => [key, row[key]])), history: (Array.isArray(row.history) ? row.history : []).filter(entry => entry && typeof entry === 'object' && !Array.isArray(entry)).map(entry => Object.fromEntries(['action', 'by', 'at', 'note'].filter(key => Object.hasOwn(entry, key)).map(key => [key, entry[key]]))) };
+  const pick=(value,names)=>require('./compat-workspace-projections').pick(value,names);return {...pick(row,keys),history:(Array.isArray(row.history)?row.history:[]).map(entry=>pick(entry,['action','by','at','note']))};
 }
 function visible(db, user) { return (db.timeOffRequests || []).filter(row => inScope(db, user, row)).map(present); }
 module.exports = { roles, actions, ceiling, validatePolicy, required, access, actor, inScope, present, visible };
