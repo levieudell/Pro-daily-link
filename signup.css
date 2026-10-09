@@ -3,3 +3,25 @@
 .billing-choice{display:flex;gap:12px;flex-wrap:wrap;margin-top:14px}.billing-choice label{display:flex;align-items:center;gap:8px;border:1px solid #d7d4cc;border-radius:8px;padding:10px 12px;font-size:13px}.billing-choice input{width:18px;margin:0}
 .plan-context{margin:16px 0 20px;padding:14px;border-radius:10px;background:#f7f6f2}.plan-context label small{color:#66717a;font-weight:normal}
 .onboarding-options{grid-template-columns:1fr}.onboarding-options label{min-height:0;max-width:460px}.hands-on-setup{display:flex;align-items:flex-start;gap:10px;margin:14px 0 2px;padding:12px 14px;border:1px solid #d7d4cc;border-radius:10px;background:#fff;font-size:14px;font-weight:700;line-height:1.4;cursor:pointer;max-width:460px}.hands-on-setup input{width:18px;height:18px;margin:1px 0 0;flex:none}.hands-on-setup:has(input:checked){border-color:#ff6b1a;background:#fff7f1}
+
+/* --- 2026 polish: brand type, motion, interaction --- */
+body{font-family:"DM Sans",Arial,sans-serif;-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility}
+::selection{background:rgba(255,107,26,.22)}
+input,select{transition:border-color .14s cubic-bezier(.2,.7,.3,1),box-shadow .14s cubic-bezier(.2,.7,.3,1)}
+input:hover,select:hover{border-color:#c0c7c2}
+input:focus,select:focus{border-color:#ff6b1a;box-shadow:0 0 0 3px rgba(255,107,26,.12);outline:0}
+button{transition:transform .14s cubic-bezier(.2,.7,.3,1),box-shadow .14s cubic-bezier(.2,.7,.3,1),background .14s cubic-bezier(.2,.7,.3,1)}
+button.next-step,button#create-company{background:linear-gradient(180deg,#ff7c33,#ff6b1a);box-shadow:0 1px 2px rgba(255,107,26,.35),0 6px 16px -6px rgba(255,107,26,.5)}
+button.next-step:hover,button#create-company:hover{box-shadow:0 2px 4px rgba(255,107,26,.35),0 10px 22px -6px rgba(255,107,26,.55)}
+button:active{transform:translateY(1px) scale(.99)}
+.plans label{transition:transform .14s cubic-bezier(.2,.7,.3,1),box-shadow .14s cubic-bezier(.2,.7,.3,1),border-color .14s cubic-bezier(.2,.7,.3,1)}
+.plans label:hover{transform:translateY(-2px);box-shadow:0 1px 2px rgba(16,37,30,.05),0 10px 28px -10px rgba(16,37,30,.12)}
+.plans label:has(input:checked){box-shadow:0 1px 2px rgba(255,107,26,.25),0 10px 26px -10px rgba(255,107,26,.4)}
+form section{box-shadow:0 1px 2px rgba(16,37,30,.04),0 10px 28px -10px rgba(16,37,30,.08)}
+.signup-progress button{transition:background .14s cubic-bezier(.2,.7,.3,1),color .14s cubic-bezier(.2,.7,.3,1)}
+.signup-step{animation:pdl-step-in .2s cubic-bezier(.2,.7,.3,1)}
+@keyframes pdl-step-in{from{opacity:0;transform:translateY(6px)}}
+*{scrollbar-width:thin;scrollbar-color:rgba(16,37,30,.28) transparent}
+::-webkit-scrollbar{width:9px;height:9px}
+::-webkit-scrollbar-thumb{background:rgba(16,37,30,.22);border-radius:99px;border:2px solid transparent;background-clip:content-box}
+::-webkit-scrollbar-track{background:transparent}
