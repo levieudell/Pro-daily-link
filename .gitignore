@@ -1,6 +1,7 @@
 .env
 .env.local
 data/*.tmp
+data/public-stats.json
 uploads/*
 !uploads/.gitkeep
 node_modules/

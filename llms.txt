@@ -1,0 +1,18 @@
+# Pro Daily Link
+
+Construction daily reports and production tracking for contractors. Field truth, office clarity.
+
+## What it does
+
+- Field crews submit daily notes by voice or text, in English or Spanish, with photos and crew hours.
+- The office reviews once, verifies production against estimate lines, and flags unplanned extra work before it is missed.
+- Flat company pricing from $99 per month. No per-seat fees.
+
+## Pages
+
+- [Home](https://app.prodailylink.com/): product overview and pricing
+- [About](https://app.prodailylink.com/about.html): why the founder built it
+- [Field Notes](https://app.prodailylink.com/blog.html): practical writing on field reporting and production
+- [Pro Daily Link vs Raken](https://app.prodailylink.com/vs/raken.html): per-seat vs flat pricing comparison
+- [Pro Daily Link vs Procore](https://app.prodailylink.com/vs/procore.html): field-first daily reports vs full platform
+- [Pro Daily Link vs paper daily logs](https://app.prodailylink.com/vs/paper-daily-logs.html): what changes when dailies go digital

@@ -22,6 +22,7 @@ function validateWorkspace(db) {
   for (const row of rows(db, 'timeOffRequests')) member(row.memberId);
   for (const name of ['projectPlans', 'projectTickets', 'subcontractorLinks', 'projectNotesTodos']) for (const row of identities(db, name, !['projectNotesTodos', 'subcontractorLinks'].includes(name)).values()) { project(row.projectId); if (row.reportId != null && (!reports.has(String(Number(row.reportId))) || Number(db.projects[reports.get(String(Number(row.reportId))).project]?.id) !== Number(row.projectId))) fail(); }
   for (const row of identities(db, 'photos').values()) { if (row.project != null && (!Number.isSafeInteger(row.project) || !db.projects[row.project])) fail(); if (row.projectId != null) project(row.projectId); if (row.project != null && row.projectId != null && Number(db.projects[row.project].id) !== Number(row.projectId)) fail(); if (row.reportId != null && (!reports.has(String(Number(row.reportId))) || row.project != null && reports.get(String(Number(row.reportId))).project !== row.project)) fail(); if (row.workdayId != null && !days.has(String(Number(row.workdayId)))) fail(); }
+  for(const row of identities(db,'changes').values())project(row.projectId);
   for (const name of ['subcontractors', 'auditLog', 'dailyTemplates', 'catalog', 'activityCodes', 'payPeriods', 'payPeriodExports', 'reportingExports']) rows(db, name);
   return db;
 }

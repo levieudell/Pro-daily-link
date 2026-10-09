@@ -8,7 +8,7 @@
     ['scheduling', 'acknowledge', '[data-ack-assignment]'],
     ['daily', 'viewReports', '.nav-item[data-page="reports"],[data-open-daily-report]'],
     ['daily', 'createReports', '#new-report,[data-assignment-daily]'],
-    ['daily', 'editReports', '[data-edit-report]'],
+    ['daily', 'editReports', '[data-edit-report],.labor-resolve-button'],
     ['daily', 'approveReports', '[data-approve-report]'],
     ['daily', 'viewWorkdays', '.nav-item[data-page="fieldday"]'],
     ['daily', 'runWorkdays', '#start-day-button,[data-start-day],[data-end-day]'],
@@ -27,9 +27,11 @@
     ['timeWrite', 'captureExports', '[data-pay-capture]'],
     ['timeWrite', 'downloadExports', '[data-pay-download],[data-pay-history]'],
     ['timeOff', 'createRequest', '#new-time-off'],
-    ['notes', 'create', '[data-notes-add]'],
+    ['timeOff', 'viewRequests', '.nav-item[data-page="timeoff"],[data-office-tool="timeoff"]'],
+    ['notes', 'view', '[data-project-detail-tab="notes"],[data-project-detail-pane="notes"]'],
+    ['notes', 'create', '[data-note-new]'],
     ['notes', 'edit', '[data-note-edit]'],
-    ['notes', 'complete', '[data-note-complete]']
+    ['notes', 'complete', '[data-note-toggle]']
   ];
   function apply() {
     if (!window.pdlWorkspaceActions?.enabled() || typeof currentUser === 'undefined') return;
@@ -38,6 +40,8 @@
       if (gates?.[family]?.[action] !== true) { node.dataset.workspaceRestricted = 'true'; node.hidden = true; if ('disabled' in node) node.disabled = true; }
       else if (node.dataset.workspaceRestricted === 'true') { delete node.dataset.workspaceRestricted; node.hidden = false; if ('disabled' in node) node.disabled = false; }
     }
+    const selectedId = document.querySelector('#report-detail [data-edit-report]')?.dataset.editReport, selected = typeof reports === 'undefined' ? null : reports.find(row => Number(row.id) === Number(selectedId));
+    for (const node of document.querySelectorAll('.labor-resolve-button')) if (!['owner','admin','project_manager'].includes(currentUser?.accessRole || currentUser?.role) || selected?.status === 'Approved' && gates?.daily?.approveReports !== true) { node.dataset.workspaceRestricted = 'true'; node.hidden = true; node.disabled = true; }
   }
   const observer = new MutationObserver(apply); observer.observe(document.body, { childList: true, subtree: true }); window.addEventListener('focus', apply); apply();
 })();

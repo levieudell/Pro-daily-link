@@ -55,7 +55,9 @@ function summarizeRates(db, projectIndex, reports = (db.reports || []).filter(ro
     const complete = validSnapshot(report.rateSnapshot), rate = complete ? report.rateSnapshot.laborRate : null;
     if (!complete) missingRateReports.push({ reportId: report.id, dateIso: report.dateIso || null, reason: report.rateReview?.reason || 'legacy_missing_rate_snapshot' });
     for (const entry of report.laborEntries || []) {
-      const hours = Number(entry.hours) || 0, classification = (db.team || []).find(member => Number(member.id) === Number(entry.memberId))?.role || 'Unclassified labor';
+      const excluded = (report.laborExclusions || []).find(row => Number(row.memberId) === Number(entry.memberId));
+      const hours = Math.max(0, (Number(entry.hours) || 0) - (excluded ? Number(excluded.hours) || Number(entry.hours) || 0 : 0));
+      const classification = (db.team || []).find(member => Number(member.id) === Number(entry.memberId))?.role || 'Unclassified labor';
       laborHours += hours;
       if (complete) knownLaborAmount += hours * rate;
       const key = JSON.stringify([classification, rate]), group = groups.get(key) || { classification, rate, hours: 0, amount: complete ? 0 : null };

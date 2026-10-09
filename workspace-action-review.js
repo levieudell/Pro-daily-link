@@ -5,7 +5,7 @@
   const id = () => crypto.randomUUID();
   function operation(path, options) {
     const method = String(options.method || 'GET').toUpperCase(), value = options.body ? JSON.parse(options.body) : {}, url = new URL(path, location.origin), p = url.pathname;
-    if (method === 'GET' || /\/(?:action-preview|review-preview)$/.test(p) || p === '/api/daily-actions/preview') return null;
+    if (method === 'GET' || /\/(?:action-preview|review-preview)$/.test(p) || p === '/api/daily-actions/preview' || p === '/api/workspace-direct-preview') return null;
     let match;
     if (method === 'POST' && p === '/api/time-cards/approve' || method === 'POST' && (match = /^\/api\/time-cards\/(\d+)\/(approve|unapprove)$/.exec(p))) return { title: 'Review time approval', previewPath: '/api/time-cards/review-preview', preview: { decision: match?.[2] || 'approve', ids: match ? [Number(match[1])] : value.ids }, family: 'timeReview', action: match?.[2] === 'unapprove' ? 'unapproveCards' : 'approveCards' };
     if (method === 'POST' && (match = /^\/api\/time-off-requests\/([^/]+)\/(approve|decline)$/.exec(p))) return { title: 'Review time-off decision', previewPath: '/api/time-off-requests/' + match[1] + '/review-preview', preview: { decision: match[2], note: value.note || '' }, family: 'timeReview', action: 'reviewLeave' };
@@ -15,7 +15,8 @@
     let dailyAction = method === 'POST' && p === '/api/reports' ? 'createReport' : (match = /^\/api\/reports\/(\d+)(?:\/(approve))?$/.exec(p)) && method === 'PATCH' ? match[2] ? 'approveReport' : 'editReport' : method === 'POST' && p === '/api/workdays/start' ? 'startWorkday' : (match = /^\/api\/workdays\/(\d+)\/end$/.exec(p)) && method === 'POST' ? 'endWorkday' : method === 'POST' && p === '/api/reporting-exports' ? 'captureExport' : null;
     if (dailyAction) {
       const details = { ...value }; delete details.extracted;
-      if (['createReport', 'editReport'].includes(dailyAction)) { delete details.project; if (dailyAction === 'editReport') delete details.projectId; }
+      if(dailyAction==='endWorkday')delete details.language;
+      if (['createReport', 'editReport'].includes(dailyAction)) { delete details.project;for(const key of ['originalLanguage','productions','laborEvidence','source','warning','noSafetyObservations','safetyTalk','safetyInspection','safetyIncident','safetyItems','customFieldSuggestions'])delete details[key];if(dailyAction==='editReport')for(const key of ['projectId','templateId','templateVersion','noteLanguage','englishTranslation'])delete details[key];if(Array.isArray(details.laborExclusions))details.laborExclusions=details.laborExclusions.map(({by,at,...entry})=>entry); }
       return { title: 'Review daily or workday', previewPath: '/api/daily-actions/preview', preview: { action: dailyAction, ...(match ? { id: Number(match[1]) } : {}), details }, family: dailyAction === 'captureExport' ? null : 'daily', action: { createReport: 'createReports', editReport: 'editReports', approveReport: 'approveReports', startWorkday: 'runWorkdays', endWorkday: 'runWorkdays' }[dailyAction] };
     }
     if (/^\/api\/assignments(?:\/\d+(?:\/acknowledge)?)?$/.test(p)) return { title: 'Review scheduling change', details: value, family: 'scheduling', action: p.endsWith('/acknowledge') ? 'acknowledge' : method === 'POST' ? 'create' : method === 'PATCH' ? 'edit' : 'remove', requestId: method === 'POST' && p === '/api/assignments' };
@@ -45,6 +46,7 @@
     if (details.memberIds) lines.push('People: ' + details.memberIds.map(personName).join(', '));
     for (const [key, label] of [['date','Work date'],['dateIso','Report date'],['startDate','First day'],['endDate','Last day'],['from','Period starts'],['to','Period ends'],['label','Period'],['start','Shift starts'],['end','Shift ends'],['inAt','Clock in'],['outAt','Clock out'],['activity','Work'],['reason','Reason'],['notes','Work recorded'],['text','Text'],['note','Private note'],['dueDate','To-do deadline'],['startNote','Starting note'],['next','Next steps']]) if (details[key] !== undefined && details[key] !== null && details[key] !== '') lines.push(label + ': ' + details[key]);
     if (details.status) lines.push('Daily status: ' + details.status);
+    if (Array.isArray(details.laborExclusions)) lines.push(details.laborExclusions.length ? 'Labor counted on another daily: ' + details.laborExclusions.map(row => 'member ' + row.memberId + ', ' + row.hours + ' hours, source report ' + row.sourceReportId).join('; ') : 'Clear labor counted on another daily');
     if (Object.hasOwn(details,'completed')) lines.push('To-do: ' + (details.completed ? 'Complete' : 'Open'));
     if (details.laborEntries?.length) lines.push('Labor: ' + details.laborEntries.map(row => personName(row.memberId) + ' — ' + row.hours + ' hours').join('; '));
     if (details.productionEntries?.length) lines.push('Production: ' + details.productionEntries.map(row => row.description + ' — ' + (row.quantity ?? 'pending quantity') + ' ' + row.unit + ', ' + (row.laborHours ?? 0) + ' labor hours').join('; '));
@@ -67,13 +69,17 @@
     const opening = await window.pdlWorkspaceActions.identity();
     if (action.family && opening.effectiveCapabilities?.[action.family]?.[action.action] !== true || !action.family && opening.role !== 'owner') throw Object.assign(Error('This action is restricted by your current permissions.'), { status: 403 });
     let preview = null;
+    if (!action.previewPath) {
+      action.previewPath='/api/workspace-direct-preview';
+      action.preview={family:action.family,method:String(options.method||'GET').toUpperCase(),path:new URL(path,location.origin).pathname+new URL(path,location.origin).search,details:{...action.details,...(action.requestId?{requestId:action.details.requestId||id()}:{})}};
+    }
     if (action.previewPath) preview = await send(action.previewPath, { method: 'POST', body: JSON.stringify(action.preview) });
     const confirmed = await review(action.title, summary(action, preview));
     if (!confirmed) throw Object.assign(Error('Change cancelled.'), { status: 400 });
     const current = await window.pdlWorkspaceActions.identity();
     if (current.authority !== opening.authority || current.sessionBinding !== opening.sessionBinding) throw Object.assign(Error('Workspace permissions changed. Review again.'), { status: 409 });
     const details = preview ? { token: preview.token, version: preview.version, confirmed: true, requestId: id() } : { ...action.details, ...(action.requestId ? { requestId: action.details.requestId || id() } : {}) };
-    if(preview)window.pdlWorkspaceSave.remember(current,String(options.method||'GET').toUpperCase(),new URL(path,location.origin).pathname,details);
+    if(preview)window.pdlWorkspaceSave.remember(current,String(options.method||'GET').toUpperCase(),new URL(path,location.origin).pathname+new URL(path,location.origin).search,details);
     const result = await send(path, { ...options, body: JSON.stringify(details), ...(preview ? { onAcknowledged: () => window.pdlWorkspaceSave.finish(details.requestId) } : {}) });
     if(preview)window.pdlWorkspaceSave.finish(details.requestId);
     // Normal report lists index the actor's projected project array.
