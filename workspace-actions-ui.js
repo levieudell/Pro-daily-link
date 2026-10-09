@@ -24,6 +24,7 @@
     if (path === '/api/workspace-identity' || !response.ok || !path.startsWith('/api/') || ['/api/config', '/api/auth/company', '/api/auth/logout', '/api/auth/forgot', '/api/auth/reset', '/api/auth/claim'].includes(path)) return;
     enabled = true;
     const opening = epoch, current = await identity();
+    if (binding && (binding.epoch !== epoch || binding.generation && (binding.generation !== loading || binding.generation !== loadSequence))) throw failure('Workspace response belongs to an earlier load. Refresh current records.');
     if(loading && path==='/api/state')loadRevision=current.revision;
     else if(loadRevision!==null && loading && current.revision!==loadRevision){clear();throw failure('Workspace records changed during loading. Refresh current records.');}
     if (opening !== epoch || revision === null || Number(revision) !== current.revision || authority !== current.authority || current.locked && !['/api/billing', '/api/account-access', '/api/auth/me', '/api/auth/login'].includes(path)) { clear(); throw failure('Workspace changed while loading. Refresh current records.'); }

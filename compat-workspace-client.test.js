@@ -28,6 +28,9 @@ async function main(){
  const queuedNewer=actions.load(async()=>{visible='newer';});
  await assert.rejects(actions.verifyResponse({ok:true,headers:{get:key=>key.includes('Revision')?'10':hash}},'/api/state',binding),/earlier load/);
  releaseRun();assert.match((await runningOlder).message,/changed during loading/);await queuedNewer;assert.equal(visible,'newer');assert.equal(root.style.visibility,'');
+ let releaseDelivery,deliveryStarted,deliveryApplied=false;const deliveryReady=new Promise(resolve=>deliveryStarted=resolve),deliveryHold=new Promise(resolve=>releaseDelivery=resolve);
+ const deliveryOlder=actions.load(async()=>{hold=deliveryHold;started=deliveryStarted;try{await actions.verifyResponse({ok:true,headers:{get:key=>key.includes('Revision')?'10':hash}},'/api/state',actions.capture());deliveryApplied=true;}finally{hold=null;started=null;}}).catch(error=>error);
+ await deliveryReady;const deliveryNewer=actions.load(async()=>{visible='newer';});releaseDelivery();assert.match((await deliveryOlder).message,/earlier load/);await deliveryNewer;assert.equal(deliveryApplied,false);assert.equal(visible,'newer');
  const reviewBox={window:{},location:{origin:'http://127.0.0.1'},URL,crypto:require('node:crypto').webcrypto};vm.createContext(reviewBox);vm.runInContext(fs.readFileSync('workspace-action-review.js','utf8'),reviewBox);
  const operation=reviewBox.window.pdlWorkspaceReview.operation;
  const clock=operation('/api/time-cards/1/clock-out',{method:'POST',body:'{}'});assert.equal(clock.preview.action,'clockOut');assert.equal(clock.action,'clockCards');assert.equal(operation('/api/time-cards/approve',{method:'POST',body:'{"ids":[1]}'}).action,'approveCards');
