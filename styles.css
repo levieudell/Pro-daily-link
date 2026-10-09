@@ -591,3 +591,11 @@ dialog[open]{animation:pdl-dialog-in .24s cubic-bezier(.2,.7,.3,1)}
   #report-modal input[type=file]::file-selector-button:hover{background:#e85c10}
   #report-modal .modal-actions{background:var(--panel,#fff);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px)}
 }
+
+/* --- Step 1 declutter (mobile) --- */
+@media(max-width:760px){
+  #report-type~small.input-help{display:none}
+  #report-crew-field small.input-help{display:none}
+  .report-step .note-tools{margin:2px 0 4px}
+  .report-step .autosave-status{margin-bottom:8px}
+}
