@@ -1,7 +1,9 @@
 const assert = require('node:assert/strict');
+const crypto = require('node:crypto');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
+const backupVerification = require('./database/backup-verification');
 
 delete process.env.RESEND_API_KEY;
 const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pdl-digest-'));
@@ -35,6 +37,14 @@ fs.writeFileSync(platformFile, JSON.stringify({
 
 (async () => {
   try {
+    // A verified backup receipt exists for the main tenant; the QA tenant is unverified.
+    const backupSnapshot = JSON.parse(fs.readFileSync(dbFile, 'utf8'));
+    backupSnapshot.company.persistence = {revision: 1};
+    const backupBytes = Buffer.from(JSON.stringify(backupSnapshot));
+    const backupHash = crypto.createHash('sha256').update(backupBytes).digest('hex');
+    await backupVerification.createAndRecordVerification(backupSnapshot, {directory: path.join(tempDir, '.backup-verification'),
+      createBackup: async () => ({bucket: 'tenant-backups', objectKey: `${backupSnapshot.company.id}/synthetic.json`, hash: backupHash, bytes: backupBytes.length, verifiedAt: new Date().toISOString()})});
+
     // Scheduling: every digest lands on Monday 08:00 America/Chicago.
     assert.equal(nextWeeklyDigestDue(new Date('2026-10-07T15:00:00Z')).getTime(), Date.UTC(2026, 9, 12, 13, 0), 'Wednesday -> Monday Oct 12, 08:00 CDT = 13:00 UTC');
     assert.equal(nextWeeklyDigestDue(new Date('2026-10-12T12:00:00Z')).getTime(), Date.UTC(2026, 9, 12, 13, 0), '07:00 CDT Monday still lands on that morning');
@@ -47,6 +57,13 @@ fs.writeFileSync(platformFile, JSON.stringify({
     assert.equal(model.flagged.length, 1);
     assert.equal(model.flagged[0].name, 'Acme Builders');
     assert.ok(model.flagged[0].alerts.includes('Subscription past due'));
+    assert.equal(model.backups.length, 2, 'backup coverage lists every workspace');
+    const acmeBackup = model.backups.find(b => b.name === 'Acme Builders');
+    assert.ok(acmeBackup.lastVerifiedAt, 'verified receipt is surfaced');
+    assert.equal(acmeBackup.fresh, true);
+    const qaBackup = model.backups.find(b => b.name === 'QA Sandbox Co');
+    assert.equal(qaBackup.lastVerifiedAt, null);
+    assert.equal(qaBackup.lastAttemptStatus, null);
 
     // Forced send delivers through the injected sender and records state.
     let delivered = null;
@@ -58,6 +75,9 @@ fs.writeFileSync(platformFile, JSON.stringify({
     assert.match(html, /Subscription past due/);
     assert.match(html, /All 1 customer account need attention/);
     assert.match(html, /<strong>80<\/strong> Watch/);
+    assert.match(html, /Backups/);
+    assert.match(html, /Verified today/);
+    assert.match(html, /Never verified/);
     const state = JSON.parse(fs.readFileSync(platformFile, 'utf8'));
     assert.ok(state.weeklyDigest.lastSentAt);
     assert.equal(state.weeklyDigest.flaggedCount, 1);
