@@ -28,8 +28,8 @@ const context={$:node,$$:()=>[],location:{origin:'https://example.invalid'},URL,
 for(const store of [context.localStorage,context.sessionStorage]){
   store.getItem=key=>store.get(key)||null;store.setItem=(key,value)=>store.set(key,value);store.removeItem=key=>store.delete(key);
 }
-vm.createContext(context);
-for(const name of ['escapeHtml','projectBadgeColor','projectProgress','projectPhotoUrl','renderTable','renderProjectCards','renderTeam','renderActionCenter','renderCatalog','importLineMarkup','offlineReportStorageKey','hasOfflineReportContent','readOfflineDraft','restoreInterruptedReport'])vm.runInContext(code(name),context);
+context.EmployeeRoster=require('./employee-roster');vm.createContext(context);
+for(const name of ['escapeHtml','projectBadgeColor','projectProgress','projectPhotoUrl','renderTable','renderProjectCards','canManageEmployeeRoster','renderTeam','renderActionCenter','renderCatalog','importLineMarkup','offlineReportStorageKey','hasOfflineReportContent','readOfflineDraft','restoreInterruptedReport'])vm.runInContext(code(name),context);
 for(const name of ['renderTable','renderProjectCards','renderTeam','renderActionCenter','renderCatalog']){
   context[name]();
   for(const [key,element] of nodes)assert.ok(!element.innerHTML.includes(attack),name+' must escape injected markup in '+key+': '+element.innerHTML.slice(Math.max(0,element.innerHTML.indexOf(attack)-50),element.innerHTML.indexOf(attack)+100));

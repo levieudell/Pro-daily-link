@@ -1,0 +1,64 @@
+'use strict';
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const vm = require('node:vm');
+const {safePage,safeReferrer,campaignLink} = require('./public-analytics');
+const config = { enabled: true, measurementId: 'G-TEST123', hosts: ['prodailylink.com'], campaignValues: {utm_source:['newsletter'],utm_medium:['email'],utm_campaign:['launch']},blogSlugs:['public-field-note'] };
+const base = 'https://prodailylink.com';
+assert.equal(safePage(base+'/app?tenant=secret',config),null);
+for(const path of ['/index.html','/guest/abc','/login.html','/platform.html','/reset-password.html']) assert.equal(safePage(base+path,config),null);
+for(const query of ['token=secret','tenant=secret','email=person%40example.com','gclid=secret','slug=customer','unknown=secret']) assert.equal(safePage(base+'/?'+query,config),null);
+for(const query of ['utm_source=person%40example.com','utm_campaign=customer-name','utm_content=secret','utm_term=private-name']) assert.equal(safePage(base+'/?'+query,config).location,base+'/');
+assert.equal(safePage(base+'/#customer-secret',config),null);
+assert.ok(safePage(base+'/#how',config)); assert.ok(safePage(base+'/#demo',config));
+assert.equal(safePage(base+'/blog.html?post=customer-secret',config),null);
+assert.equal(safePage(base+'/blog.html?post=public-field-note',config).title,'Field Notes');
+assert.equal(safePage('https://preview.example.com/',config),null);
+assert.equal(safePage('http://prodailylink.com/',config),null);
+assert.equal(safePage(base+'/signup.html?plan=growth',config).location,base+'/signup.html');
+assert.equal(safeReferrer('https://source.com/customer?token=secret#person'),'https://source.com/');
+const campaign = '/?utm_source=newsletter&utm_medium=email&utm_campaign=launch';
+const link = campaignLink(base+campaign,base+'/signup.html?plan=growth',config);
+assert.equal(new URL(link).searchParams.get('utm_campaign'),'launch');
+assert.equal(new URL(link).searchParams.get('plan'),'growth');
+assert.equal(campaignLink(base+campaign+'&token=secret','/signup.html',config),'/signup.html');
+assert.equal(campaignLink(base+campaign,'https://elsewhere.com/signup.html',config),'https://elsewhere.com/signup.html');
+function browser(options={}) {
+  const appended=[], listeners={}, cookies=[], storage=new Map();
+  if(options.choice)storage.set('pdl-public-analytics-consent-v1',options.choice);
+  const links=[{href:base+'/signup.html?plan=growth'}];
+  const doc={referrer:'https://source.com/customer?token=secret',head:{appendChild:e=>appended.push(e)},body:{append:(...e)=>appended.push(...e)},createElement:tag=>({tag,dataset:{},setAttribute(){}}),addEventListener:(event,fn)=>listeners['doc:'+event]=fn,querySelectorAll:()=>links};
+  let cookie=options.cookie||'';
+  Object.defineProperty(doc,'cookie',{get:()=>cookie,set:value=>cookies.push(value)});
+  const win={document:doc,navigator:options.navigator||{},PDL_PUBLIC_ANALYTICS:{...config,enabled:options.enabled!==false},location:{href:options.href||base+'/',hostname:'prodailylink.com',reload(){win.reloaded=true;}},localStorage:{getItem:k=>storage.get(k),setItem:(k,v)=>storage.set(k,v)},history:{pushState(_s,_t,url){win.location.href=new URL(url,win.location.href).href;},replaceState(_s,_t,url){win.location.href=new URL(url,win.location.href).href;}},addEventListener:(event,fn)=>listeners[event]=fn};
+  const code=fs.readFileSync('public-analytics.js','utf8');
+  vm.runInNewContext(code,{window:win,URL});
+  return {win,doc,appended,listeners,cookies,links,run:()=>vm.runInNewContext(code,{window:win,URL}),panel:()=>appended.find(e=>e.tag==='section'),views:()=>Array.from(win.dataLayer||[]).filter(e=>e[0]==='event')};
+}
+for(const options of [{},{choice:'declined'},{enabled:false},{choice:'accepted',navigator:{globalPrivacyControl:true}},{choice:'accepted',navigator:{doNotTrack:'1'}},{choice:'accepted',cookie:'pdl_company=private'},{choice:'accepted',href:base+'/app?tenant=secret'},{choice:'accepted',href:base+'/?token=secret'}]) {
+  const b=browser(options); assert.equal(b.appended.filter(e=>e.tag==='script').length,0); assert.equal(b.views().length,0);
+}
+const b=browser(); b.panel().onclick({target:{dataset:{choice:'accepted'}}});
+assert.equal(b.appended.filter(e=>e.tag==='script').length,1); assert.equal(b.views().length,1);
+b.run(); assert.equal(b.views().length,1);
+b.win.history.pushState({},'', '/about.html'); assert.equal(b.views().length,2);
+b.win.history.replaceState({},'', '/about.html#pricing'); assert.equal(b.views().length,2);
+b.win.history.pushState({},'', '/app?tenant=secret'); assert.equal(b.views().length,2); assert.equal(b.win['ga-disable-G-TEST123'],true);
+assert.ok(!JSON.stringify(b.win.dataLayer).includes('secret'));
+const attributed=browser({choice:'accepted',href:base+campaign}); assert.equal(new URL(attributed.links[0].href).searchParams.get('utm_campaign'),'launch');
+const unreviewed=browser({choice:'accepted',href:base+'/?utm_source=person%40example.com&utm_campaign=customer-secret&utm_content=private-secret'});
+assert.equal(unreviewed.views().length,1,'unreviewed campaign visit still counts canonical public page');
+assert.equal(unreviewed.views()[0][2].page_location,base+'/');
+assert.equal(new URL(unreviewed.links[0].href).searchParams.get('utm_campaign'),null,'unreviewed labels never copied to signup');
+for(const value of ['person@example.com','person%40example.com','customer-secret','private-secret','utm_content'])assert.ok(!JSON.stringify(unreviewed.win.dataLayer).includes(value),'unreviewed query never reaches tag commands');
+const mixedPrivate=browser({choice:'accepted',href:base+campaign+'&tenant=secret'});assert.equal(mixedPrivate.views().length,0);
+const defaultsOnly={...config,campaignValues:{utm_source:[],utm_medium:[],utm_campaign:[]},blogSlugs:[]};assert.equal(safePage(base+campaign,defaultsOnly).location,base+'/');
+const revoke=browser({choice:'accepted',cookie:'_ga=abc; _ga_TEST123=def'});
+revoke.panel().onclick({target:{dataset:{choice:'declined'}}});
+assert.equal(revoke.win['ga-disable-G-TEST123'],true); assert.equal(revoke.win.reloaded,true); assert.ok(revoke.cookies.some(v=>v.startsWith('_ga=;')));
+const otherTab=browser({choice:'accepted'}); otherTab.listeners.storage({key:'pdl-public-analytics-consent-v1'}); assert.equal(otherTab.win.reloaded,true);
+for(const page of ['index.html','guest.html','login.html','platform.html','support.html','reset-password.html','verify-email.html'])assert.ok(!fs.readFileSync(page,'utf8').includes('/public-analytics.js'));
+const defaults=fs.readFileSync('public-analytics-config.js','utf8'); assert.match(defaults,/enabled: true/); assert.match(defaults,/measurementId: 'G-BDXQC0Z07E'/);
+console.log('Public analytics consent, URL privacy, scope, navigation, campaign and opt-out tests passed');
+
+const privacyCopy=fs.readFileSync('privacy.html','utf8');assert(privacyCopy.includes('visitor identifier cookie expires 30 days after creation'));assert(privacyCopy.includes("session-state cookie can renew during activity"));assert(!privacyCopy.includes('analytics cookies are limited to 30 days without renewal'));
