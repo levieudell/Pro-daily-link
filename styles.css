@@ -565,3 +565,12 @@ dialog::backdrop{background:rgba(16,37,30,.55);backdrop-filter:blur(6px);-webkit
 
 /* --- Tables --- */
 th{letter-spacing:.04em}
+
+/* --- Field-mode + dialog motion polish --- */
+dialog[open]{animation:pdl-dialog-in .24s cubic-bezier(.2,.7,.3,1)}
+@keyframes pdl-dialog-in{from{opacity:0;transform:translateY(12px) scale(.98)}}
+.hero-start-button{transition:transform var(--t-fast),box-shadow var(--t-fast)}
+.hero-start-button:active{transform:scale(.95)}
+.field-assignment,.activity-item{transition:background var(--t-fast)}
+.activity-report-link{transition:background var(--t-fast)}
+.project-view-tabs button,.team-tabs button,.project-detail-tabs button{transition:background var(--t-fast),color var(--t-fast),border-color var(--t-fast)}
