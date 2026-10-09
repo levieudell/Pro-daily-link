@@ -2,12 +2,13 @@
 const assert = require('node:assert/strict'), { Readable } = require('node:stream');
 const { EventEmitter } = require('node:events');
 const { readJsonBody } = require('./json-request-body');
-const { fixture } = require('./fixtures/project-assistant');
-const { splitSnapshot, assembleSnapshot, canonicalHash } = require('./database/transactional-repository');
+const { snapshot: fixture } = require('./compat-account-fixture');
+const { split } = require('./database/compat-tenant-repository');
+const { assembleSnapshot, canonicalHash } = require('./database/transactional-repository');
 async function main() {
   const reason = 'Reviewed → changed · café 👷', snapshot = fixture();
   snapshot.auditLog = [{ id: 'synthetic-unicode-audit', action: reason }];
-  const packed = splitSnapshot(snapshot), input = { p_scalar_data: packed.scalarData, p_content_hash: canonicalHash(snapshot), p_records: packed.records };
+  const packed = split(snapshot), input = { p_scalar_data: packed.scalarData, p_content_hash: canonicalHash(snapshot), p_records: packed.records };
   const bytes = Buffer.from(JSON.stringify(input)), arrow = bytes.indexOf(Buffer.from('→'));
   const brokenChunks = [bytes.subarray(0, arrow + 1), bytes.subarray(arrow + 1)];
   const damaged = JSON.parse(brokenChunks.map(chunk => chunk.toString('utf8')).join(''));
