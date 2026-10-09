@@ -433,6 +433,28 @@
     </form>
   </dialog>
 
+  <dialog id="day-action-modal">
+    <form method="dialog">
+      <div class="modal-header"><div><p class="eyebrow">FIELD SCHEDULING</p><h2 id="day-action-title">Plan this day</h2></div><button class="close-button" value="cancel">×</button></div>
+      <p class="input-help" id="day-action-summary"></p>
+      <div class="day-action-buttons"><button type="button" class="primary" id="day-action-schedule">Schedule work</button><button type="button" class="secondary" id="day-action-markoff">Mark off · sick / no work</button></div>
+      <div class="modal-actions"><button value="cancel" class="secondary">Cancel</button></div>
+    </form>
+  </dialog>
+
+  <dialog id="mark-off-modal">
+    <form method="dialog">
+      <div class="modal-header"><div><p class="eyebrow">AVAILABILITY</p><h2>Mark off</h2></div><button class="close-button" value="cancel">×</button></div>
+      <p class="input-help" id="mark-off-summary"></p>
+      <input id="mark-off-member" type="hidden"><input id="mark-off-date" type="hidden">
+      <label>Reason<select id="mark-off-reason"><option value="sick">Called in sick</option><option value="personal">Personal day</option><option value="no_work">No work</option><option value="other">Other</option></select></label>
+      <label>Note <small>Optional detail for the record</small><input id="mark-off-note" maxlength="240" placeholder="Example: Doctor appointment"></label>
+      <fieldset class="mark-off-paid"><legend>How is the day counted?</legend><label class="check-row"><input type="radio" name="mark-off-paid" value="paid" checked> Paid · sick or PTO</label><label class="check-row"><input type="radio" name="mark-off-paid" value="unpaid"> Unpaid</label></fieldset>
+      <p class="form-message" id="mark-off-message" role="alert" hidden></p>
+      <div class="modal-actions"><button value="cancel" class="secondary">Cancel</button><button type="button" class="primary" id="mark-off-save">Save mark-off</button></div>
+    </form>
+  </dialog>
+
   <dialog id="start-day-modal">
     <form method="dialog">
       <div class="modal-header"><div><p class="eyebrow">CLOCK IN CREW</p><h2>Start workday</h2></div><button class="close-button" value="cancel">×</button></div>
@@ -489,7 +511,7 @@
   <script src="report-labor-review.js?v=20261009-labor-exclusions"></script>
   <script src="company-timezone.js?v=20261008-saved-zone"></script>
   <script src="schedule-approved-labor.js?v=20261008-approved-evidence"></script>
-  <script src="app.js?v=20261008-saved-zone-repeat-week"></script>
+  <script src="app.js?v=20261008-saved-zone-mark-off"></script>
   <script src="estimate-mobile.js"></script>
   <script src="time-approval-controls.js?v=20261007-pay-presets-person-total"></script>
   <script src="company-settings-tabs.js?v=20261004-pay-periods"></script>
