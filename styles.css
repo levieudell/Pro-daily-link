@@ -599,3 +599,14 @@ dialog[open]{animation:pdl-dialog-in .24s cubic-bezier(.2,.7,.3,1)}
   .report-step .note-tools{margin:2px 0 4px}
   .report-step .autosave-status{margin-bottom:8px}
 }
+
+/* --- Step 2 banner consolidation (mobile) --- */
+@media(max-width:760px){
+  #report-modal .verify-banner{padding:9px 12px;margin:8px 0 10px;gap:4px}
+  #report-modal .verify-banner b{font-size:11px}
+  #report-modal .verify-banner span{font-size:10px}
+  #report-modal .ai-preview:empty{display:none}
+  .verify-gold-hint{display:block;color:#8a5a10;font-weight:700}
+  #report-modal .report-review-summary{margin-top:2px}
+  #report-modal .report-gaps{margin-bottom:10px}
+}
