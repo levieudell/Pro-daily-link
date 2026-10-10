@@ -676,3 +676,27 @@ body.schedule-touch-dragging{overflow:hidden;-webkit-user-select:none;user-selec
 :root[data-theme="dark"] .project-schedule-add{background:#1d2b25;border-color:#2c3d35}
 :root[data-theme="dark"] .project-schedule-dep{background:#24463a;color:#cde3d8}
 :root[data-theme="dark"] .project-schedule-track{background:#22302a}
+
+/* Unassigned project-work lane under the team schedule */
+.schedule-unassigned{margin:16px 0 0;border:1px dashed #c8d4cd;border-radius:14px;background:#f7f9f7;padding:14px 16px}
+.schedule-unassigned-head{display:flex;align-items:baseline;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:10px}
+.schedule-unassigned-head h3{margin:0;font:600 13px "Oswald",sans-serif;letter-spacing:.08em;text-transform:uppercase;color:#17382d}
+.schedule-unassigned-head p{margin:0;font-size:13px;color:#64726c}
+.schedule-unassigned-list{display:flex;flex-direction:column;gap:8px}
+.schedule-task-chip{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;background:#fff;border:1px solid #dfe5e1;border-radius:10px;padding:10px 12px;cursor:grab}
+.schedule-task-chip.dragging{opacity:.5;cursor:grabbing}
+.schedule-task-chip-main{display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;min-width:0}
+.schedule-task-chip-main b{font:600 11px "Oswald",sans-serif;letter-spacing:.06em;background:#17382d;color:#fff;border-radius:6px;padding:2px 8px}
+.schedule-task-chip-main strong{font-size:14px;color:#1c2b25}
+.schedule-task-chip-main small{color:#64726c;font-size:12px}
+.schedule-task-assign{display:flex;align-items:center;gap:8px}
+.schedule-task-assign select{max-width:180px}
+.schedule-unassigned-empty{margin:0;color:#98a5a0;font-size:13px}
+@media(max-width:760px){
+  .schedule-task-chip{align-items:stretch;flex-direction:column}
+  .schedule-task-assign select{max-width:none;flex:1}
+}
+:root[data-theme="dark"] .schedule-unassigned{background:#17211c;border-color:#2c3d35}
+:root[data-theme="dark"] .schedule-task-chip{background:#1d2b25;border-color:#2c3d35}
+:root[data-theme="dark"] .schedule-task-chip-main strong{color:#e6efe9}
+:root[data-theme="dark"] .schedule-unassigned-head h3{color:#cde3d8}

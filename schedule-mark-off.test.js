@@ -13,7 +13,7 @@ assert.match(index,/id="mark-off-reason"/,'reason select exists');
 assert.match(index,/name="mark-off-paid"/,'paid/unpaid choice exists');
 assert.match(appSource,/\$\('#mark-off-save'\)\.onclick=saveMarkOff/,'save wired');
 assert.match(appSource,/canManageSchedule\(\)\?openDayAction\(\+cell\.dataset\.scheduleMember/,'week cells route through the day chooser');
-assert.match(index,/app\.js\?v=20261009-touch-drag/,'cache version carries the bumped release marker (suffix changes per release)');
+assert.match(index,/app\.js\?v=20261011-task-assign/,'cache version carries the bumped release marker (suffix changes per release)');
 // Live API against a real server boot.
 const root=fs.mkdtempSync(path.join(os.tmpdir(),'pdl-markoff-')),companyId='ccddccdd-ccdd-4cc4-8cc8-ccddccddeeff',ownerToken='synthetic-markoff-owner';
 const utc=new Date(),today=`${utc.getUTCFullYear()}-${String(utc.getUTCMonth()+1).padStart(2,'0')}-${String(utc.getUTCDate()).padStart(2,'0')}`;
