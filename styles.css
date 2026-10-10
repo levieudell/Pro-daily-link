@@ -641,3 +641,38 @@ dialog[open]{animation:pdl-dialog-in .24s cubic-bezier(.2,.7,.3,1)}
 /* Touch drag-and-drop on the schedule board: ghost chip follows the finger. */
 .schedule-touch-ghost{position:fixed;z-index:90;pointer-events:none;transform:scale(.96) rotate(1.5deg);opacity:.95;box-shadow:0 14px 34px #11141633;width:max-content;max-width:230px}
 body.schedule-touch-dragging{overflow:hidden;-webkit-user-select:none;user-select:none}
+
+/* Project schedule tab: linked tasks with auto-computed dates. */
+.project-schedule-head{display:flex;justify-content:space-between;gap:16px;align-items:flex-start;margin:4px 0 14px}
+.project-schedule-head h3{margin:0 0 4px;font:600 20px "Oswald",sans-serif;letter-spacing:.02em}
+.project-schedule-head p{margin:0;color:#64726c;font-size:14px;max-width:640px}
+.project-schedule-add{display:flex;flex-wrap:wrap;gap:10px;align-items:flex-end;padding:12px;border:1px solid #dfe5e1;border-radius:12px;background:#faf9f6;margin-bottom:14px}
+.project-schedule-add input[type=text]{flex:1 1 220px;min-width:180px}
+.project-schedule-add input[type=number]{width:96px}
+.project-schedule-add select[multiple]{min-width:180px;min-height:64px}
+.project-schedule-table-wrap{overflow-x:auto;border:1px solid #dfe5e1;border-radius:12px}
+.project-schedule-table{width:100%;border-collapse:collapse;font-size:14px}
+.project-schedule-table th{text-align:left;font:600 11px "Oswald",sans-serif;letter-spacing:.08em;text-transform:uppercase;color:#64726c;padding:10px 12px;background:#f4f2ec;border-bottom:1px solid #dfe5e1}
+.project-schedule-table td{padding:10px 12px;border-bottom:1px solid #eceee9;vertical-align:top}
+.project-schedule-table tr:last-child td{border-bottom:0}
+.project-schedule-table small{color:#64726c}
+.project-schedule-dep{display:inline-block;background:#e8efeb;color:#17382d;border-radius:99px;padding:2px 10px;font-size:12px;margin:0 4px 4px 0}
+.project-schedule-none{color:#98a5a0;font-size:12px}
+.project-schedule-track{position:relative;height:8px;border-radius:99px;background:#eef1ee;margin-top:8px;min-width:120px}
+.project-schedule-track i{position:absolute;top:0;bottom:0;border-radius:99px;background:linear-gradient(90deg,#2e6b52,#17382d)}
+.project-schedule-actions{white-space:nowrap}
+.project-schedule-actions select{margin-right:6px}
+.project-schedule-edit-row td{background:#f7f8f6}
+.project-schedule-editor{display:grid;grid-template-columns:2fr 1fr 2fr;gap:12px;align-items:end}
+.project-schedule-editor label{display:grid;gap:4px;font-size:12px;font-weight:600;color:#64726c}
+.project-schedule-editor-actions{display:flex;gap:8px;grid-column:1/-1}
+@media(max-width:760px){
+  .project-schedule-editor{grid-template-columns:1fr}
+  .project-schedule-add{flex-direction:column;align-items:stretch}
+  .project-schedule-add input[type=text],.project-schedule-add select[multiple]{width:100%}
+  .project-schedule-actions select{display:block;margin:0 0 6px}
+}
+:root[data-theme="dark"] .project-schedule-table th{background:#1d2b25;color:#9fb3aa}
+:root[data-theme="dark"] .project-schedule-add{background:#1d2b25;border-color:#2c3d35}
+:root[data-theme="dark"] .project-schedule-dep{background:#24463a;color:#cde3d8}
+:root[data-theme="dark"] .project-schedule-track{background:#22302a}
