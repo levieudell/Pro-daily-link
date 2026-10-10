@@ -11,8 +11,8 @@ const { isPublicFile } = require('./public-file-policy');
 
 // Script loads after app.js (it patches openProject) and carries a version.
 assert.ok(index.indexOf('app.js?') < index.indexOf('project-schedule-ui.js?'), 'module loads after app.js so openProject exists');
-assert.match(index, /project-schedule-ui\.js\?v=20261010-project-schedule/);
-assert.match(index, /styles\.css\?v=20261010-project-schedule/);
+assert.match(index, /project-schedule-ui\.js\?v=20261011-task-assign/);
+assert.match(index, /styles\.css\?v=20261011-task-assign/);
 
 // Static serving + server wiring.
 assert.equal(isPublicFile(process.cwd(), path.join(process.cwd(), 'project-schedule-ui.js')), true, 'UI module is publicly served');
@@ -39,5 +39,16 @@ assert.match(engine, /link back on themselves/, 'cycles produce a human-readable
 for (const selector of ['.project-schedule-table', '.project-schedule-track', '.project-schedule-add', '.project-schedule-editor', '.project-schedule-dep'])
   assert.ok(styles.includes(selector), `${selector} styled`);
 assert.match(styles, /@media\(max-width:760px\)[^]*project-schedule-editor\{grid-template-columns:1fr\}/);
+
+// Task assignment from the team schedule.
+assert.ok(server.includes('projectTaskAssignRoute = url.pathname.match'), 'assign endpoint route exists');
+assert.match(ui, /renderScheduleWithLane = renderSchedule/, 'team schedule render is wrapped');
+assert.match(ui, /class="schedule-unassigned"/);
+assert.match(ui, /data-schedule-task="\$\{Number\(task\.id\)\}"/);
+assert.match(ui, /blockSelector: '\[data-schedule-task\]'/, 'chips get their own touch-drag attach');
+assert.match(ui, /api\(`\/api\/project-tasks\/\$\{taskId\}\/assign`/);
+assert.match(ui, /window\.PDLProjectScheduleUI = \{ assignTaskTo, paintUnassignedLane \}/);
+for (const selector of ['.schedule-unassigned', '.schedule-task-chip', '.schedule-task-assign'])
+  assert.ok(styles.includes(selector), `${selector} styled`);
 
 console.log('project-schedule UI contracts: ok');

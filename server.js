@@ -1253,6 +1253,54 @@ async function api(req,res,url){
     writeDb(db);
     return json(res, 200, { tasks: result.tasks || [], changed: result.changed || [], deleted: removed.id });
   }
+  const projectTaskAssignRoute = url.pathname.match(/^\/api\/project-tasks\/(\d+)\/assign$/);
+  if (req.method === 'POST' && projectTaskAssignRoute) {
+    const input = await body(req), db = readDb(), task = (db.projectTasks || []).find(t => t.id === Number(projectTaskAssignRoute[1]));
+    if (!task) return json(res, 404, { error: 'Task not found' });
+    if (!taskOfficeAllowed(req)) return json(res, 403, { error: 'Office permission required to schedule tasks' });
+    const memberId = Number(input.memberId), member = (db.team || []).find(m => Number(m.id) === memberId);
+    if (!member) return json(res, 400, { error: 'Choose a person from the team' });
+    if (req.auth?.user?.role === 'project_manager' && !managerAssignmentAllowed(db, req.auth.user, { projectId: task.projectId, memberIds: [memberId] })) return json(res, 403, { error: 'You can only schedule your assigned crews on your assigned projects' });
+    const from = scheduleAvailability.validDate(input.fromDate) ? String(input.fromDate).slice(0, 10) : task.startDate;
+    const first = new Date(`${from}T12:00:00Z`), last = new Date(`${task.endDate}T12:00:00Z`);
+    if (Number.isNaN(+first) || Number.isNaN(+last) || last < first) return json(res, 400, { error: 'Pick a day on or before the task ends' });
+    if ((last - first) / 86400000 > 90) return json(res, 400, { error: 'Schedule ranges can be up to 90 days' });
+    const dates = [];
+    for (const cursor = new Date(first); cursor <= last; cursor.setUTCDate(cursor.getUTCDate() + 1)) {
+      const iso = cursor.toISOString().slice(0, 10);
+      if (PDLProjectSchedule.isBusinessDay(new Date(`${iso}T12:00:00`))) dates.push(iso);
+    }
+    if (!dates.length) return json(res, 400, { error: 'This range has no workdays' });
+    const start = '07:00', end = '15:30', now = new Date().toISOString();
+    const approved = scheduleAvailability.approved(db.timeOffRequests, [memberId]);
+    let created = 0, merged = 0, skipped = 0;
+    db.assignments ||= [];
+    for (const date of dates) {
+      if (scheduleAvailability.onDate(approved, memberId, date)) { skipped++; continue; }
+      const elsewhere = db.assignments.filter(a => a.date === date && a.projectId !== task.projectId && (a.memberIds || []).includes(memberId) && start < a.end && end > a.start);
+      if (elsewhere.length) { skipped++; continue; }
+      const sameProject = db.assignments.find(a => a.date === date && a.projectId === task.projectId && (a.memberIds || []).includes(memberId) && start < a.end && end > a.start);
+      if (sameProject) { skipped++; continue; }
+      const row = db.assignments.find(a => a.date === date && a.projectId === task.projectId && start < a.end && end > a.start);
+      if (row) {
+        row.memberIds = [...(row.memberIds || []), memberId];
+        row.notifications = row.notifications || {};
+        row.notifications[memberId] = { inAppAt: now, emailStatus: 'not_available' };
+        merged++;
+        continue;
+      }
+      db.assignments.push(...createAssignmentRows(db, { projectId: task.projectId, memberIds: [memberId], crew: member.crew || null, start, end, activity: task.name }, [date], now));
+      created++;
+    }
+    if (created + merged > 0) {
+      task.memberIds = [memberId];
+      task.assignedAt = now;
+      task.assignedBy = req.auth?.user.name || 'Office user';
+    }
+    writeDb(db);
+    const scheduled = PDLProjectSchedule.scheduleTasks((db.projectTasks || []).filter(t => Number(t.projectId) === Number(task.projectId)), (db.projects || []).find(p => Number(p.id) === Number(task.projectId))?.startDate);
+    return json(res, 200, { tasks: scheduled.tasks || [], changed: [], created, merged, skipped, memberId, memberName: member.name });
+  }
   const projectPlansRoute=url.pathname.match(/^\/api\/projects\/(\d+)\/plans$/);
   if(req.method==='GET'&&projectPlansRoute){
     const db=readDb(),project=db.projects.find(row=>row.id===Number(projectPlansRoute[1]));

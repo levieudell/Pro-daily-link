@@ -17,6 +17,7 @@
     const opts=options||{};
     const canManage=typeof opts.canManage==='function'?opts.canManage:()=>false;
     const onMove=typeof opts.onMove==='function'?opts.onMove:()=>{};
+    const blockSelector=opts.blockSelector||'[data-assignment]';
     let pending=null,dragging=false,ghost=null,currentCell=null,sourceBlock=null;
 
     const distance=(a,b)=>Math.max(Math.abs(a.clientX-b.clientX),Math.abs(a.clientY-b.clientY));
@@ -49,6 +50,7 @@
       ghost=sourceBlock.cloneNode(true);
       ghost.classList.add('schedule-touch-ghost');
       ghost.removeAttribute('data-assignment');
+      ghost.removeAttribute('data-schedule-task');
       ghost.removeAttribute('draggable');
       if(root.body&&root.body.appendChild)root.body.appendChild(ghost);
       placeGhost(start);
@@ -56,7 +58,7 @@
 
     root.addEventListener('pointerdown',event=>{
       if(event.pointerType!=='touch'||!canManage())return;
-      const block=typeof event.target.closest==='function'?event.target.closest('[data-assignment]'):null;
+      const block=typeof event.target.closest==='function'?event.target.closest(blockSelector):null;
       if(!block)return;
       pending={pointerId:event.pointerId,block,start:{clientX:event.clientX,clientY:event.clientY},at:Date.now(),started:false};
     });
@@ -77,7 +79,7 @@
     root.addEventListener('pointerup',event=>{
       if(!pending||event.pointerId!==pending.pointerId)return;
       const wasDragging=dragging,dropped=currentCell;
-      const payload=wasDragging&&dropped?{assignmentId:+pending.block.dataset.assignment,memberId:+pending.block.dataset.member,targetMemberId:+dropped.dataset.scheduleMember,date:dropped.dataset.scheduleDate}:null;
+      const payload=wasDragging&&dropped?{assignmentId:+pending.block.dataset.assignment,memberId:+pending.block.dataset.member,targetMemberId:+dropped.dataset.scheduleMember,date:dropped.dataset.scheduleDate,...(pending.block.dataset.scheduleTask?{taskId:+pending.block.dataset.scheduleTask}:{})}:null;
       if(payload)pending.block.dataset.touchDragged='1';
       reset();
       if(payload)onMove(payload);
