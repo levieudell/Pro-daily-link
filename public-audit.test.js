@@ -42,6 +42,8 @@ process.env.PDL_DB_FILE=path.join(temp,'db.json');process.env.PDL_PLATFORM_FILE=
 for(const key of ['SENTRY_DSN','RESEND_API_KEY','STRIPE_SECRET_KEY','OPENAI_API_KEY','DATABASE_URL','PDL_DATABASE_URL'])delete process.env[key];
 fs.copyFileSync(path.join(__dirname,'data/db.json'),process.env.PDL_DB_FILE);
 fs.writeFileSync(process.env.PDL_PLATFORM_FILE,JSON.stringify({users:[],sessions:[],blogPosts:[{...post,id:1,status:'Published'},{...post,id:2,slug:'private-draft',status:'Draft'}]}));
+const platformBefore=fs.readFileSync(process.env.PDL_PLATFORM_FILE,'utf8');
+const {loadPublishedPost}=require('./public-blog-source');assert.equal(loadPublishedPost(process.env.PDL_PLATFORM_FILE,'daily-reports').id,1);assert.equal(loadPublishedPost(process.env.PDL_PLATFORM_FILE,'private-draft'),null);assert.equal(loadPublishedPost(process.env.PDL_PLATFORM_FILE,'../daily-reports'),null);assert.equal(loadPublishedPost(path.join(temp,'missing.json'),'daily-reports'),null);
 const {server}=require('./server');
 (async()=>{try{
   await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));const base=`http://127.0.0.1:${server.address().port}`;
@@ -52,5 +54,7 @@ const {server}=require('./server');
   const article=await fetch(base+'/blog.html?post=daily-reports');assert.equal(article.status,200);const html=await article.text();assert.match(html,/"@type":"BlogPosting"/);assert.match(html,/rel="canonical" href="https:\/\/app.prodailylink.com\/blog.html\?post=daily-reports"/);
   for(const slug of ['private-draft','unknown','%3Cscript%3E']){const response=await fetch(base+'/blog.html?post='+slug);assert.equal(response.status,404);assert.equal(response.headers.get('x-robots-tag'),'noindex, nofollow');assert.doesNotMatch(await response.text(),/Actual Author|Daily reports that crews/)}
   for(const route of ['/data/platform.json','/scripts/generate-public-sitemap.js','/public-audit.test.js'])assert.equal((await fetch(base+route)).status,404);
+  assert.equal((await fetch(base+'/public-blog-source.js')).status,404);
+  assert.equal(fs.readFileSync(process.env.PDL_PLATFORM_FILE,'utf8'),platformBefore,'Article metadata must not seed support items or persist any platform records');
   console.log('Public audit metadata, privacy, article injection, redirect, discovery and synthetic HTTP regressions passed.');
 }catch(error){console.error(error);process.exitCode=1}finally{await new Promise(resolve=>server.close(resolve));}})();
