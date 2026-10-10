@@ -50,6 +50,9 @@ function createWorkspace(h) {
     return base;
   }
   const helpers = { workspace, canViewPricing: h.canViewPricing };
+  const resources=require('./resource-admission').createHandler({...common,...helpers,key:options.workspaceKey,authenticate:h.authenticate,accountAccess:h.accountAccess,activities:h.companyActivities,
+    authority:(db,auth)=>require('./compat-workspace-authority').authority(db,auth,h.context()?.transactionalRevision??0,options.lifecycle,h.accountAccess),
+    returnReceipt:tuple=>{h.context().resourceReturn=structuredClone(tuple);}});
   const policyApi=require('./role-policy-api');
   const policy=policyApi.createHandler({readDb:h.readDb,writeDb:h.writeDb,body:h.body,json:h.json,revision:()=>h.context().transactionalRevision,assertCurrent,
     baselineProjectAllowed:h.canAccessProject,accountAccess:h.accountAccess,key:options.workspaceKey,
@@ -135,7 +138,7 @@ function createWorkspace(h) {
   }
   async function handle(req, res, url) {
     const context = h.context(); context.route = url.pathname; context.openingSnapshot ||= structuredClone(context.db);
-    validateWorkspace(context.db);repairs.valid(context.db);
+    validateWorkspace(context.db);repairs.valid(context.db);resources.valid(context.db);
     policyApi.ledger(context.db,options.workspaceKey);scheduleWorkflows.ledger(context.db);
     for(const [name,handler] of [['workspaceComplianceJobs',compliance],['workspaceBillingJobs',billing],['workspaceAssignmentJobs',assignmentDelivery]]){if(handler)handler.valid(context.db);else if(Object.hasOwn(context.db,name))fail(503,'Stored workspace dependency needs its reviewed contract.');}
     try {
@@ -153,7 +156,7 @@ function createWorkspace(h) {
         if(input.reportId!=null&&(!Number.isSafeInteger(input.reportId)||!report||Number(db.projects[report.project].id)!==input.projectId||!dailyAccess.reportInScope(db,user,report,'editReports'))||input.reportId==null&&!dailyAccess.access(db,user).createReports)fail(403,'Daily draft permission required.');
         await assertCurrent(req);h.json(res,200,dto.localDaily(h.localDailyExtract(input.notes,input.language)));return true;
       }
-      if (await policy(req,res,url) || await scheduleWorkflows.handle(req,res,url) || await direct(req, res, url) || await leave(req, res, url) || await review(req, res, url) || await writes(req, res, url) || await daily(req, res, url) || await notes(req, res, url)) return true;
+      if (await resources.handle(req,res,url) || await policy(req,res,url) || await scheduleWorkflows.handle(req,res,url) || await direct(req, res, url) || await leave(req, res, url) || await review(req, res, url) || await writes(req, res, url) || await daily(req, res, url) || await notes(req, res, url)) return true;
       fail(503, 'Workspace operation is outside this source gate.');
     } catch (error) { if (![400, 401, 402, 403, 404, 409, 503].includes(error.statusCode)) throw error; h.json(res, error.statusCode, { error: error.message }); return true; }
   }
@@ -171,6 +174,6 @@ function createWorkspace(h) {
     context.finalizedRevision=loaded.revision;context.finalizedContentHash=loaded.contentHash;
     if(!['/api/assignments','/api/schedule/repeat-week'].includes(url.pathname))context.response.data=url.pathname.startsWith('/api/billing')?{...dto.billing(h.billingSummary(loaded.snapshot)),...(billingResult?{refresh:{status:billingResult.status,...(billingResult.observed?{observed:billingResult.observed,jobId:billingResult.jobId}:{})}}:{})}:{ok:true};
   }
-  return { supported: routes.supported, handle, finalize, rolePolicies:true };
+  return { supported: routes.supported, handle, finalize, resourceTransition:resources.deliver, rolePolicies:true };
 }
 module.exports = { createWorkspace };

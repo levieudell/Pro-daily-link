@@ -4,7 +4,7 @@
   const failure = message => Object.assign(Error(message), { status: 409, code: 'PDL_WORKSPACE_STALE' });
   function clear() { epoch++; actor = null; displayedRevision = null; window.PDLCompanyRoles?.retire(); retire?.(); document.querySelectorAll('[data-workspace-dialog]').forEach(node => node.remove()); }
   function headers() { const companyId = localStorage.getItem('pdl-company-id'); return companyId ? { 'X-PDL-Company': companyId } : {}; }
-  async function identity({billingTransition=false,reconciliationFrom=null}={}) {
+  async function identity({billingTransition=false,reconciliationFrom=null,resourceTransition=null}={}) {
     const opening = epoch, company = localStorage.getItem('pdl-company-id'), binding = expected;
     const response = await fetch('/api/workspace-identity', { credentials: 'include', cache: 'no-store', headers: headers() });
     if (opening !== epoch || company !== localStorage.getItem('pdl-company-id')) throw failure('Workspace changed while checking access.');
@@ -12,10 +12,25 @@
     const current = await response.json();
     if (opening !== epoch || binding !== expected || company !== localStorage.getItem('pdl-company-id')) throw failure('Workspace changed while checking access.');
     if (!current || !Number.isSafeInteger(current.actorId) || current.actorId < 1 || !Number.isSafeInteger(current.revision) || current.revision < 0 || !['owner','admin','project_manager','foreman','field'].includes(current.role) || !/^[a-f0-9]{64}$/.test(current.authority) || !/^[a-f0-9]{64}$/.test(current.sessionBinding) || !Number.isFinite(Date.parse(current.expiresAt)) || Date.parse(current.expiresAt) <= Date.now() || current.companyId !== company || binding && Object.entries(binding).some(([key,value]) => value !== undefined && value !== null && current[key] !== value)) { clear(); throw failure('Sign in again to verify current workspace access.'); }
-    if (actor && ['companyId', 'actorId', 'role', 'sessionBinding', ...(reconciliationFrom===actor.authority?[]:['authority']), ...(!billingTransition||actor.role!=='owner'?['locked']:[])].some(key => actor[key] !== current[key])) { clear(); throw failure('Your workspace access changed. Refresh current records.'); }
+    const resourceMatch=resourceTransition&&current.authority===resourceTransition.to&&actor&&[resourceTransition.from,resourceTransition.to].includes(actor.authority);
+    if (resourceTransition&&!resourceMatch) { clear(); throw failure('The resource receipt does not match current workspace access.'); }
+    if (actor && ['companyId', 'actorId', 'role', 'sessionBinding', ...(reconciliationFrom===actor.authority||resourceMatch?[]:['authority']), ...(!billingTransition||actor.role!=='owner'?['locked']:[])].some(key => actor[key] !== current[key])) { clear(); throw failure('Your workspace access changed. Refresh current records.'); }
     actor = current; return current;
   }
-  function capture() { return enabled ? { epoch, generation: loading } : null; }
+  function capture() { return enabled ? { epoch, generation: loading, resource:window.pdlResourceActions?.pending?.()||null } : null; }
+  function resourceLink(response,path,binding) {
+    const encoded=response.headers.get('X-PDL-Resource-Receipt');
+    if(!encoded){if(binding?.resource){clear();throw failure('The original resource receipt is missing. Refresh current records.');}return null;}
+    const expectedResource=binding?.resource;
+    try {
+      if(!expectedResource||typeof encoded!=='string'||encoded.length>3000||!/^[A-Za-z0-9_-]+$/.test(encoded))throw failure('Unexpected resource receipt.');
+      const padded=encoded.replace(/-/g,'+').replace(/_/g,'/').padEnd(Math.ceil(encoded.length/4)*4,'='),row=JSON.parse(atob(padded));
+      const lookup=path==='/api/resources/original-result';
+      if(Object.keys(row).sort().join(',')!=='actorId,companyId,from,method,originalAuthority,path,purpose,receiptId,requestId,sessionBinding,to,token,version'||row.purpose!==(lookup?'workspace-resource-outcome-v1':'workspace-resource-save-v1')||!/^([a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12})$/.test(row.receiptId)||!/^[a-f0-9]{64}$/.test(row.to)||!['companyId','actorId','sessionBinding','token','version','requestId','method','path'].every(key=>row[key]===expectedResource[key])||row.originalAuthority!==expectedResource.authority||(lookup?row.from!==row.to:row.from!==expectedResource.authority)||!(lookup||path===row.path))throw failure('Resource receipt identity changed.');
+      return row;
+    } catch(error) { clear(); throw failure('The resource receipt could not be verified. Refresh current records.'); }
+  }
+  function resourceChanged() { epoch++;loadSequence++;displayedRevision=null;window.PDLCompanyRoles?.retire(); }
   async function verifyResponse(response, path, binding) {
     const revision = response.headers.get('X-PDL-Workspace-Revision'), authority = response.headers.get('X-PDL-Workspace-Authority');
     if (!enabled && revision === null) return;
@@ -24,13 +39,14 @@
     if(!response.ok && path.startsWith('/api/') && [401,402,403,409].includes(response.status)){clear();throw Object.assign(Error('Workspace access changed. Refresh current records.'),{status:response.status});}
     if (path === '/api/workspace-identity' || !response.ok || !path.startsWith('/api/') || ['/api/config', '/api/auth/company', '/api/auth/logout', '/api/auth/forgot', '/api/auth/reset', '/api/auth/claim'].includes(path)) return;
     const policyFrom=path==='/api/company/role-policy/confirm'&&actor?.role==='owner'?response.headers.get('X-PDL-Workspace-Policy-From'):null;
-    const opening = epoch, current = await identity({billingTransition:path==='/api/billing'||path==='/api/billing/recover',reconciliationFrom:policyFrom||(['/api/state','/api/action-center','/api/exceptions'].includes(path)?response.headers.get('X-PDL-Workspace-Reconciled-From'):null)});
+    const resource=resourceLink(response,path,binding);
+    const opening = epoch, current = await identity({billingTransition:path==='/api/billing'||path==='/api/billing/recover',resourceTransition:resource,reconciliationFrom:policyFrom||(['/api/state','/api/action-center','/api/exceptions'].includes(path)?response.headers.get('X-PDL-Workspace-Reconciled-From'):null)});
     if (binding && (binding.epoch !== epoch || binding.generation && (binding.generation !== loading || binding.generation !== loadSequence))) throw failure('Workspace response belongs to an earlier load. Refresh current records.');
     if(loading && path==='/api/state')loadRevision=current.revision;
     else if(loadRevision!==null && loading && current.revision!==loadRevision){clear();throw failure('Workspace records changed during loading. Refresh current records.');}
     if (opening !== epoch || revision === null || Number(revision) !== current.revision || authority !== current.authority || current.locked && !['/api/billing', '/api/billing/recover', '/api/account-access', '/api/auth/me', '/api/auth/login'].includes(path)) { clear(); throw failure('Workspace changed while loading. Refresh current records.'); }
   }
-  function configure(config, me, onRetire) { epoch++; displayedRevision = null; if (configured && enabled) retire?.(); configured = true; enabled = config?.compatibilityAccount?.workspace === true;rolePolicies=enabled&&config?.compatibilityAccount?.rolePolicies===true; retire = onRetire; actor = null; expected = enabled ? { companyId: config.compatibilityAccount.companyId, actorId: me?.id, role: (me?.accessRole || me?.role) === 'office' ? 'admin' : (me?.accessRole || me?.role), sessionBinding: me?.accountSessionBinding } : null; if (!enabled) return; window.pdlWorkspaceSave?.draw(); }
+  function configure(config, me, onRetire) { epoch++; displayedRevision = null; if (configured && enabled) retire?.(); configured = true; enabled = config?.compatibilityAccount?.workspace === true;rolePolicies=enabled&&config?.compatibilityAccount?.rolePolicies===true; retire = onRetire; actor = null; expected = enabled ? { companyId: config.compatibilityAccount.companyId, actorId: me?.id, role: (me?.accessRole || me?.role) === 'office' ? 'admin' : (me?.accessRole || me?.role), sessionBinding: me?.accountSessionBinding } : null; if (!enabled) return; window.pdlWorkspaceSave?.draw();window.pdlResourceActions?.draw(); }
   window.addEventListener('focus', () => { if (enabled) identity().catch(() => {}); });
   function load(run) {
     if (!enabled) return run();
@@ -61,5 +77,5 @@
       if (generation === loading) { loading = 0; loadRevision = null; if (root && generation === loadSequence) root.style.visibility = ''; }
     }
   }
-  window.pdlWorkspaceActions = { configure, capture, verifyResponse, load, identity, clear, displayedRevision: () => displayedRevision, rolePolicies: () => rolePolicies, enabled: () => enabled };
+  window.pdlWorkspaceActions = { configure, capture, verifyResponse, load, identity, clear, resourceChanged, displayedRevision: () => displayedRevision, rolePolicies: () => rolePolicies, enabled: () => enabled };
 })();

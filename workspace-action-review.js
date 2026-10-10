@@ -71,7 +71,7 @@
   async function request(path, options, send) {
     if (!window.pdlWorkspaceActions?.enabled()) return send(path, options);
     const action = operation(path, options); if (!action) return send(path, options);
-    if(window.pdlWorkspaceSave?.read()){window.pdlWorkspaceSave.draw();throw Object.assign(Error('Check the previous save result before making another change.'),{status:409});}
+    if(window.pdlWorkspaceSave?.read()||window.pdlResourceActions?.unresolved()){window.pdlWorkspaceSave?.draw();window.pdlResourceActions?.draw();throw Object.assign(Error('Check the previous save result before making another change.'),{status:409});}
     const opening = await window.pdlWorkspaceActions.identity();
     if (action.workflow ? opening.scheduleWorkflows?.[action.workflow] !== true : action.family ? opening.effectiveCapabilities?.[action.family]?.[action.action] !== true : opening.role !== 'owner') throw Object.assign(Error('This action is restricted by your current permissions.'), { status: 403 });
     let preview = null;

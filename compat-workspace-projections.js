@@ -84,7 +84,7 @@ function template(row) {
   dto.versions = list(row.versions, version => ({ ...pick(version, ['version', 'name', 'createdAt', 'createdBy']), fields: list(version.fields, field => { const out = pick(field, ['id', 'label', 'type', 'required', 'help']); if (field.options) out.options = texts(field.options); if (field.showWhen) out.showWhen = pick(field.showWhen, ['fieldId', 'value']); return out; }) }));
   return dto;
 }
-const audit = row => pick(row, ['id', 'type', 'actor', 'actorId', 'at', 'detail', 'reason', 'projectId', 'projectName', 'reportId', 'reportDate', 'memberId', 'userId', 'decision', 'action']);
+const audit = row => pick(row, ['id', 'type', 'actor', 'actorId', 'at', 'detail', 'reason', 'projectId', 'projectName', 'reportId', 'reportDate', 'memberId', 'userId', 'decision', 'action', 'resourceKind', 'previewId', 'requestId']);
 function billing(row){return {...pick(row,['plan','planName','price','annualPrice','billingCycle','status','trialEndsAt','daysRemaining','nextBillingAt','configured','hasSubscription','hasBillingCustomer','locked','lockReason','demo','accountType','billingExempt','cohort','discountPercent']),founder:row.founder?pick(row.founder,['protectedUntil','assistedSetup','plan','billingCycle']):null,usage:pick(row.usage,['users','activeProjects']),limits:pick(row.limits,['users','activeProjects']),plans:list(row.plans,value=>pick(value,['id','name','price','annualPrice','maxUsers','maxProjects','available','annualAvailable']))};}
 function auditRows(db, user, helpers) {
   if (!['owner','admin'].includes(user.role)) return [];

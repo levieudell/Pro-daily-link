@@ -59,6 +59,10 @@ jobs:
       - run: node compat-workspace-client.test.js
       - run: node compat-workspace-delivery.test.js
       - run: node compat-workspace.test.js
+      - run: node resource-admission-http.test.js
+      - run: node resource-client.test.js
+      - run: node resource-recovery-client.test.js
+      - run: node resource-postgres.test.js
       - name: Install isolated browser test dependency
         run: |
           npm install --prefix "$RUNNER_TEMP/compat-browser" --no-save --ignore-scripts playwright@1.63.0
@@ -74,6 +78,8 @@ jobs:
       - run: node compat-workspace-work-journeys.test.js --group=daily
       - run: node compat-workspace-recovery-browser.test.js
       - run: node compat-company-roles-browser.test.js
+      - run: node resource-browser.test.js --viewport=desktop
+      - run: node resource-browser.test.js --viewport=mobile
       - uses: actions/upload-artifact@v4
         if: always()
         with:

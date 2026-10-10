@@ -10,7 +10,12 @@ function validateWorkspace(db) {
   if(typeof db.company?.name!=='string')fail(); text(db.company,['timezone','status','subscriptionStatus','plan']);
   const projects = identities(db, 'projects'), team = identities(db, 'team'), customers = identities(db, 'customers'), reports = identities(db, 'reports'), days = identities(db, 'workdays'), assignments = identities(db, 'assignments');
   for(const row of team.values())text(row,['name','crew','role','status','archivedAt']);
-  for(const row of projects.values())text(row,['name','code','crew','status','archivedAt','site','address']);
+  for(const row of projects.values()){
+    text(row,['name','code','status','archivedAt','site','address']);
+    // The normal project form initializes this display count to zero. Crew
+    // authority continues to come from linked members and current accounts.
+    if(Object.hasOwn(row,'crew')&&row.crew!==null&&typeof row.crew!=='string'&&(!Number.isSafeInteger(row.crew)||row.crew<0||row.crew>100000))fail();
+  }
   const project = value => { if (!id(value) || !projects.has(String(Number(value)))) fail(); };
   const member = value => { if (!id(value) || !team.has(String(Number(value)))) fail(); };
   const members = value => { if (!Array.isArray(value) || !value.length || new Set(value.map(Number)).size !== value.length) fail(); value.forEach(member); };

@@ -108,7 +108,7 @@
       if (!lifecycle || !supported(method, path) && !privateRead(method, path)) return send(path, options);
       if (!current) throw error('Account identity needs checking. Sign in again.');
       const checked = (route, input) => sendCurrent(send, route, input);
-      if (supported(method, path)) return review(path, options, checked);
+      if (supported(method, path)) {if(window.pdlResourceActions?.unresolved())throw error('Check the original resource save result before changing accounts.');return review(path, options, checked);}
       const opening = { ...current }, openedAt = generation, result = await checked(path, options);
       await checkIdentity(checked, opening, openedAt); return result;
     }

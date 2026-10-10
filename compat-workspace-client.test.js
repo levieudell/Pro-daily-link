@@ -6,12 +6,12 @@ async function main(){
  let company=A,next=identity(),retired=0,hold,started;const events={};
  const box={window:{addEventListener:(name,fn)=>events[name]=fn},document:{querySelectorAll:()=>[],getElementById:()=>null,querySelector:()=>null},localStorage:{getItem:()=>company},Date,Error,URL,fetch:async()=>({ok:true,json:async()=>{if(hold){started?.();await hold;}return next;}})};
  vm.createContext(box);vm.runInContext(fs.readFileSync('workspace-actions-ui.js','utf8'),box);const actions=box.window.pdlWorkspaceActions;
- await assert.rejects(actions.verifyResponse({ok:true,headers:{get:key=>key.includes('Revision')?'10':hash}},'/api/state'),/configuration is required/);assert.equal(actions.enabled(),false);
+ await assert.rejects(actions.verifyResponse({ok:true,headers:{get:key=>key==='X-PDL-Workspace-Revision'?'10':key==='X-PDL-Workspace-Authority'?hash:null}},'/api/state'),/configuration is required/);assert.equal(actions.enabled(),false);
  const configure=(role='owner')=>actions.configure({compatibilityAccount:{workspace:true,companyId:company}},{id:1,role:role==='foreman'?'field':role,accessRole:role,accountSessionBinding:company===A?hash:other},()=>retired++);
  configure();await actions.identity();
  let release;hold=new Promise(resolve=>release=resolve);let begun;const ready=new Promise(resolve=>begun=resolve);started=begun;
  const old=actions.identity();await ready;company=B;configure();release();await assert.rejects(old,/changed while checking/);hold=null;next=identity(B);await actions.identity();assert.equal(retired,1);
- await assert.rejects(actions.verifyResponse({ok:true,headers:{get:key=>key.includes('Revision')?'10':hash}},'/api/production'),/changed while loading/);assert.equal(retired,2);
+ await assert.rejects(actions.verifyResponse({ok:true,headers:{get:key=>key==='X-PDL-Workspace-Revision'?'10':key==='X-PDL-Workspace-Authority'?hash:null}},'/api/production'),/changed while loading/);assert.equal(retired,2);
  company=A;configure('foreman');next=identity(A,'foreman');assert.equal((await actions.identity()).role,'foreman');
  next={...next,locked:true};await assert.rejects(actions.identity(),/access changed/);assert.ok(retired>=3);
  await assert.rejects(actions.verifyResponse({ok:false,status:402,headers:{get:()=>null}},'/api/time-cards.csv'),error=>error.status===402);
@@ -32,10 +32,10 @@ async function main(){
  let releaseRun,runStarted,binding;const running=new Promise(resolve=>runStarted=resolve),runHold=new Promise(resolve=>releaseRun=resolve);box.workspaceApi=async()=>({ready:true});
  const runningOlder=actions.load(async()=>{binding=actions.capture();runStarted();await runHold;visible='older';}).catch(error=>error);await running;
  const queuedNewer=actions.load(async()=>{visible='newer';});
- await assert.rejects(actions.verifyResponse({ok:true,headers:{get:key=>key.includes('Revision')?'10':hash}},'/api/state',binding),/earlier load/);
+ await assert.rejects(actions.verifyResponse({ok:true,headers:{get:key=>key==='X-PDL-Workspace-Revision'?'10':key==='X-PDL-Workspace-Authority'?hash:null}},'/api/state',binding),/earlier load/);
  releaseRun();assert.match((await runningOlder).message,/changed during loading/);await queuedNewer;assert.equal(visible,'newer');assert.equal(root.style.visibility,'');
  let releaseDelivery,deliveryStarted,deliveryApplied=false;const deliveryReady=new Promise(resolve=>deliveryStarted=resolve),deliveryHold=new Promise(resolve=>releaseDelivery=resolve);
- const deliveryOlder=actions.load(async()=>{hold=deliveryHold;started=deliveryStarted;try{await actions.verifyResponse({ok:true,headers:{get:key=>key.includes('Revision')?'10':hash}},'/api/state',actions.capture());deliveryApplied=true;}finally{hold=null;started=null;}}).catch(error=>error);
+ const deliveryOlder=actions.load(async()=>{hold=deliveryHold;started=deliveryStarted;try{await actions.verifyResponse({ok:true,headers:{get:key=>key==='X-PDL-Workspace-Revision'?'10':key==='X-PDL-Workspace-Authority'?hash:null}},'/api/state',actions.capture());deliveryApplied=true;}finally{hold=null;started=null;}}).catch(error=>error);
  await deliveryReady;const deliveryNewer=actions.load(async()=>{visible='newer';});releaseDelivery();assert.match((await deliveryOlder).message,/earlier load/);await deliveryNewer;assert.equal(deliveryApplied,false);assert.equal(visible,'newer');
  const reviewBox={window:{},location:{origin:'http://127.0.0.1'},URL,crypto:require('node:crypto').webcrypto};vm.createContext(reviewBox);vm.runInContext(fs.readFileSync('workspace-action-review.js','utf8'),reviewBox);
  const operation=reviewBox.window.pdlWorkspaceReview.operation;
