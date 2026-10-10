@@ -637,3 +637,7 @@ dialog[open]{animation:pdl-dialog-in .24s cubic-bezier(.2,.7,.3,1)}
 .mark-off-paid{border:1px solid var(--line);border-radius:8px;padding:10px 12px;margin:10px 0}
 .mark-off-paid legend{font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);padding:0 4px}
 @media(max-width:600px){.day-action-buttons{grid-template-columns:1fr}}
+
+/* Touch drag-and-drop on the schedule board: ghost chip follows the finger. */
+.schedule-touch-ghost{position:fixed;z-index:90;pointer-events:none;transform:scale(.96) rotate(1.5deg);opacity:.95;box-shadow:0 14px 34px #11141633;width:max-content;max-width:230px}
+body.schedule-touch-dragging{overflow:hidden;-webkit-user-select:none;user-select:none}
