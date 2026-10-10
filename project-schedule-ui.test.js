@@ -11,7 +11,7 @@ const { isPublicFile } = require('./public-file-policy');
 
 // Script loads after app.js (it patches openProject) and carries a version.
 assert.ok(index.indexOf('app.js?') < index.indexOf('project-schedule-ui.js?'), 'module loads after app.js so openProject exists');
-assert.match(index, /project-schedule-ui\.js\?v=20261011-task-assign/);
+assert.match(index, /project-schedule-ui\.js\?v=20261011-schedule-formfix/);
 assert.match(index, /styles\.css\?v=20261011-task-assign/);
 
 // Static serving + server wiring.
@@ -48,6 +48,12 @@ assert.match(ui, /data-schedule-task="\$\{Number\(task\.id\)\}"/);
 assert.match(ui, /blockSelector: '\[data-schedule-task\]'/, 'chips get their own touch-drag attach');
 assert.match(ui, /api\(`\/api\/project-tasks\/\$\{taskId\}\/assign`/);
 assert.match(ui, /window\.PDLProjectScheduleUI = \{ assignTaskTo, paintUnassignedLane \}/);
+// The project detail content is itself a <form>, so pane markup must never
+// emit a nested <form> — the parser drops the tag and the handler never binds.
+assert.equal((ui.match(/<form[\s>]/g) || []).length, 0, 'no nested form tags in schedule pane markup');
+assert.match(ui, /<div class="project-schedule-add" data-schedule-add-form>/);
+assert.match(ui, /data-add-task/);
+assert.match(ui, /paintProjectScheduleTab\(projectId\)/, 'clicking the Schedule tab repaints it with fresh data');
 for (const selector of ['.schedule-unassigned', '.schedule-task-chip', '.schedule-task-assign'])
   assert.ok(styles.includes(selector), `${selector} styled`);
 

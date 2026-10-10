@@ -56,12 +56,12 @@
       </tr>`)).join('');
     pane.innerHTML = `
       <div class="project-schedule-head"><div><h3>Project schedule</h3><p>Linked tasks auto-schedule: a task starts the next working day after everything it waits for is done. Change one and the rest follow.</p></div></div>
-      ${editable ? `<form class="project-schedule-add" data-schedule-add-form>
+      ${editable ? `<div class="project-schedule-add" data-schedule-add-form>
         <input type="text" data-new-task-name placeholder="Task name, e.g. Set footings" maxlength="160" aria-label="Task name">
         <input type="number" data-new-task-duration min="1" max="365" step="1" value="1" aria-label="Working days">
         <select data-new-task-deps multiple size="${Math.min(4, Math.max(2, sorted.length))}" aria-label="Waits for">${depsOptions || '<option value="" disabled>No tasks yet</option>'}</select>
-        <button type="submit" class="primary">＋ Add task</button>
-      </form>` : ''}
+        <button type="button" class="primary" data-add-task>＋ Add task</button>
+      </div>` : ''}
       ${sorted.length ? `<div class="project-schedule-table-wrap"><table class="project-schedule-table"><thead><tr><th>Task</th><th>Waits for</th><th>Length</th><th>Dates</th><th>Assigned</th><th>${editable ? 'Status / actions' : 'Status'}</th></tr></thead><tbody>${rows}</tbody></table></div>` : `<div class="project-tab-empty"><strong>No scheduled tasks yet</strong><p>${editable ? 'Add the project’s phases or milestones above and link them so the dates keep themselves honest.' : 'Your office will add the project schedule here.'}</p></div>`}`;
     if (Number(editingId)) { const select = pane.querySelector(`[data-schedule-edit-row="${Number(editingId)}"] [data-edit-task-deps]`); if (select) { const editing = taskById(tasks, editingId); [...select.options].forEach(option => { option.selected = (editing?.predecessorIds || []).map(Number).includes(Number(option.value)); }); } }
     wireSchedulePane(pane, project, tasks, editingId);
@@ -73,9 +73,8 @@
     const editable = canEditTasks();
     const refresh = payload => renderSchedulePane(pane, project, payload.tasks, null);
     const notifyChanged = payload => { const others = (payload.changed || []).filter(id => true).length; notify(others > 1 ? `Schedule updated — ${others} tasks moved` : 'Schedule updated'); };
-    const addForm = pane.querySelector('[data-schedule-add-form]');
-    if (addForm) addForm.onsubmit = async event => {
-      event.preventDefault();
+    const addButton = pane.querySelector('[data-add-task]');
+    if (addButton) addButton.onclick = async () => {
       const name = pane.querySelector('[data-new-task-name]').value.trim(), durationDays = Number(pane.querySelector('[data-new-task-duration]').value), predecessorIds = selectedValues(pane.querySelector('[data-new-task-deps]'));
       if (!name) return notify('Give the task a name first');
       try { const payload = await api(`/api/projects/${project.id}/tasks`, { method: 'POST', body: JSON.stringify({ name, durationDays, predecessorIds }) }); refresh(payload); notifyChanged(payload); }
@@ -119,6 +118,7 @@
       tabs.querySelector('[data-project-detail-tab="schedule"]').onclick = () => {
         document.querySelectorAll('[data-project-detail-tab]').forEach(tab => tab.classList.toggle('active', tab === tabs.querySelector('[data-project-detail-tab="schedule"]')));
         document.querySelectorAll('[data-project-detail-pane]').forEach(paneEl => paneEl.classList.toggle('active', paneEl.dataset.projectDetailPane === 'schedule'));
+        paintProjectScheduleTab(projectId);
       };
     }
     const pane = content.querySelector('[data-project-detail-pane="schedule"]');
