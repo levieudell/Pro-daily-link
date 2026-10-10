@@ -2,7 +2,7 @@
 const path=require('node:path');
 const PUBLIC_FILES=new Set([
   'company-timezone.js', 'account-actions-ui.js', 'workspace-actions-ui.js', 'workspace-action-review.js', 'workspace-controls.js', 'workspace-save-recovery.js', 'resource-review-ui.js',
-  'schedule-approved-labor.js','schedule-touch-drag.js',
+  'schedule-approved-labor.js','schedule-touch-drag.js','project-schedule-ui.js',
   'project-assistant-access.js',
   'project-assistant-ui.js','project-assistant-ui.css','project-assistant-voice.js','project-assistant-conversation.js','project-assistant-chat.js','project-assistant-names.js',
   'index.html','landing.html','about.html','blog.html','login.html','signup.html','forgot-password.html','reset-password.html','verify-email.html','guest.html','platform.html','platform-login.html','platform-forgot-password.html','platform-reset-password.html','support.html','privacy.html','terms.html',
