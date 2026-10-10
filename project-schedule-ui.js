@@ -30,6 +30,7 @@
 
   function renderSchedulePane(pane, project, tasks, editingId){
     const editable = canEditTasks();
+    const hasStart = Boolean(project.startDate && /^\d{4}-\d{2}-\d{2}$/.test(String(project.startDate)));
     const sorted = (tasks || []).slice().sort((a, b) => String(a.startDate).localeCompare(String(b.startDate)) || Number(a.id) - Number(b.id));
     const dates = sorted.map(t => t.startDate).concat(sorted.map(t => t.endDate)).filter(Boolean).sort();
     const windowStart = dates[0], windowEnd = dates[dates.length - 1];
@@ -56,7 +57,14 @@
       </tr>`)).join('');
     pane.innerHTML = `
       <div class="project-schedule-head"><div><h3>Project schedule</h3><p>Linked tasks auto-schedule: a task starts the next working day after everything it waits for is done. Change one and the rest follow.</p></div></div>
-      ${editable ? `<div class="project-schedule-add" data-schedule-add-form>
+      ${editable ? `${!hasStart ? `<div data-schedule-needs-start style="display:flex;gap:8px 16px;align-items:baseline;flex-wrap:wrap;padding:12px 14px;margin-bottom:12px;border:1px solid #e5c97a;background:#fdf6e3;border-radius:12px;font-size:14px"><strong>No start date on this project yet.</strong><span style="color:#6b5d33">Set one below and every task will schedule itself from that day.</span></div>` : ''}
+      <div class="project-schedule-add" data-project-dates-form>
+        <label style="display:grid;gap:4px;font-size:12px;font-weight:600;color:#64726c">Start date<input type="date" data-project-start-date value="${escapeHtml(String(project.startDate || ''))}"></label>
+        <label style="display:grid;gap:4px;font-size:12px;font-weight:600;color:#64726c">Target end <span style="font-weight:400">(optional)</span><input type="date" data-project-end-date value="${escapeHtml(String(project.endDate || ''))}"></label>
+        <button type="button" class="secondary small" data-save-project-dates>Save dates</button>
+        <span style="font-size:12px;color:#98a5a0;flex:1 1 180px">Tasks count working days from the start date. Change it any time and the dates follow.</span>
+      </div>
+      <div class="project-schedule-add" data-schedule-add-form>
         <input type="text" data-new-task-name placeholder="Task name, e.g. Set footings" maxlength="160" aria-label="Task name">
         <input type="number" data-new-task-duration min="1" max="365" step="1" value="1" aria-label="Working days">
         <select data-new-task-deps multiple size="${Math.min(4, Math.max(2, sorted.length))}" aria-label="Waits for">${depsOptions || '<option value="" disabled>No tasks yet</option>'}</select>
@@ -73,6 +81,22 @@
     const editable = canEditTasks();
     const refresh = payload => renderSchedulePane(pane, project, payload.tasks, null);
     const notifyChanged = payload => { const others = (payload.changed || []).filter(id => true).length; notify(others > 1 ? `Schedule updated — ${others} tasks moved` : 'Schedule updated'); };
+    const saveDates = pane.querySelector('[data-save-project-dates]');
+    if (saveDates) saveDates.onclick = async () => {
+      const startDate = pane.querySelector('[data-project-start-date]').value, endDate = pane.querySelector('[data-project-end-date]').value;
+      if (!startDate) return notify('Pick a start date first');
+      if (endDate && endDate < startDate) return notify('Target end must be on or after the start date');
+      try {
+        const payload = await api(`/api/projects/${project.id}`, { method: 'PATCH', body: JSON.stringify({ startDate, endDate }) });
+        project.startDate = payload.startDate; project.endDate = payload.endDate;
+        const entry = (typeof projects !== 'undefined' ? projects : []).find(item => Number(item.id) === Number(project.id));
+        if (entry) { entry.startDate = payload.startDate; entry.endDate = payload.endDate; }
+        renderSchedulePane(pane, project, Array.isArray(payload.tasks) ? payload.tasks : [], null);
+        try { const state = await api('/api/state'); if (typeof assignments !== 'undefined') assignments = state.assignments || []; laneTasksCache = state.projectTasks || []; laneTasksFetchedAt = Date.now(); if (typeof renderSchedule === 'function') renderSchedule(); } catch (error) { /* board refresh is best-effort */ }
+        const moved = (payload.changed || []).length;
+        notify(moved > 1 ? `Dates saved — ${moved} tasks moved` : 'Project dates saved');
+      } catch (error) { notify(error.message); }
+    };
     const addButton = pane.querySelector('[data-add-task]');
     if (addButton) addButton.onclick = async () => {
       const name = pane.querySelector('[data-new-task-name]').value.trim(), durationDays = Number(pane.querySelector('[data-new-task-duration]').value), predecessorIds = selectedValues(pane.querySelector('[data-new-task-deps]'));

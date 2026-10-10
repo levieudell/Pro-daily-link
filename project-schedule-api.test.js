@@ -116,6 +116,38 @@ const { server } = require('./server');
     assert.equal(new Map(w2.data.tasks.map(t => [t.id, t])).get(fridayId).endDate, '2026-10-19');
     assert.equal(afterFriday.startDate, '2026-10-20');
 
+    // Project dates PATCH: persists, validates, and re-anchors linked tasks.
+    const moveStart = await call('PATCH', '/api/projects/101', { startDate: '2026-10-19' });
+    assert.equal(moveStart.status, 200, 'dates PATCH works even with contract tracking off');
+    assert.equal(moveStart.data.startDate, '2026-10-19');
+    const moved = new Map(moveStart.data.tasks.map(t => [t.id, t]));
+    assert.equal(moved.get(1).startDate, '2026-10-19', 'an unlinked task re-anchors to the new start date');
+    assert.ok(moveStart.data.changed.includes(1), 're-anchoring reports the moved tasks');
+    assert.equal(reload().projects.find(p => p.id === 101).startDate, '2026-10-19', 'start date persisted to disk');
+
+    // End date must be on/after the start date; fake calendar dates are rejected.
+    assert.equal((await call('PATCH', '/api/projects/101', { endDate: '2026-10-01' })).status, 400);
+    assert.equal((await call('PATCH', '/api/projects/101', { startDate: '2026-13-40' })).status, 400);
+    assert.equal((await call('PATCH', '/api/projects/101', { startDate: 'soon' })).status, 400);
+    const setEnd = await call('PATCH', '/api/projects/101', { endDate: '2026-11-30' });
+    assert.equal(setEnd.status, 200);
+    assert.equal(setEnd.data.endDate, '2026-11-30');
+
+    // Clearing the start date is allowed (tasks fall back to today); setting a
+    // start date later re-anchors every task to the new anchor.
+    const clearStart = await call('PATCH', '/api/projects/101', { startDate: '' });
+    assert.equal(clearStart.status, 200);
+    assert.equal(clearStart.data.startDate, '');
+    assert.equal(reload().projects.find(p => p.id === 101).startDate, '');
+    const reanchor = await call('PATCH', '/api/projects/101', { startDate: '2026-10-26' });
+    assert.equal(reanchor.status, 200);
+    assert.equal(new Map(reanchor.data.tasks.map(t => [t.id, t])).get(1).startDate, '2026-10-26');
+
+    // Field role cannot change project dates; unknown project 404s.
+    const fieldDates = await call('PATCH', '/api/projects/101', { startDate: '2026-10-12' }, otherFieldToken);
+    assert.equal(fieldDates.status, 403);
+    assert.equal((await call('PATCH', '/api/projects/999', { startDate: '2026-10-12' })).status, 404);
+
     console.log('project-schedule API: ok');
   } finally {
     server.close();
