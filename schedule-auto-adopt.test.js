@@ -10,7 +10,7 @@ const index=fs.readFileSync('index.html','utf8'),appSource=fs.readFileSync('app.
 assert.match(index,/id="company-auto-adopt"/,'settings page carries the opt-in toggle');
 assert.match(appSource,/\$\('#company-auto-adopt'\)\.checked=company\.autoAdoptActualTimes===true/,'toggle renders current state');
 assert.match(appSource,/autoAdoptActualTimes:\$\('#company-auto-adopt'\)\.checked/,'toggle rides the company save payload');
-assert.match(index,/app\.js\?v=20261008-saved-zone-/,'cache version carries the bumped saved-zone marker');
+assert.match(index,/app\.js\?v=20261009-touch-drag/,'cache version carries the bumped release marker');
 // Live API against a real server boot.
 const root=fs.mkdtempSync(path.join(os.tmpdir(),'pdl-autoadopt-')),companyId='ccddccdd-ccdd-4cc4-8cc8-ccddccddeeff',ownerToken='synthetic-autoadopt-owner';
 const utc=new Date(),today=`${utc.getUTCFullYear()}-${String(utc.getUTCMonth()+1).padStart(2,'0')}-${String(utc.getUTCDate()).padStart(2,'0')}`;
@@ -45,7 +45,7 @@ try{
   assert.equal(clean.data.adopted.length,1,'the matching assignment is offered to the helper');
   stored=verifyAdopted(clean.data.adopted,before);
   if(clean.data.adopted[0].changed)assert.ok(stored.assignments[0].notifications[7].inAppAt,'members get a fresh My Day notification');
-  else assert.ok(stored.assignments[0].notifications[7]===undefined||stored.assignments[0].notifications[7].inAppAt,'no-op keeps or refreshes notifications cleanly');
+  else assert.ok(!stored.assignments[0].notifications||stored.assignments[0].notifications[7]===undefined,'no-op keeps or refreshes notifications cleanly');
   // Conflict skip: the workday still ends and the conflicting plan is untouched.
   stored.assignments.push({id:2,projectId:101,date:today,start:'00:00',end:'06:15',crew:'B',memberIds:[8],activity:'Morning watch'});
   stored.workdays.push({id:7,projectId:101,memberIds:[8],status:'active',startedAt:`${today}T06:09:00Z`,endedAt:null,reportId:null});save(stored);

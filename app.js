@@ -24,7 +24,7 @@ let editingAssignmentId=null;
 let scheduleWeekOffset=0;
 let scheduleView='week';
 let scheduleAnchorDate='';
-let draggedScheduleWork=null;
+let draggedScheduleWork=null,scheduleTouchDragAttached=false;
 let editingReportId=null;
 let reportReturnProjectId=null;
 let reportReturnActivity=null;
@@ -420,6 +420,7 @@ function renderSchedule(){
   $('#schedule-board').innerHTML=visibleTeam.length?html+'</div>'+scheduleMobileMarkup(days,visibleTeam):'<div class="active-day-card"><strong>No people match this filter.</strong><p>Choose another crew or include office staff.</p></div>';
   $$('[data-agenda-date]').forEach(button=>button.onclick=()=>openAssignment({date:button.dataset.agendaDate}));
   $$('[data-schedule-date]').forEach(cell=>{cell.onclick=()=>canManageSchedule()?openDayAction(+cell.dataset.scheduleMember,cell.dataset.scheduleDate):openAssignment({memberId:+cell.dataset.scheduleMember,date:cell.dataset.scheduleDate});cell.ondragover=event=>{event.preventDefault();cell.classList.add('drag-over')};cell.ondragleave=()=>cell.classList.remove('drag-over');cell.ondrop=event=>{event.preventDefault();event.stopPropagation();cell.classList.remove('drag-over');moveScheduledWork(+cell.dataset.scheduleMember,cell.dataset.scheduleDate)}});
+  if(!scheduleTouchDragAttached){scheduleTouchDragAttached=true;PDLScheduleTouchDrag.attach(document,{canManage:canManageSchedule,onMove:work=>{draggedScheduleWork={assignmentId:work.assignmentId,memberId:work.memberId};moveScheduledWork(work.targetMemberId,work.date)}});document.addEventListener('click',event=>{const block=typeof event.target.closest==='function'?event.target.closest('[data-assignment]'):null;if(block&&block.dataset.touchDragged==='1'){event.stopPropagation();event.preventDefault();delete block.dataset.touchDragged}},true)}
   $$('[data-assignment]').forEach(block=>{block.onclick=event=>{event.stopPropagation();openScheduledWork(+block.dataset.assignment,+block.dataset.member)};block.onkeydown=event=>{if(event.key==='Enter'||event.key===' '){event.preventDefault();event.stopPropagation();openScheduledWork(+block.dataset.assignment,+block.dataset.member)}};block.ondragstart=event=>{if(!canManageSchedule()){event.preventDefault();return}draggedScheduleWork={assignmentId:+block.dataset.assignment,memberId:+block.dataset.member};block.classList.add('dragging');event.dataTransfer.effectAllowed='move'};block.ondragend=()=>{block.classList.remove('dragging');draggedScheduleWork=null;$$('.drag-over').forEach(cell=>cell.classList.remove('drag-over'))}})
 }
 async function moveScheduledWork(targetMemberId,date){if(!canManageSchedule()||!draggedScheduleWork)return;const moved=draggedScheduleWork,assignment=assignments.find(row=>row.id===moved.assignmentId);if(!assignment||assignment.date===date&&moved.memberId===targetMemberId)return;try{await api(`/api/assignments/${moved.assignmentId}`,{method:'PATCH',body:JSON.stringify({memberId:moved.memberId,targetMemberId,date})});const state=await api('/api/state');assignments=state.assignments||[];renderSchedule();renderMyDay();notify('Assignment moved. Field schedules are updated.')}catch(error){if(/^Approved time-off conflict:/.test(error.message))await refreshScheduleAvailability();notify(error.message);renderSchedule()}}
