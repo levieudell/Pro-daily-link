@@ -47,6 +47,7 @@ jobs:
       - run: node compat-lifecycle-postgres.test.js
       - run: node account-lifecycle.test.js
       - run: node compat-role-policy.test.js
+      - run: node compat-schedule-workflows.test.js
       - run: node compat-workspace-postgres.test.js
       - run: node compat-platform-sink-postgres.test.js
       - run: node compat-workspace-compliance-postgres.test.js

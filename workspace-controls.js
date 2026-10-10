@@ -40,6 +40,7 @@
       if (gates?.[family]?.[action] !== true) { node.dataset.workspaceRestricted = 'true'; node.hidden = true; if ('disabled' in node) node.disabled = true; }
       else if (node.dataset.workspaceRestricted === 'true') { delete node.dataset.workspaceRestricted; node.hidden = false; if ('disabled' in node) node.disabled = false; }
     }
+    for(const [action,selector]of [['markOff','#day-action-markoff,#mark-off-save'],['repeatWeek','#repeat-week,#repeat-week-confirm'],['adoptActual','#adopt-actual-times']]) for(const node of document.querySelectorAll(selector)){if(currentUser?.scheduleWorkflows?.[action]!==true){node.dataset.workspaceRestricted='true';node.hidden=true;if('disabled' in node)node.disabled=true;}else if(node.dataset.workspaceRestricted==='true'){delete node.dataset.workspaceRestricted;node.hidden=false;if('disabled' in node)node.disabled=false;}}
     const selectedId = document.querySelector('#report-detail [data-edit-report]')?.dataset.editReport, selected = typeof reports === 'undefined' ? null : reports.find(row => Number(row.id) === Number(selectedId));
     for (const node of document.querySelectorAll('.labor-resolve-button')) if (!['owner','admin','project_manager'].includes(currentUser?.accessRole || currentUser?.role) || selected?.status === 'Approved' && gates?.daily?.approveReports !== true) { node.dataset.workspaceRestricted = 'true'; node.hidden = true; node.disabled = true; }
   }
