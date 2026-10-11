@@ -24,6 +24,21 @@ function restriction(db, original, family, action) {
     });
   } catch { return false; }
 }
+// Derived workday updates inherit the workday route's baseline, including
+// field users. A manual office scheduling ceiling cannot revoke that baseline.
+function derivedRestriction(db, original, family, action) {
+  const user=registry.normalize(original),entry=registry.families.find(row=>row[0]===family);
+  if(!entry||!entry[4].actions.includes(action)||!user||user.status!=='Active')return false;
+  if(user.role==='owner')return true;
+  if(entry[4].ceiling(user.role)[action]!==true)return true;
+  if(!entry[4].required(db)&&!profiles.required(db))return true;
+  try{return profiles.evaluate(db,()=>{
+    const [, ,prefix, ,controller]=entry;
+    const row=Object.fromEntries(controller.actions.map(name=>[name,true]));
+    if(controller.required(db))Object.assign(row,controller.validatePolicy(db.company[prefix+'RolePolicy']).roles[user.role]);
+    return profiles.restrict(db,user,family,row)[action]===true;
+  });}catch{return false;}
+}
 function eligible(db, original) {
   const user=registry.normalize(original), office=user?.status==='Active'&&['owner','admin','project_manager'].includes(user.role)&&!(user.companyId!=null&&user.companyId!==db.company.id);
   const schedule=office&&(user.role!=='project_manager'||user.permissions?.scheduleCrews===true);
@@ -55,4 +70,4 @@ function sourceView(db,user,workday) {
 function authority(db,auth) {
   return canonicalHash({actor:require('./compat-workspace-delivery').actorBinding(db,auth),workflows:eligible(db,auth.user),restrictions:Object.fromEntries(registry.families.map(([id,,, ,module])=>[id,Object.fromEntries(module.actions.map(action=>[action,restriction(db,auth.user,id,action)]))]))});
 }
-module.exports={actions,restriction,eligible,assignmentScope,memberScope,sourceView,authority};
+module.exports={actions,restriction,derivedRestriction,eligible,assignmentScope,memberScope,sourceView,authority};

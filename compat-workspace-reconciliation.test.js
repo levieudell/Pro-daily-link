@@ -29,7 +29,7 @@ function legacyHelpers() {
     assert.ok(end < lines.length, 'Actual legacy function terminates: ' + name);
     return lines.slice(start, end + 1).join('\n');
   });
-  const context = vm.createContext({});
+  const context = vm.createContext({dbContext:{getStore:()=>undefined}});
   vm.runInContext(definitions.join('\n') + '\nglobalThis.helpers={prepareWorkspace,ensureOwnerTeamMember};', context, { filename: 'actual-server-reconciliation-functions.js' });
   return context.helpers;
 }

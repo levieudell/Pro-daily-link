@@ -88,7 +88,7 @@ async function httpProofs() {
 function corruptDb(corrupt) { change(corrupt); }
 function currentAuthentication() {
   const source = fs.readFileSync(path.join(__dirname, 'server.js'), 'utf8'), start = source.indexOf('function authenticateRequestAccount('), end = source.indexOf('function projectNotesUser(', start);
-  assert.ok(start >= 0 && end > start); const context = { crypto, bearer: req => req.token, cookie: () => null, compatibilityAccountRuntime: { companyId: companyA, actor: registry.actor } };
+  assert.ok(start >= 0 && end > start); const context = { crypto, bearer: req => req.token, cookie: () => null, compatibilityAccountRuntime: { companyId: companyA, actor: registry.actor },productionRolesService:()=>null };
   vm.createContext(context); vm.runInContext(source.slice(start, end), context); return context.authenticateRequestAccount;
 }
 async function aiProofs() {

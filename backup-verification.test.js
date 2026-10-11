@@ -30,6 +30,7 @@ global.fetch = async (url, options = {}) => {
   if (address.startsWith('http://127.0.0.1:')) return realFetch(url, options);
   assert.ok(address.startsWith(process.env.SUPABASE_URL + '/'), 'all external calls must target the synthetic adapter');
   const route = address.slice(process.env.SUPABASE_URL.length);
+  if(route.includes('&select=*&limit=1'))return new Response(JSON.stringify([{id:companyId,roles_managed:false}]));
   if (route === '/storage/v1/bucket') return new Response('{}');
   if (route.startsWith('/storage/v1/object/tenant-backups/')) {
     if (options.method === 'POST') {

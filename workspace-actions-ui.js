@@ -2,7 +2,7 @@
 (function () {
   let enabled = false, rolePolicies = false, actor = null, epoch = 0, retire = null, loading = 0, loadRevision = null, loadSequence = 0, configured = false, expected = null, displayedRevision = null, loadTail = Promise.resolve();
   const failure = message => Object.assign(Error(message), { status: 409, code: 'PDL_WORKSPACE_STALE' });
-  function clear() { epoch++; actor = null; displayedRevision = null; window.PDLCompanyRoles?.retire(); retire?.(); document.querySelectorAll('[data-workspace-dialog]').forEach(node => node.remove()); }
+  function clear() { if(window.pdlProductionRoles?.enabled())window.pdlProductionRoles.clear();epoch++; actor = null; displayedRevision = null; window.PDLCompanyRoles?.retire(); retire?.(); document.querySelectorAll('[data-workspace-dialog]').forEach(node => node.remove()); }
   function headers() { const companyId = localStorage.getItem('pdl-company-id'); return companyId ? { 'X-PDL-Company': companyId } : {}; }
   async function identity({billingTransition=false,reconciliationFrom=null,resourceTransition=null}={}) {
     const opening = epoch, company = localStorage.getItem('pdl-company-id'), binding = expected;
@@ -17,7 +17,7 @@
     if (actor && ['companyId', 'actorId', 'role', 'sessionBinding', ...(reconciliationFrom===actor.authority||resourceMatch?[]:['authority']), ...(!billingTransition||actor.role!=='owner'?['locked']:[])].some(key => actor[key] !== current[key])) { clear(); throw failure('Your workspace access changed. Refresh current records.'); }
     actor = current; return current;
   }
-  function capture() { return enabled ? { epoch, generation: loading, resource:window.pdlResourceActions?.pending?.()||null } : null; }
+  function capture() { if(!enabled)return window.pdlProductionRoles?.capture()||null;return enabled ? { epoch, generation: loading, resource:window.pdlResourceActions?.pending?.()||null } : null; }
   function resourceLink(response,path,binding) {
     const encoded=response.headers.get('X-PDL-Resource-Receipt');
     if(!encoded){if(binding?.resource){clear();throw failure('The original resource receipt is missing. Refresh current records.');}return null;}
@@ -32,6 +32,7 @@
   }
   function resourceChanged() { epoch++;loadSequence++;displayedRevision=null;window.PDLCompanyRoles?.retire(); }
   async function verifyResponse(response, path, binding) {
+    if(window.pdlProductionRoles?.enabled()||!enabled&&response.headers.get('X-PDL-Workspace-Revision')!==null&&window.pdlProductionRoles)return window.pdlProductionRoles.verifyResponse(response,path,binding);
     const revision = response.headers.get('X-PDL-Workspace-Revision'), authority = response.headers.get('X-PDL-Workspace-Authority');
     if (!enabled && revision === null) return;
     if (!configured || !enabled) throw failure('Authenticated workspace configuration is required before loading records.');
@@ -46,10 +47,10 @@
     else if(loadRevision!==null && loading && current.revision!==loadRevision){clear();throw failure('Workspace records changed during loading. Refresh current records.');}
     if (opening !== epoch || revision === null || Number(revision) !== current.revision || authority !== current.authority || current.locked && !['/api/billing', '/api/billing/recover', '/api/account-access', '/api/auth/me', '/api/auth/login'].includes(path)) { clear(); throw failure('Workspace changed while loading. Refresh current records.'); }
   }
-  function configure(config, me, onRetire) { epoch++; displayedRevision = null; if (configured && enabled) retire?.(); configured = true; enabled = config?.compatibilityAccount?.workspace === true;rolePolicies=enabled&&config?.compatibilityAccount?.rolePolicies===true; retire = onRetire; actor = null; expected = enabled ? { companyId: config.compatibilityAccount.companyId, actorId: me?.id, role: (me?.accessRole || me?.role) === 'office' ? 'admin' : (me?.accessRole || me?.role), sessionBinding: me?.accountSessionBinding } : null; if (!enabled) return; window.pdlWorkspaceSave?.draw();window.pdlResourceActions?.draw(); }
+  function configure(config, me, onRetire) { window.pdlProductionRoles?.configure(config,me,onRetire); epoch++; displayedRevision = null; if (configured && enabled) retire?.(); configured = true; enabled = config?.compatibilityAccount?.workspace === true;rolePolicies=enabled&&config?.compatibilityAccount?.rolePolicies===true; retire = onRetire; actor = null; expected = enabled ? { companyId: config.compatibilityAccount.companyId, actorId: me?.id, role: (me?.accessRole || me?.role) === 'office' ? 'admin' : (me?.accessRole || me?.role), sessionBinding: me?.accountSessionBinding } : null; if (!enabled) return; window.pdlWorkspaceSave?.draw();window.pdlResourceActions?.draw(); }
   window.addEventListener('focus', () => { if (enabled) identity().catch(() => {}); });
   function load(run) {
-    if (!enabled) return run();
+    if (!enabled) return window.pdlProductionRoles?.enabled()?window.pdlProductionRoles.load(run):run();
     const generation = ++loadSequence, opening = epoch;
     const result = loadTail.catch(() => {}).then(() => runLoad(run, generation, opening));
     loadTail = result; return result;

@@ -1,5 +1,11 @@
 const $=s=>document.querySelector(s),$$=s=>[...document.querySelectorAll(s)];let data,audit=[],helpItems=[],blogPosts=[],editingBlogId=null,workType='onboarding',platformUser=null,currentView='overview',activeCompanyId='';
-async function api(path,options={}){const response=await fetch(path,{credentials:'include',headers:{'Content-Type':'application/json'},...options}),result=await response.json();if(response.status===401){location.href='/platform-login.html';throw new Error('Your platform session expired.')}if(!response.ok)throw new Error(result.error);return result}
+async function api(path,options={}){
+  const managed=/^\/api\/platform\/companies\/([^/]+)\/(features|owner-reset|subscription|demo-reset)$/.exec(path);
+  if(managed&&options.method&&options.method!=='GET'){
+    const authority=await api('/api/platform/companies/'+managed[1]+'/roles-authority');
+    if(authority.managed){const details=JSON.parse(options.body||'{}');options={...options,body:JSON.stringify({...details,expectedRevision:authority.expectedRevision})};}
+  }
+  const response=await fetch(path,{credentials:'include',headers:{'Content-Type':'application/json'},...options}),result=await response.json();if(response.status===401){location.href='/platform-login.html';throw new Error('Your platform session expired.')}if(!response.ok)throw new Error(result.error);return result}
 const safe=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const relativeDay=value=>{const days=Math.floor((Date.now()-new Date(value).getTime())/86400000);return days<=0?'today':days===1?'yesterday':`${days} days ago`};
 let openAccountMenu=null;const closeAccountMenu=menu=>{if(!menu)return;menu.open=false;if(openAccountMenu===menu)openAccountMenu=null};

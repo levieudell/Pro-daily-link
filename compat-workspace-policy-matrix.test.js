@@ -61,7 +61,7 @@ function legacyHelpers() {
     const line = source.split(/\r?\n/).find(value => value.startsWith('function ' + name + '('));
     assert.ok(line, 'Existing server baseline helper ' + name); return line;
   }).join('\n');
-  const context = vm.createContext({ process: { env: { PDL_REQUIRE_AUTH: '1' } } });
+  const context = vm.createContext({ process: { env: { PDL_REQUIRE_AUTH: '1' } }, rolesReadView:db=>db });
   return vm.runInContext(code + '\n({' + names.join(',') + '})', context);
 }
 function legacyAccess(db, user, legacy) {

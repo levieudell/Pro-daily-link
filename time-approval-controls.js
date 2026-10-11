@@ -126,9 +126,9 @@ else {
     payFormZone=p?.timeZone||company?.timezone||'America/Los_Angeles';$('#pay-period-title').textContent=p?'Edit pay period':'New pay period';payEditing=p?.id||null;$('#pay-period-label').value=p?.label||'';$('#pay-period-from').value=p?.from||'';$('#pay-period-to').value=p?.to||'';$('#pay-period-reason').value='';$('#pay-period-reason-label').hidden=!p;$('#pay-period-reason').required=Boolean(p);$('#pay-period-form-error').hidden=true;$('#pay-period-zone').textContent=(p?.timeZone||company?.timezone||'America/Los_Angeles')+' · Dates include both boundaries. Overnight time belongs to its clock-in day.';resetPayPreset();$('#pay-period-dialog').showModal();$('#pay-period-label').focus({preventScroll:true});
   }
   async function downloadPayExport(id){
-    const context=timeContext(),period=paySelected,tenant=signedInCompanyId();
+    const context=timeContext(),period=paySelected,tenant=signedInCompanyId(),responseBinding=window.pdlWorkspaceActions?.capture?.();
     const response=await fetch('/api/pay-periods/'+encodeURIComponent(period)+'/exports/'+encodeURIComponent(id)+'.csv',{credentials:'same-origin',headers:{'X-PDL-Company':tenant},cache:'no-store'});
-    await window.pdlWorkspaceActions?.verifyResponse(response,'/api/pay-periods/'+encodeURIComponent(period)+'/exports/'+encodeURIComponent(id)+'.csv');if(!response.ok)throw Error('Export could not be downloaded');const blob=await response.blob();await window.pdlWorkspaceActions?.verifyResponse(response,'/api/pay-periods/'+encodeURIComponent(period)+'/exports/'+encodeURIComponent(id)+'.csv');if(context!==timeContext()||period!==paySelected)return;
+    await window.pdlWorkspaceActions?.verifyResponse(response,'/api/pay-periods/'+encodeURIComponent(period)+'/exports/'+encodeURIComponent(id)+'.csv',responseBinding);if(!response.ok)throw Error('Export could not be downloaded');const blob=await response.blob();await window.pdlWorkspaceActions?.verifyResponse(response,'/api/pay-periods/'+encodeURIComponent(period)+'/exports/'+encodeURIComponent(id)+'.csv',responseBinding);if(context!==timeContext()||period!==paySelected)return;
     const url=URL.createObjectURL(blob),link=document.createElement('a');link.href=url;link.download='pay-period-'+period+'-'+id+'.csv';link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
   }
   $('#pay-period-form').onsubmit=async event=>{

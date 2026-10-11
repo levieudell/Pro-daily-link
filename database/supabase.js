@@ -78,6 +78,7 @@ async function ensurePrivateBucket(bucket, fileSizeLimit = 25_000_000, allowedMi
 async function createVerifiedBackup(snapshot) {
   compatibilityBoundary.assertLegacySnapshot(snapshot);
   if (!configured()) return null;
+  await require('./roles-legacy-fence').assertUnmanaged({configured,request}, snapshot.company.id);
   await ensurePrivateBucket('tenant-backups');
   const bytes = Buffer.from(JSON.stringify(snapshot));
   const hash = crypto.createHash('sha256').update(bytes).digest('hex');
@@ -132,6 +133,7 @@ async function listCompanySnapshots() {
 async function saveCompanySnapshot(snapshot) {
   compatibilityBoundary.assertLegacySnapshot(snapshot);
   if (!configured()) return false;
+  await require('./roles-legacy-fence').assertUnmanaged({configured,request}, snapshot.company.id);
   const id = snapshot.company.id;
   await request('/rest/v1/companies?on_conflict=id', {
     method: 'POST',
@@ -148,6 +150,7 @@ async function loadSnapshot(id) {
 async function saveSnapshot(id, name, data) {
   compatibilityBoundary.assertLegacy(id); compatibilityBoundary.assertLegacySnapshot(data);
   if (!configured()) return false;
+  await require('./roles-legacy-fence').assertUnmanaged({configured,request}, id);
   await request('/rest/v1/companies?on_conflict=id', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Prefer: 'resolution=merge-duplicates,return=minimal' },
@@ -169,6 +172,7 @@ async function health() {
 async function saveTransactionalSnapshot(snapshot, expectedRevision = 0) {
   compatibilityBoundary.assertLegacySnapshot(snapshot);
   if (!configured()) throw new Error('Supabase is not configured');
+  await require('./roles-legacy-fence').assertUnmanaged({configured,request}, snapshot.company.id);
   const { splitSnapshot, canonicalHash, databaseCompanyId } = require('./transactional-repository');
   const companyId = databaseCompanyId(snapshot);
   const { scalarData, records } = splitSnapshot(snapshot);

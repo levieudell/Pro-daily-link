@@ -34,7 +34,7 @@
     ['notes', 'complete', '[data-note-toggle]']
   ];
   function apply() {
-    if (!window.pdlWorkspaceActions?.enabled() || typeof currentUser === 'undefined') return;
+    if ((!window.pdlWorkspaceActions?.enabled()&&!window.pdlProductionRoles?.rolePolicies()) || typeof currentUser === 'undefined') return;
     const gates = currentUser?.effectiveCapabilities;
     for (const [family, action, selector] of controls) for (const node of document.querySelectorAll(selector)) {
       if (gates?.[family]?.[action] !== true) { node.dataset.workspaceRestricted = 'true'; node.hidden = true; if ('disabled' in node) node.disabled = true; }
