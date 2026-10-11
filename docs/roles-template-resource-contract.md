@@ -1,0 +1,29 @@
+# Template resource writer contract
+
+This local slice is based on `ac1e3bc812cc8ecec3a8d1f060f33a069f2f5877`. It implements the five existing template writers as a finite resource family. It does not install live policy settings, change any role defaults, add an editable permission flag, or expose the AI template generator.
+
+| Method and route | Operation kind | Accepted details |
+| --- | --- | --- |
+| `POST /api/daily-templates` | `templateCreate` | `name`, optional `fields`, `category`, `description`, `requirements`, `assignment`, `reviewNotice` |
+| `PATCH /api/daily-templates/:id` | `templateEdit` | The same keys; absent keys preserve the named handler's existing defaults |
+| `DELETE /api/daily-templates/:id` | `templateRemove` | Empty object |
+| `POST /api/daily-templates/default` | `templateDefault` | Exactly `templateId` |
+| `PATCH /api/projects/:id/template` | `projectTemplates` | Exactly one of `templateId` or `templateIds`; normalized to `templateIds` |
+
+IDs are safe positive integers, accepted as numbers or canonical decimal strings for template references. `standard` is the only reserved string ID. Item routes accept `standard` so its existing edit/delete protection returns a locked conflict. The exact route recognizer excludes queries, encoded identifiers, leading zeroes, the generator, arbitrary item names, and other methods. Empty project selections normalize to Standard, retaining the existing server behavior.
+
+Every write requires a current Active normalized Owner or Admin and `company.features.templates === true`. These immutable management and feature gates remain outside editable role-policy flags. Where supplied, an actor's company ID must match the current company. Assignment crew/work-type labels remain template metadata; they grant no project, crew, account, or assistant access.
+
+Custom fields are limited to 40 declared fields and the existing seven answer types. The adapter preserves server-generated field IDs, rejects collisions and replacements of fixed daily fields, accepts the normal UI's dropdown comma string, and normalizes to two through 20 bounded unique options. Booleans must be actual booleans. Nested objects are closed. Conditions reference another declared yes/no or checkbox field and cannot cycle. Safety forms retain the server's mandatory review notice.
+
+`validate` compares the complete candidate from the actual named legacy handler against its expected consequences. Creation appends one server-ID template with one version. Editing appends exactly one sequential version and retains all prior versions. Removal preserves all unrelated templates and collections; the company default, either project binding form, or any report pin prevents removal. Default changes only `company.defaultTemplateId`. Project binding changes only its three template binding fields and pins the primary selection to its current latest version. Users, sessions, role policy, financial fields, feature flags, project history, saved report versions, and other collections must remain byte-equivalent under canonical hashing.
+
+Private retained beforeimages include the complete prior template on edit/remove, explicit presence/value of the prior company default, and the complete prior project on binding. The shared admission layer must keep these private, sign and durably retain them with the preview/receipt, enforce reason, explicit confirmation, current revision/session/authority, transaction deadline and compare-and-swap, and reauthenticate at final delivery. This module neither commits a repository snapshot nor runs arbitrary handlers.
+
+Fresh result delivery projects current authorized template data. A template receipt uses the immutable first version as lifecycle identity; a removed/recycled ID returns a technical acknowledgement instead of a replacement record. Project records have no immutable lifecycle ID, so binding replays return only `{id, receiptId}`. A first binding delivery requires the non-binding project beforeimage to remain identical and validates all current template pins. Default delivery reflects the current valid default rather than the old receipt's cached selection. No readback returns cached receipt result metadata. The normal UI must reload current authorized views and avoid assigning missing replay fields into its cache.
+
+The exported interface is `route(method, path)`, `parse(operation, input)`, `authorizeActor(auth, operation, input)`, `authorize(db, auth, operation, helpers, input)`, `validate(before, after, operation, auth, helpers, input)`, and `currentResult(db, auth, receipt, first, helpers, input)`. The `input` argument is the existing closed helper export from `resource-inputs.js`. The root integration should dispatch only these exact kinds to their named existing routes; no caller-supplied capability or handler name supplies authority.
+
+Validation: `node --check resource-templates.js` and `node resource-templates.test.js` pass. The 21 grouped test cases execute the actual `handleDailyTemplates` function and actual normalizers extracted from this checkout over isolated candidate snapshots, including all five writers, both fixed management roles, role/feature denial, malicious input, complete-delta overreach, pinned history, retained beforeimages, and fresh/recycled-ID results. This slice test is not an HTTP/repository/CI acceptance claim. Shared admission HTTP, native transaction, browser, stale-session, and signed recovery acceptance must run after the parent integrates the family.
+
+Existing gaps retained for integration: the named project-binding handler compares numeric project IDs strictly, so legacy string project IDs remain denied; any canonical-ID change belongs in that named handler. The enhanced template builder currently drops stored `showWhen` conditions on edit; this slice does not edit the UI. AI generation remains a separate fenced provider workflow.
