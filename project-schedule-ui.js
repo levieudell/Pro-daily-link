@@ -63,7 +63,7 @@
       <div class="project-schedule-head"><div><h3>Project schedule</h3><p>Linked tasks auto-schedule: a task starts the next working day after everything it waits for is done. Change one and the rest follow.</p></div></div>
       ${editable ? `${!hasStart ? `<div data-schedule-needs-start style="display:flex;gap:8px 16px;align-items:baseline;flex-wrap:wrap;padding:12px 14px;margin-bottom:12px;border:1px solid #e5c97a;background:#fdf6e3;border-radius:12px;font-size:14px"><strong>No start date on this project yet.</strong><span style="color:#6b5d33">Set one below and every task will schedule itself from that day.</span></div>` : ''}
       <div class="project-schedule-add" data-project-dates-form>
-        <label style="display:grid;gap:4px;font-size:12px;font-weight:600;color:#64726c">Start date<input type="date" data-project-start-date value="${escapeHtml(String(project.startDate || ''))}"></label>
+        <label style="display:grid;gap:4px;font-size:12px;font-weight:600;color:#64726c">Start date<input type="date" data-project-start-date value="${escapeHtml(String(project.startDate || (typeof localDateIso === 'function' ? localDateIso() : new Date().toISOString().slice(0, 10))))}"></label>
         <label style="display:grid;gap:4px;font-size:12px;font-weight:600;color:#64726c">Target end <span style="font-weight:400">(optional)</span><input type="date" data-project-end-date value="${escapeHtml(String(project.endDate || ''))}"></label>
         <button type="button" class="secondary small" data-save-project-dates>Save dates</button>
         <span style="font-size:12px;color:#98a5a0;flex:1 1 180px">Tasks count working days from the start date. Change it any time and the dates follow.</span>
@@ -84,7 +84,7 @@
 
   function wireSchedulePane(pane, project, tasks){
     const editable = canEditTasks();
-    const refresh = payload => renderSchedulePane(pane, project, payload.tasks, null);
+    const refresh = payload => { renderSchedulePane(pane, project, payload.tasks, null); syncLaneWithServer(); };
     const notifyChanged = payload => { const others = (payload.changed || []).filter(id => true).length; notify(others > 1 ? `Schedule updated — ${others} tasks moved` : 'Schedule updated'); };
     const saveDates = pane.querySelector('[data-save-project-dates]');
     if (saveDates) saveDates.onclick = async () => {
@@ -191,14 +191,16 @@
     return team.filter(member => (includeOffice || !isOfficeMember(member)) && (!crew || crew === 'all' || member.crew === crew));
   }
 
-  function unassignedLaneTasks(days){
-    if (!days.length) return [];
-    const first = days[0].date, last = days[days.length - 1].date;
+  function unassignedLaneTasks(){
     const activeProjects = new Set((typeof projects !== 'undefined' ? projects : []).filter(project => !project.archived).map(project => Number(project.id)));
     return (laneTasksCache || [])
-      .filter(task => task && activeProjects.has(Number(task.projectId)) && !(task.memberIds || []).length && !task.crew && task.status !== 'done' && task.startDate <= last && task.endDate >= first)
+      .filter(task => task && activeProjects.has(Number(task.projectId)) && !(task.memberIds || []).length && !task.crew && task.status !== 'done')
       .sort((a, b) => String(a.startDate).localeCompare(String(b.startDate)) || Number(a.id) - Number(b.id));
   }
+
+  // Tasks changed in the project Schedule tab must reach the team-schedule
+  // lane immediately — the 30s cache would otherwise hide fresh work.
+  function syncLaneWithServer(){ return refreshLaneTasks(true).then(() => paintUnassignedLane()); }
 
   async function refreshLaneTasks(force){
     const stamp = Date.now();
@@ -254,7 +256,7 @@
     if (typeof currentRole !== 'undefined' && currentRole !== 'office') return;
     const board = document.getElementById('schedule-board'), days = laneVisibleDays();
     if (!board || !days.length) return;
-    const tasks = unassignedLaneTasks(days), editable = canAssignTasks(), members = laneTeamOptions();
+    const tasks = unassignedLaneTasks(), editable = canAssignTasks(), members = laneTeamOptions();
     if (!tasks.length && !editable) return;
     const today = typeof localDateIso === 'function' ? localDateIso() : '';
     const firstDay = (days.find(day => day.date >= today) || days[0]).date;
