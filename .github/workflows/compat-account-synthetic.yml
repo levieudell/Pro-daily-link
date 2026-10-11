@@ -77,6 +77,7 @@ jobs:
       - run: node resource-estimates.test.js
       - run: node resource-estimates-http.test.js
       - run: node editor-assistant-policy.test.js
+      - run: node project-assistant-provider-context.test.js
       - run: node editor-client-contracts.test.js
       - name: Install isolated browser test dependency
         run: |
