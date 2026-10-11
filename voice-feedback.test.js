@@ -16,8 +16,8 @@ assert.ok(app.includes('setVoiceStatus(status'), 'listening state is surfaced th
 assert.ok(app.includes("button.setAttribute('aria-pressed'"), 'listening state is exposed to assistive tech');
 assert.ok(app.indexOf("button.textContent=spanish?'■ Dejar de escuchar':'■ Stop listening'") < app.indexOf('recognition.start()'), 'the listening label appears before the browser service starts');
 assert.ok(styles.includes('.voice-status') && styles.includes('@keyframes pdl-voice-pulse'), 'status line and pulse animation are styled');
-assert.match(index, /app\.js\?v=20261011-schedule-tab/);
-assert.match(index, /styles\.css\?v=20261011-schedule-tab/);
+assert.match(index, /app\.js\?v=20261011-co-document/);
+assert.match(index, /styles\.css\?v=20261011-co-document/);
 
 // --- Behavioral harness -----------------------------------------------------
 const aStart = app.indexOf('let endDayVoice=null');
