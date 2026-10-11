@@ -139,6 +139,45 @@ const { server } = require('./server');
     assert.equal(again.data.merged, 0);
     assert.equal(again.data.skipped, 1);
 
+    // Email notification: an assignee with an account email gets the same
+    // assignment email a manual schedule entry sends; a provider failure marks
+    // the rows instead of failing the request; members without an account
+    // email are skipped entirely.
+    const realFetch = globalThis.fetch, sentCalls = [];
+    globalThis.fetch = async (url, options) => {
+      const target = String(url);
+      if (!/api\.resend\.com/.test(target)) return realFetch(url, options);
+      sentCalls.push({ url: target, body: options && options.body });
+      return { ok: true };
+    };
+    process.env.RESEND_API_KEY = 'synthetic-resend-key';
+    patchDb(current => {
+      current.projects.push({ id: 103, name: 'Mail Job', customer: 'Test Customer', site: 'Site C', startDate: '2026-12-07', endDate: '2026-12-31', status: 'Active' });
+      current.users.push({ id: 3, name: 'Chloe Login', role: 'field', status: 'Active', companyId, memberId: 7, email: 'chloe@example.com' });
+    });
+    const seventh = await call('POST', '/api/projects/103/tasks', { name: 'Email check', durationDays: 1 });
+    const task7 = seventh.data.tasks[0].id;
+    const emailed = await call('POST', `/api/project-tasks/${task7}/assign`, { memberId: 7 });
+    assert.equal(emailed.status, 200);
+    assert.equal(emailed.data.created, 1);
+    assert.equal(sentCalls.length, 1, 'exactly one assignment email is sent');
+    assert.match(sentCalls[0].body, /chloe@example\.com/);
+    assert.match(sentCalls[0].body, /Mail Job/, 'the email names the project');
+    assert.match(sentCalls[0].body, /Email check/, 'the email names the task activity');
+    const emailedRows = reload().assignments.filter(a => a.projectId === 103 && a.activity === 'Email check');
+    assert.equal(emailedRows.length, 1);
+    assert.equal(emailedRows[0].notifications[7].emailStatus, 'sent', 'created rows are marked sent');
+    // Provider rejection: rows marked failed, assignment itself still succeeds.
+    globalThis.fetch = async (url, options) => /api\.resend\.com/.test(String(url)) ? { ok: false, status: 500 } : realFetch(url, options);
+    const eighth = await call('POST', '/api/projects/103/tasks', { name: 'Email fail check', durationDays: 1, predecessorIds: [task7] });
+    const task8 = eighth.data.tasks.find(t => t.name === 'Email fail check').id;
+    const failedMail = await call('POST', `/api/project-tasks/${task8}/assign`, { memberId: 7 });
+    assert.equal(failedMail.status, 200, 'an email failure does not fail the assignment');
+    const failedRows = reload().assignments.filter(a => a.projectId === 103 && a.activity === 'Email fail check');
+    assert.equal(failedRows[0].notifications[7].emailStatus, 'failed', 'rows are marked failed for the office to see');
+    globalThis.fetch = realFetch;
+    delete process.env.RESEND_API_KEY;
+
     // Gates: field role, unknown task, unknown member, and a fromDate past the end.
     assert.equal((await call('POST', `/api/project-tasks/${task1}/assign`, { memberId: 7 }, fieldToken)).status, 403);
     assert.equal((await call('POST', '/api/project-tasks/999/assign', { memberId: 7 })).status, 404);

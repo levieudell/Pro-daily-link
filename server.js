@@ -1274,6 +1274,7 @@ async function api(req,res,url){
     const start = '07:00', end = '15:30', now = new Date().toISOString();
     const approved = scheduleAvailability.approved(db.timeOffRequests, [memberId]);
     let created = 0, merged = 0, skipped = 0;
+    const touched = [];
     db.assignments ||= [];
     for (const date of dates) {
       if (scheduleAvailability.onDate(approved, memberId, date)) { skipped++; continue; }
@@ -1286,10 +1287,13 @@ async function api(req,res,url){
         row.memberIds = [...(row.memberIds || []), memberId];
         row.notifications = row.notifications || {};
         row.notifications[memberId] = { inAppAt: now, emailStatus: 'not_available' };
+        touched.push(row);
         merged++;
         continue;
       }
-      db.assignments.push(...createAssignmentRows(db, { projectId: task.projectId, memberIds: [memberId], crew: member.crew || null, start, end, activity: task.name }, [date], now));
+      const rows = createAssignmentRows(db, { projectId: task.projectId, memberIds: [memberId], crew: member.crew || null, start, end, activity: task.name }, [date], now);
+      db.assignments.push(...rows);
+      touched.push(...rows);
       created++;
     }
     if (created + merged > 0) {
@@ -1298,6 +1302,20 @@ async function api(req,res,url){
       task.assignedBy = req.auth?.user.name || 'Office user';
     }
     writeDb(db);
+    // The lane assignee gets the same email a manual schedule entry sends.
+    // Only rows created or merged by this request are included — someone who
+    // already held the shift is not re-notified about it.
+    const assigneeUser = (db.users || []).find(u => u.status === 'Active' && Number(u.memberId) === memberId && u.email);
+    if (process.env.RESEND_API_KEY && assigneeUser && touched.length) {
+      try {
+        await sendAssignmentEmail({ to: assigneeUser.email, name: assigneeUser.name || member.name, companyName: db.company.name, projectName: (db.projects || []).find(p => Number(p.id) === Number(task.projectId))?.name || 'your project', assignments: touched });
+        for (const row of touched) if (row.notifications && row.notifications[memberId]) row.notifications[memberId].emailStatus = 'sent';
+      } catch (error) {
+        for (const row of touched) if (row.notifications && row.notifications[memberId]) row.notifications[memberId].emailStatus = 'failed';
+        console.error('Task assignment email failed', error.message);
+      }
+      writeDb(db);
+    }
     const scheduled = PDLProjectSchedule.scheduleTasks((db.projectTasks || []).filter(t => Number(t.projectId) === Number(task.projectId)), (db.projects || []).find(p => Number(p.id) === Number(task.projectId))?.startDate);
     return json(res, 200, { tasks: scheduled.tasks || [], changed: [], created, merged, skipped, memberId, memberName: member.name });
   }
