@@ -315,7 +315,11 @@ async function httpMatrix(mode) {
     for (const { user, token } of actors.filter(row => row.user.role !== 'owner')) {
       for (const route of ['/api/assistant/context', '/api/projects/101/assistant/context']) await expect(route, { token }, 503);
       for (const route of ['/api/platform', '/api/platform/revenue']) assert.ok((await request(route, { token })).status >= 400, 'Tenant token cannot access platform ' + route);
-      await expect('/api/company', { token, method: 'PATCH', data: { name: 'Synthetic forbidden change' } }, 503);
+      // Company management is a named fixed-baseline resource operation now.
+      // A raw payload still cannot bypass its reviewed confirmation envelope.
+      const companyBefore=JSON.stringify(store.current().company);
+      await expect('/api/company', { token, method: 'PATCH', data: { name: 'Synthetic forbidden change' } }, 400);
+      assert.equal(JSON.stringify(store.current().company),companyBefore);
       await expect('/api/users/1/time-access', { token, method: 'PATCH', data: { manageTime: false } }, 403);
     }
     } else {
