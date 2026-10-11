@@ -89,8 +89,8 @@ async function call(method, route, body, auth = ownerToken) {
     assert.ok(app.includes('Sent to customer'), 'English status label');
     assert.ok(app.includes('Enviado al cliente'), 'Spanish status label');
     assert.ok(app.includes('renderMyFlags()}catch(error){message.textContent'), 'flags refresh after a successful flag save');
-    assert.match(index, /app\.js\?v=20261011-my-flags/);
-    assert.match(index, /styles\.css\?v=20261011-my-flags/);
+    assert.match(index, /app\.js\?v=20261011-change-detail/);
+    assert.match(index, /styles\.css\?v=20261011-change-detail/);
     const styles = fs.readFileSync('styles.css', 'utf8');
     assert.ok(styles.includes('.my-flag-row'), 'flag rows are styled');
 
