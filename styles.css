@@ -708,3 +708,26 @@ button.voice-listening{outline:2px solid #2e6b52;outline-offset:2px;animation:pd
 @keyframes pdl-voice-pulse{0%,100%{outline-color:#2e6b52}50%{outline-color:#8fd0ae}}
 :root[data-theme="dark"] .voice-status{color:#9fb3aa}
 :root[data-theme="dark"] .voice-status.voice-listening{color:#cde3d8}
+.my-flag-row{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:11px 0;border-bottom:1px solid #e6ebe8}
+.my-flag-row:last-child{border-bottom:0}
+.my-flag-row>div{display:grid;gap:2px;min-width:0}
+.my-flag-row strong{font-size:13px}
+.my-flag-row span{font-size:12px;color:#68716d;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+
+/* Change cards — field context, line items, photo strip (changes v2 step 3) */
+.change-flag-note{margin:10px 0 0;padding:10px 12px;border-left:3px solid #e8a33d;background:#fdf6e9;border-radius:0 8px 8px 0}
+.change-flag-note small{font-size:11px;letter-spacing:.06em;color:#8a6d1f;font-weight:700}
+.change-flag-note p{margin:4px 0 0;font-size:13px;color:#333a37}
+.change-reason-label{display:block;margin-top:10px;font-size:12px;font-weight:600;color:#4c554f}
+.change-reason-label textarea{width:100%;margin-top:4px;padding:8px 10px;border:1px solid #d7dcd9;border-radius:8px;font:inherit;font-size:13px;font-weight:400;resize:vertical;background:#fff}
+.change-lines{margin-top:12px}
+.change-lines-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:6px}
+.change-lines-head small{font-size:11px;letter-spacing:.06em;color:#68716d;font-weight:700}
+.change-line-row{display:grid;grid-template-columns:minmax(140px,2fr) 60px 68px 80px 92px 26px;gap:6px;margin-bottom:6px;align-items:center}
+.change-line-row input{padding:6px 8px;border:1px solid #d7dcd9;border-radius:6px;font-size:12px;min-width:0;width:100%}
+.change-line-remove{border:none;background:none;font-size:16px;color:#98a29c;cursor:pointer;padding:2px 4px;line-height:1}
+.change-line-remove:hover{color:#c0392b}
+.change-line-add{font-size:12px;padding:5px 10px;margin-top:2px}
+.change-photo-strip{display:flex;gap:6px;margin-top:12px;flex-wrap:wrap}
+.change-photo-strip .photo-thumb{width:64px;height:64px;object-fit:cover;border-radius:8px;border:1px solid #d7dcd9;cursor:zoom-in}
+.change-daily-link{margin-top:6px;border:none;background:none;padding:0;font-size:12px;color:#1a6fd4;cursor:pointer;text-decoration:underline}
