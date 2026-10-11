@@ -33,12 +33,12 @@ function createDelivery({repository,companyId,send,authenticateSession,accountAc
   function current(db,job){valid(db);const auth=authenticateSession(db,job.sessionHash),users=db.users.filter(u=>u.id===job.source.recipientId&&u.status==='Active');if(users.length!==1)return null;let source;try{source=descriptor(db,users[0],job.source.assignments.map(r=>r.id));}catch{return null;}
     return auth&&auth.companyId===companyId&&auth.user.id===job.actorId&&Date.parse(auth.session.expiresAt)>clock()&&Date.parse(job.expiresAt)>clock()&&actorBinding(db,auth)===job.authority&&!accountAccess(db.company).locked&&access.access(db,auth.user).create&&job.source.assignments.every(row=>access.inScope(db,auth.user,row,'create'))&&canonicalHash(source)===job.sourceHash?auth:null;
   }
-  function stage(db,req,ids){const ledger=valid(db),at=clock(),rows=ids.map(id=>db.assignments.find(r=>r.id===id));if(rows.some(r=>!r)||!access.access(db,req.auth.user).create||rows.some(r=>!access.inScope(db,req.auth.user,r,'create')))fail();const memberIds=new Set(rows.flatMap(r=>r.memberIds));
-    for(const user of db.users.filter(u=>u.status==='Active'&&memberIds.has(u.memberId)&&u.email)){
+  function stage(db,req,ids,recipientMemberId=null){if(recipientMemberId!==null&&(!Number.isSafeInteger(recipientMemberId)||recipientMemberId<1))fail();const ledger=valid(db),at=clock(),rows=ids.map(id=>db.assignments.find(r=>r.id===id));if(rows.some(r=>!r)||!access.access(db,req.auth.user).create||rows.some(r=>!access.inScope(db,req.auth.user,r,'create')))fail();const memberIds=new Set(rows.flatMap(r=>r.memberIds));
+    for(const user of db.users.filter(u=>u.status==='Active'&&memberIds.has(u.memberId)&&u.email&&(recipientMemberId===null||u.memberId===recipientMemberId))){
       const groups=new Map();for(const row of rows.filter(item=>item.memberIds.includes(user.memberId))){if(!groups.has(row.projectId))groups.set(row.projectId,[]);groups.get(row.projectId).push(row.id);}
       for(const selected of [...groups.values()].flatMap(ids=>Array.from({length:Math.ceil(ids.length/91)},(_,i)=>ids.slice(i*91,(i+1)*91)))){const source=descriptor(db,user,selected);validateSource(source,companyId);const sourceHash=canonicalHash(source);if(ledger.some(j=>j.sourceHash===sourceHash))continue;ledger.push(sign({id:crypto.randomUUID(),purpose,companyId,actorId:req.auth.user.id,sessionHash:req.auth.session.tokenHash,authority:actorBinding(db,req.auth),source,sourceHash,status:'queued',createdAt:new Date(at).toISOString(),expiresAt:new Date(Math.min(at+600000,Date.parse(req.auth.session.expiresAt))).toISOString()}));for(const row of rows.filter(item=>selected.includes(item.id))){row.notifications||={};row.notifications[user.memberId]||={};row.notifications[user.memberId].emailStatus='queued';}}
     }
-    db[jobs]=ledger;valid(db);return ledger.filter(j=>j.status==='queued'&&j.source.assignments.some(row=>ids.includes(row.id))).map(j=>j.id);
+    db[jobs]=ledger;valid(db);return ledger.filter(j=>j.status==='queued'&&(recipientMemberId===null||j.source.memberId===recipientMemberId)&&j.source.assignments.some(row=>ids.includes(row.id))).map(j=>j.id);
   }
   async function load(expected){const l=await repository.load(companyId);if(!l||l.contentHash!==canonicalHash(l.snapshot)||expected&&(l.revision!==expected.revision||l.contentHash!==expected.contentHash))fail();valid(l.snapshot);return l;}
   async function commit(db,revision,deadline){const saved=await repository.commit(db,revision,deadline?{deadline}:undefined);if(saved.revision!==revision+1||saved.contentHash!==canonicalHash(db))fail();return saved;}
@@ -49,6 +49,7 @@ function createDelivery({repository,companyId,send,authenticateSession,accountAc
     if(job.status==='sent'||job.status==='rejected')for(const record of job.source.assignments){const row=db.assignments.find(r=>r.id===record.id);row.notifications||={};row.notifications[job.source.memberId]||={};row.notifications[job.source.memberId].emailStatus=job.status==='sent'?'sent':'failed';}
     return {status:job.status,...await commit(db,loaded.revision,job.status==='sent'?deadline:undefined)};
   }
-  return {stage,dispatch,valid,authorised:(db,job)=>Boolean(current(db,job))};
+  function cancelQueued(db,ids){const ledger=valid(db),matching=ledger.filter(row=>row.source.assignments.some(item=>ids.includes(item.id)));if(matching.some(row=>['sending','uncertain'].includes(row.status)))throw Object.assign(Error('Review the original assignment delivery outcome before changing this shift.'),{statusCode:409});const cancelled=[];for(const row of matching)if(row.status==='queued'){row.status='cancelled';sign(row);cancelled.push(row.id);}valid(db);return cancelled;}
+  return {stage,dispatch,valid,cancelQueued,authorised:(db,job)=>Boolean(current(db,job))};
 }
 module.exports={createDelivery,descriptor,validateSource,jobs};

@@ -1384,7 +1384,7 @@ async function api(req,res,url){
     // Only rows created or merged by this request are included — someone who
     // already held the shift is not re-notified about it.
     const assigneeUser = (db.users || []).find(u => u.status === 'Active' && Number(u.memberId) === memberId && u.email);
-    if (process.env.RESEND_API_KEY && assigneeUser && touched.length) {
+    if (process.env.RESEND_API_KEY && assigneeUser && touched.length && !dbContext.getStore()?.workspaceCandidate) {
       try {
         await sendAssignmentEmail({ to: assigneeUser.email, name: assigneeUser.name || member.name, companyName: db.company.name, projectName: (db.projects || []).find(p => Number(p.id) === Number(task.projectId))?.name || 'your project', assignments: touched });
         for (const row of touched) if (row.notifications && row.notifications[memberId]) row.notifications[memberId].emailStatus = 'sent';

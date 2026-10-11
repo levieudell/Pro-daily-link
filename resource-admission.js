@@ -36,7 +36,9 @@ function createHandler(h) {
         if (name !== reconciliations) {
           if (!delta.equal(input.parse(row.operation), row.operation) || !hash(row.version) || typeof row.reason !== 'string' || !row.reason.trim() || row.reason.length > 500) fail(409, 'Resource save identity needs reconciliation.');
           if (name === previews) {
-            if (!Number.isSafeInteger(row.openingRevision)||row.openingRevision<0||row.reviewRevision!==row.openingRevision+1||!timestamp(row.expiresAt) || Date.parse(row.expiresAt) <= Date.parse(row.createdAt) || Date.parse(row.expiresAt) > Date.parse(row.createdAt) + 600000 || !exact(row.impact, ['kind', 'details', 'changedCollections', 'affectedMembers', 'affectedAccounts', 'accountScopes'])) fail(409, 'Resource preview needs reconciliation.');
+            if (!Number.isSafeInteger(row.openingRevision)||row.openingRevision<0||row.reviewRevision!==row.openingRevision+1||!timestamp(row.expiresAt) || Date.parse(row.expiresAt) <= Date.parse(row.createdAt) || Date.parse(row.expiresAt) > Date.parse(row.createdAt) + 600000 || !exact(row.impact, ['kind', 'details', 'changedCollections', 'affectedMembers', 'affectedAccounts', 'accountScopes', ...(Object.hasOwn(row.impact||{},'taskChanges')?['taskChanges']:[]), ...(Object.hasOwn(row.impact||{},'taskAssignment')?['taskAssignment']:[]), ...(Object.hasOwn(row.impact||{},'subcontractorEffects')?['subcontractorEffects']:[])])) fail(409, 'Resource preview needs reconciliation.');
+            if(row.impact.taskChanges!==undefined){if(!Array.isArray(row.impact.taskChanges)||row.impact.taskChanges.length>10000)fail(409,'Task preview requires reconciliation.');for(const change of row.impact.taskChanges){if(!exact(change,['id','name','before','after'])||!input.id(change.id)||typeof change.name!=='string'||change.name.length>160)fail(409,'Task preview requires reconciliation.');for(const value of [change.before,change.after])if(value!==null&&(!exact(value,['startDate','endDate'])||!input.date(value.startDate)||!input.date(value.endDate)))fail(409,'Task preview requires reconciliation.');}}
+            for(const [name,keys]of [['taskAssignment',['createdCount','mergedCount','skippedCount']],['subcontractorEffects',['revokedLinkCount','cancelledReminderCount']]])if(row.impact[name]!==undefined&&(!exact(row.impact[name],keys)||Object.values(row.impact[name]).some(value=>!Number.isSafeInteger(value)||value<0||value>50000)))fail(409,'Resource consequences require reconciliation.');
           } else {
             const identity = row.actorId + ':' + row.requestId;
             if (!uuid(row.previewId) || !requestId(row.requestId) || requests.has(identity) || ![200, 201].includes(row.status) || !hash(row.authorityAfter) || !row.result || typeof row.result !== 'object' || Array.isArray(row.result) || !row.retained || typeof row.retained !== 'object') fail(409, 'Resource receipt needs reconciliation.');
@@ -57,14 +59,17 @@ function createHandler(h) {
     if (h.accountAccess(db.company).locked) fail(402, 'Company access requires Owner review.');
     return auth;
   }
-  function impact(before, after, op) {
+  function impact(before, after, op, checked) {
     const registry=require('./capability-registry'),dto=require('./compat-workspace-projections');
     const scope=(db,user)=>{
       const actor=registry.actor(db,registry.normalize(user)),view=dto.bootstrap(db,actor,h),cards=(db.timeCards||[]).filter(row=>require('./time-review-access').cardInScope(db,actor,row));
       return {...Object.fromEntries(['projects','team','assignments','reports','workdays'].map(name=>[name,(view[name]||[]).map(row=>row.id).sort((a,b)=>String(a).localeCompare(String(b)))])),timeCards:cards.map(row=>row.id).sort((a,b)=>String(a).localeCompare(String(b))),pricing:h.canViewPricing(db,actor)};
     };
     const accountScopes=before.users.filter(user=>user.status==='Active').map(user=>({id:user.id,role:user.role,before:scope(before,user),after:scope(after,after.users.find(row=>row.id===user.id))})).filter(row=>!delta.equal(row.before,row.after));
-    return { kind: op.kind, details: structuredClone(op.details), changedCollections: [...new Set([...Object.keys(before), ...Object.keys(after)])].filter(key => !delta.equal(before[key], after[key])), affectedMembers: before.team.filter(row => !delta.equal(row, after.team.find(value => value.id === row.id))).map(row => row.id), affectedAccounts: [...new Set([...before.users.filter(row => !delta.equal(row, after.users.find(value => value.id === row.id))).map(row => row.id),...accountScopes.map(row=>row.id)])],accountScopes };
+    const datePair=(db,row)=>{if(!row)return null;const value=input.date(row.startDate)&&input.date(row.endDate)?row:require('./project-schedule').scheduleTasks((db.projectTasks||[]).filter(task=>Number(task.projectId)===Number(row.projectId)),db.projects.find(project=>Number(project.id)===Number(row.projectId))?.startDate).tasks?.find(task=>task.id===row.id);return value&&input.date(value.startDate)&&input.date(value.endDate)?{startDate:value.startDate,endDate:value.endDate}:null;};
+    const taskChange = row => ({id:row.id,name:row.name,before:datePair(before,before.projectTasks?.find(old=>old.id===row.id)),after:datePair(after,after.projectTasks?.find(next=>next.id===row.id))});
+    const consequences={...(op.kind.startsWith('projectTask')||op.kind==='projectDates'?{taskChanges:[...new Map([...(before.projectTasks||[]),...(after.projectTasks||[])].filter(row=>!delta.equal((before.projectTasks||[]).find(old=>old.id===row.id),(after.projectTasks||[]).find(next=>next.id===row.id))).map(row=>[row.id,taskChange(row)])).values()]}:{}),...(op.kind.startsWith('subcontractor')?{subcontractorEffects:{revokedLinkCount:(before.subcontractorLinks||[]).filter(row=>row.status==='Active'&&(after.subcontractorLinks||[]).find(next=>next.id===row.id)?.status==='Revoked').length,cancelledReminderCount:(before.workspaceComplianceJobs||[]).filter(row=>row.status==='queued'&&(after.workspaceComplianceJobs||[]).find(next=>next.id===row.id)?.status==='cancelled').length}}:{})};
+    return { ...consequences,...(op.kind==='projectTaskAssign'?{taskAssignment:{createdCount:checked.data.created,mergedCount:checked.data.merged,skippedCount:checked.data.skipped}}:{}), kind: op.kind, details: structuredClone(op.details), changedCollections: [...new Set([...Object.keys(before), ...Object.keys(after)])].filter(key => !delta.equal(before[key], after[key])), affectedMembers: before.team.filter(row => !delta.equal(row, after.team.find(value => value.id === row.id))).map(row => row.id), affectedAccounts: [...new Set([...before.users.filter(row => !delta.equal(row, after.users.find(value => value.id === row.id))).map(row => row.id),...accountScopes.map(row=>row.id)])],accountScopes };
   }
   async function execute(req, db, op) {
     const auth = fresh(req, db); input.authorize(db, auth, op, h);
@@ -77,11 +82,12 @@ function createHandler(h) {
       if (result.response.status >= 400) fail(result.response.status, 'The complete Company save could not be validated.');
     }
     const afterAuth = fresh(req, result.candidate);
+    const family = input.extension(op); if (family?.prepareCandidate) family.prepareCandidate(db, result.candidate, op, afterAuth, h, input);
     const checked = delta.validate(db, result.candidate, op, afterAuth, h);
-    return { candidate: result.candidate, status: op.kind.endsWith('Create') ? 201 : 200, data: checked.data, retained: checked.retained, impact: impact(db, result.candidate, op), afterAuth };
+    return { candidate: result.candidate, status: op.kind.endsWith('Create') || op.kind === 'catalogApply' ? 201 : 200, data: checked.data, retained: checked.retained, impact: impact(db, result.candidate, op, checked), afterAuth };
   }
   function publicImpact(db,auth,value){
-    const result={kind:value.kind,details:value.details};
+    const result={kind:value.kind,details:value.details,...(value.taskChanges?{taskChanges:value.taskChanges}:{}),...(value.taskAssignment?{taskAssignment:value.taskAssignment}:{}),...(['owner','admin'].includes(auth.user.role)&&value.subcontractorEffects?{subcontractorEffects:value.subcontractorEffects}:{})};
     if(!['owner','admin'].includes(auth.user.role))return result;
     const gates=require('./capability-registry').effective(db,auth.user),allowed=new Set(['projects','team',...(gates.scheduling.view?['assignments']:[]),...(gates.daily.viewReports?['reports']:[]),...(gates.daily.viewWorkdays?['workdays']:[]),...(gates.timeReview.viewCards?['timeCards']:[])]);
     return {...result,affectedMemberCount:value.affectedMembers.length,affectedAccountCount:value.affectedAccounts.length,accountChanges:value.accountScopes.map(row=>({id:row.id,role:row.role,changes:Object.keys(row.before).filter(name=>allowed.has(name)).map(name=>({collection:name,removed:row.before[name].filter(id=>!row.after[name].includes(id)).length,added:row.after[name].filter(id=>!row.before[name].includes(id)).length})).filter(change=>change.removed||change.added),...(h.canViewPricing(db,auth.user)&&row.before.pricing!==row.after.pricing?{pricingBefore:row.before.pricing,pricingAfter:row.after.pricing}:{})})).filter(row=>row.changes.length||Object.hasOwn(row,'pricingBefore'))};
@@ -96,6 +102,7 @@ function createHandler(h) {
   }
   function currentResult(db, auth, row, first=false) {
     const dto=require('./compat-workspace-projections'),op=row.operation,visible=dto.bootstrap(db,auth.user,h);
+    const family = input.extension(op); if (family) return family.currentResult(db, auth, row, first, h, input);
     const collection={customerCreate:'customers',projectCreate:'projects',teamCreate:'team'}[op.kind];
     if(collection){const current=(visible[collection]||[]).find(value=>value.id===row.result.id);return current||{id:row.result.id,...(first?op.details:{}),receiptId:row.id};}
     if(op.kind==='projectArchive'){const current=visible.projects.find(value=>value.id===Number(op.path.split('/')[3]));if(!current)fail(409,'Current project readback requires review.');return current;}
@@ -141,6 +148,7 @@ function createHandler(h) {
     try {
       if (url.search) fail(400, 'Resource operations accept no query overrides.');
       const db = h.readDb(); valid(db); await h.assertCurrent(req);
+      if(req.method==='GET' && selected==='projectTasksView'){const auth=fresh(req,db),op=input.parse({kind:selected,method:req.method,path:url.pathname,details:{}});input.authorize(db,auth,op,h);h.json(res,200,require('./resource-project-tasks').visible(db,auth.user,Number(url.pathname.split('/')[3]),input));return true;}
       if(req.method==='GET'&&url.pathname==='/api/crews/eligible-members'){const auth=fresh(req,db);if(!['owner','admin'].includes(auth.user.role))fail(403,'Current Owner or Admin permission required.');h.json(res,200,{memberIds:input.eligibleMembers(db)});return true;}
       if (req.method === 'GET') return await crewRead(req, res);
       const value = await h.body(req); await h.assertCurrent(req); const auth = fresh(req, db), opening = h.authority(db, auth);
@@ -158,14 +166,16 @@ function createHandler(h) {
       }
       const proof = envelope(value), tuple = { ...delta.omit(proof, ['confirmed']), method: req.method, path: url.pathname };
       const prior = (db[receipts] || []).find(row => row.actorId === auth.user.id && row.requestId === proof.requestId);
-      if (prior) { const row = original(db, auth, tuple); h.returnReceipt(tuple); h.json(res, row.status, { ...currentResult(db,auth,row), originalSaveResult: true }); return true; }
+      if (prior) { const row = original(db, auth, tuple); if(row.operation.kind==='projectTaskAssign')h.resumeTaskAssignments(db,{auth},row); h.returnReceipt(tuple); h.json(res, row.status, { ...currentResult(db,auth,row), originalSaveResult: true }); return true; }
       const row = (db[previews] || []).find(row => row.id === proof.token);
       if (!row || row.reviewRevision!==h.revision() || row.actorRole!==auth.user.role || row.version !== proof.version || row.operation.method !== req.method || row.operation.path !== url.pathname || row.actorId !== auth.user.id || row.sessionHash !== auth.session.tokenHash || row.sessionBinding !== opening.sessionBinding || row.authorityBefore !== opening.authority || Date.parse(row.expiresAt) <= Date.now() || row.version !== version(db, auth) || (db[receipts] || []).some(receipt => receipt.previewId === row.id)) fail(409, 'Company changed. Review a new resource preview.');
       h.guardDeadline(row.expiresAt);
       const result = await execute(req, db, row.operation); await h.assertCurrent(req);
       if (!delta.equal(row.impact, result.impact)) fail(409, 'Resource consequences changed. Review again.');
       result.candidate.auditLog ||= []; result.candidate.auditLog.push({ id: crypto.randomUUID(), type: 'resource_changed', actorId: auth.user.id, actor: auth.user.name, at: new Date().toISOString(), resourceKind: row.operation.kind, previewId: row.id, requestId: proof.requestId, reason: row.reason, detail: 'Confirmed resource effects retained with the original receipt.' });
+      if(row.operation.kind==='projectTaskAssign'){const ids=(result.candidate.assignments||[]).filter(value=>!delta.equal(value,(db.assignments||[]).find(old=>old.id===value.id))).map(value=>value.id);result.retained.assignmentJobs=h.stageTaskAssignments(result.candidate,{auth:result.afterAuth},ids,row.operation.details.memberId);fresh(req,result.candidate);}
       result.candidate[receipts] ||= []; result.candidate[receipts].push(sign({ id: crypto.randomUUID(), purpose, companyId: db.company.id, actorId: auth.user.id, actorRole:auth.user.role, sessionHash: auth.session.tokenHash, sessionBinding: opening.sessionBinding, authorityBefore: opening.authority, authorityAfter: h.authority(result.candidate, result.afterAuth).authority, operation: row.operation, version: row.version, previewId: row.id, requestId: proof.requestId, reason: row.reason, reviewRevision:row.reviewRevision,committedRevision:h.revision()+1, createdAt: new Date().toISOString(), status: result.status, result: result.data, retained: result.retained }));
+
       valid(result.candidate); h.writeDb(result.candidate); h.returnReceipt(tuple); h.json(res, result.status, result.data); return true;
     } catch (error) { if (![400, 401, 402, 403, 404, 409, 503].includes(error.statusCode)) throw error; h.json(res, error.statusCode, { error: error.message }); return true; }
   }

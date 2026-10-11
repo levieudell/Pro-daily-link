@@ -50,7 +50,13 @@ function createWorkspace(h) {
     return base;
   }
   const helpers = { workspace, canViewPricing: h.canViewPricing };
-  const resources=require('./resource-admission').createHandler({...common,...helpers,key:options.workspaceKey,authenticate:h.authenticate,accountAccess:h.accountAccess,activities:h.companyActivities,
+  const resources=require('./resource-admission').createHandler({...common,...helpers,key:options.workspaceKey,authenticate:h.authenticate,accountAccess:h.accountAccess,activities:h.companyActivities,canAccessProject:h.canAccessProject,
+    validateCompliance:db=>{if(compliance)return compliance.valid(db);if((db.workspaceComplianceJobs||[]).length)fail(503,'Compliance custody requires its reviewed provider contract.');return [];},
+    cancelCompliance:(db,id)=>{if(compliance)return compliance.cancelQueued(db,id);if((db.workspaceComplianceJobs||[]).length)fail(503,'Compliance custody requires its reviewed provider contract.');return [];},
+    validateAssignment:db=>{if(assignmentDelivery)return assignmentDelivery.valid(db);if((db.workspaceAssignmentJobs||[]).length)fail(503,'Assignment custody requires its reviewed provider contract.');return [];},
+    cancelTaskAssignments:(db,ids)=>{if(assignmentDelivery)return assignmentDelivery.cancelQueued(db,ids);if((db.workspaceAssignmentJobs||[]).length)fail(503,'Assignment custody requires its reviewed provider contract.');return [];},
+    resumeTaskAssignments:(db,req,row)=>{if(!assignmentDelivery)return;const ids=row.retained.assignmentIds,jobs=row.retained.assignmentJobs;if(!Array.isArray(ids)||ids.length>91||ids.some(id=>!Number.isSafeInteger(id)||id<1)||!Array.isArray(jobs)||jobs.length>91||jobs.some(job=>!job||Object.keys(job).sort().join(',')!=='id,sourceHash'||typeof job.id!=='string'||!/^[a-f0-9-]{36}$/.test(job.id)||typeof job.sourceHash!=='string'||!/^[a-f0-9]{64}$/.test(job.sourceHash))||new Set(jobs.map(job=>job.id)).size!==jobs.length)fail(409,'Original task delivery identity needs review.');h.context().workspaceAssignmentJobIds=assignmentDelivery.valid(db).filter(job=>jobs.some(original=>original.id===job.id&&original.sourceHash===job.sourceHash)&&job.status==='queued'&&job.actorId===req.auth.user.id&&job.sessionHash===req.auth.session.tokenHash&&job.source.memberId===row.operation.details.memberId&&job.source.assignments.every(value=>ids.includes(value.id))&&assignmentDelivery.authorised(db,job)).map(job=>job.id);},
+    stageTaskAssignments:(db,req,ids,memberId)=>{if(!assignmentDelivery||!ids.length)return [];const jobIds=assignmentDelivery.stage(db,req,ids,memberId);h.context().workspaceAssignmentJobIds=jobIds;return assignmentDelivery.valid(db).filter(job=>jobIds.includes(job.id)).map(job=>({id:job.id,sourceHash:job.sourceHash}));},
     authority:(db,auth)=>require('./compat-workspace-authority').authority(db,auth,h.context()?.transactionalRevision??0,options.lifecycle,h.accountAccess),
     returnReceipt:tuple=>{h.context().resourceReturn=structuredClone(tuple);}});
   const policyApi=require('./role-policy-api');
@@ -161,8 +167,9 @@ function createWorkspace(h) {
     } catch (error) { if (![400, 401, 402, 403, 404, 409, 503].includes(error.statusCode)) throw error; h.json(res, error.statusCode, { error: error.message }); return true; }
   }
   async function finalize(req,context,url) {
+    const taskAssignment=req.method==='POST'&&/^\/api\/project-tasks\/[1-9]\d*\/assign$/.test(url.pathname);
     if(!context.workspaceDeliveryIds?.length&&!context.workspaceBillingJobId&&!context.workspaceAssignmentJobIds?.length)return;
-    if(!['/api/workspace-prepare','/api/billing','/api/billing/recover','/api/assignments','/api/schedule/repeat-week'].includes(url.pathname)||context.workspaceDeliveryIds?.length&&!compliance||context.workspaceBillingJobId&&!billing||context.workspaceAssignmentJobIds?.length&&!assignmentDelivery)fail(409,'Unexpected dashboard dependency.');
+    if(!['/api/workspace-prepare','/api/billing','/api/billing/recover','/api/assignments','/api/schedule/repeat-week'].includes(url.pathname)&&!taskAssignment||context.workspaceDeliveryIds?.length&&!compliance||context.workspaceBillingJobId&&!billing||context.workspaceAssignmentJobIds?.length&&!assignmentDelivery)fail(409,'Unexpected dashboard dependency.');
     let expected={revision:context.savedRevision??context.transactionalRevision,contentHash:canonicalHash(context.candidate??context.openingSnapshot)};
     let billingResult;
     if(context.workspaceBillingJobId){billingResult=await billing.dispatch(context.workspaceBillingJobId,expected,context.workspaceBillingRecover===true);expected=billingResult;}
@@ -172,7 +179,7 @@ function createWorkspace(h) {
     if(loaded.revision!==expected.revision||loaded.contentHash!==expected.contentHash)fail(409,'Dashboard changed during delivery. Refresh current records.');
     const auth=h.authenticate(req,loaded.snapshot).auth;if(!auth||Date.parse(auth.session.expiresAt)<=Date.now()||!url.pathname.startsWith('/api/billing')&&h.accountAccess(loaded.snapshot.company).locked)fail(401,'Current dashboard access could not be verified.');
     context.finalizedRevision=loaded.revision;context.finalizedContentHash=loaded.contentHash;
-    if(!['/api/assignments','/api/schedule/repeat-week'].includes(url.pathname))context.response.data=url.pathname.startsWith('/api/billing')?{...dto.billing(h.billingSummary(loaded.snapshot)),...(billingResult?{refresh:{status:billingResult.status,...(billingResult.observed?{observed:billingResult.observed,jobId:billingResult.jobId}:{})}}:{})}:{ok:true};
+    if(!['/api/assignments','/api/schedule/repeat-week'].includes(url.pathname)&&!taskAssignment)context.response.data=url.pathname.startsWith('/api/billing')?{...dto.billing(h.billingSummary(loaded.snapshot)),...(billingResult?{refresh:{status:billingResult.status,...(billingResult.observed?{observed:billingResult.observed,jobId:billingResult.jobId}:{})}}:{})}:{ok:true};
   }
   return { supported: routes.supported, handle, finalize, resourceTransition:resources.deliver, rolePolicies:true };
 }

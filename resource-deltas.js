@@ -35,6 +35,7 @@ function retained(before, after, op) {
   return {};
 }
 function validate(before, after, op, auth, helpers) {
+  const family = input.extension(op); if (family) return family.validate(before, after, op, auth, helpers, input);
   const d = op.details, actor = auth.user;
   let allowed, data;
   if (op.kind === 'customerCreate' || op.kind === 'teamCreate' || op.kind === 'projectCreate') {

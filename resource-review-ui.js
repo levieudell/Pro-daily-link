@@ -1,7 +1,31 @@
 'use strict';
 (function(){
   const key='pdl-resource-original-save-v1',known=new Set();let custody=null,busy=false;
-  const routes=(method,path)=>method==='POST'?({'/api/customers':'customerCreate','/api/projects':'projectCreate','/api/team':'teamCreate','/api/crews':'crewCreate','/api/company-activities':'activityCreate'}[path]||null):method==='PATCH'&&path==='/api/company'?'companySettings':method==='PATCH'&&path==='/api/company/contract-value-tracking'?'contractTracking':method==='PATCH'&&/^\/api\/projects\/[1-9]\d*\/archive$/.test(path)?'projectArchive':['PATCH','DELETE'].includes(method)&&/^\/api\/crews\/[1-9]\d*$/.test(path)?method==='PATCH'?'crewEdit':'crewRemove':null;
+  function routes(method,path,details){
+    if(method==='POST'){
+      const exact={'/api/customers':'customerCreate','/api/projects':'projectCreate','/api/team':'teamCreate','/api/crews':'crewCreate','/api/company-activities':'activityCreate','/api/daily-templates':'templateCreate','/api/daily-templates/default':'templateDefault','/api/catalog':'catalogCreate','/api/subcontractors':'subcontractorCreate'};
+      if(exact[path])return exact[path];
+      if(/^\/api\/catalog\/[1-9]\d*\/apply$/.test(path))return 'catalogApply';
+      if(/^\/api\/projects\/[1-9]\d*\/tasks$/.test(path))return 'projectTaskCreate';
+      if(/^\/api\/project-tasks\/[1-9]\d*\/assign$/.test(path))return 'projectTaskAssign';
+    }
+    if(method==='PATCH'&&path==='/api/company')return 'companySettings';
+    if(method==='PATCH'&&path==='/api/company/contract-value-tracking')return 'contractTracking';
+    if(method==='PATCH'&&/^\/api\/projects\/[1-9]\d*\/archive$/.test(path))return 'projectArchive';
+    if(method==='PATCH'&&/^\/api\/projects\/[1-9]\d*\/template$/.test(path))return 'projectTemplates';
+    if(['PATCH','PUT'].includes(method)&&/^\/api\/projects\/[1-9]\d*$/.test(path)){
+      if(details===undefined)return 'projectChange'; // Retained technical markers contain no submitted values.
+      const keys=details&&typeof details==='object'&&!Array.isArray(details)?Object.keys(details):[];
+      if(keys.length===1&&keys[0]==='contractValue')return 'projectContract';
+      if(method==='PATCH'&&keys.length&&keys.every(key=>['startDate','endDate'].includes(key)))return 'projectDates';
+      return 'mixedProjectChange';
+    }
+    if(['PATCH','DELETE'].includes(method)&&/^\/api\/crews\/[1-9]\d*$/.test(path))return method==='PATCH'?'crewEdit':'crewRemove';
+    if(['PATCH','DELETE'].includes(method)&&/^\/api\/daily-templates\/(?:standard|[1-9]\d*)$/.test(path))return method==='PATCH'?'templateEdit':'templateRemove';
+    if(['PATCH','DELETE'].includes(method)&&/^\/api\/project-tasks\/[1-9]\d*$/.test(path))return method==='PATCH'?'projectTaskEdit':'projectTaskRemove';
+    if(method==='PATCH'&&/^\/api\/subcontractors\/[1-9]\d*(?:\/(?:profile|archive))?$/.test(path))return path.endsWith('/profile')?'subcontractorProfile':path.endsWith('/archive')?'subcontractorArchive':'subcontractorCompliance';
+    return null;
+  }
   const fail=message=>Object.assign(Error(message),{status:409});
   function unresolved(){try{const raw=sessionStorage.getItem(key);if(raw===null)return false;const row=JSON.parse(raw);return !row||!known.has(row.requestId);}catch{return true;}}
   function read(){try{const row=JSON.parse(sessionStorage.getItem(key));return row&&!known.has(row.requestId)&&Object.keys(row).sort().join(',')==='actorId,authority,companyId,method,path,requestId,role,sessionBinding,token,version'&&routes(row.method,row.path)&&/^[a-f0-9]{64}$/.test(row.authority)&&/^[a-f0-9]{64}$/.test(row.sessionBinding)&&/^[a-f0-9]{64}$/.test(row.version)&&/^[a-f0-9-]{36}$/.test(row.token)&&/^[a-zA-Z0-9_-]{8,128}$/.test(row.requestId)?row:null;}catch{return null;}}
@@ -16,13 +40,26 @@
     catch(error){window.pdlWorkspaceActions.clear();throw error;}
     finally{if(root)root.style.visibility='';}
   }
-  function display(value){const labels={customerId:'Customer record',customer:'Customer',name:'Name',contact:'Contact',email:'Email',phone:'Phone',role:'Job role',crew:'Crew',initials:'Initials',contractType:'Contract type',budget:'Budget',site:'Site',startDate:'Start date',endDate:'End date',supervisor:'Supervisor',siteContact:'Site contact',archived:'Archived',enabled:'Enabled',trade:'Trade',timezone:'Time zone',timezoneSelected:'Time zone confirmed',weekStart:'Week starts',overtimeRule:'Overtime rule',scheduleGraceMinutes:'Schedule grace minutes',autoAdoptActualTimes:'Adopt actual times',contractValueTracking:'Contract value tracking'};
-    return Object.entries(value).filter(([key])=>!['accountRole','hours','color','progress','production','status','estimateItems'].includes(key)).map(([key,value])=>{
-      if(key==='memberIds')return 'Crew members: '+value.map(id=>typeof team!=='undefined'?team.find(row=>row.id===id)?.name||'Employee '+id:'Employee '+id).join(', ');
-      if(key==='pricingAccess')return 'Pricing visibility: '+(value.enabled?'enabled':'disabled')+', '+(value.officeMode==='all'?'all eligible office accounts':'selected eligible office accounts')+'; account IDs '+value.userIds.join(', ');
-      if(key==='tmSettings')return value?'T&M rates: labor '+value.defaultLaborRate+', material markup '+value.materialMarkup+', equipment markup '+value.equipmentMarkup:'';
-      return (labels[key]||key)+': '+value;
-    }).filter(Boolean).join('\n');
+  function display(value){
+    const labels={customerId:'Customer record',customer:'Customer',name:'Name',contact:'Contact',email:'Email',phone:'Phone',role:'Job role',crew:'Crew',initials:'Initials',contractType:'Contract type',budget:'Budget',site:'Site',startDate:'Start date',endDate:'End date',supervisor:'Supervisor',siteContact:'Site contact',archived:'Archived',enabled:'Enabled',trade:'Trade',timezone:'Time zone',timezoneSelected:'Time zone confirmed',weekStart:'Week starts',overtimeRule:'Overtime rule',scheduleGraceMinutes:'Schedule grace minutes',autoAdoptActualTimes:'Adopt actual times',contractValueTracking:'Contract value tracking',contractValue:'Contract value',fields:'Questions',label:'Question',type:'Answer type',required:'Required',help:'Guidance',options:'Choices',showWhen:'Show when',fieldId:'Question ID',value:'Answer',requirements:'Completion requirements',photo:'Photo',signature:'Signature',acknowledgement:'Worker acknowledgement',assignment:'Template assignment',crewNames:'Crews',workTypes:'Work types',reviewNotice:'Review notice',templateId:'Template',templateIds:'Templates',category:'Category',description:'Purpose',unit:'Unit',targetHoursPerUnit:'Target hours per unit',projectId:'Project record',plannedQuantity:'Planned quantity',durationDays:'Working days',predecessorIds:'Waits for tasks',memberIds:'Employees',memberId:'Employee record',fromDate:'Starting date',insuranceExpiration:'Insurance expiration',workersCompExpiration:'Workers’ compensation expiration',licenseNumber:'License number',licenseExpiration:'License expiration',w9Received:'W-9 received',agreementSigned:'Agreement signed',autoComplianceReminders:'Automatic compliance reminders',notes:'Notes',status:'Status',reason:'Archive reason',taskChanges:'Affected project tasks',subcontractorEffects:'Subcontractor consequences',revokedLinkCount:'Project links to revoke',cancelledReminderCount:'Queued reminders to cancel',before:'Before',after:'After',removed:'Removed',created:'Created',taskAssignment:'Task daily assignments',createdCount:'New assignments',mergedCount:'Existing shifts to join',skippedCount:'Days to skip'};
+    const scalar=value=>value===null?'Not set':typeof value==='boolean'?(value?'Yes':'No'):String(value);
+    const recordLabel=(key,id)=>{
+      if(['memberIds','memberId'].includes(key)){const row=typeof team!=='undefined'?team.find(row=>Number(row.id)===Number(id)):null;return row?row.name+' (employee '+id+')':'Employee '+id;}
+      if(key==='predecessorIds'){const row=typeof projectTasks!=='undefined'?projectTasks.find(row=>Number(row.id)===Number(id)):null;return row?row.name+' (task '+id+')':'Task '+id;}
+      if(['templateIds','templateId'].includes(key)){const row=typeof dailyTemplates!=='undefined'?dailyTemplates.find(row=>String(row.id)===String(id)):null;return row?row.name+' (template '+id+')':'Template '+id;}
+      return scalar(id);
+    };
+    function lines(key,value,depth){
+      const prefix='  '.repeat(depth),label=labels[key]||key;
+      if(Array.isArray(value)){
+        if(!value.length)return [prefix+label+': None'];
+        if(value.every(item=>item===null||typeof item!=='object'))return [prefix+label+': '+value.map(item=>recordLabel(key,item)).join(', ')];
+        return [prefix+label+':',...value.flatMap((item,index)=>[prefix+'  '+(key==='fields'?'Question ':'Item ')+(index+1)+':',...Object.entries(item).flatMap(([name,entry])=>lines(name,entry,depth+2))])];
+      }
+      if(value&&typeof value==='object')return [prefix+label+':',...Object.entries(value).flatMap(([name,entry])=>lines(name,entry,depth+1))];
+      return [prefix+label+': '+(['memberId','templateId'].includes(key)?recordLabel(key,value):scalar(value))];
+    }
+    return Object.entries(value).flatMap(([key,entry])=>lines(key,entry,0)).join('\n');
   }
   async function review(operation,opening,send){return new Promise((resolve,reject)=>{
     const dialog=document.createElement('dialog');dialog.id='resource-action-review';dialog.dataset.workspaceDialog='resource';
@@ -38,7 +75,7 @@
       const status=dialog.querySelector('[role=status]');
       if(!preview){const reason=dialog.querySelector('textarea').value.trim();if(!reason){status.textContent='Enter a reason before previewing.';return;}working=true;
         try{const current=await window.pdlWorkspaceActions.identity();if(current.authority!==opening.authority||current.sessionBinding!==opening.sessionBinding)throw fail('Workspace access changed. Review again.');preview=await send('/api/resources/preview',{method:'POST',body:JSON.stringify({operation,expectedRevision:current.revision,reason})});if(settled)return;
-          dialog.querySelector('pre').textContent=display(preview.impact.details)+(Object.hasOwn(preview.impact,'affectedMemberCount')?'\n\nAffected existing employees: '+preview.impact.affectedMemberCount+'\nAffected accounts: '+preview.impact.affectedAccountCount:'')+'\nReason: '+preview.reason;
+          dialog.querySelector('pre').textContent=display(preview.impact.details)+(Object.hasOwn(preview.impact,'affectedMemberCount')?'\n\nAffected existing employees: '+preview.impact.affectedMemberCount+'\nAffected accounts: '+preview.impact.affectedAccountCount:'')+(preview.impact.taskChanges?'\n\n'+display({taskChanges:preview.impact.taskChanges}):'')+(preview.impact.taskAssignment?'\n\n'+display({taskAssignment:preview.impact.taskAssignment}):'')+(preview.impact.subcontractorEffects?'\n\n'+display({subcontractorEffects:preview.impact.subcontractorEffects}):'')+'\nReason: '+preview.reason;
           for(const account of preview.impact.accountChanges||[]){for(const change of account.changes)dialog.querySelector('pre').textContent+='\nAccount '+account.id+' ('+account.role+'): '+change.collection+' '+change.removed+' removed, '+change.added+' added';if(Object.hasOwn(account,'pricingBefore'))dialog.querySelector('pre').textContent+='\nAccount '+account.id+': pricing access '+(account.pricingBefore?'enabled':'disabled')+' to '+(account.pricingAfter?'enabled':'disabled');}
           dialog.querySelector('textarea').disabled=true;dialog.querySelector('input').disabled=false;dialog.querySelector('input').checked=false;dialog.querySelector('.primary').textContent='Confirm and save';status.textContent='Server preview ready. Review it before confirming.';
         }catch(error){status.textContent=error.message;}finally{working=false;}return;
@@ -49,10 +86,12 @@
   });}
   async function request(path,options,send){
     if(!window.pdlWorkspaceActions?.enabled())return send(path,options);
-    const method=String(options.method||'GET').toUpperCase(),kind=routes(method,path);if(!kind)return send(path,options);
+    const method=String(options.method||'GET').toUpperCase();if(!routes(method,path))return send(path,options);
+    const details=options.body?JSON.parse(options.body):{},kind=routes(method,path,details);
+    if(kind==='mixedProjectChange')throw fail('Review project dates and contract value as separate changes.');
     if(busy||unresolved()||window.pdlWorkspaceSave?.read()){draw();throw fail('Check the previous save result before making another change.');}busy=true;
     try{
-      const opening=await window.pdlWorkspaceActions.identity(),operation={kind,method,path,details:options.body?JSON.parse(options.body):{}},preview=await review(operation,opening,send);
+      const opening=await window.pdlWorkspaceActions.identity(),operation={kind,method,path,details},preview=await review(operation,opening,send);
       if(!preview)throw Object.assign(Error('Change cancelled.'),{status:400});
       const current=await window.pdlWorkspaceActions.identity();if(current.authority!==opening.authority||current.sessionBinding!==opening.sessionBinding||preview.authorityBefore!==opening.authority||Date.parse(preview.expiresAt)<=Date.now())throw fail('Company changed. Review a new preview.');
       const proof={token:preview.token,version:preview.version,confirmed:true,requestId:crypto.randomUUID()};custody=remember(current,method,path,proof);

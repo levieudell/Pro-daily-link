@@ -29,7 +29,9 @@ async function main(){
     const eligibility=await request('/api/crews/eligible-members',{token:tokens.admin});assert.equal(eligibility.status,200);assert.equal(eligibility.value.memberIds.includes(11),false);assert.equal((await request('/api/crews/eligible-members',{token:tokens.project_manager})).status,403);
     const competingOne=await preview('customerCreate','POST','/api/customers',{name:'Competing one'}),competingTwo=await preview('customerCreate','POST','/api/customers',{name:'Competing two'});assert.equal(competingOne.status,200);assert.equal(competingTwo.status,200);
     assert.equal((await request('/api/customers',{token:tokens.owner,method:'POST',data:{token:competingOne.value.token,version:competingOne.value.version,confirmed:true,requestId:crypto.randomUUID()}})).status,409);assert.equal(store.current().customers.some(row=>row.name==='Competing one'),false);
-    assert.equal((await request('/api/daily-templates',{token:tokens.owner,method:'POST',data:{name:'Remaining fenced'}})).status,503);
+    const templatesBefore=JSON.stringify(store.current().dailyTemplates);
+    assert.equal((await request('/api/daily-templates',{token:tokens.owner,method:'POST',data:{name:'Unconfirmed template'}})).status,400);
+    assert.equal(JSON.stringify(store.current().dailyTemplates),templatesBefore);
     const customer=await save('customerCreate','POST','/api/customers',{name:'Synthetic new customer',contact:'Synthetic contact',email:'new@example.invalid'},tokens.field);assert.equal(customer.r.value.id,22);
     const beforeCount=store.current().customers.length,beforeRevision=store.revision();
     assert.equal((await request('/api/customers',{token:tokens.field,method:'POST',data:customer.proof})).status,201);assert.equal(store.current().customers.length,beforeCount);assert.equal(store.revision(),beforeRevision);

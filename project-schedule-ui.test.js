@@ -45,7 +45,7 @@ assert.ok(server.includes('projectTaskAssignRoute = url.pathname.match'), 'assig
 assert.match(ui, /renderScheduleWithLane = renderSchedule/, 'team schedule render is wrapped');
 assert.match(ui, /class="schedule-unassigned"/);
 assert.match(ui, /data-schedule-task="\$\{Number\(task\.id\)\}"/);
-assert.match(ui, /blockSelector: '\[data-schedule-task\]'/, 'chips get their own touch-drag attach');
+assert.match(ui, /blockSelector: '\[data-schedule-task\]\[draggable="true"\]'/, 'chips get their own touch-drag attach');
 assert.match(ui, /api\(`\/api\/project-tasks\/\$\{taskId\}\/assign`/);
 assert.match(ui, /window\.PDLProjectScheduleUI = \{ assignTaskTo, paintUnassignedLane \}/);
 // The project detail content is itself a <form>, so pane markup must never

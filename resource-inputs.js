@@ -1,6 +1,8 @@
 'use strict';
 // Named existing resource operations. These identifiers are not permission flags.
 const timezone = require('./company-timezone');
+const extensions = [require('./resource-project-tasks'), require('./resource-templates'), require('./resource-catalog-contract'), require('./resource-subcontractors')];
+const extension = op => extensions.find(module => module.route(op.method, op.path) === op.kind) || null;
 const fail = (statusCode, message) => { throw Object.assign(Error(message), { statusCode }); };
 const object = (value, keys) => value && typeof value === 'object' && !Array.isArray(value) && [Object.prototype, null].includes(Object.getPrototypeOf(value)) && Object.keys(value).every(key => keys.includes(key));
 const id = value => Number.isSafeInteger(value) && value > 0;
@@ -20,15 +22,17 @@ function fields(value, limits, required = []) {
 }
 function email(value) { if (value && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)) fail(400, 'Enter a valid email address.'); return value; }
 function route(method, path) {
+  const selected=extensions.map(module => module.route(method,path)).find(Boolean);if(selected)return selected;
   if (method === 'POST') return { '/api/customers': 'customerCreate', '/api/projects': 'projectCreate', '/api/team': 'teamCreate', '/api/crews': 'crewCreate', '/api/company-activities': 'activityCreate' }[path] || null;
   if (method === 'PATCH' && path === '/api/company') return 'companySettings';
   if (method === 'PATCH' && path === '/api/company/contract-value-tracking') return 'contractTracking';
   if (method === 'PATCH' && /^\/api\/projects\/[1-9]\d*\/archive$/.test(path)) return 'projectArchive';
   if (['PATCH', 'DELETE'].includes(method) && /^\/api\/crews\/[1-9]\d*$/.test(path)) return method === 'PATCH' ? 'crewEdit' : 'crewRemove';
-  return null;
+  return extensions.map(module => module.route(method, path)).find(Boolean) || null;
 }
 function parse(value) {
-  if (!object(value, ['kind', 'method', 'path', 'details']) || Object.keys(value).length !== 4 || typeof value.path !== 'string' || value.path.length > 160 || route(value.method, value.path) !== value.kind || !value.kind) fail(400, 'Choose one supported resource change.');
+  if (!object(value, ['kind', 'method', 'path', 'details']) || Object.keys(value).length !== 4 || typeof value.path !== 'string' || value.path.length > 160 || route(value.method, value.path) !== value.kind && !extension(value) || !value.kind) fail(400, 'Choose one supported resource change.');
+  const family = extension(value); if (family) return family.parse(value, module.exports);
   const d = value.details;
   let out;
   if (value.kind === 'customerCreate') {
@@ -88,6 +92,7 @@ function parse(value) {
 function authorizeActor(auth, op) {
   const user = auth?.user;
   if (!user || user.status !== 'Active' || !['owner', 'admin', 'project_manager', 'foreman', 'field'].includes(user.role)) fail(403, 'A current company account is required.');
+  const family = extension(op); if (family) return family.authorizeActor(auth, op, module.exports);
   // The three inherited creation handlers have broad authenticated baselines.
   // Do not misrepresent them as an Office role grant introduced by this draft.
   if (!['customerCreate', 'projectCreate', 'teamCreate', 'activityCreate'].includes(op.kind) && !['owner', 'admin'].includes(user.role)) fail(403, 'Current Owner or Admin permission required.');
@@ -97,6 +102,7 @@ function protectedMembers(db) {const profiles=require('./role-profiles');profile
 function eligibleMembers(db) {const protectedIds=protectedMembers(db);return db.team.filter(row=>!protectedIds.has(Number(row.id))&&!row.archivedAt&&!row.archived&&row.status!=='Inactive').map(row=>Number(row.id));}
 function authorize(db, auth, op, helpers) {
   authorizeActor(auth, op);const user=auth.user;
+  const family = extension(op); if (family) return family.authorize(db, auth, op, helpers, module.exports);
   if (op.kind === 'projectCreate') {
     const customer = db.customers.find(row => Number(row.id) === op.details.customerId);
     if (!customer || customer.name !== op.details.customer) fail(404, 'Selected customer not found.');
@@ -123,4 +129,4 @@ function authorize(db, auth, op, helpers) {
     if (op.details.pricingAccess?.userIds.some(value => !db.users.some(row => row.id === value && row.status === 'Active' && ['owner', 'admin', 'project_manager'].includes(row.role)))) fail(404, 'Pricing account not found.');
   }
 }
-module.exports = { route, parse, authorize, authorizeActor, eligibleMembers, object, id, date, text, number, fail };
+module.exports = { route, parse, authorize, authorizeActor, extension, eligibleMembers, object, id, date, text, number, fail };

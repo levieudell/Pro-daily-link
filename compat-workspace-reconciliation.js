@@ -8,13 +8,14 @@ const {canonicalHash}=require('./database/transactional-repository');
 const fail=()=>{throw Object.assign(Error('Workspace repairs require unambiguous source records.'),{statusCode:409});};
 function source(db) {validateAccounts(db);validateWorkspace(db);const owners=db.users.filter(u=>u.role==='owner'&&u.status==='Active');if(!owners.length)return db;const owner=owners[0],linked=db.team.filter(r=>Number(r.id)===Number(owner.memberId)),matching=db.team.filter(r=>r.email&&r.email.toLowerCase()===owner.email.toLowerCase());if(linked.length>1||!linked.length&&matching.length>1)fail();const member=linked[0]||matching[0];if(member&&db.users.some(u=>u.id!==owner.id&&Number(u.memberId)===Number(member.id)))fail();if(owners.length!==1&&(!member||member.role!=='Account Owner'||member.crew!=='Office'||Number(owner.memberId)!==Number(member.id)))fail();return db;}
 function candidate(before,after,changed) {
-  const allowed=new Set(['customers','projects','reports','photos','workdays','timeCards','assignments','projectPlans','projectTickets','subcontractorLinks','changes','auditLog','users','team']);
+  const allowed=new Set(['customers','projects','reports','photos','workdays','timeCards','assignments','projectPlans','projectTickets','subcontractorLinks','changes','auditLog','users','team','projectTasks']);
   if(changed.some(key=>!allowed.has(key)))fail();validateAccounts(after);validateWorkspace(after);
   // Existing credentials, account roles, PM grants/crews and all non-owner
   // member links remain byte-for-byte. Only removed known-test project IDs and
   // the unique owner's member link are legitimate account reconciliation.
   const testIds=new Set((before.customers||[]).filter(r=>String(r.name||'').trim().toLowerCase()==='abc test'&&String(r.contact||'').trim().toLowerCase()==='tester mctest').map(r=>Number(r.id)));
   const removed=new Set((before.projects||[]).filter(r=>testIds.has(Number(r.customerId))&&!after.projects.some(next=>Number(next.id)===Number(r.id))).map(r=>Number(r.id)));
+  if(canonicalHash(after.projectTasks??null)!==canonicalHash(Object.hasOwn(before,'projectTasks')?(before.projectTasks||[]).filter(row=>!removed.has(Number(row.projectId))):null))fail();
   const owner=before.users.find(u=>u.role==='owner'&&u.status==='Active'),expectedTeam=structuredClone(before.team);let member=owner&&expectedTeam.find(row=>Number(row.id)===Number(owner.memberId));if(owner&&!member)member=expectedTeam.find(row=>row.email&&row.email.toLowerCase()===owner.email.toLowerCase());
   if(owner&&!member){member={id:Math.max(0,...expectedTeam.map(row=>Number(row.id)||0))+1,companyId:before.company.id,name:owner.name,role:'Account Owner',initials:owner.name.split(/\s+/).filter(Boolean).map(part=>part[0]).join('').slice(0,2).toUpperCase(),crew:'Office',hours:0,site:'Not assigned',email:owner.email||'',phone:''};expectedTeam.push(member);}
   if(member){member.role='Account Owner';member.crew='Office';}if(canonicalHash(expectedTeam)!==canonicalHash(after.team))fail();
@@ -22,7 +23,7 @@ function candidate(before,after,changed) {
   if(before.users.length!==after.users.length)fail();return after;
 }
 const collection='workspaceReconciliations',purpose='legacy-workspace-reconciliation-v1';
-const allowed=['customers','projects','reports','photos','workdays','timeCards','assignments','projectPlans','projectTickets','subcontractorLinks','changes','auditLog','users','team'];
+const allowed=['customers','projects','reports','photos','workdays','timeCards','assignments','projectPlans','projectTickets','subcontractorLinks','changes','auditLog','users','team','projectTasks'];
 function createLedger(key,companyId){
   if(!Buffer.isBuffer(key)||key.length!==32)fail();
   const sign=row=>{const copy={...row};delete copy.proof;row.proof=crypto.createHmac('sha256',key).update(purpose+':'+canonicalHash(copy)).digest('hex');return row;};

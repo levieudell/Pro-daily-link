@@ -90,6 +90,11 @@ function createCompliance({ repository, companyId, requirements, send, authentic
     const committed = await commit(db, loaded.revision, job.status === 'sent' ? { deadline } : undefined);
     return { status: job.status, ...committed };
   }
-  return { stage, dispatch, valid };
+  function cancelQueued(db,subcontractorId){
+    const ledger=valid(db),matching=ledger.filter(row=>Number(row.source.subcontractorId)===Number(subcontractorId));
+    if(matching.some(row=>['sending','uncertain'].includes(row.status)))throw Object.assign(Error('Review the original compliance reminder outcome before changing this subcontractor.'),{statusCode:409});
+    const cancelled=[];for(const row of matching)if(row.status==='queued'){row.status='cancelled';sign(row);cancelled.push(row.id);}valid(db);return cancelled;
+  }
+  return { stage, dispatch, valid, cancelQueued };
 }
 module.exports = { createCompliance, descriptor, validateDescriptor, jobs, actorBinding };
