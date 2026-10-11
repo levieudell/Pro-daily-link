@@ -9,7 +9,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Oswald:wght@500;600;700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="styles.css?v=20261011-task-assign" />
+  <link rel="stylesheet" href="styles.css?v=20261011-voice-feedback" />
   <link rel="stylesheet" href="estimate-mobile.css" />
   <link rel="stylesheet" href="company-roles-ui.css?v=20261009-company-roles" />
   <link rel="stylesheet" href="project-notes-ui.css?v=20261005-notes-focus" />
@@ -282,6 +282,7 @@
         <input type="hidden" id="report-weather" /><input type="hidden" id="report-temperature" />
         <label id="field-notes-label">Tell us what happened today<textarea id="field-notes" rows="8" placeholder="Example: Concrete crew poured 86 yards on the east foundation with 3 people for 8 hours. Pump arrived 45 minutes late…" required></textarea></label>
         <div class="note-tools"><button type="button" id="voice-notes">🎙 Speak notes</button><button type="button" data-note-chip="No delays today. ">No delays</button><button type="button" data-note-chip="No safety incidents. ">No incidents</button><button type="button" data-note-chip="Tomorrow we plan to ">Tomorrow</button></div>
+        <p class="voice-status" id="voice-status" role="status" aria-live="polite" hidden></p>
         <div class="autosave-status" id="autosave-status">Notes save automatically on this device</div>
         <label>Daily photos<input type="file" id="report-photos" accept="image/jpeg,image/png,image/webp" multiple /><small class="input-help">Add progress, material, issue, or completed-work photos.</small></label><label id="report-photo-tags-field">Photo tags<input id="report-photo-tags" placeholder="progress, concrete, east wall"><small class="input-help">Separate tags with commas. Date and time are added automatically.</small></label>
         <button type="button" class="ai-button" id="ai-convert"><span>✦</span><b>Analyze notes and build report</b><small>AI will propose production, labor, delays, materials, equipment, and safety details</small></button>
@@ -480,6 +481,7 @@
       <div id="end-day-summary" class="weather-row"></div>
       <label>What was completed?<textarea id="end-day-notes" rows="6" placeholder="Speak or type what the crew accomplished, quantities, delays, and tomorrow's plan." required></textarea></label>
       <button type="button" class="secondary" id="end-day-voice">🎙 Speak completed work</button>
+      <p class="voice-status" id="end-day-voice-status" role="status" aria-live="polite" hidden></p>
       <label>What happens next?<textarea id="end-day-next" rows="2" placeholder="Optional: tomorrow’s plan, follow-up work, or what the office needs to arrange."></textarea></label>
       <label>End-of-day photos<input type="file" id="end-day-photos" accept="image/jpeg,image/png,image/webp" multiple /><small class="input-help">Take a new photo or choose existing progress photos from the phone library.</small></label><label>Photo tags<input id="end-day-photo-tags" placeholder="completed work, progress, issue"><small class="input-help">Date and time are added automatically.</small></label>
       <div class="timestamp-preview">End time and total hours will be calculated when you finish.</div>
@@ -522,7 +524,7 @@
   <script src="workspace-action-review.js?v=20261009-g2-source"></script>
   <script src="resource-review-ui.js?v=20261010-resources"></script>
   <script src="account-actions-ui.js"></script>
-    <script src="app.js?v=20261011-privacy-consent"></script>
+    <script src="app.js?v=20261011-voice-feedback"></script>
   <script src="workspace-controls.js?v=20261009-g2-source"></script>
   <script src="estimate-mobile.js"></script>
   <script src="time-approval-controls.js?v=20261007-pay-presets-person-total"></script>

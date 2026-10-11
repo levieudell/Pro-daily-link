@@ -701,3 +701,10 @@ body.schedule-touch-dragging{overflow:hidden;-webkit-user-select:none;user-selec
 :root[data-theme="dark"] .schedule-task-chip{background:#1d2b25;border-color:#2c3d35}
 :root[data-theme="dark"] .schedule-task-chip-main strong{color:#e6efe9}
 :root[data-theme="dark"] .schedule-unassigned-head h3{color:#cde3d8}
+.voice-status{margin:8px 0 0;font-size:13px;color:#64726c;min-height:18px}
+.voice-status.voice-listening{color:#17382d;font-weight:600}
+.voice-status.voice-listening:before{content:"🎙 "}
+button.voice-listening{outline:2px solid #2e6b52;outline-offset:2px;animation:pdl-voice-pulse 1.4s ease-in-out infinite}
+@keyframes pdl-voice-pulse{0%,100%{outline-color:#2e6b52}50%{outline-color:#8fd0ae}}
+:root[data-theme="dark"] .voice-status{color:#9fb3aa}
+:root[data-theme="dark"] .voice-status.voice-listening{color:#cde3d8}
