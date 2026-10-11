@@ -292,14 +292,14 @@ test('every project-opening layer accepts and forwards view, including reporting
 
 function installActualApi(context){
   const base=app.split('\n').find(line=>line.startsWith('async function api('));assert.ok(base);vm.runInContext(base,context);
-  const aliases=['workspaceApi','apiBeforeSuperintendent','apiBeforeWorkspaceFeedback','apiBeforeReportLaborPreservation','apiBeforeTemplatePhotoTransaction'];
+  const aliases=['workspaceApi','apiBeforeSuperintendent','apiBeforeWorkspaceFeedback','apiBeforeReportLaborPreservation','apiBeforeTemplatePhotoTransaction','apiBeforeAtomicDailyPhotos'];
   assert.equal([...app.matchAll(/\bapi=async function\(/g)].length,aliases.length,'Review any additional API layer before shipping');
   for(const alias of aliases){const marker=`const ${alias}=api;`,start=app.indexOf(marker);assert.ok(start>=0);const assignment=app.indexOf('api=async function(',start),line=app.slice(assignment).split('\n')[0],body=/};?\s*$/.test(line)?line:app.slice(assignment,app.indexOf('\n};',assignment)+3);vm.runInContext(marker+'\n'+body,context)}
 }
 function apiFixture(response){
   const requests=[],updates=[],context={location:{href:'/unchanged'},signedInCompanyId:()=> 'synthetic tenant',wakeService:async()=>{},setWorkspaceUpdating:value=>updates.push(value),fetch:async(route,options)=>{requests.push({route,options});return response},reports:[],projects:[]};context.window=context;vm.createContext(context);installActualApi(context);return{context,requests,updates};
 }
-test('real base API plus all five wrappers preserve no-redirect notes behavior and strip custom fetch option',async()=>{
+test('real base API plus all six wrappers preserve no-redirect notes behavior and strip custom fetch option',async()=>{
   const fixture=apiFixture({ok:false,status:401,headers:{get:()=> 'application/json'},json:async()=>({error:'Authentication required',code:'unauthenticated'})}),controller=new AbortController();await assert.rejects(fixture.context.api('/api/projects/1/notes-todos',{redirectOnUnauthorized:false,signal:controller.signal}),error=>error.message==='Authentication required'&&error.status===401&&error.code==='unauthenticated');assert.equal(fixture.context.location.href,'/unchanged');assert.equal(fixture.requests.length,1);assert.equal(fixture.requests[0].options.redirectOnUnauthorized,undefined);assert.equal(fixture.requests[0].options.signal,controller.signal);assert.equal(fixture.requests[0].options.headers['X-PDL-Company'],'synthetic tenant');assert.equal(fixture.requests[0].options.credentials,'include');assert.deepEqual(fixture.updates,[true,false]);
   await assert.rejects(fixture.context.api('/api/projects'),/Your session expired/);assert.equal(fixture.context.location.href,'/login.html?tenant=synthetic%20tenant');
 });

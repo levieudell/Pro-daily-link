@@ -313,7 +313,10 @@ async function httpMatrix(mode) {
     const dailyCreate = operations(field.user)['daily.createReports'];
     await expect(dailyCreate[0], { token: field.token, method: 'POST', data: { ...dailyCreate[1].data, details: { ...dailyCreate[1].data.details, dateIso: '2026-10-01', sourceAssignmentId: 4 } } }, 403, 'A source assignment cannot supply another crew identity');
     for (const { user, token } of actors.filter(row => row.user.role !== 'owner')) {
-      for (const route of ['/api/assistant/context', '/api/projects/101/assistant/context']) await expect(route, { token }, 503);
+      // Fixed pilot eligibility remains outside every editable role policy.
+      const assistantBefore=JSON.stringify(store.current());
+      for (const route of ['/api/assistant/context', '/api/projects/101/assistant/context']) await expect(route, { token }, 403);
+      assert.equal(JSON.stringify(store.current()),assistantBefore,'A nonpilot tenant cannot enter Assistant through role flags');
       for (const route of ['/api/platform', '/api/platform/revenue']) assert.ok((await request(route, { token })).status >= 400, 'Tenant token cannot access platform ' + route);
       // Company management is a named fixed-baseline resource operation now.
       // A raw payload still cannot bypass its reviewed confirmation envelope.

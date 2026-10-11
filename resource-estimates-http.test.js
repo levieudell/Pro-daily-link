@@ -101,11 +101,13 @@ async function main() {
     await denied({ ...draft, path: '/api/estimate-imports/9/draft', details: { ...draft.details, lines: [{ description: 'Rejected catalog binding', quantity: 1, unit: 'SF', catalogItemId: 999 }] } }, tokens.owner, [404]);
     await denied({ ...draft, details: { ...draft.details, lines: [{ ...draft.details.lines[0], confidence: 'high', catalogSuggestions: [] }] } }, tokens.owner, [400]);
     await denied(operation('estimateProposalCreate', 'POST', '/api/projects/101/estimate-proposals', { name: 'Rejected PDF', plannedQuantity: 1, data: 'data:application/pdf;base64,eA==' }), tokens.field, [400]);
-    assert.equal((await request('/api/estimate-imports/analyze', 'POST', { data: 'data:application/pdf;base64,eA==' })).status, 503);
+    const intakeBefore=canonicalHash(store.current()),intakeRevision=store.revision();
+    assert.equal((await request('/api/estimate-imports/analyze', 'POST', { data: 'data:application/pdf;base64,eA==' })).status, 400);
+    assert.equal(canonicalHash(store.current()),intakeBefore);assert.equal(store.revision(),intakeRevision,'Raw PDF intake cannot bypass reviewed confirmation');
     assert.equal((await request('/api/estimate-imports?projectId=102', 'GET', undefined, tokens.project_manager)).status, 404);
     assert.equal((await request('/api/estimate-imports?projectId=101', 'GET', undefined, tokens.field)).status, 403);
     assert.equal((await request('/api/estimate-imports?projectId=101', 'GET', undefined, tokens.owner, B)).status, 404);
-    checks.push('Strict source/project/creator/catalog/role/pricing boundaries; duplicate approval and historical report references protected; PDF/provider paths remain fenced');
+    checks.push('Strict source/project/creator/catalog/role/pricing boundaries; duplicate approval and historical report references protected; raw PDF intake cannot bypass reviewed confirmation');
     await mutate(db => { db.company.dailyPolicyRequired = true; db.company.dailyRolePolicy = { version: 1, revision: 1, roles: Object.fromEntries(daily.roles.map(role => [role, Object.fromEntries(daily.actions.map(action => [action, false]))])) }; });
     const independent = await save({ ...create, details: { ...create.details, name: 'Independent financial scope' } }, tokens.project_manager); assert.equal(independent.result.data.name, 'Independent financial scope');
     await mutate(db => { db.company.pricingAccess.enabled = false; });
