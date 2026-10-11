@@ -707,3 +707,8 @@ button.voice-listening{outline:2px solid #2e6b52;outline-offset:2px;animation:pd
 @keyframes pdl-voice-pulse{0%,100%{outline-color:#2e6b52}50%{outline-color:#8fd0ae}}
 :root[data-theme="dark"] .voice-status{color:#9fb3aa}
 :root[data-theme="dark"] .voice-status.voice-listening{color:#cde3d8}
+.my-flag-row{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:11px 0;border-bottom:1px solid #e6ebe8}
+.my-flag-row:last-child{border-bottom:0}
+.my-flag-row>div{display:grid;gap:2px;min-width:0}
+.my-flag-row strong{font-size:13px}
+.my-flag-row span{font-size:12px;color:#68716d;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
