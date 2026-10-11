@@ -121,6 +121,7 @@ $('#signup').onsubmit=async event=>{
     });
     const data=await response.json();
     if(!response.ok)throw new Error(data.error);
+    if(typeof fbq==='function')fbq('track','Signup');
     localStorage.setItem('pdl-company-id',data.company.id);
     if(data.company.founder){
       try{
