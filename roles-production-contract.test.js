@@ -1,7 +1,9 @@
 'use strict';
 const assert=require('node:assert/strict'),crypto=require('node:crypto'),{AsyncLocalStorage}=require('node:async_hooks'),vm=require('node:vm'),fs=require('node:fs');
 const {createService}=require('./roles-production'),{canonicalHash}=require('./database/transactional-repository'),{workspaceSnapshot}=require('./compat-workspace-fixture'),{A}=require('./compat-account-fixture');
+const registry=require('./capability-registry');
 let checks=0;
+const setPolicy=(db,id,flags,role='admin')=>{const row=registry.families.find(row=>row[0]===id);db.company[row[2]+'PolicyRequired']=true;db.company[row[2]+'RolePolicy']={version:1,revision:1,roles:Object.fromEntries(row[4].roles.map(id=>[id,row[4].ceiling(id)]))};Object.assign(db.company[row[2]+'RolePolicy'].roles[role],flags);};
 function fixture(){
  let db=workspaceSnapshot(),revision=0,dispatches=0,hook=null;const context=new AsyncLocalStorage();
  const transport={configured:()=>true,request:async(path,options)=>{
@@ -32,7 +34,6 @@ async function client(){
 }
 async function reviewRegressions(){
  const guards=require('./roles-production-guards'),registry=require('./capability-registry'),profiles=require('./role-profiles');
- const setPolicy=(db,id,flags,role='admin')=>{const row=registry.families.find(row=>row[0]===id);db.company[row[2]+'PolicyRequired']=true;db.company[row[2]+'RolePolicy']={version:1,revision:1,roles:Object.fromEntries(row[4].roles.map(id=>[id,row[4].ceiling(id)]))};Object.assign(db.company[row[2]+'RolePolicy'].roles[role],flags);};
  let f=fixture();const large=await f.call(async(req,res)=>{res.writeHead(200);res.write('ONLY');res.end(Buffer.alloc(22000001));});assert.equal(large.status,503);assert.equal(large.raw,undefined);checks+=2;
  f=fixture();const broken=await f.call(async(req,res)=>{res.writeHead(200);res.write('ONLY');res.destroy(Error('Synthetic stream truncated'));});assert.equal(broken.status,503);assert.equal(broken.raw,undefined);checks+=2;
  let db=workspaceSnapshot();db.users.push({id:3,companyId:A,role:'admin',name:'Synthetic office',status:'Active',permissions:{manageTime:true},projectIds:[],assignedCrews:[]});const profileId=crypto.randomUUID();db=profiles.plan(db,{operation:'create',profileId,name:'Office restricted',baseRole:'admin',capabilities:Object.fromEntries(registry.families.map(row=>[row[0],row[4].ceiling('admin')]))});db=profiles.plan(db,{operation:'assign',accountId:3,profileId});
@@ -46,5 +47,20 @@ async function reviewRegressions(){
  db=workspaceSnapshot();setPolicy(db,'notes',{});db.timeCards=[{id:1,memberId:12,projectId:101},{id:2,memberId:13,projectId:102}];const reduced=guards.readView(db,pm,{workspace:()=>({projects:[db.projects[0]],reports:[],workdays:[],assignments:[],timeCards:[db.timeCards[0]],team:[]})});assert.deepEqual(reduced.timeCards.map(row=>row.id),[1]);checks++;
  db=workspaceSnapshot();db.company.features.timeCards=true;setPolicy(db,'daily',{runWorkdays:false},'field');const field=db.users.find(row=>row.role==='field');db.workdays=[{id:99,projectId:101,memberIds:[field.memberId],status:'active'}];db.timeCards=[{id:99,workdayId:99,projectId:101,memberId:field.memberId}];const next=structuredClone(db);next.workdays[0].status='complete';assert.throws(()=>guards.validateDelta(db,next,{method:'PATCH',auth:{user:field}},new URL('/api/time-cards/99','http://fixture'),{}),error=>error.statusCode===403);checks++;
 }
-async function main(){await provider();await client();await reviewRegressions();console.log(JSON.stringify({passed:true,checks,externalCalls:0,syntheticOnly:true}));}
+async function changeCards(){
+ const guards=require('./roles-production-guards');const db=workspaceSnapshot();setPolicy(db,'daily',{});
+ const admin={id:3,role:'admin',companyId:db.company.id,status:'Active'};
+ db.changes=[{id:77,number:'PC-077',projectId:101,reportId:db.reports[0].id,title:'Synthetic extra',status:'Pricing',reason:'Synthetic reason',hours:2,amount:120,lines:[{description:'Material',quantity:1,unit:'EA',laborHours:2,materialCost:120}],history:[{action:'Updated amount $0 → $120',by:'Synthetic owner',at:'2026-10-11T00:00:00.000Z'}]}];
+ const url=new URL('/api/changes','http://fixture');const helpers={canViewPricing:()=>false};
+ const safe=guards.projectResponse({method:'GET',auth:{user:admin}},url,db,db.changes,helpers)[0];
+ assert.equal(safe.reason,'Synthetic reason');assert.equal(safe.hours,2);assert.equal(safe.lines[0].laborHours,2);assert.equal(safe.amount,undefined);assert.equal(safe.lines[0].materialCost,undefined);assert.equal(safe.history[0].action,'Reviewed');checks++;
+ const priced=guards.projectResponse({method:'GET',auth:{user:admin}},url,db,db.changes,{canViewPricing:()=>true})[0];assert.equal(priced.lines[0].materialCost,120);assert.equal(priced.amount,120);checks++;
+ setPolicy(db,'daily',{viewReports:false,createReports:false,editReports:false,approveReports:false,viewWorkdays:false,runWorkdays:false});
+ assert.deepEqual(guards.projectResponse({method:'GET',auth:{user:admin}},url,db,db.changes,helpers),[]);checks++;
+ await assert.rejects(guards.guard({method:'PATCH',auth:{user:admin}},new URL('/api/changes/77','http://fixture'),db,{body:async()=>({status:'Approved'})}),error=>error.statusCode===404);checks++;
+ const field=db.users.find(row=>row.role==='field');db.changes[0].fieldFlag=true;db.changes[0].createdBy=field.name;
+ setPolicy(db,'daily',{viewReports:false,createReports:false,editReports:false,approveReports:false,viewWorkdays:false,runWorkdays:false},'field');
+ assert.deepEqual(guards.projectResponse({method:'GET',auth:{user:field}},new URL('/api/changes/mine','http://fixture'),db,[{id:77,number:'PC-077',title:'Synthetic extra',status:'Pricing'}],helpers),[]);checks++;
+}
+async function main(){await provider();await client();await reviewRegressions();await changeCards();console.log(JSON.stringify({passed:true,checks,externalCalls:0,syntheticOnly:true}));}
 main().catch(error=>{console.error(error);process.exitCode=1;});

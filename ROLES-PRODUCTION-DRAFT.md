@@ -4,6 +4,11 @@ This is an isolated, unpublished source draft. It has not changed production
 permissions, accounts, sessions, credentials, schemas or services. **It is not
 ready to activate.** The earlier compatibility prototype remains frozen.
 
+This candidate integrates repository main through
+`d6c316d7d2b3dd1e2a8e1e05f8bb6d2bfda2bb3c` (change-card details and
+field flag/status updates). Repository main is not evidence of the deployed
+commit. No existing PR contains this unpublished production-adapter candidate.
+
 The existing framework uses Owner, Admin (including legacy Office), Project
 Manager, Foreman and Field account roles. Crew names are assignment scopes.
 Owner authority, account management, billing, pricing, feature switches,
@@ -40,6 +45,13 @@ bind company, actor, session, generation, revision and authority, and retire
 private views after revocation. A failed oversized/partial stream returns
 finite 503 JSON rather than partial successful bytes.
 
+Change-card line items retain nonfinancial detail and hide material costs and
+amount-bearing history when existing pricing access denies them. Linked daily
+and photo sources remain within current scope. Managed status emails are
+awaited and journaled; uncertain delivery returns the original operation
+reference. These are fixed projections and source checks, not editable changes
+or pricing grants.
+
 Read-time broad draft cleanup, duplicate-card collapse and Owner-member
 relinking are suppressed in the managed adapter; they need a separately
 reviewed maintenance action. Managed sessions renew when fewer than 24 hours
@@ -58,6 +70,8 @@ required to prove an unmanaged UUID before legacy fallback can proceed.
    a standalone append helper cannot prevent another worker restoring revoked
    platform authority or erasing receipts. Managed platform system/support
    commands and founder recipient checks need that shared evidence too.
+   Until then, the managed platform adapters in this draft are review subjects,
+   not authority-safe activation paths.
 2. Unknown credential delivery is safely blocked, but the Owner needs a finite
    explicit reconciliation contract tied to the original outcome/generation
    before it can be resolved or deliberately rotated. The current read-only
@@ -86,3 +100,6 @@ Synthetic fixtures use generated data, memory Supabase transport and an owned
 loopback PostgreSQL instance. The normal-page browser blocks external requests.
 Test receipts distinguish mutable work-in-progress checks from frozen-head
 checks. Deployed production commit is not inferred from repository main.
+The source-only `roles-production-synthetic.yml` checks the exact PR head with
+an ephemeral PostgreSQL service and isolated browser dependency. It has not
+been published or run; source workflow existence is not a successful CI result.

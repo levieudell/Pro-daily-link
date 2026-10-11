@@ -40,6 +40,8 @@ async function guard(req,url,db,h){
   if(!anyPolicy(db))return;
   const data=['POST','PATCH','PUT','DELETE'].includes(method)?await h.body(req):null;
   if(data!==null)req.rolesBody=data;
+  const change=/^\/api\/changes\/([1-9]\d*)$/.exec(path);
+  if(change&&!changeVisible(db,user,one(db.changes,change[1],'Change')))fail(404,'Change not found');
   if(method==='PATCH'&&/^\/api\/users\/[1-9]\d*$/.test(path)&&Object.hasOwn(data,'role')&&profiles.required(db)){
     const target=one(db.users,path.split('/')[3],'Account'),model=profiles.validateModel(db.company.roleProfiles);
     if(model.assignments.some(row=>row.accountId===target.id)&&(data.role==='office'?'admin':data.role)!==(target.role==='office'?'admin':target.role))fail(409,'Remove the assigned profile before changing its base role');
@@ -120,7 +122,7 @@ async function guard(req,url,db,h){
     // create/correct dependencies. Owner's office ceiling has no clock grant.
     if(day[1]&&controlled(db,'daily',action)&&!daily.workdayInScope(db,user,one(db.workdays,day[1],'Workday'),action))fail(404,'Workday not found');
     if(day[3]&&controlled(db,'daily',action)&&(!daily.projectAllowed(db,user,data.projectId)||(data.memberIds||[]).some(id=>!daily.memberAllowed(db,user,id))))fail(403,'Assigned project and entire crew scope required');
-    if(method==='POST'&&controlled(db,'daily','runWorkdays')){req.rolesDay=require('./daily-admission').parse({action:day[3]?'startWorkday':'endWorkday',...(day[1]?{id:day[1]}:{}),details:data});require('./daily-admission').authorize(db,user,req.rolesDay);}
+    if(method==='POST'&&(controlled(db,'daily','runWorkdays')||day[2]&&db.company.autoAdoptActualTimes===true&&restricted(db,'scheduling'))){req.rolesDay=require('./daily-admission').parse({action:day[3]?'startWorkday':'endWorkday',...(day[1]?{id:day[1]}:{}),details:data});require('./daily-admission').authorize(db,user,req.rolesDay);}
     if(day[2]&&db.company.autoAdoptActualTimes===true&&!workflows.derivedRestriction(db,user,'scheduling','edit'))fail(403,'Automatic schedule adoption is restricted for your role.');
   }
   const note=noteRoute(path);
@@ -137,6 +139,7 @@ async function guard(req,url,db,h){
       for(const row of [original,target].filter(Boolean)){
         const projectId=row.projectId??db.projects?.[Number(row.project)]?.id;if(!daily.projectAllowed(db,user,projectId))fail(404,'Photo project not found');
         if(row.reportId!=null){permit(db,user,'daily','editReports');const source=one(db.reports,row.reportId,'Report');if(db.projects[source.project]?.id!==projectId||!daily.reportInScope(db,user,source,'editReports'))fail(404,'Report not found');if(source.status==='Approved')permit(db,user,'daily','approveReports');}
+        if(row.changeId!=null){const change=one(db.changes,row.changeId,'Change');if(change.projectId!==projectId||!changeVisible(db,user,change))fail(404,'Change not found');}
         if(row.workdayId!=null){const source=one(db.workdays,row.workdayId,'Workday');if(source.projectId!==projectId||!daily.workdayInScope(db,user,source,'runWorkdays')||row.reportId!=null&&(source.reportId!=null&&Number(source.reportId)!==Number(row.reportId)||one(db.reports,row.reportId,'Report').workdayId!=null&&Number(one(db.reports,row.reportId,'Report').workdayId)!==Number(source.id)))fail(404,'Workday not found');}
       }
       if(method==='POST')validatePhotoFiles(data.files);
@@ -153,6 +156,7 @@ async function guard(req,url,db,h){
     // Every live reference must authorize the same bytes. An allowed alias
     // cannot expose a denied report, workday or project alias.
     if(refs.length&&refs.some(ref=>!require('./protected-assets-admission').authorized(db,user,ref,h)))fail(404,'File not found');
+    if(refs.some(ref=>ref.kind==='photo'&&ref.row.changeId!=null&&!changeVisible(db,user,one(db.changes,ref.row.changeId,'Change'))))fail(404,'File not found');
   }
 }
 function validatePhotoFiles(files){
@@ -190,7 +194,8 @@ function projectResponse(req,url,db,data,h){
     // Keep the product's existing immutable modules through finite projections.
     result.crews=(copy.crews||[]).map(row=>({...dto.pick(row,['id','name','status','createdAt','updatedAt']),memberIds:(row.memberIds||[]).filter(id=>view.team.some(member=>member.id===id))}));
     result.catalog=(copy.catalog||[]).map(row=>dto.pick(row,['id','name','category','unit','targetHoursPerUnit','productionRate','notes']));
-    result.changes=(copy.changes||[]).filter(row=>changeVisible(db,user,row)).map(row=>({...dto.pick(row,['id','projectId','reportId','title','description','status','fieldFlag','createdAt','updatedAt','createdBy','date']),...(pricing?dto.pick(row,['amount','hours','rate','pricingType']):{})}));
+    result.changes=(copy.changes||[]).filter(row=>changeVisible(db,user,row)).map(row=>changeProjection(db,user,row,h));
+    result.photos=result.photos.filter(row=>view.photos.some(photo=>photo.id===row.id)).map(row=>{const source=view.photos.find(photo=>photo.id===row.id);return source?.changeId!=null?{...row,changeId:source.changeId}:row;});
     if(gates.timeReview.viewCards)result.timeCards=view.timeCards.map(row=>require('./time-review-admission').cardProjection(row));
     if(gates.timeOff.viewRequests&&copy.timeOffRequests)result.timeOffRequests=copy.timeOffRequests.filter(row=>leave.inScope(db,user,row)).map(leave.present);
     result.projects=result.projects.map(row=>{const source=view.projects.find(project=>project.id===row.id);if(restricted(db,'daily')){if(!gates.daily.viewReports){delete row.progress;delete row.production;}else if(source){Object.assign(row,metrics(view,source));}}return row;});
@@ -207,7 +212,8 @@ function projectResponse(req,url,db,data,h){
     const visible=tasks.visible(db,user,id,require('./resource-inputs'));
     return Array.isArray(copy)?visible:{...copy,tasks:visible};
   }
-  if(path==='/api/changes'&&Array.isArray(copy))return copy.filter(row=>changeVisible(db,user,row));
+  if((path==='/api/changes'||path==='/api/changes/mine')&&Array.isArray(copy))return copy.filter(row=>changeVisible(db,user,one(db.changes,row.id,'Change'))).map(row=>path.endsWith('/mine')?dto.pick(row,['id','number','title','status','flagDate','createdAt']):changeProjection(db,user,row,h));
+  if(/^\/api\/changes\/[1-9]\d*$/.test(path)&&copy.id!=null)return changeProjection(db,user,copy,h);
   if(path.startsWith('/api/pay-periods')){
     const payroll=require('./time-write-admission');
     if(/\/exports/.test(path))return Array.isArray(copy)?copy.map(payroll.exportProjection):payroll.exportProjection(copy);
@@ -229,6 +235,15 @@ function changeVisible(db,user,row){
   if(!hProject(db,user,row.projectId))return false;
   const references=(db.reports||[]).filter(report=>Number(report.id)===Number(row.reportId)||(report.flags||[]).some(flag=>Number(flag.resolution?.changeId)===Number(row.id)));
   return references.every(report=>!restricted(db,'daily')||daily.reportInScope(db,user,report));
+}
+function changeProjection(db,user,row,h){
+  const dto=require('./compat-workspace-projections'),pricing=h.canViewPricing(db,user);
+  const result=dto.pick(row,['id','number','projectId','reportId','title','description','detail','reason','status','fieldFlag','flagDate','hours','createdAt','updatedAt','createdBy','date','submittedAt','decidedAt','decidedBy']);
+  if(pricing)Object.assign(result,dto.pick(row,['amount','rate','pricingType']));
+  result.lines=(row.lines||[]).map(line=>({...dto.pick(line,['description','quantity','unit','laborHours']),...(pricing?dto.pick(line,['materialCost']):{})}));
+  result.history=(row.history||[]).map(entry=>({...dto.pick(entry,['by','at']),action:pricing?String(entry.action||'Reviewed'):'Reviewed'}));
+  result.photoIds=(row.photoIds||[]).filter(id=>(db.photos||[]).some(photo=>photo.id===id&&require('./protected-assets-admission').authorized(db,user,{kind:'photo',row:photo,projectId:db.projects[photo.project]?.id??photo.projectId},h)));
+  return result;
 }
 function hProject(db,user,id){return ['owner','admin'].includes(user.role)||daily.projectAllowed(db,user,id);}
 function taskScope(db,user,row){
@@ -253,7 +268,7 @@ function readView(db,user,h){
   result.timeCards=(db.timeCards||[]).filter(row=>cards.has(row.id)&&(!restricted(db,'timeReview')||review.cardInScope(db,user,row)));
   result.timeOffRequests=(db.timeOffRequests||[]).filter(row=>!restricted(db,'timeOff')||leave.inScope(db,user,row));
   result.team=workspace.team||[];result.changes=(db.changes||[]).filter(row=>changeVisible(db,user,row));
-  const reportIds=new Set(result.reports.map(row=>row.id));result.photos=(db.photos||[]).filter(row=>indexMap.has(row.project)&&(row.reportId==null||reportIds.has(row.reportId))).map(row=>({...row,project:indexMap.get(row.project)}));
+  const reportIds=new Set(result.reports.map(row=>row.id));result.photos=(db.photos||[]).filter(row=>indexMap.has(row.project)&&(row.reportId==null||reportIds.has(row.reportId))&&(row.changeId==null||changeVisible(db,user,one(db.changes,row.changeId,'Change')))).map(row=>({...row,project:indexMap.get(row.project)}));
   return result;
 }
 function validateDelta(before,after,req,url,h){

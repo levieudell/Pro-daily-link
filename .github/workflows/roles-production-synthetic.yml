@@ -1,0 +1,64 @@
+name: Company Roles normal adapter synthetic proof
+on:
+  pull_request:
+    paths:
+      - '**.js'
+      - 'database/*.sql'
+      - 'package*.json'
+      - '.github/workflows/roles-production-synthetic.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  production-adapter:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_HOST_AUTH_METHOD: trust
+          POSTGRES_DB: pdl_roles_production_synthetic_ci
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      NODE_ENV: test
+      OPENAI_API_KEY: ''
+      RESEND_API_KEY: ''
+      STRIPE_SECRET_KEY: ''
+      STRIPE_WEBHOOK_SECRET: ''
+      SUPABASE_SECRET_KEY: ''
+      PDL_PLATFORM_KEY: ''
+      SENTRY_DSN: ''
+      TEST_ROLES_DATABASE_URL: postgresql://postgres@127.0.0.1:5432/pdl_roles_production_synthetic_ci
+      PDL_ROLES_BROWSER_EVIDENCE: roles-production-browser-evidence
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - run: node roles-production-contract.test.js
+      - run: node roles-production-http.test.js
+      - run: node roles-production-changes-http.test.js
+      - run: node database/roles-snapshot-postgres.test.js
+      - name: Install isolated browser test dependency
+        run: |
+          npm install --prefix "$RUNNER_TEMP/roles-browser" --no-save --ignore-scripts playwright@1.63.0
+          "$RUNNER_TEMP/roles-browser/node_modules/.bin/playwright" install --with-deps chromium
+          echo "PLAYWRIGHT_MODULE=$RUNNER_TEMP/roles-browser/node_modules/playwright" >> "$GITHUB_ENV"
+      - run: node roles-production-browser.test.js
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: roles-normal-adapter-${{ github.event.pull_request.head.sha || github.sha }}
+          path: roles-production-browser-evidence
+          if-no-files-found: ignore
