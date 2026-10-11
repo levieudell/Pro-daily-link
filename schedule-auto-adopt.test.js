@@ -10,7 +10,7 @@ const index=fs.readFileSync('index.html','utf8'),appSource=fs.readFileSync('app.
 assert.match(index,/id="company-auto-adopt"/,'settings page carries the opt-in toggle');
 assert.match(appSource,/\$\('#company-auto-adopt'\)\.checked=company\.autoAdoptActualTimes===true/,'toggle renders current state');
 assert.match(appSource,/autoAdoptActualTimes:\$\('#company-auto-adopt'\)\.checked/,'toggle rides the company save payload');
-assert.match(index,/app\.js\?v=20261009-touch-drag/,'cache version carries the bumped release marker');
+assert.match(index,/app\.js\?v=20261011-task-assign/,'cache version carries the bumped release marker');
 // Live API against a real server boot.
 const root=fs.mkdtempSync(path.join(os.tmpdir(),'pdl-autoadopt-')),companyId='ccddccdd-ccdd-4cc4-8cc8-ccddccddeeff',ownerToken='synthetic-autoadopt-owner';
 const utc=new Date(),today=`${utc.getUTCFullYear()}-${String(utc.getUTCMonth()+1).padStart(2,'0')}-${String(utc.getUTCDate()).padStart(2,'0')}`;

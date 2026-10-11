@@ -1331,6 +1331,72 @@ async function api(req,res,url){
     writeDb(db);
     return json(res, 200, { tasks: result.tasks || [], changed: result.changed || [], deleted: removed.id });
   }
+  const projectTaskAssignRoute = url.pathname.match(/^\/api\/project-tasks\/(\d+)\/assign$/);
+  if (req.method === 'POST' && projectTaskAssignRoute) {
+    const input = await body(req), db = readDb(), task = (db.projectTasks || []).find(t => t.id === Number(projectTaskAssignRoute[1]));
+    if (!task) return json(res, 404, { error: 'Task not found' });
+    if (!taskOfficeAllowed(req)) return json(res, 403, { error: 'Office permission required to schedule tasks' });
+    const memberId = Number(input.memberId), member = (db.team || []).find(m => Number(m.id) === memberId);
+    if (!member) return json(res, 400, { error: 'Choose a person from the team' });
+    if (req.auth?.user?.role === 'project_manager' && !managerAssignmentAllowed(db, req.auth.user, { projectId: task.projectId, memberIds: [memberId] })) return json(res, 403, { error: 'You can only schedule your assigned crews on your assigned projects' });
+    const from = scheduleAvailability.validDate(input.fromDate) ? String(input.fromDate).slice(0, 10) : task.startDate;
+    const first = new Date(`${from}T12:00:00Z`), last = new Date(`${task.endDate}T12:00:00Z`);
+    if (Number.isNaN(+first) || Number.isNaN(+last) || last < first) return json(res, 400, { error: 'Pick a day on or before the task ends' });
+    if ((last - first) / 86400000 > 90) return json(res, 400, { error: 'Schedule ranges can be up to 90 days' });
+    const dates = [];
+    for (const cursor = new Date(first); cursor <= last; cursor.setUTCDate(cursor.getUTCDate() + 1)) {
+      const iso = cursor.toISOString().slice(0, 10);
+      if (PDLProjectSchedule.isBusinessDay(new Date(`${iso}T12:00:00`))) dates.push(iso);
+    }
+    if (!dates.length) return json(res, 400, { error: 'This range has no workdays' });
+    const start = '07:00', end = '15:30', now = new Date().toISOString();
+    const approved = scheduleAvailability.approved(db.timeOffRequests, [memberId]);
+    let created = 0, merged = 0, skipped = 0;
+    const touched = [];
+    db.assignments ||= [];
+    for (const date of dates) {
+      if (scheduleAvailability.onDate(approved, memberId, date)) { skipped++; continue; }
+      const elsewhere = db.assignments.filter(a => a.date === date && a.projectId !== task.projectId && (a.memberIds || []).includes(memberId) && start < a.end && end > a.start);
+      if (elsewhere.length) { skipped++; continue; }
+      const sameProject = db.assignments.find(a => a.date === date && a.projectId === task.projectId && (a.memberIds || []).includes(memberId) && start < a.end && end > a.start);
+      if (sameProject) { skipped++; continue; }
+      const row = db.assignments.find(a => a.date === date && a.projectId === task.projectId && start < a.end && end > a.start);
+      if (row) {
+        row.memberIds = [...(row.memberIds || []), memberId];
+        row.notifications = row.notifications || {};
+        row.notifications[memberId] = { inAppAt: now, emailStatus: 'not_available' };
+        touched.push(row);
+        merged++;
+        continue;
+      }
+      const rows = createAssignmentRows(db, { projectId: task.projectId, memberIds: [memberId], crew: member.crew || null, start, end, activity: task.name }, [date], now);
+      db.assignments.push(...rows);
+      touched.push(...rows);
+      created++;
+    }
+    if (created + merged > 0) {
+      task.memberIds = [memberId];
+      task.assignedAt = now;
+      task.assignedBy = req.auth?.user.name || 'Office user';
+    }
+    writeDb(db);
+    // The lane assignee gets the same email a manual schedule entry sends.
+    // Only rows created or merged by this request are included — someone who
+    // already held the shift is not re-notified about it.
+    const assigneeUser = (db.users || []).find(u => u.status === 'Active' && Number(u.memberId) === memberId && u.email);
+    if (process.env.RESEND_API_KEY && assigneeUser && touched.length) {
+      try {
+        await sendAssignmentEmail({ to: assigneeUser.email, name: assigneeUser.name || member.name, companyName: db.company.name, projectName: (db.projects || []).find(p => Number(p.id) === Number(task.projectId))?.name || 'your project', assignments: touched });
+        for (const row of touched) if (row.notifications && row.notifications[memberId]) row.notifications[memberId].emailStatus = 'sent';
+      } catch (error) {
+        for (const row of touched) if (row.notifications && row.notifications[memberId]) row.notifications[memberId].emailStatus = 'failed';
+        console.error('Task assignment email failed', error.message);
+      }
+      writeDb(db);
+    }
+    const scheduled = PDLProjectSchedule.scheduleTasks((db.projectTasks || []).filter(t => Number(t.projectId) === Number(task.projectId)), (db.projects || []).find(p => Number(p.id) === Number(task.projectId))?.startDate);
+    return json(res, 200, { tasks: scheduled.tasks || [], changed: [], created, merged, skipped, memberId, memberName: member.name });
+  }
   const projectPlansRoute=url.pathname.match(/^\/api\/projects\/(\d+)\/plans$/);
   if(req.method==='GET'&&projectPlansRoute){
     const db=readDb(),project=db.projects.find(row=>row.id===Number(projectPlansRoute[1]));
@@ -1449,6 +1515,26 @@ async function api(req,res,url){
     db.company.contractValueTracking=input.enabled===true;
     writeDb(db);
     return json(res,200,publicCompanyLogo(db.company));
+  }
+  const projectDatesRoute=url.pathname.match(/^\/api\/projects\/(\d+)$/);
+  if(req.method==='PATCH'&&projectDatesRoute){
+    const input=await body(req);
+    if(Object.hasOwn(input,'startDate')||Object.hasOwn(input,'endDate')){
+      if(process.env.PDL_REQUIRE_AUTH==='1'&&!['owner','admin','project_manager'].includes(req.auth?.user?.role))return json(res,403,{error:'Office permission required to change project dates'});
+      const db=readDb(),project=(db.projects||[]).find(row=>Number(row.id)===Number(projectDatesRoute[1]));
+      if(!project)return json(res,404,{error:'Project not found'});
+      if(process.env.PDL_REQUIRE_AUTH==='1'&&req.auth?.user?.role==='project_manager'&&!managerScope(db,req.auth.user).projectIds.has(Number(project.id)))return json(res,404,{error:'Project not found'});
+      const startDate=Object.hasOwn(input,'startDate')?(input.startDate===''?'':(scheduleAvailability.validDate(input.startDate)?input.startDate:null)):(project.startDate||'');
+      if(startDate===null)return json(res,400,{error:'Start date must be a real calendar date'});
+      const endDate=Object.hasOwn(input,'endDate')?(input.endDate===''?'':(scheduleAvailability.validDate(input.endDate)?input.endDate:null)):(project.endDate||'');
+      if(endDate===null)return json(res,400,{error:'End date must be a real calendar date'});
+      if(startDate&&endDate&&endDate<startDate)return json(res,400,{error:'End date must be on or after the start date'});
+      project.startDate=startDate;project.endDate=endDate;
+      const result=rescheduledTasks(db,project.id);
+      if(result.error)return json(res,400,{error:result.error});
+      writeDb(db);
+      return json(res,200,{id:project.id,startDate:project.startDate||'',endDate:project.endDate||'',tasks:result.tasks||[],changed:result.changed||[]});
+    }
   }
   if(req.method==='PATCH'&&/^\/api\/projects\/\d+$/.test(url.pathname)&&['owner','admin'].includes(req.auth?.user?.role)&&!contractValuesEnabled(readDb().company))return json(res,409,{error:'Turn on contract value tracking in Company settings before adding project pricing'});
   if(req.method==='POST'&&url.pathname==='/api/workdays/start'){const input=await body(req),db=readDb();db.workdays ||= [];const memberIds=[...new Set((input.memberIds||[]).map(Number))],project=db.projects.find(p=>p.id===Number(input.projectId));if(!project||!memberIds.length)return json(res,400,{error:'Choose a project and at least one team member'});if(process.env.PDL_REQUIRE_AUTH==='1'&&req.auth?.user.role==='field'){const self=(db.team||[]).find(row=>Number(row.id)===Number(req.auth.user.memberId)),allowed=self&&fieldProjectIds(db,self).allowedIds;if(!self||!allowed.has(project.id)||memberIds.some(id=>{const person=(db.team||[]).find(row=>Number(row.id)===Number(id));return !person||person.crew!==self.crew}))return json(res,403,{error:'You can only start a workday for your own crew'})}const busy=db.workdays.filter(w=>w.status==='active'&&w.memberIds.some(id=>memberIds.includes(id))).flatMap(w=>w.memberIds).filter(id=>memberIds.includes(id));if(busy.length){const names=db.team.filter(m=>busy.includes(m.id)).map(m=>m.name);return json(res,409,{error:`Already clocked in: ${names.join(', ')}`})}if(timeCardsEnabled(db.company)){db.timeCards ||= [];const openIds=new Set(db.timeCards.filter(card=>!card.outAt).map(card=>Number(card.memberId))),conflict=memberIds.filter(id=>openIds.has(Number(id)));if(conflict.length){const names=db.team.filter(member=>conflict.includes(Number(member.id))).map(member=>member.name);return json(res,409,{error:`Already has an open time card: ${names.join(', ')}`})}}const row={id:nextId(db.workdays),projectId:project.id,memberIds,status:'active',startedAt:new Date().toISOString(),endedAt:null,startNote:String(input.startNote||'').slice(0,500),endNotes:'',reportId:null};db.workdays.push(row);if(timeCardsEnabled(db.company))openTimeCards(db,row,req.auth?.user?.name||'Field team');writeDb(db);return json(res,201,row)}

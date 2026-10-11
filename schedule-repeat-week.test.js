@@ -13,7 +13,7 @@ assert.match(index,/id="repeat-week-list"/,'checkbox list exists');
 assert.match(appSource,/\$\('#repeat-week'\)\.onclick=openRepeatWeek/,'button wired');
 assert.match(appSource,/\$\('#repeat-week-confirm'\)\.onclick=confirmRepeatWeek/,'confirm wired');
 assert.match(appSource,/repeatWeekButton\.hidden=!canManageSchedule\(\)\|\|scheduleView==='month'/,'button hidden for field users and month view');
-assert.match(index,/app\.js\?v=20261009-touch-drag/,'cache version carries the bumped release marker (suffix changes per release)');
+assert.match(index,/app\.js\?v=20261011-task-assign/,'cache version carries the bumped release marker (suffix changes per release)');
 // Client helper (pure): the source window is the 7 days before the viewed week.
 const lines=appSource.split('\n');
 function code(name){const start=lines.findIndex(l=>l.startsWith(`function ${name}(`));assert.ok(start>=0,name);assert.ok(lines[start].trimEnd().endsWith('}'),name+' must be single-line for extraction');return lines[start]}
