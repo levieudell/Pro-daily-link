@@ -12,7 +12,7 @@ const { isPublicFile } = require('./public-file-policy');
 // Script loads after app.js (it patches openProject) and carries a version.
 assert.ok(index.indexOf('app.js?') < index.indexOf('project-schedule-ui.js?'), 'module loads after app.js so openProject exists');
 assert.match(index, /project-schedule-ui\.js\?v=20261011-project-dates/);
-assert.match(index, /styles\.css\?v=20261011-co-document/);
+assert.match(index, /styles\.css\?v=20261011-co-dashboard/);
 
 // Static serving + server wiring.
 assert.equal(isPublicFile(process.cwd(), path.join(process.cwd(), 'project-schedule-ui.js')), true, 'UI module is publicly served');
