@@ -49,6 +49,8 @@ jobs:
       - run: node roles-production-contract.test.js
       - run: node roles-production-http.test.js
       - run: node roles-production-changes-http.test.js
+      - run: node roles-production-task-ui.test.js
+      - run: node roles-production-tasks-http.test.js
       - run: node database/roles-snapshot-postgres.test.js
       - name: Install isolated browser test dependency
         run: |

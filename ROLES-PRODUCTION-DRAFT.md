@@ -55,6 +55,11 @@ awaited and journaled; uncertain delivery returns the original operation
 reference. These are fixed projections and source checks, not editable changes
 or pricing grants.
 
+Task controls read the normal adapter's current effective scheduling actions,
+while retaining the existing no-policy manual baseline. A task refresh reloads
+the current workspace before repainting. Estimate links are finite metadata
+bound to the same project; omission retains a link and explicit null clears it.
+
 Read-time broad draft cleanup, duplicate-card collapse and Owner-member
 relinking are suppressed in the managed adapter; they need a separately
 reviewed maintenance action. Managed sessions renew when fewer than 24 hours

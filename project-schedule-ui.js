@@ -5,10 +5,11 @@
   // the tab, wires add/edit/delete/status, and repaints after every change.
   let scheduleTabSequence = 0;
 
-  function selectedWorkspace(){ return window.pdlWorkspaceActions?.enabled() === true; }
+  function selectedWorkspace(){ return window.pdlWorkspaceActions?.enabled() === true || window.pdlProductionRoles?.rolePolicies() === true; }
+  function taskAccess(action){ const access = window.pdlProductionRoles?.rolePolicies() === true ? currentUser?.effectiveCapabilities?.scheduling : currentUser?.schedulingAccess; return access?.[action] === true; }
   function canViewTasks(project){
     if (!selectedWorkspace()) return true;
-    if (currentUser?.schedulingAccess?.view !== true) return false;
+    if (!taskAccess('view')) return false;
     if (currentUser.role === 'project_manager') return (currentUser.projectIds || []).map(Number).includes(Number(project.id));
     if (['field', 'foreman'].includes(currentUser.role)) return [...(assignments || []), ...(workdays || [])].some(row => Number(row.projectId) === Number(project.id) && (row.memberIds || []).map(Number).includes(Number(currentUser.memberId)));
     return ['owner', 'admin'].includes(currentUser.role);
@@ -17,7 +18,7 @@
     if (typeof canManageSchedule !== 'function' || !canManageSchedule()) return false;
     if (!selectedWorkspace()) return true;
     if (task?.readOnly === true) return false;
-    if (currentUser?.schedulingAccess?.[action] !== true) return false;
+    if (!taskAccess(action)) return false;
     if (currentUser?.role !== 'project_manager') return ['owner', 'admin'].includes(currentUser?.role);
     if (project && !(currentUser.projectIds || []).map(Number).includes(Number(project.id))) return false;
     const crews = new Set((currentUser.assignedCrews || []).map(name => String(name).trim().toLowerCase()));
@@ -163,6 +164,7 @@
   }
 
   async function freshSchedule(projectId){
+    if (window.pdlProductionRoles?.enabled() === true) await loadData();
     // The reviewed save has already retired views and loaded the current projection.
     if (!(projects || []).some(project => Number(project.id) === Number(projectId))) return;
     await openProject(Number(projectId));
@@ -240,7 +242,7 @@
   }
 
   async function refreshLaneTasks(force){
-    if (selectedWorkspace() && currentUser?.schedulingAccess?.view !== true) { laneTasksCache = null; laneTasksFetchedAt = 0; removeLane(); return; }
+    if (selectedWorkspace() && !taskAccess('view')) { laneTasksCache = null; laneTasksFetchedAt = 0; removeLane(); return; }
     const stamp = Date.now();
     if (!force && laneTasksCache && laneTasksFetchedAt && stamp - laneTasksFetchedAt < 30000) return;
     laneTasksFetchedAt = stamp; const sequence = laneSequence;
@@ -293,7 +295,7 @@
   function paintUnassignedLane(){
     removeLane();
     if (typeof currentRole !== 'undefined' && currentRole !== 'office') return;
-    if (selectedWorkspace() && currentUser?.schedulingAccess?.view !== true) return;
+    if (selectedWorkspace() && !taskAccess('view')) return;
     const board = document.getElementById('schedule-board'), days = laneVisibleDays();
     if (!board || !days.length) return;
     const tasks = unassignedLaneTasks(days), editable = canAssignTasks(), members = laneTeamOptions();
@@ -344,7 +346,7 @@
     }
     try {
       const payload = await api(`/api/project-tasks/${taskId}/assign`, { method: 'POST', body: JSON.stringify({ memberId, fromDate }) });
-      if (selectedWorkspace()) laneTasksCache = (typeof projectTasks !== 'undefined' ? projectTasks : []).slice();
+      if (selectedWorkspace()) { if (window.pdlProductionRoles?.enabled() === true) await loadData(); laneTasksCache = (typeof projectTasks !== 'undefined' ? projectTasks : []).slice(); }
       else {
         const state = await api('/api/state');
         if (typeof assignments !== 'undefined') assignments = state.assignments || [];
