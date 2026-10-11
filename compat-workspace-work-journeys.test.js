@@ -47,7 +47,7 @@ async function journey(name, viewport) {
     const store = native?.repository || memory(db), key = crypto.randomBytes(32), fixture = services(store, origin, { key });
     uninstall = mod.installCompatibilityAccountTests({ synthetic: true, companyId: A, origin, globalOrigin: 'http://localhost:4999', repository: store, ...fixture, workspace: true, workspaceKey: key });
     browser = await chromium.launch({ headless: true, args: ['--disable-background-networking'] });
-    context = await browser.newContext({ viewport });
+    context = await browser.newContext({ viewport, timezoneId: 'Etc/UTC' });
     context.on('page', current => {
       current.on('pageerror', error => errors.push(error.message));
       current.on('response', response => {
