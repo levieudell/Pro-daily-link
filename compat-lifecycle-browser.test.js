@@ -2,6 +2,15 @@
 const assert = require('node:assert/strict'), crypto = require('node:crypto'), fs = require('node:fs'), os = require('node:os'), path = require('node:path'), { fork } = require('node:child_process'), { once } = require('node:events');
 const { chromium } = require(process.env.PLAYWRIGHT_MODULE || 'playwright');
 const { A, B, initial, snapshot, memory } = require('./compat-account-fixture'), { services } = require('./compat-lifecycle-fixture'), { nativeFixture } = require('./compat-lifecycle-native-fixture');
+async function declinePublicAnalytics(page, expectedOrigin) {
+  assert.equal(new URL(page.url()).origin, expectedOrigin);
+  const banner = page.getByRole('dialog', { name: 'Analytics consent', exact: true });
+  await banner.waitFor({ state: 'visible' });
+  await banner.getByRole('button', { name: 'Decline', exact: true }).click();
+  await banner.waitFor({ state: 'detached' });
+  assert.equal(new URL(page.url()).origin, expectedOrigin);
+  assert.deepEqual(await page.evaluate(() => ({ consent: localStorage.getItem('pdl-analytics-consent'), analyticsLoaded: Boolean(window.PDLAnalytics) })), { consent: 'declined', analyticsLoaded: false });
+}
 async function main() {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'pdl-compat-lifecycle-')), evidence = process.env.PDL_COMPAT_BROWSER_EVIDENCE || path.join(directory, 'evidence'); fs.mkdirSync(evidence, { recursive: true });
   Object.assign(process.env, { NODE_ENV: 'test', PDL_COMPAT_ACCOUNT_SYNTHETIC: '1', PDL_REQUIRE_AUTH: '1', PDL_SUPABASE_ENABLED: '0', PDL_TRANSACTIONAL_DB: 'off', PDL_COMPAT_GLOBAL_FENCE_FILE: '' });
@@ -24,7 +33,7 @@ async function main() {
       await reset(); const ctx = await context(viewport), page = await ctx.newPage(); page.on('response', response => { if (response.status() === 503) blocked.add(new URL(response.url()).pathname); });
       await login(page); await page.waitForFunction(() => Boolean(document.querySelector('#email-verification-banner'))); await page.waitForTimeout(250);
       for (let attempt = 0; attempt < 80 && !fixture.messages.some(row => row.purpose === 'email-verification'); attempt++) await page.waitForTimeout(50);
-      const verification = fixture.messages.find(row => row.purpose === 'email-verification'); assert.ok(verification); await page.goto(verification.verifyUrl.replace(origin, globalOrigin)); await page.waitForURL(url => url.origin === origin && url.pathname === '/verify-email.html'); await page.locator('#verification-next:not([hidden])').waitFor(); await page.click('#verification-next'); await page.waitForFunction(() => document.documentElement.classList.contains('workspace-ready')); checks.push(name + ': existing resend and legacy-host verification link preserves sessions');
+      const verification = fixture.messages.find(row => row.purpose === 'email-verification'); assert.ok(verification); await page.goto(verification.verifyUrl.replace(origin, globalOrigin)); await page.waitForURL(url => url.origin === origin && url.pathname === '/verify-email.html'); await declinePublicAnalytics(page, origin); await page.locator('#verification-next:not([hidden])').waitFor(); await page.click('#verification-next'); await page.waitForFunction(() => document.documentElement.classList.contains('workspace-ready')); checks.push(name + ': existing resend and legacy-host verification link preserves sessions');
       assert.equal((await store.load(A)).snapshot.projectTickets[0].purgedAt, undefined); checks.push(name + ': account page loads with expired retained source without deleting it');
       if (name === 'mobile') await page.click('#menu-button'); if (!(await page.isVisible('.nav-item[data-page="team"]'))) await page.click('.nav-more > summary'); await page.click('.nav-item[data-page="team"]'); await page.click('[data-team-tab="accounts"]'); await page.click('#team-add-button'); await page.fill('#user-name', 'Browser PM ' + name); await page.fill('#user-email', 'browser-' + name + '@example.invalid'); await page.selectOption('#user-role', 'project_manager'); await page.click('#save-user'); await review(page); await page.locator('#setup-code-result input').waitFor();
       let loaded = await store.load(A); const target = loaded.snapshot.users.find(row => row.email === 'browser-' + name + '@example.invalid'); assert.ok(target); const secretInput = page.locator('#setup-code-result input'); const temporaryPassword = await secretInput.inputValue(); assert.match(temporaryPassword, /^[A-Za-z0-9_-]{8}$/); assert.equal(JSON.stringify(loaded.snapshot).includes(temporaryPassword), false); checks.push(name + ': existing add-account form uses preview/reason/unchecked confirmation and committed secret');

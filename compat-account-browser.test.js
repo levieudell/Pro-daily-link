@@ -12,6 +12,15 @@ const { CompatTenantRepository, split } = require('./database/compat-tenant-repo
 const { canonicalHash } = require('./database/transactional-repository');
 const { Pool } = require('pg');
 const { once } = require('node:events');
+async function declinePublicAnalytics(page, expectedOrigin) {
+  assert.equal(new URL(page.url()).origin, expectedOrigin);
+  const banner = page.getByRole('dialog', { name: 'Analytics consent', exact: true });
+  await banner.waitFor({ state: 'visible' });
+  await banner.getByRole('button', { name: 'Decline', exact: true }).click();
+  await banner.waitFor({ state: 'detached' });
+  assert.equal(new URL(page.url()).origin, expectedOrigin);
+  assert.deepEqual(await page.evaluate(() => ({ consent: localStorage.getItem('pdl-analytics-consent'), analyticsLoaded: Boolean(window.PDLAnalytics) })), { consent: 'declined', analyticsLoaded: false });
+}
 async function main() {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'pdl-compat-browser-')), evidence = process.env.PDL_COMPAT_BROWSER_EVIDENCE || path.join(directory, 'evidence'); fs.mkdirSync(evidence, { recursive: true });
   process.env.NODE_ENV = 'test'; process.env.PDL_COMPAT_ACCOUNT_SYNTHETIC = '1'; process.env.PDL_REQUIRE_AUTH = '1'; process.env.PDL_SUPABASE_ENABLED = '0'; process.env.PDL_TRANSACTIONAL_DB = 'off';
@@ -95,7 +104,7 @@ async function main() {
     }
     // The ordinary global legacy signup API and selected-host page link remain.
     const context = await browser.newContext(); await context.route('**/*', route => [origin, globalOrigin].some(base => route.request().url().startsWith(base + '/')) ? route.continue() : route.abort());
-    const page = await context.newPage(); await page.goto(origin + '/login.html'); await page.locator('a[href="' + globalOrigin + '/signup.html"]').waitFor(); await page.locator('a[href="' + globalOrigin + '/signup.html"]').click(); assert.equal(new URL(page.url()).origin, globalOrigin);
+    const page = await context.newPage(); await page.goto(origin + '/login.html'); await declinePublicAnalytics(page, origin); await page.locator('a[href="' + globalOrigin + '/signup.html"]').waitFor(); await page.locator('a[href="' + globalOrigin + '/signup.html"]').click(); assert.equal(new URL(page.url()).origin, globalOrigin); await declinePublicAnalytics(page, globalOrigin);
     // Selected-host cookie must not contaminate the separate global host.
     const selectedLogin = await context.request.post(origin + '/api/auth/login', { headers: { 'X-PDL-Company': A }, data: { email: 'owner@example.invalid', password: initial } }); assert.equal(selectedLogin.status(), 200);
     await page.goto(origin + '/signup.html'); assert.equal(new URL(page.url()).origin, globalOrigin);
