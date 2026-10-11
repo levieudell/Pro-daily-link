@@ -11,7 +11,7 @@ const { isPublicFile } = require('./public-file-policy');
 
 // Script loads after app.js (it patches openProject) and carries a version.
 assert.ok(index.indexOf('app.js?') < index.indexOf('project-schedule-ui.js?'), 'module loads after app.js so openProject exists');
-assert.match(index, /project-schedule-ui\.js\?v=20261011-schedule-formfix/);
+assert.match(index, /project-schedule-ui\.js\?v=20261011-project-dates/);
 assert.match(index, /styles\.css\?v=20261011-task-assign/);
 
 // Static serving + server wiring.
@@ -54,6 +54,17 @@ assert.equal((ui.match(/<form[\s>]/g) || []).length, 0, 'no nested form tags in 
 assert.match(ui, /<div class="project-schedule-add" data-schedule-add-form>/);
 assert.match(ui, /data-add-task/);
 assert.match(ui, /paintProjectScheduleTab\(projectId\)/, 'clicking the Schedule tab repaints it with fresh data');
+
+// Project start/end dates: editable from the Schedule pane, saved through a
+// dedicated PATCH that runs before the contract-pricing guard.
+assert.ok(server.includes('projectDatesRoute=url.pathname.match'), 'project dates PATCH route exists');
+assert.ok(server.indexOf('projectDatesRoute') < server.indexOf('Turn on contract value tracking in Company settings before adding project pricing'), 'dates route runs before the pricing guard');
+assert.match(server, /rescheduledTasks\(db, project\.id\)/, 'saving dates re-anchors linked tasks');
+assert.match(ui, /data-project-dates-form/);
+assert.match(ui, /data-save-project-dates/);
+assert.match(ui, /data-project-start-date/);
+assert.match(ui, /data-schedule-needs-start/, 'a no-start-date project gets a set-one prompt');
+assert.match(ui, /api\(`\/api\/projects\/\$\{project\.id\}`/, 'dates save through the project PATCH');
 for (const selector of ['.schedule-unassigned', '.schedule-task-chip', '.schedule-task-assign'])
   assert.ok(styles.includes(selector), `${selector} styled`);
 
