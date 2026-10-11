@@ -734,3 +734,9 @@ button.voice-listening{outline:2px solid #2e6b52;outline-offset:2px;animation:pd
 /* Schedule tab — estimate-linked task picker + estimate tags (2026 refresh) */
 .project-schedule-add select[data-new-task-estimate],.project-schedule-editor select[data-edit-task-estimate]{flex:1 1 190px;min-width:160px;padding:8px 10px;border:1px solid #d7dcd9;border-radius:8px;font-size:13px;background:#fff}
 .project-schedule-est-tag{display:inline-block;margin:2px 0 4px;font-size:10px;font-weight:700;color:#1a6fd4;background:#e8f0fb;border-radius:4px;padding:2px 6px}
+
+/* Dashboard — change-order exposure on project cards (changes v2 step 5) */
+.project-card-changes{display:flex;gap:6px;flex-wrap:wrap;margin:8px 0 2px}
+.project-co-badge{font-size:10px;font-weight:700;color:#8a5a00;background:#fdf0d3;border:1px solid #ecd9a8;border-radius:12px;padding:2px 8px;white-space:nowrap}
+.project-co-open{font-size:10px;font-weight:700;color:#4c554f;background:#eef1ef;border:1px solid #d7dcd9;border-radius:12px;padding:2px 8px;white-space:nowrap}
+.project-co-exposure{font-size:10px;font-weight:700;color:#8a2323;background:#fdeaea;border:1px solid #f2c9c9;border-radius:12px;padding:2px 8px;white-space:nowrap}
