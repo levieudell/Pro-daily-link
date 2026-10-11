@@ -74,6 +74,13 @@
   }
   async function request(path, options, send) {
     if (!window.pdlWorkspaceActions?.enabled()) return send(path, options);
+    // A reviewed report/photo resource uses this callback too. Pass only the
+    // exact in-flight resource envelope through to its server confirmation.
+    const method=String(options.method||'GET').toUpperCase(),pending=window.pdlResourceActions?.pending();
+    if(pending&&(method==='POST'&&path==='/api/reports'||method==='PATCH'&&/^\/api\/reports\/[1-9]\d*$/.test(path))){
+      const proof=options.body?JSON.parse(options.body):{};
+      if(pending.method===method&&pending.path===path&&Object.keys(proof).sort().join(',')==='confirmed,requestId,token,version'&&proof.confirmed===true&&['token','version','requestId'].every(key=>proof[key]===pending[key]))return send(path,options);
+    }
     const action = operation(path, options); if (!action) return send(path, options);
     if(window.pdlWorkspaceSave?.read()||window.pdlResourceActions?.unresolved()){window.pdlWorkspaceSave?.draw();window.pdlResourceActions?.draw();throw Object.assign(Error('Check the previous save result before making another change.'),{status:409});}
     const opening = await window.pdlWorkspaceActions.identity();
