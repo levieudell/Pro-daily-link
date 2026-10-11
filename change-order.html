@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex,nofollow">
+<title>Change order · Pro Daily Link</title>
+<style>
+:root{--ink:#14181a;--muted:#5f6a65;--line:#dfe5e1;--green:#177245;--red:#b3362b;--paper:#ffffff;--wash:#f4f6f4}
+*{box-sizing:border-box}
+body{margin:0;background:var(--wash);color:var(--ink);font-family:Arial,Helvetica,sans-serif;font-size:14px;line-height:1.5}
+.page{max-width:760px;margin:24px auto;padding:0 16px}
+.document{background:var(--paper);border:1px solid var(--line);border-radius:14px;padding:34px 38px;box-shadow:0 8px 30px rgba(20,24,26,.06)}
+.co-head{display:flex;justify-content:space-between;align-items:flex-start;gap:16px;border-bottom:3px solid var(--ink);padding-bottom:16px;margin-bottom:20px}
+.co-head small{display:block;font-size:10px;letter-spacing:.14em;color:var(--muted);font-weight:700}
+.co-head h1{margin:2px 0 0;font-size:26px;letter-spacing:.02em}
+.co-number{text-align:right;font-size:13px;color:var(--muted)}
+.co-number strong{display:block;font-size:18px;color:var(--ink)}
+.meta{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;margin-bottom:20px}
+.meta div small{display:block;font-size:10px;letter-spacing:.1em;color:var(--muted);font-weight:700}
+.meta div strong{font-size:14px}
+h2{font-size:12px;letter-spacing:.12em;color:var(--muted);margin:22px 0 8px;text-transform:uppercase}
+.description{font-size:15px;margin:0 0 6px}
+.reason{color:var(--muted);font-size:13px;margin:0}
+table.lines{width:100%;border-collapse:collapse;margin-top:4px}
+table.lines th{font-size:10px;letter-spacing:.1em;color:var(--muted);text-align:left;border-bottom:2px solid var(--ink);padding:6px 8px}
+table.lines td{border-bottom:1px solid var(--line);padding:8px;font-size:13px;vertical-align:top}
+table.lines td.num,table.lines th.num{text-align:right;white-space:nowrap}
+table.lines tr.total td{border-bottom:none;border-top:2px solid var(--ink);font-weight:700;font-size:14px}
+.photos{display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:10px;margin-top:4px}
+.photos figure{margin:0}
+.photos img{width:100%;height:110px;object-fit:cover;border-radius:8px;border:1px solid var(--line)}
+.photos figcaption{font-size:10px;color:var(--muted);margin-top:3px}
+.terms{margin-top:26px;padding:14px 16px;background:var(--wash);border-radius:10px;font-size:12px;color:var(--muted)}
+.decision{margin-top:26px;border:1px solid var(--line);border-radius:12px;padding:20px}
+.decision.pending{border-color:#c9d6cf;background:#fbfdfb}
+.decision.approved{border-color:var(--green);background:#f0f8f3}
+.decision.declined{border-color:var(--red);background:#fdf1ef}
+.decision h2{margin-top:0}
+.decision label{display:block;font-size:11px;font-weight:700;letter-spacing:.08em;color:var(--muted);margin:10px 0 4px;text-transform:uppercase}
+.decision input[type=text],.decision textarea{width:100%;padding:10px 12px;border:1px solid var(--line);border-radius:8px;font:inherit;font-size:14px}
+.decision textarea{resize:vertical;min-height:64px}
+.decision-actions{display:flex;gap:10px;margin-top:14px;flex-wrap:wrap}
+button{font:inherit;font-weight:700;border-radius:8px;padding:11px 22px;cursor:pointer;border:1px solid transparent}
+button.approve{background:var(--green);color:#fff}
+button.decline{background:#fff;color:var(--red);border-color:var(--red)}
+button.plain{background:#fff;border-color:var(--line);color:var(--ink)}
+button:disabled{opacity:.5;cursor:default}
+.decision-error{color:var(--red);font-size:13px;margin:8px 0 0}
+.signature{font-size:13px;margin-top:6px}
+.signature strong{font-size:15px}
+.toolbar{display:flex;gap:10px;justify-content:flex-end;margin:0 0 14px}
+.banner{border-radius:10px;padding:12px 16px;font-size:13px;font-weight:700;margin-bottom:16px}
+.banner.ok{background:#f0f8f3;color:var(--green)}
+.banner.no{background:#fdf1ef;color:var(--red)}
+.empty{color:var(--muted);font-size:13px}
+@media(max-width:600px){.document{padding:22px 18px}.co-head{flex-direction:column}.co-number{text-align:left}}
+@media print{
+  body{background:#fff}
+  .page{margin:0;max-width:none}
+  .document{border:none;border-radius:0;box-shadow:none;padding:0}
+  .toolbar,.decision-actions,.decision input,.decision textarea,button{display:none!important}
+  .decision{border:1px solid #999}
+}
+</style>
+</head>
+<body>
+<div class="page">
+  <div class="toolbar no-print"><button type="button" class="plain" onclick="window.print()">Print / Save as PDF</button></div>
+  <main class="document" id="co-document"><p class="empty">Loading change order…</p></main>
+</div>
+<script src="/change-order.js"></script>
+</body>
+</html>
