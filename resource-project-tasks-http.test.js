@@ -94,6 +94,38 @@ async function main() {
       assert.equal((await request('/api/projects/102/tasks', { token: tokens[role] })).status, 404, 'field/foreman cannot read an unassigned project');
       await deny('projectTaskCreate', 'POST', '/api/projects/101/tasks', { name: 'No field writer', durationDays: 1 }, tokens[role], 403);
     }
+    // Crew-only task authority survives an empty member list. Preserve the
+    // original fixture between controls so later CRUD/history checks stay exact.
+    const crewBaseline = store.current();
+    await mutate(db => { db.projectTasks.find(row => row.id === 1).memberIds = []; db.projectTasks.find(row => row.id === 2).memberIds = []; db.team.push({ id: 16, name: 'Synthetic North employee without login', crew: 'North', role: 'Employee', initials: 'SN', hours: 0 }); });
+    const crewOnlyView = await request('/api/projects/101/tasks', { token: tokens.project_manager }); assert.equal(crewOnlyView.status, 200); const foreignCrewView = crewOnlyView.value.find(row => row.id === 2); assert.equal(foreignCrewView.crew, ''); assert.deepEqual(foreignCrewView.memberIds, []); assert.equal(foreignCrewView.readOnly, true);
+    for (const [kind, method, route, details] of [
+      ['projectTaskEdit', 'PATCH', '/api/project-tasks/2', { status: 'done' }],
+      ['projectTaskEdit', 'PATCH', '/api/project-tasks/2', { crew: 'North', memberIds: [14] }],
+      ['projectTaskRemove', 'DELETE', '/api/project-tasks/2', {}],
+      ['projectTaskAssign', 'POST', '/api/project-tasks/2/assign', { memberId: 16 }],
+      ['projectTaskEdit', 'PATCH', '/api/project-tasks/1', { durationDays: 4 }],
+      ['projectTaskRemove', 'DELETE', '/api/project-tasks/1', {}],
+      ['projectDates', 'PATCH', '/api/projects/101', { startDate: '2026-10-06' }]
+    ]) await deny(kind, method, route, details, tokens.project_manager, 403);
+    await mutate(db => { Object.assign(db.projectTasks.find(row => row.id === 2), { startDate: '2026-10-01', endDate: '2026-10-02' }); });
+    await deny('projectTaskCreate', 'POST', '/api/projects/101/tasks', { name: 'PM cannot recascade stale foreign crew dates', durationDays: 1, crew: 'North' }, tokens.project_manager, 403);
+    await mutate(db => { db.projectTasks = structuredClone(crewBaseline.projectTasks).map(row => [1, 2].includes(row.id) ? { ...row, memberIds: [] } : row); });
+    const resetCrewFixture = async () => mutate(db => { db.projectTasks = structuredClone(crewBaseline.projectTasks).map(row => [1, 2].includes(row.id) ? { ...row, memberIds: [] } : row); db.assignments = structuredClone(crewBaseline.assignments); db.projects = structuredClone(crewBaseline.projects); delete db.company.schedulingRolePolicy; });
+    for (const role of ['owner', 'admin']) {
+      await save('projectTaskEdit', 'PATCH', '/api/project-tasks/2', { status: 'done' }, tokens[role]); await resetCrewFixture();
+      await save('projectTaskAssign', 'POST', '/api/project-tasks/2/assign', { memberId: 17 }, tokens[role]); await resetCrewFixture();
+      await save('projectTaskRemove', 'DELETE', '/api/project-tasks/2', {}, tokens[role]); await resetCrewFixture();
+      await save('projectTaskEdit', 'PATCH', '/api/project-tasks/1', { durationDays: 4 }, tokens[role]); assert.equal(taskById(2).startDate, '2026-10-09'); await resetCrewFixture();
+      await save('projectDates', 'PATCH', '/api/projects/101', { startDate: '2026-10-06' }, tokens[role]); assert.equal(taskById(2).startDate, '2026-10-09'); await resetCrewFixture();
+    }
+    await save('projectTaskEdit', 'PATCH', '/api/project-tasks/1', { status: 'done' }, tokens.project_manager); await resetCrewFixture();
+    await save('projectTaskAssign', 'POST', '/api/project-tasks/1/assign', { memberId: 16 }, tokens.project_manager); await resetCrewFixture();
+    await mutate(db => { const task = db.projectTasks.find(row => row.id === 2); task.crew = 'North'; task.memberIds = [15]; db.company.schedulingRolePolicy = { version: 1, revision: 1, roles: Object.fromEntries(scheduling.roles.map(role => [role, scheduling.ceiling(role)])) }; db.company.schedulingRolePolicy.roles.project_manager.edit = false; });
+    await deny('projectTaskEdit', 'PATCH', '/api/project-tasks/1', { status: 'done' }, tokens.project_manager, 403);
+    const separateRemove = await save('projectTaskRemove', 'DELETE', '/api/project-tasks/1', {}, tokens.project_manager); assert.equal(separateRemove.r.value.deleted, 1); assert.deepEqual(taskById(2).predecessorIds, []); assert.equal(taskById(2).startDate, '2026-10-05', 'current remove permission permits relinking an own-crew dependent even when edit is restricted');
+    await mutate(db => { db.projectTasks = structuredClone(crewBaseline.projectTasks); db.assignments = structuredClone(crewBaseline.assignments); db.projects = structuredClone(crewBaseline.projects); delete db.company.schedulingRolePolicy; });
+    assert.equal(assignmentAttempts, 0, 'crew-only controls use employees without login and never invoke the fake provider');
     assert.equal((await request('/api/projects/101/tasks', { method: 'POST', data: { name: 'Raw bypass', durationDays: 1 } })).status, 400);
     for (const details of [{ name: 'Mixed financial fields', durationDays: 1, budget: 500 }, { name: 'Foreign identity', durationDays: 1, companyId: B }, { name: 'Wrong typed duration', durationDays: '1' }, { name: 'Duplicate members', durationDays: 1, memberIds: [14, 14] }]) await deny('projectTaskCreate', 'POST', '/api/projects/101/tasks', details, tokens.owner, 400);
     await deny('projectDates', 'PATCH', '/api/projects/101', { startDate: '2026-02-30' }, tokens.owner, 400);

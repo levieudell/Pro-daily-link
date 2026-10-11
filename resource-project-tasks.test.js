@@ -59,6 +59,25 @@ rejects(() => tasks.authorize(db, auth(pm), op('projectTaskCreate', 'POST', '/ap
 rejects(() => tasks.authorize(db, auth(pm), op('projectTaskCreate', 'POST', '/api/projects/101/tasks', { name: 'Mixed crews', durationDays: 1, memberIds: [12, 13] }), {}, input), 403);
 rejects(() => tasks.authorize(db, auth(pm), op('projectTaskEdit', 'PATCH', '/api/project-tasks/2', { name: 'Steal South task', memberIds: [12] }), {}, input), 403);
 rejects(() => tasks.authorize(db, auth(pm), op('projectTaskCreate', 'POST', '/api/projects/101/tasks', { name: 'Foreign dependency', durationDays: 1, predecessorIds: [3] }), {}, input), 400);
+const crewOnly = make(); crewOnly.projectTasks[1].memberIds = [];
+const foreignCrewOperations = [
+  op('projectTaskEdit', 'PATCH', '/api/project-tasks/2', { status: 'done' }),
+  op('projectTaskEdit', 'PATCH', '/api/project-tasks/2', { crew: 'North' }),
+  op('projectTaskRemove', 'DELETE', '/api/project-tasks/2'),
+  op('projectTaskAssign', 'POST', '/api/project-tasks/2/assign', { memberId: 12 })
+];
+for (const operation of foreignCrewOperations) {
+  rejects(() => tasks.authorize(crewOnly, auth(pm), operation, {}, input), 403);
+  for (const role of ['owner', 'admin']) tasks.authorize(crewOnly, auth(actor(role)), operation, {}, input);
+}
+const crewOnlyView = tasks.visible(crewOnly, pm, 101, input).find(row => row.id === 2);
+assert.equal(crewOnlyView.crew, ''); assert.deepEqual(crewOnlyView.memberIds, []); assert.equal(crewOnlyView.readOnly, true, 'an empty member list cannot make a foreign crew task editable');
+crewOnly.projectTasks[1].crew = 'North';
+for (const operation of foreignCrewOperations) tasks.authorize(crewOnly, auth(pm), operation, {}, input);
+assert.equal(tasks.visible(crewOnly, pm, 101, input).find(row => row.id === 2).readOnly, false);
+crewOnly.company.schedulingRolePolicy = policy(); crewOnly.company.schedulingRolePolicy.roles.project_manager.edit = false;
+tasks.authorize(crewOnly, auth(pm), op('projectTaskRemove', 'DELETE', '/api/project-tasks/1'), {}, input);
+rejects(() => tasks.authorize(crewOnly, auth(pm), op('projectTaskEdit', 'PATCH', '/api/project-tasks/1', { status: 'done' }), {}, input), 403);
 for (const role of ['field', 'foreman']) rejects(() => tasks.authorize(db, auth(actor(role)), create, {}, input), 403);
 for (const role of ['crew', 'platform_admin']) rejects(() => tasks.authorizeActor(auth(actor(role)), create, input), 403);
 

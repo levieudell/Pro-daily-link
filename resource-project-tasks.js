@@ -65,6 +65,7 @@ function membersAllowed(db,user,projectId,ids,action,input){
   for(const id of ids){const member=db.team.find(row=>Number(row.id)===id);if(!member||member.archivedAt||member.archived||member.status==='Inactive')input.fail(409,'Choose active current employees.');}
   if(user.role==='project_manager'&&ids.length&&!scheduling.inScope(db,user,{projectId,memberIds:ids},action))input.fail(403,'You can only schedule your assigned crews on your assigned projects.');
 }
+function crewAllowed(user,row,input){if(user.role==='project_manager'&&row.crew&&!(user.assignedCrews||[]).some(crew=>String(crew).trim().toLowerCase()===String(row.crew).trim().toLowerCase()))input.fail(403,'You can only change tasks for your assigned crews.');}
 function authorize(db,auth,op,h,input) {
   authorizeActor(auth,op,input);graph(db,input);const id=projectId(db,op),project=db.projects.find(row=>Number(row.id)===id);
   if(!project)input.fail(404,'Project not found.');
@@ -73,7 +74,7 @@ function authorize(db,auth,op,h,input) {
   if(op.kind==='projectTasksView')return;
   const old=(db.projectTasks||[]).find(row=>Number(row.id)===Number(op.path.split('/')[3]));
   if(!['projectTaskCreate','projectDates'].includes(op.kind)&&!old)input.fail(404,'Task not found.');
-  if(old)membersAllowed(db,auth.user,id,old.memberIds,action,input);
+  if(old){crewAllowed(auth.user,old,input);membersAllowed(db,auth.user,id,old.memberIds,action,input);}
   membersAllowed(db,auth.user,id,op.kind==='projectTaskAssign'?[op.details.memberId]:op.details.memberIds||[],action,input);
   if(op.details.crew&&auth.user.role==='project_manager'&&!(auth.user.assignedCrews||[]).some(name=>name.trim().toLowerCase()===op.details.crew.toLowerCase()))input.fail(403,'Choose one of your assigned crews.');
   if(op.kind==='projectDates'){
@@ -87,7 +88,7 @@ function task(row){return {...dto.pick(row,['id','projectId','name','durationDay
 function visible(db,user,id,input){
   const project=db.projects.find(row=>Number(row.id)===Number(id));if(!project)input.fail(404,'Project not found.');actorScope(db,user,project,'view',input);graph(db,input);
   const scheduled=engine.scheduleTasks((db.projectTasks||[]).filter(row=>Number(row.projectId)===Number(id)),project.startDate);if(scheduled.error)input.fail(409,'Task graph requires reconciliation.');
-  return scheduled.tasks.map(row=>{const out=task(row);out.readOnly=['field','foreman'].includes(user.role)||(user.role==='project_manager'&&(row.memberIds||[]).some(id=>!db.team.some(member=>Number(member.id)===id&&(user.assignedCrews||[]).some(crew=>String(crew).trim().toLowerCase()===String(member.crew||'').trim().toLowerCase()))));if(user.role==='project_manager'){const crews=new Set((user.assignedCrews||[]).map(name=>name.trim().toLowerCase()));out.memberIds=out.memberIds.filter(id=>db.team.some(member=>Number(member.id)===id&&crews.has(String(member.crew||'').trim().toLowerCase())));if(out.crew&&!crews.has(out.crew.toLowerCase()))out.crew='';}else if(['field','foreman'].includes(user.role)){out.memberIds=out.memberIds.filter(id=>id===Number(user.memberId));out.crew='';}return out;});
+  return scheduled.tasks.map(row=>{const out=task(row);out.readOnly=['field','foreman'].includes(user.role)||(user.role==='project_manager'&&((row.crew&&!(user.assignedCrews||[]).some(crew=>String(crew).trim().toLowerCase()===String(row.crew).trim().toLowerCase()))||(row.memberIds||[]).some(id=>!db.team.some(member=>Number(member.id)===id&&(user.assignedCrews||[]).some(crew=>String(crew).trim().toLowerCase()===String(member.crew||'').trim().toLowerCase())))));if(user.role==='project_manager'){const crews=new Set((user.assignedCrews||[]).map(name=>name.trim().toLowerCase()));out.memberIds=out.memberIds.filter(id=>db.team.some(member=>Number(member.id)===id&&crews.has(String(member.crew||'').trim().toLowerCase())));if(out.crew&&!crews.has(out.crew.toLowerCase()))out.crew='';}else if(['field','foreman'].includes(user.role)){out.memberIds=out.memberIds.filter(id=>id===Number(user.memberId));out.crew='';}return out;});
 }
 function assignmentEffects(before,op,auth,input,actual){
   const id=projectId(before,op),expected=structuredClone(before.assignments||[]),old=(before.projectTasks||[]).find(row=>row.id===Number(op.path.split('/')[3])),member=before.team.find(row=>Number(row.id)===op.details.memberId);
@@ -141,7 +142,7 @@ function validate(before,after,op,auth,h,input){
   const anchor=expectedProjects.find(row=>Number(row.id)===id).startDate,schedule=engine.scheduleTasks(expected.filter(row=>Number(row.projectId)===id),anchor);if(schedule.error)fail();
   for(const row of expected){const computed=schedule.tasks.find(task=>task.id===row.id);if(computed){row.startDate=computed.startDate;row.endDate=computed.endDate;}}
   if(!equal(after.projectTasks||[],expected)||!equal(after.projects,expectedProjects)||!equal(omit(before,['projectTasks','projects']),omit(after,['projectTasks','projects'])))fail();
-  const affected=expected.filter(row=>!equal(row,oldRows.find(old=>old.id===row.id)));for(const row of affected)membersAllowed(before,actor,id,row.memberIds,op.kind==='projectTaskCreate'?'create':'edit',input);
+  const affected=expected.filter(row=>!equal(row,oldRows.find(old=>old.id===row.id)));for(const row of affected){const original=oldRows.find(old=>old.id===row.id);if(original)crewAllowed(actor,original,input);crewAllowed(actor,row,input);membersAllowed(before,actor,id,row.memberIds,op.kind==='projectTaskCreate'?'create':op.kind==='projectTaskRemove'?'remove':'edit',input);}
   const tasks=visible(after,actor,id,input),changed=engine.changedDateIds(oldRows.filter(row=>Number(row.projectId)===id).map(row=>({id:row.id,startDate:row.startDate,endDate:row.endDate})),schedule.tasks);
   const data=op.kind==='projectDates'?{id:project.id,startDate:expectedProjects.find(row=>Number(row.id)===id).startDate,endDate:expectedProjects.find(row=>Number(row.id)===id).endDate,tasks,changed}:{tasks,changed,...(op.kind==='projectTaskRemove'?{deleted:target}:{})};
   return {data,retained:{projectTasks:structuredClone(oldRows.filter(row=>Number(row.projectId)===id)),...(op.kind==='projectDates'?{project:structuredClone(project)}:{}),...(changedTarget?{createdOrEditedTaskId:changedTarget}:{})}};

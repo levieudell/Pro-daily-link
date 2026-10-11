@@ -185,6 +185,7 @@
     const pane = content.querySelector('[data-project-detail-pane="schedule"]');
     if (!pane) return;
     const sequence = ++scheduleTabSequence;
+    pane.innerHTML = '<div class="project-tab-empty"><strong>Loading schedule…</strong></div>';
     try {
       const taskList = await api(`/api/projects/${project.id}/tasks`);
       if (sequence !== scheduleTabSequence || !pane.isConnected) return;
