@@ -15,6 +15,7 @@ function el(tag, dataset = {}, classes = []) {
     },
     matches(sel) {
       return (sel === '[data-assignment]' && node.dataset.assignment !== undefined) ||
+             (sel === '[data-schedule-task]' && node.dataset.scheduleTask !== undefined) ||
              (sel === '[data-schedule-date]' && node.dataset.scheduleDate !== undefined);
     },
     closest(sel) {
@@ -32,7 +33,7 @@ function el(tag, dataset = {}, classes = []) {
   return node;
 }
 
-function setup({canManage = () => true} = {}) {
+function setup({canManage = () => true, blockSelector} = {}) {
   const block = el('div', {assignment: '7', member: '3'}, ['assignment']);
   const cell = el('div', {scheduleDate: '2026-10-13', scheduleMember: '9'}, ['schedule-cell']);
   const body = el('body');
@@ -40,7 +41,7 @@ function setup({canManage = () => true} = {}) {
   root.body = body;
   root.elementFromPoint = () => cell;
   const moves = [];
-  const handle = drag.attach(root, {canManage, onMove: payload => moves.push(payload)});
+  const handle = drag.attach(root, {canManage, onMove: payload => moves.push(payload), ...(blockSelector ? {blockSelector} : {})});
   return {root, body, block, cell, moves, handle};
 }
 
@@ -134,6 +135,37 @@ const touch = (target, extra = {}) => ({pointerId: 1, pointerType: 'touch', targ
         root.dispatch('pointerup', touch(block, {clientX: 5, clientY: 800}));
         assert.deepEqual(moves, []);
         assert.notEqual(block.dataset.touchDragged, '1');
+      }
+
+      // A custom block selector lets unassigned task chips ride the same drag:
+      // the drop payload carries the task id and no assignment identity.
+      {
+        const {root, body, cell, moves} = setup({blockSelector: '[data-schedule-task]'});
+        const chip = el('div', {scheduleTask: '5'}, ['schedule-task-chip']);
+        root.dispatch('pointerdown', touch(chip));
+        now += drag.HOLD_MS + 20;
+        root.dispatch('pointermove', touch(chip, {clientX: 12, clientY: 12}));
+        assert.equal(chip.classList.contains('dragging'), true);
+        assert.equal(body.children.length, 1);
+        assert.equal(body.children[0].dataset.scheduleTask, undefined, 'ghost carries no task identity');
+        root.dispatch('pointermove', touch(chip, {clientX: 200, clientY: 120}));
+        assert.equal(cell.classList.contains('drag-over'), true);
+        root.dispatch('pointerup', touch(chip, {clientX: 200, clientY: 120}));
+        assert.equal(moves.length, 1);
+        assert.equal(moves[0].taskId, 5);
+        assert.equal(moves[0].targetMemberId, 9);
+        assert.equal(moves[0].date, '2026-10-13');
+      }
+
+      // Default attach still ignores task chips (board assignments only).
+      {
+        const {root, moves} = setup();
+        const chip = el('div', {scheduleTask: '5'}, ['schedule-task-chip']);
+        root.dispatch('pointerdown', touch(chip));
+        now += drag.HOLD_MS + 20;
+        root.dispatch('pointermove', touch(chip, {clientX: 200, clientY: 120}));
+        root.dispatch('pointerup', touch(chip, {clientX: 200, clientY: 120}));
+        assert.deepEqual(moves, []);
       }
     } finally {
       Date.now = realNow;
