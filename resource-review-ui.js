@@ -2,14 +2,18 @@
 (function(){
   const key='pdl-resource-original-save-v1',known=new Set();let custody=null,busy=false;
   function routes(method,path,details){
+    if(method==='POST'&&path==='/api/reports'||method==='PATCH'&&/^\/api\/reports\/[1-9]\d*$/.test(path))return details===undefined?'reportPhotoCandidate':details?.files&&details?.report?method==='POST'?'reportPhotoCreate':'reportPhotoEdit':null;
     if(method==='POST'){
+      if(path==='/api/photos')return 'photoUpload';
+      if(path==='/api/estimate-imports/analyze')return 'estimatePdfIntake';
+      if(/^\/api\/projects\/[1-9]\d*\/plans$/.test(path))return 'planUpload';
       const exact={'/api/customers':'customerCreate','/api/projects':'projectCreate','/api/team':'teamCreate','/api/crews':'crewCreate','/api/company-activities':'activityCreate','/api/daily-templates':'templateCreate','/api/daily-templates/default':'templateDefault','/api/catalog':'catalogCreate','/api/subcontractors':'subcontractorCreate'};
       if(exact[path])return exact[path];
       if(/^\/api\/catalog\/[1-9]\d*\/apply$/.test(path))return 'catalogApply';
       if(/^\/api\/projects\/[1-9]\d*\/tasks$/.test(path))return 'projectTaskCreate';
       if(/^\/api\/project-tasks\/[1-9]\d*\/assign$/.test(path))return 'projectTaskAssign';
       if(/^\/api\/projects\/[1-9]\d*\/estimate-items$/.test(path))return 'estimateItemCreate';
-      if(/^\/api\/projects\/[1-9]\d*\/estimate-proposals$/.test(path))return 'estimateProposalCreate';
+      if(/^\/api\/projects\/[1-9]\d*\/estimate-proposals$/.test(path))return details?.data?'estimatePdfProposal':'estimateProposalCreate';
       if(/^\/api\/projects\/[1-9]\d*\/estimate-proposals\/[1-9]\d*\/approve$/.test(path))return 'estimateProposalApprove';
       if(/^\/api\/estimate-imports\/[1-9]\d*\/approve$/.test(path))return 'estimateImportApprove';
     }
@@ -73,7 +77,7 @@
   async function review(operation,opening,send){return new Promise((resolve,reject)=>{
     const dialog=document.createElement('dialog');dialog.id='resource-action-review';dialog.dataset.workspaceDialog='resource';
     dialog.innerHTML='<h2>Review resource change</h2><pre style="white-space:pre-wrap;max-height:35vh;overflow:auto"></pre><label>Reason for this change <textarea maxlength="500" required></textarea></label><p role="status"></p><label><input type="checkbox" disabled> I reviewed the server preview and confirm this change.</label><div class="modal-actions"><button type="button" class="secondary">Cancel</button><button type="button" class="primary">Preview change</button></div>';
-    dialog.querySelector('pre').textContent=display(operation.details);let preview=null,working=false,settled=false;
+    dialog.querySelector('pre').textContent=display(reviewDetails(operation));let preview=null,working=false,settled=false;
     const finish=value=>{if(settled)return;settled=true;observer.disconnect();window.removeEventListener('blur',cancel);document.removeEventListener('visibilitychange',hidden);window.removeEventListener('hashchange',cancel);dialog.close();dialog.remove();resolve(value);};
     const cancel=()=>finish(null),hidden=()=>{if(document.hidden)cancel();};
     const observer=new MutationObserver(()=>{if(!dialog.isConnected&&!settled){settled=true;observer.disconnect();window.removeEventListener('blur',cancel);document.removeEventListener('visibilitychange',hidden);window.removeEventListener('hashchange',cancel);reject(fail('Workspace changed. Review again.'));}});observer.observe(document.body,{childList:true});
@@ -94,10 +98,16 @@
     };
     document.body.append(dialog);dialog.showModal();
   });}
+  function reviewDetails(operation){
+    const details={...operation.details};delete details.data;delete details.assetId;
+    if(details.files)details.files=details.files.map(file=>({name:file.name,type:file.type,bytes:file.data?Math.floor((file.data.length-file.data.indexOf(',')-1)*3/4):undefined}));
+    return details;
+  }
   async function request(path,options,send){
     if(!window.pdlWorkspaceActions?.enabled())return send(path,options);
     const method=String(options.method||'GET').toUpperCase();if(!routes(method,path))return send(path,options);
     const details=options.body?JSON.parse(options.body):{},kind=routes(method,path,details);
+    if(!kind)return send(path,options);
     if(kind==='mixedProjectChange')throw fail('Review project dates and contract value as separate changes.');
     if(busy||unresolved()||window.pdlWorkspaceSave?.read()){draw();throw fail('Check the previous save result before making another change.');}busy=true;
     try{
@@ -106,7 +116,7 @@
       const current=await window.pdlWorkspaceActions.identity();if(current.authority!==opening.authority||current.sessionBinding!==opening.sessionBinding||preview.authorityBefore!==opening.authority||Date.parse(preview.expiresAt)<=Date.now())throw fail('Company changed. Review a new preview.');
       const proof={token:preview.token,version:preview.version,confirmed:true,requestId:crypto.randomUUID()};custody=remember(current,method,path,proof);
       const result=await send(path,{...options,body:JSON.stringify(proof),onAcknowledged:()=>{}});finish(proof.requestId);custody=null;
-      try{await refresh();}catch(error){error.saved=true;error.message='Saved. Refresh the workspace before continuing.';throw error;}return result;
+      if(!['reportPhotoCreate','reportPhotoEdit'].includes(kind)){try{await refresh();}catch(error){error.saved=true;error.message='Saved. Refresh the workspace before continuing.';throw error;}}return result;
     }finally{custody=null;busy=false;}
   }
   function draw(){
@@ -129,5 +139,5 @@
       const historyKey=key+'-retired',history=JSON.parse(sessionStorage.getItem(historyKey)||'[]');if(!Array.isArray(history)||history.length>=100||JSON.stringify(history).length>50000)throw fail('Browser result history needs review.');let entry;if(row)entry={companyId:row.companyId,actorId:row.actorId,requestId:row.requestId,method:row.method,path:row.path};else{const raw=sessionStorage.getItem(key);if(raw===null)throw fail('The result marker changed. Review again.');const markerHash=[...new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(raw)))].map(value=>value.toString(16).padStart(2,'0')).join('');if(raw!==sessionStorage.getItem(key))throw fail('The result marker changed. Review again.');entry={companyId:current.companyId,actorId:current.actorId,markerHash};}sessionStorage.setItem(historyKey,JSON.stringify([...history,{...entry,result:'unknown',retiredAt:new Date().toISOString()}]));if(row)finish(row.requestId);else{sessionStorage.removeItem(key);if(sessionStorage.getItem(key)!==null)throw fail('The result marker could not be retired.');draw();}
     }catch(error){box.querySelector('[role=status]').textContent=error.message;}};box.append(section);
   }
-  window.pdlResourceActions={request,read,draw,unresolved,pending:()=>custody?{...custody}:null};
+  window.pdlResourceActions={request,read,draw,unresolved,refreshReport:refresh,pending:()=>custody?{...custody}:null};
 })();

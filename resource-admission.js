@@ -17,6 +17,7 @@ const exact = (value, keys) => input.object(value, keys) && Object.keys(value).l
 const timestamp = value => typeof value === 'string' && Number.isFinite(Date.parse(value)) && new Date(value).toISOString() === value;
 const fail = input.fail;
 function reviewTarget(db, op) {
+  if(input.extension(op)===require('./resource-assets'))return null;
   const estimates=op.kind.startsWith('estimate'),reports=['reportDisposition','reportSafety','reportRate','reportRemove'].includes(op.kind);
   if(!estimates&&!reports&&op.kind!=='projectRateSettings')return null;
   const parts=op.path.split('/'),report=reports?db.reports.find(row=>row.id===Number(parts[3])):null;
@@ -88,7 +89,7 @@ function createHandler(h) {
     const auth = fresh(req, db); input.authorize(db, auth, op, h);
     const details = structuredClone(op.details); delete details.contractValueTracking;
     const actorRequest = { auth, headers: req.headers };
-    let result = await h.run(actorRequest, { ...op, details: op.kind === 'companySettings' ? details : op.details }, db);
+    let result = input.extension(op)===require('./resource-assets') ? await require('./resource-assets').execute(db,auth,op,h,req) : await h.run(actorRequest, { ...op, details: op.kind === 'companySettings' ? details : op.details }, db);
     if (result.response.status >= 400) fail(result.response.status, result.response.data?.error || 'Resource change unavailable.');
     if (op.kind === 'companySettings' && Object.hasOwn(op.details, 'contractValueTracking')) {
       result = await h.run(actorRequest, { method: 'PATCH', path: '/api/company/contract-value-tracking', details: { enabled: op.details.contractValueTracking } }, result.candidate);
@@ -96,11 +97,11 @@ function createHandler(h) {
     }
     const afterAuth = fresh(req, result.candidate);
     const family = input.extension(op); if (family?.prepareCandidate) family.prepareCandidate(db, result.candidate, op, afterAuth, h, input);
-    const checked = delta.validate(db, result.candidate, op, afterAuth, h);
-    return { candidate: result.candidate, status: op.kind.endsWith('Create') || op.kind === 'catalogApply' ? 201 : 200, data: checked.data, retained: checked.retained, impact: impact(db, result.candidate, op, checked), afterAuth };
+    const checked = await delta.validate(db, result.candidate, op, afterAuth, h);
+    return { candidate: result.candidate, status: op.kind==='reportPhotoEdit'?200:op.kind.endsWith('Create') || op.kind === 'catalogApply' || input.extension(op)===require('./resource-assets') ? 201 : 200, data: checked.data, retained: checked.retained, impact: impact(db, result.candidate, op, checked), afterAuth };
   }
   function publicImpact(db,auth,value){
-    const result={kind:value.kind,details:value.details,...(value.taskChanges?{taskChanges:value.taskChanges}:{}),...(value.taskAssignment?{taskAssignment:value.taskAssignment}:{}),...(['owner','admin'].includes(auth.user.role)&&value.subcontractorEffects?{subcontractorEffects:value.subcontractorEffects}:{})};
+    const result={kind:value.kind,details:['photoUpload','planUpload','estimatePdfIntake','estimatePdfProposal','reportPhotoCreate','reportPhotoEdit'].includes(value.kind)?require('./resource-assets').publicDetails({details:value.details}):value.details,...(value.taskChanges?{taskChanges:value.taskChanges}:{}),...(value.taskAssignment?{taskAssignment:value.taskAssignment}:{}),...(['owner','admin'].includes(auth.user.role)&&value.subcontractorEffects?{subcontractorEffects:value.subcontractorEffects}:{})};
     if(!['owner','admin'].includes(auth.user.role))return result;
     const gates=require('./capability-registry').effective(db,auth.user),allowed=new Set(['projects','team',...(gates.scheduling.view?['assignments']:[]),...(gates.daily.viewReports?['reports']:[]),...(gates.daily.viewWorkdays?['workdays']:[]),...(gates.timeReview.viewCards?['timeCards']:[])]);
     return {...result,affectedMemberCount:value.affectedMembers.length,affectedAccountCount:value.affectedAccounts.length,accountChanges:value.accountScopes.map(row=>({id:row.id,role:row.role,changes:Object.keys(row.before).filter(name=>allowed.has(name)).map(name=>({collection:name,removed:row.before[name].filter(id=>!row.after[name].includes(id)).length,added:row.after[name].filter(id=>!row.before[name].includes(id)).length})).filter(change=>change.removed||change.added),...(h.canViewPricing(db,auth.user)&&row.before.pricing!==row.after.pricing?{pricingBefore:row.before.pricing,pricingAfter:row.after.pricing}:{})})).filter(row=>row.changes.length||Object.hasOwn(row,'pricingBefore'))};
@@ -135,6 +136,7 @@ function createHandler(h) {
     if (!(method === row.operation.method && url.pathname === row.operation.path || method === 'POST' && url.pathname === '/api/resources/original-result')) fail(409, 'Unexpected resource receipt delivery.');
     const replay=context.response.data.originalSaveResult===true;
     context.response.data=lookup?{originalSaveResult:true,receipt:{id:row.id,token:row.previewId,version:row.version,requestId:row.requestId,method:row.operation.method,path:row.operation.path,committedRevision:row.committedRevision,status:'committed'}}:{...currentResult(db,auth,row,!replay),...(replay?{originalSaveResult:true}:{})};
+    if(!lookup&&!replay&&['photoUpload','planUpload'].includes(row.operation.kind))context.response.data=context.response.data.files;
     return { purpose:lookup?outcomePurpose:purpose, receiptId: row.id, token: row.previewId, version: row.version, requestId: row.requestId, method: row.operation.method, path: row.operation.path, companyId: row.companyId, actorId: row.actorId, sessionBinding: current.sessionBinding, originalAuthority:row.authorityBefore, from: lookup?current.authority:row.authorityBefore, to: lookup?current.authority:row.authorityAfter };
   }
   async function crewRead(req, res) {
@@ -156,7 +158,9 @@ function createHandler(h) {
   async function handle(req, res, url) {
     const preview = req.method === 'POST' && url.pathname === '/api/resources/preview';
     const lookup = req.method === 'POST' && url.pathname === '/api/resources/original-result';
-    const selected = input.route(req.method, url.pathname);
+    const photoRoute=req.method==='POST'&&url.pathname==='/api/reports'||req.method==='PATCH'&&/^\/api\/reports\/[1-9]\d*$/.test(url.pathname),photoEnvelope=photoRoute?await h.body(req):null;
+    const retainedPhotoOperation=photoEnvelope&&(h.readDb()[previews]||[]).find(row=>row.id===photoEnvelope.token&&row.operation.path===url.pathname&&row.operation.method===req.method&&row.operation.kind.startsWith('reportPhoto'));
+    const selected = input.route(req.method, url.pathname)||(retainedPhotoOperation?retainedPhotoOperation.operation.kind:null);
     if (!preview && !lookup && !selected && !(req.method === 'GET' && ['/api/crews','/api/crews/eligible-members'].includes(url.pathname))) return false;
     try {
       if (url.search) fail(400, 'Resource operations accept no query overrides.');
@@ -167,7 +171,9 @@ function createHandler(h) {
       const value = await h.body(req); await h.assertCurrent(req); const auth = fresh(req, db), opening = h.authority(db, auth);
       if (preview) {
         if (!exact(value, ['operation', 'expectedRevision', 'reason']) || value.expectedRevision !== h.revision()) fail(409, 'Refresh before reviewing this resource change.');
-        const op = input.parse(value.operation), reason = input.text(value.reason, 500, true), proposed = await execute(req, db, op); await h.assertCurrent(req);
+        let op=input.parse(value.operation);const family=input.extension(op);
+        if(family===require('./resource-assets'))op=await h.assetCustody.prepareOperation(db,auth,op,req);
+        const reason = input.text(value.reason, 500, true), proposed = await execute(req, db, op); await h.assertCurrent(req);
         const at = Date.now(), row = sign({ id: crypto.randomUUID(), purpose, companyId: db.company.id, actorId: auth.user.id, actorRole:auth.user.role, sessionHash: auth.session.tokenHash, sessionBinding: opening.sessionBinding, authorityBefore: opening.authority, operation: op, version: version(db, auth), openingRevision:h.revision(),reviewRevision:h.revision()+1, createdAt: new Date(at).toISOString(), expiresAt: new Date(Math.min(at + 600000, Date.parse(auth.session.expiresAt))).toISOString(), reason, impact: proposed.impact });
         if (Buffer.byteLength(JSON.stringify(db[receipts] || [])) + Buffer.byteLength(JSON.stringify({result:proposed.data,retained:proposed.retained,operation:op})) + 30000 > 8000000) fail(409, 'Resource receipt capacity needs review before another save.');
         const target=reviewTarget(db,op);
@@ -175,8 +181,8 @@ function createHandler(h) {
         h.json(res, 200, { token: row.id, version: row.version, reason, impact: publicImpact(db,auth,row.impact), proposed: proposed.data, ...(target?{reviewTarget:target}:{}), authorityBefore: row.authorityBefore, expiresAt: row.expiresAt }); return true;
       }
       if (lookup) {
-        if (!exact(value, ['token', 'version', 'requestId', 'method', 'path']) || !uuid(value.token) || !hash(value.version) || !requestId(value.requestId) || !input.route(value.method, value.path)) fail(400, 'Use the original bounded resource receipt identity.');
-        const row = original(db, auth, value,true); h.returnReceipt(value); h.json(res, 200, { originalSaveResult: true, receipt:{id:row.id,token:row.previewId,version:row.version,requestId:row.requestId,method:row.operation.method,path:row.operation.path,committedRevision:row.committedRevision,status:'committed'} }); return true;
+        if (!exact(value, ['token', 'version', 'requestId', 'method', 'path']) || !uuid(value.token) || !hash(value.version) || !requestId(value.requestId)) fail(400, 'Use the original bounded resource receipt identity.');
+        const row = original(db, auth, value,true); if (!input.route(value.method,value.path) && !['reportPhotoCreate','reportPhotoEdit'].includes(row.operation.kind)) fail(400,'Use the original bounded resource receipt identity.'); h.returnReceipt(value); h.json(res, 200, { originalSaveResult: true, receipt:{id:row.id,token:row.previewId,version:row.version,requestId:row.requestId,method:row.operation.method,path:row.operation.path,committedRevision:row.committedRevision,status:'committed'} }); return true;
       }
       const proof = envelope(value), tuple = { ...delta.omit(proof, ['confirmed']), method: req.method, path: url.pathname };
       const prior = (db[receipts] || []).find(row => row.actorId === auth.user.id && row.requestId === proof.requestId);
@@ -188,7 +194,7 @@ function createHandler(h) {
       if (!delta.equal(row.impact, result.impact)) fail(409, 'Resource consequences changed. Review again.');
       result.candidate.auditLog ||= []; result.candidate.auditLog.push({ id: crypto.randomUUID(), type: 'resource_changed', actorId: auth.user.id, actor: auth.user.name, at: new Date().toISOString(), resourceKind: row.operation.kind, previewId: row.id, requestId: proof.requestId, reason: row.reason, detail: 'Confirmed resource effects retained with the original receipt.' });
       if(row.operation.kind==='projectTaskAssign'){const ids=(result.candidate.assignments||[]).filter(value=>!delta.equal(value,(db.assignments||[]).find(old=>old.id===value.id))).map(value=>value.id);result.retained.assignmentJobs=h.stageTaskAssignments(result.candidate,{auth:result.afterAuth},ids,row.operation.details.memberId);fresh(req,result.candidate);}
-      result.candidate[receipts] ||= []; result.candidate[receipts].push(sign({ id: crypto.randomUUID(), purpose, companyId: db.company.id, actorId: auth.user.id, actorRole:auth.user.role, sessionHash: auth.session.tokenHash, sessionBinding: opening.sessionBinding, authorityBefore: opening.authority, authorityAfter: h.authority(result.candidate, result.afterAuth).authority, operation: row.operation, version: row.version, previewId: row.id, requestId: proof.requestId, reason: row.reason, reviewRevision:row.reviewRevision,committedRevision:h.revision()+1, createdAt: new Date().toISOString(), status: result.status, result: result.data, retained: result.retained }));
+      result.candidate[receipts] ||= []; result.candidate[receipts].push(sign({ id: crypto.randomUUID(), purpose, companyId: db.company.id, actorId: auth.user.id, actorRole:auth.user.role, sessionHash: auth.session.tokenHash, sessionBinding: opening.sessionBinding, authorityBefore: opening.authority, authorityAfter: h.authority(result.candidate, result.afterAuth).authority, operation: structuredClone(row.operation), version: row.version, previewId: row.id, requestId: proof.requestId, reason: row.reason, reviewRevision:row.reviewRevision,committedRevision:h.revision()+1, createdAt: new Date().toISOString(), status: result.status, result: structuredClone(result.data), retained: structuredClone(result.retained) }));
 
       valid(result.candidate); h.writeDb(result.candidate); h.returnReceipt(tuple); h.json(res, result.status, result.data); return true;
     } catch (error) { if (![400, 401, 402, 403, 404, 409, 503].includes(error.statusCode)) throw error; h.json(res, error.statusCode, { error: error.message }); return true; }

@@ -22,6 +22,10 @@ function createWorkspace(h) {
     return auth;
   }
   const common = { readDb: h.readDb, writeDb: h.writeDb, body: h.body, json: h.json, raw: h.raw, revision: () => h.context().transactionalRevision, assertCurrent, run: h.run, guardDeadline: value => { const ctx=h.context();ctx.businessDeadline=new Date(Math.min(Date.parse(value),ctx.businessDeadline?Date.parse(ctx.businessDeadline):Infinity)).toISOString(); } };
+  const assetCustody=require('./resource-assets').createCustody({...common,key:options.workspaceKey,canViewPricing:h.canViewPricing,canAccessProject:h.canAccessProject,pdfAnalyze:options.pdfAnalyze});
+  common.assetCustody=assetCustody;
+  const protectedAssets=require('./protected-assets-admission').createHandler({...common,canViewPricing:h.canViewPricing,canAccessProject:h.canAccessProject,readAsset:options.readAsset});
+  const assistant=require('./assistant-admission').createHandler({...common,key:options.workspaceKey,context:h.context,repository:options.repository,companyId:options.companyId,ai:options.assistantAI,authenticate:h.authenticate,accountAccess:h.accountAccess,authority:(db,auth)=>require('./compat-workspace-authority').authority(db,auth,h.context()?.transactionalRevision??0,options.lifecycle,h.accountAccess)});
   const notes = require('./notes-admission').createHandler({ ...common, run: async (req, res, url) => { const result = await h.run(req, { method: req.method, path: url.pathname + url.search, details: ['POST', 'PATCH'].includes(req.method) ? await h.body(req) : {} }); if (result.dirty && result.response.status < 400) h.writeDb(result.candidate); if (Object.hasOwn(result.response, 'raw')) h.raw(res, result.response); else h.json(res, result.response.status, result.response.data); }, response: () => h.context().response, baselineProjectAllowed: h.canAccessProject });
   const daily = require('./daily-admission').createHandler({ ...common, adoptActual: h.adoptAssignmentActualTimes, presentReport: h.presentReport, exportProjection: h.dailyExportProjection });
   const writes = require('./time-write-admission').createHandler({ ...common, activities: db => h.companyActivities(structuredClone(db)) });
@@ -179,7 +183,7 @@ function createWorkspace(h) {
   }
   async function handle(req, res, url) {
     const context = h.context(); context.route = url.pathname; context.openingSnapshot ||= structuredClone(context.db);
-    validateWorkspace(context.db);repairs.valid(context.db);resources.valid(context.db);
+    validateWorkspace(context.db);repairs.valid(context.db);resources.valid(context.db);assetCustody.valid(context.db);assistant.valid(context.db);
     policyApi.ledger(context.db,options.workspaceKey);scheduleWorkflows.ledger(context.db);
     for(const [name,handler] of [['workspaceComplianceJobs',compliance],['workspaceBillingJobs',billing],['workspaceAssignmentJobs',assignmentDelivery]]){if(handler)handler.valid(context.db);else if(Object.hasOwn(context.db,name))fail(503,'Stored workspace dependency needs its reviewed contract.');}
     try {
@@ -197,7 +201,7 @@ function createWorkspace(h) {
         if(input.reportId!=null&&(!Number.isSafeInteger(input.reportId)||!report||Number(db.projects[report.project].id)!==input.projectId||!dailyAccess.reportInScope(db,user,report,'editReports'))||input.reportId==null&&!dailyAccess.access(db,user).createReports)fail(403,'Daily draft permission required.');
         await assertCurrent(req);h.json(res,200,dto.localDaily(h.localDailyExtract(input.notes,input.language)));return true;
       }
-      if (await resources.handle(req,res,url) || await policy(req,res,url) || await scheduleWorkflows.handle(req,res,url) || await direct(req, res, url) || await leave(req, res, url) || await review(req, res, url) || await writes(req, res, url) || await daily(req, res, url) || await notes(req, res, url)) return true;
+      if (await protectedAssets(req,res,url) || await assistant.handle(req,res,url) || await resources.handle(req,res,url) || await policy(req,res,url) || await scheduleWorkflows.handle(req,res,url) || await direct(req, res, url) || await leave(req, res, url) || await review(req, res, url) || await writes(req, res, url) || await daily(req, res, url) || await notes(req, res, url)) return true;
       fail(503, 'Workspace operation is outside this source gate.');
     } catch (error) { if (![400, 401, 402, 403, 404, 409, 503].includes(error.statusCode)) throw error; h.json(res, error.statusCode, { error: error.message }); return true; }
   }
@@ -216,6 +220,6 @@ function createWorkspace(h) {
     context.finalizedRevision=loaded.revision;context.finalizedContentHash=loaded.contentHash;
     if(!['/api/assignments','/api/schedule/repeat-week'].includes(url.pathname)&&!taskAssignment)context.response.data=url.pathname.startsWith('/api/billing')?{...dto.billing(h.billingSummary(loaded.snapshot)),...(billingResult?{refresh:{status:billingResult.status,...(billingResult.observed?{observed:billingResult.observed,jobId:billingResult.jobId}:{})}}:{})}:{ok:true};
   }
-  return { supported: routes.supported, handle, finalize, resourceTransition:resources.deliver, rolePolicies:true };
+  return { supported: routes.supported, handle, finalize, resourceTransition:(db,auth,context,url,method)=>{assistant.deliver(db,auth,context);return resources.deliver(db,auth,context,url,method);}, rolePolicies:true };
 }
 module.exports = { createWorkspace };

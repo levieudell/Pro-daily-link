@@ -5,13 +5,13 @@ const { createIntentService, pricedModel } = require('./project-assistant-intent
 const { createBudget, createSharedStore, digest } = require('./project-assistant-budget');
 const roles = new Set(['owner','admin','project_manager']);
 const uuid = value => typeof value === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
-function createAIHandler({ readDb, readFreshDb = readDb, authenticatedUser, accountAccess, body, json, supabase, store, now = () => new Date(), adapter, enabled, signingKey }) {
+function createAIHandler({ readDb, readFreshDb = readDb, authenticatedUser, accountAccess, body, json, supabase, store, now = () => new Date(), adapter, enabled, signingKey, actorBinding }) {
   function authorize(req, db) {
     const user = authenticatedUser(req, db);
     if (!permittedCompany(db.company?.id)) throw Error('Assistant pilot access is unavailable.');
     if (!user || !roles.has(user.role) || user.companyId != null && user.companyId !== db.company.id || req.auth?.companyId != null && req.auth.companyId !== db.company.id || user.status !== 'Active') throw Error('Your assistant access changed. Sign in or use your permitted manual screens.');
     if (accountAccess(db.company).locked) throw Error('Company access is unavailable.');
-    return { db, user, actor: { companyId: db.company.id, userId: user.id, role: user.role, permissions: user.permissions || {}, projectIds: user.projectIds || [], assignedCrews: user.assignedCrews || [], timezone: db.company.timezone || '', policy: policyAuthority(db, user) } };
+    return { db, user, actor: { companyId: db.company.id, userId: user.id, role: user.role, permissions: user.permissions || {}, projectIds: user.projectIds || [], assignedCrews: user.assignedCrews || [], timezone: db.company.timezone || '', policy: policyAuthority(db, user), ...(actorBinding?{sessionBinding:actorBinding(req,db)}:{}) } };
   }
   const budget = createBudget(store || createSharedStore(supabase), now);
   function context({ db, user }, projectId) {

@@ -59,6 +59,7 @@ jobs:
       - run: node compat-workspace-client.test.js
       - run: node compat-workspace-delivery.test.js
       - run: node compat-workspace.test.js
+      - run: node roles-rollout-admission-http.test.js
       - run: node resource-admission-http.test.js
       - run: node resource-client.test.js
       - run: node resource-recovery-client.test.js
@@ -106,6 +107,9 @@ jobs:
         env:
           TEST_COMPAT_DATABASE_URL: ""
       - run: node resource-report-variants-browser.test.js --viewport=mobile
+        env:
+          TEST_COMPAT_DATABASE_URL: ""
+      - run: node roles-rollout-browser.test.js
         env:
           TEST_COMPAT_DATABASE_URL: ""
       - uses: actions/upload-artifact@v4

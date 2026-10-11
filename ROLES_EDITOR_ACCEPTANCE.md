@@ -1,3 +1,7 @@
+# Current local continuation
+
+The current unpublished rollout candidate integrates the four named file/photo/PDF/Assistant boundaries described in [workflow availability](ROLES_EDITOR_WORKFLOW_AVAILABILITY.md). The inherited acceptance account below records the earlier sealed phase; its unavailable-file/Assistant statements describe that preserved phase, not the current source. Exact current-source test receipts accompany the local handoff. The published d4975f9 and frozen659123c sources remain untouched.
+
 # Existing Company Roles editor: bounded local acceptance continuation
 
 This continuation starts at sealed local acceptance `f932482f4930da8652755d6576691ec7cf3c0bc7`, itself based on preserved `d4975f96aa7b28d5b34f2a0a4f4ad47452af739b`. It does not replace that upload target. Work uses code and owned synthetic fixtures only; production access, settings, data, keys, schema, deployment and grants are unchanged. Employee archive integration is excluded.

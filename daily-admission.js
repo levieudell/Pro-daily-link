@@ -135,21 +135,22 @@ function reportProjection(db, user, report, presentReport, liveProject = true) {
   return result;
 }
 const dayProjection = row => require('./compat-workspace-projections').workday(row);
+// Reuse the existing two finite manual handlers for daily safety fields.
+async function executeReport(req, operation, run, presentReport, source) {
+  const compound = ['createReport', 'editReport'].includes(operation.action) && safetyFields.some(name => Object.hasOwn(operation.details, name));
+  const executed = await run(req, compound ? { ...operation, details: omit(operation.details, safetyFields) } : operation, source);
+  if (!compound || executed.response.status >= 400) return executed;
+  const op = safetyVariants.parse({ kind: 'reportSafety', method: 'PATCH', path: '/api/reports/' + executed.response.data.id + '/safety', details: pick(operation.details, safetyFields) });
+  const followed = await run(req, op, executed.candidate);
+  if (followed.response.status >= 400) return followed;
+  safetyVariants.validateSafetyConsequence(executed.candidate, followed.candidate, op, req.auth, { presentReport });
+  return { ...followed, dirty: executed.dirty || followed.dirty, response: { ...followed.response, status: executed.response.status } };
+}
 function createHandler({ readDb, writeDb, body, json, raw, revision, run, assertCurrent, presentReport, exportProjection, adoptActual, guardDeadline = () => {}, now = () => Date.now() }) {
   const present = (db, user, data, operation) => operation.action === 'captureExport' ? exportProjection(db, user, data) : operation.action === 'startWorkday' ? dayProjection(data) : operation.action === 'endWorkday' ? { workday: dayProjection(data.workday), report: reportProjection(db, user, data.report, presentReport), autoAdoptEnabled:db.company.autoAdoptActualTimes===true, ...(Object.hasOwn(data,'adopted')?{adopted:autoAdopt.present(db,user,operation,data.adopted)}:{}) } : reportProjection(db, user, data, presentReport);
   async function execute(req,operation){
     const source=readDb(), enabled=operation.action==='endWorkday'&&source.company.autoAdoptActualTimes===true;
-    if(!enabled){
-      const compound=['createReport','editReport'].includes(operation.action)&&safetyFields.some(name=>Object.hasOwn(operation.details,name));
-      if(!compound)return run(req,operation);
-      const executed=await run(req,{...operation,details:omit(operation.details,safetyFields)});
-      if(executed.response.status>=400)return executed;
-      const report=executed.response.data, op=safetyVariants.parse({kind:'reportSafety',method:'PATCH',path:'/api/reports/'+report.id+'/safety',details:pick(operation.details,safetyFields)});
-      const followed=await run(req,op,executed.candidate);
-      if(followed.response.status>=400)return followed;
-      safetyVariants.validateSafetyConsequence(executed.candidate,followed.candidate,op,req.auth,{presentReport});
-      return {...followed,dirty:executed.dirty||followed.dirty,response:{...followed.response,status:executed.response.status}};
-    }
+    if(!enabled)return executeReport(req,operation,run,presentReport);
     const base={...source,company:{...source.company,autoAdoptActualTimes:false}},executed=await run(req,operation,base);
     if(executed.response.status>=400)return executed;
     if(!equal(executed.candidate.company,base.company))fail(409,'Workday completion cannot change company settings');
@@ -220,4 +221,4 @@ function createHandler({ readDb, writeDb, body, json, raw, revision, run, assert
   };
 }
 function effect(db, operation) { return canonicalHash(operation.action === 'captureExport' ? db.reportingExports || [] : { reports: db.reports || [], workdays: db.workdays || [], timeCards: db.timeCards || [], projects: db.projects || [], ...(operation.action==='endWorkday'&&db.company.autoAdoptActualTimes===true?{assignments:db.assignments||[]}: {}) }); }
-module.exports = { definitions, parse, unique, authority, authorize, validateDelta, reportProjection, dayProjection, createHandler };
+module.exports = { definitions, parse, unique, authority, authorize, validateDelta, reportProjection, dayProjection, executeReport, createHandler };

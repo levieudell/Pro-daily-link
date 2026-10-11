@@ -52,7 +52,7 @@ function assignment(row) {
   return dto;
 }
 function report(row, pricing) {
-  const dto = pick(row, ['id', 'project', 'date', 'dateIso', 'foreman', 'crew', 'sourceAssignmentId', 'status', 'notes', 'originalNotes', 'noteLanguage', 'englishTranslation', 'summary', 'labor', 'quantity', 'issue', 'next', 'weather', 'temperature', 'materials', 'equipment', 'delays', 'safety', 'signature', 'source', 'subcontractorId', 'reportType', 'safetyTalk', 'safetyTalkAttendees', 'safetyInspection', 'noSafetyObservations', 'workdayId', 'templateId', 'templateVersion', 'createdAt', 'updatedAt']);
+  const dto = pick(row, ['id', 'project', 'date', 'dateIso', 'foreman', 'crew', 'sourceAssignmentId', 'status', 'notes', 'originalNotes', 'noteLanguage', 'englishTranslation', 'summary', 'labor', 'quantity', 'issue', 'next', 'weather', 'temperature', 'materials', 'equipment', 'delays', 'safety', 'signature', 'source', 'subcontractorId', 'reportType', 'safetyTalk', 'safetyTalkAttendees', 'safetyInspection', 'safetyIncident', 'noSafetyObservations', 'workdayId', 'templateId', 'templateVersion', 'createdAt', 'updatedAt']);
   dto.productionEntries = list(row.productionEntries, entry => pick(entry, ['estimateItemId', 'catalogItemId', 'description', 'unit', 'quantity', 'laborHours', 'custom', 'scopeEvidence', 'scopeUnverified', 'scopeChoice', 'needsScopeConfirmation', 'needsLaborConfirmation', 'potentialExtraWork']));
   dto.workSuggestions = list(row.workSuggestions, entry => pick(entry, ['estimateItemId', 'catalogItemId', 'description', 'workDescription', 'unit', 'quantity', 'laborHours', 'quantityPending', 'laborHoursPending', 'custom', 'scopeEvidence', 'scopeUnverified', 'scopeChoice', 'needsScopeConfirmation', 'needsLaborConfirmation', 'potentialExtraWork']));
   dto.laborEntries = list(row.laborEntries, entry => pick(entry, ['memberId', 'hours', 'crew']));
@@ -115,7 +115,7 @@ function scoped(db, user, helpers) {
   base.assignments = scheduling.visibleAssignments(db, user).filter(row => assignmentIds.has(Number(row.id)) && base.projects.some(p => p.id === row.projectId)).map(row=>({...db.assignments.find(source=>Number(source.id)===Number(row.id)),...row}));
   base.timeCards = (base.timeCards || []).filter(row => timeReview.cardInScope(db, user, row));
   const visibleDays = new Set(base.workdays.map(row => row.id));
-  base.photos = (base.photos || []).filter(row => (!row.reportId || visibleReports.has(row.reportId)) && (!row.workdayId || visibleDays.has(row.workdayId)));
+  base.photos = daily.access(db,user).viewReports ? (base.photos || []).filter(row => (!row.reportId || visibleReports.has(row.reportId)) && (!row.workdayId || visibleDays.has(row.workdayId))) : [];
   // Metrics use the same filtered source records and the same remapped indexes.
   const gates=registry.effective(db,user),metricProjects=base.projects.map(row=>{const value={...row};if(!gates.daily.viewReports){delete value.progress;delete value.production;}return value;});
   const metrics = { ...db, projects: metricProjects, reports: base.reports, assignments: base.assignments, workdays: base.workdays, timeCards: base.timeCards, team: base.team, subcontractors: base.subcontractors || [] };

@@ -72,6 +72,7 @@ function stripPrivate(value) {
   if (!value || typeof value !== 'object') return value;
   const denied = new Set([COLLECTION, HISTORY, 'accountSecretEnvelopes', 'accountActionPreviews', 'accountActionReceipts', 'workspaceDirectPreviews', 'workspaceDirectReceipts', 'resourcePreviews', 'resourceReceipts', 'resourceReconciliations', 'scheduleWorkflowPreviews', 'scheduleWorkflowReceipts', 'workspaceAssignmentJobs', 'workspaceBillingJobs', 'workspaceBillingReceipts', 'workspaceComplianceJobs', 'workspaceReconciliations', 'rolePolicyPreviews', 'rolePolicyReceipts', 'rolePolicyAudit', 'custodyProof', 'dailyActionPreviews','dailyActionReceipts','timeWriterPreviews','timeWriterReceipts','timeReviewPreviews','timeReviewReceipts','timeOffActionReceipts','timeOffReviewPreviews','timeOffReviewReceipts', 'passwordHash', 'passwordSalt', 'setupHash', 'setupSalt', 'resetTokenHash', 'emailVerificationTokenHash', 'accountResetGeneration', 'accountVerificationGeneration', 'setupGeneration', 'setupIssuedEmail']);
   denied.add('assistantConfirmations');
+  denied.add('workspaceAssetCustody');denied.add('workspaceAssistantPreviews');denied.add('workspaceAssistantReceipts');
   return Object.fromEntries(Object.entries(value).filter(([name]) => !denied.has(name)).map(([name, child]) => [name, stripPrivate(child)]));
 }
 function createCredentialDelivery({ key, keyVersion = 'synthetic-v1', origin, load, commit, send, clock = Date.now }) {
