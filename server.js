@@ -1372,6 +1372,7 @@ async function api(req,res,url){
     const check = PDLProjectSchedule.validate(input, null, new Set((db.team || []).map(member => Number(member.id))));
     if (check.error) return json(res, 400, { error: check.error });
     if (!projectTaskPredicatesValid(db, project.id, check.value.predecessorIds)) return json(res, 400, { error: 'Link tasks from this project only' });
+    if (check.value.estimateItemId && !(project.estimateItems || []).some(item => Number(item.id) === Number(check.value.estimateItemId))) return json(res, 400, { error: 'Choose an estimate line from this project' });
     const task = { id: nextId(db.projectTasks), projectId: project.id, ...check.value, createdAt: new Date().toISOString(), createdBy: req.auth?.user.name || 'Office user' };
     db.projectTasks.push(task);
     const result = rescheduledTasks(db, project.id);
@@ -1386,6 +1387,7 @@ async function api(req,res,url){
     const check = PDLProjectSchedule.validate(input, task, new Set((db.team || []).map(member => Number(member.id))));
     if (check.error) return json(res, 400, { error: check.error });
     if (!projectTaskPredicatesValid(db, task.projectId, check.value.predecessorIds, task.id)) return json(res, 400, { error: 'Link tasks from this project only' });
+    if (check.value.estimateItemId && !((db.projects || []).find(p => Number(p.id) === Number(task.projectId))?.estimateItems || []).some(item => Number(item.id) === Number(check.value.estimateItemId))) return json(res, 400, { error: 'Choose an estimate line from this project' });
     const prospective = (db.projectTasks || []).filter(t => Number(t.projectId) === Number(task.projectId)).map(t => Number(t.id) === Number(task.id) ? { ...t, ...check.value } : t);
     const dryRun = PDLProjectSchedule.scheduleTasks(prospective, (db.projects || []).find(p => Number(p.id) === Number(task.projectId))?.startDate);
     if (dryRun.error) return json(res, 400, { error: dryRun.error });

@@ -52,11 +52,15 @@
     const dates = sorted.map(t => t.startDate).concat(sorted.map(t => t.endDate)).filter(Boolean).sort();
     const windowStart = dates[0], windowEnd = dates[dates.length - 1];
     const depsOptions = sorted.map(t => `<option value="${Number(t.id)}">${escapeHtml(t.name)}</option>`).join('');
+    const estimateItems = project.estimateItems || [];
+    const linkedEstimateIds = new Set((tasks || []).map(t => Number(t.estimateItemId)).filter(Boolean));
+    const estimatePick = (field, selected) => estimateItems.length ? `<select ${field} aria-label="Linked estimate line (optional)"><option value="">Custom task / milestone</option>${estimateItems.filter(item => !linkedEstimateIds.has(Number(item.id)) || Number(item.id) === Number(selected)).map(item => `<option value="${Number(item.id)}" ${Number(selected) === Number(item.id) ? 'selected' : ''}>${escapeHtml(item.name)} · ${Number(item.plannedQuantity) || 0} ${escapeHtml(item.unit || '')}</option>`).join('')}</select>` : '';
     const editorRow = task => `
       <tr class="project-schedule-edit-row" data-schedule-edit-row="${Number(task.id)}">
         <td colspan="6">
           <div class="project-schedule-editor">
             <label>Task<input type="text" data-edit-task-name value="${escapeHtml(task.name)}" maxlength="160"></label>
+            ${estimatePick('data-edit-task-estimate', task.estimateItemId)}
             <label>Working days<input type="number" data-edit-task-duration min="1" max="365" step="1" value="${Number(task.durationDays)}"></label>
             <label>Waits for<select data-edit-task-deps multiple size="${Math.min(4, Math.max(2, sorted.length))}">${depsOptions.replace(`value="${Number(task.id)}"`, 'value="" disabled')}</select></label>
             <div class="project-schedule-editor-actions"><button type="button" class="primary small" data-save-task-edit="${Number(task.id)}">Save task</button><button type="button" class="secondary small" data-cancel-task-edit>Cancel</button></div>
@@ -65,7 +69,7 @@
       </tr>`;
     const rows = sorted.map(task => (Number(editingId) === Number(task.id) && taskPermission('edit', project, task) ? editorRow(task) : `
       <tr data-schedule-task-row="${Number(task.id)}">
-        <td><strong>${escapeHtml(task.name)}</strong>${timelineRow(task, windowStart, windowEnd)}</td>
+        <td><strong>${escapeHtml(task.name)}</strong>${task.estimateItemId ? `<small class="project-schedule-est-tag">From estimate · ${escapeHtml(estimateItems.find(item => Number(item.id) === Number(task.estimateItemId))?.name || 'line item')}</small>` : ''}${timelineRow(task, windowStart, windowEnd)}</td>
         <td>${dependencyChips(sorted, task)}</td>
         <td>${Number(task.durationDays)}d</td>
         <td><small>${formatDate(task.startDate)} – ${formatDate(task.endDate)}</small></td>
@@ -82,7 +86,8 @@
         <span style="font-size:12px;color:#98a5a0;flex:1 1 180px">Tasks count working days from the start date. Change it any time and the dates follow.</span>
       </div>` : ''}
       ${create ? `<div class="project-schedule-add" data-schedule-add-form>
-        <input type="text" data-new-task-name placeholder="Task name, e.g. Set footings" maxlength="160" aria-label="Task name">
+        ${estimatePick('data-new-task-estimate', '')}
+        <input type="text" data-new-task-name placeholder="Task name or pick an estimate line above" maxlength="160" aria-label="Task name">
         <input type="number" data-new-task-duration min="1" max="365" step="1" value="1" aria-label="Working days">
         <select data-new-task-deps multiple size="${Math.min(4, Math.max(2, sorted.length))}" aria-label="Waits for">${depsOptions || '<option value="" disabled>No tasks yet</option>'}</select>
         <button type="button" class="primary" data-add-task>＋ Add task</button>
@@ -119,11 +124,16 @@
       } catch (error) { notify(error.message); }
     };
     const addButton = pane.querySelector('[data-add-task]');
+    const newEstimateSelect = pane.querySelector('[data-new-task-estimate]');
+    if (newEstimateSelect) newEstimateSelect.onchange = () => {
+      const item = (project.estimateItems || []).find(row => Number(row.id) === Number(newEstimateSelect.value)), nameInput = pane.querySelector('[data-new-task-name]');
+      if (item && nameInput && !nameInput.value.trim()) nameInput.value = item.name;
+    };
     if (addButton) addButton.onclick = async () => {
       if (!current() || !taskPermission('create', project)) return;
-      const name = pane.querySelector('[data-new-task-name]').value.trim(), durationDays = Number(pane.querySelector('[data-new-task-duration]').value), predecessorIds = selectedValues(pane.querySelector('[data-new-task-deps]'));
+      const name = pane.querySelector('[data-new-task-name]').value.trim(), durationDays = Number(pane.querySelector('[data-new-task-duration]').value), predecessorIds = selectedValues(pane.querySelector('[data-new-task-deps]')), estimateItemId = Number(pane.querySelector('[data-new-task-estimate]')?.value) || null;
       if (!name) return notify('Give the task a name first');
-      try { const payload = await api(`/api/projects/${project.id}/tasks`, { method: 'POST', body: JSON.stringify({ name, durationDays, predecessorIds }) }); await refresh(payload); notifyChanged(payload); }
+      try { const payload = await api(`/api/projects/${project.id}/tasks`, { method: 'POST', body: JSON.stringify({ name, durationDays, predecessorIds, estimateItemId }) }); await refresh(payload); notifyChanged(payload); }
       catch (error) { notify(error.message); }
     };
     pane.querySelectorAll('[data-task-status]').forEach(select => select.onchange = async () => {
@@ -143,9 +153,9 @@
     if (saveEdit) saveEdit.onclick = async () => {
       if (!current() || !taskPermission('edit', project, taskById(tasks, saveEdit.dataset.saveTaskEdit))) return;
       const row = pane.querySelector(`[data-schedule-edit-row="${saveEdit.dataset.saveTaskEdit}"]`);
-      const name = row.querySelector('[data-edit-task-name]').value.trim(), durationDays = Number(row.querySelector('[data-edit-task-duration]').value), predecessorIds = selectedValues(row.querySelector('[data-edit-task-deps]'));
+      const name = row.querySelector('[data-edit-task-name]').value.trim(), durationDays = Number(row.querySelector('[data-edit-task-duration]').value), predecessorIds = selectedValues(row.querySelector('[data-edit-task-deps]')), estimateItemId = Number(row.querySelector('[data-edit-task-estimate]')?.value) || null;
       if (!name) return notify('Give the task a name first');
-      try { const payload = await api(`/api/project-tasks/${saveEdit.dataset.saveTaskEdit}`, { method: 'PATCH', body: JSON.stringify({ name, durationDays, predecessorIds }) }); await refresh(payload); notifyChanged(payload); }
+      try { const payload = await api(`/api/project-tasks/${saveEdit.dataset.saveTaskEdit}`, { method: 'PATCH', body: JSON.stringify({ name, durationDays, predecessorIds, estimateItemId }) }); await refresh(payload); notifyChanged(payload); }
       catch (error) { notify(error.message); }
     };
     const cancelEdit = pane.querySelector('[data-cancel-task-edit]');
