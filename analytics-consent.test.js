@@ -1,14 +1,16 @@
 'use strict';
-// Analytics privacy posture: the HeyCatch tracker is consent-first and
-// public-pages-only. Signed-in app pages and subcontractor guest pages never
-// load it, no client-side identity is ever set, and the privacy policy
-// discloses what the remaining server-side billing events share.
+// Analytics privacy posture: the HeyCatch tracker and the Meta (Facebook)
+// ad-measurement pixel are consent-first and public-pages-only. Signed-in
+// app pages and subcontractor guest pages never load them, no client-side
+// identity is ever set, and the privacy policy discloses what the remaining
+// server-side billing events share.
 const assert = require('node:assert/strict'), fs = require('node:fs'), path = require('node:path');
 const { isPublicFile } = require('./public-file-policy');
 const analytics = fs.readFileSync('analytics.js', 'utf8');
 const app = fs.readFileSync('app.js', 'utf8');
 const server = fs.readFileSync('server.js', 'utf8');
 const privacy = fs.readFileSync('privacy.html', 'utf8');
+const signup = fs.readFileSync('signup.js', 'utf8');
 const read = file => fs.readFileSync(file, 'utf8');
 
 // The loader is consent-first: it never identifies anyone and initializes
@@ -35,9 +37,32 @@ assert.ok(!/PDLAnalytics|setIdentity|resetIdentity|identifyAnalyticsUser/.test(a
 // still present.
 assert.match(privacy, /HeyCatch/, 'policy names the analytics provider');
 assert.match(privacy, /consent banner/i, 'policy describes the opt-in');
-assert.match(privacy, /never runs inside the signed-in application/, 'policy promises the app is not tracked');
+assert.match(privacy, /never run inside the signed-in application/, 'policy promises the app is not tracked');
 assert.match(privacy, /account owner’s name and email/, 'policy discloses billing-event identity');
 assert.ok(server.includes('trackBillingEvent'), 'server billing events still exist for the policy to describe');
 assert.ok(server.includes("require('@heycatch/sdk')"), 'server-side provider wiring intact');
+
+// The Meta (Facebook) pixel ships with the same guarantees: it loads only
+// inside the consent-gated starter, uses the owner's pixel id, and its
+// script tag is injected nowhere else. The consent banner and the policy
+// must name Meta so the choice is informed.
+assert.ok(analytics.includes("PDL_FACEBOOK_PIXEL_ID = '2581023075730326'"), 'pixel id is wired to the owner account');
+assert.ok(analytics.indexOf("window.fbq('init', PDL_FACEBOOK_PIXEL_ID)") > analytics.indexOf('function startFacebookPixel'), 'pixel init lives inside the consent-gated starter');
+assert.ok(analytics.indexOf("window.fbq('track', 'PageView')") > analytics.indexOf('function startFacebookPixel'), 'PageView fires only after the pixel starts');
+assert.equal((analytics.match(/connect\.facebook\.net/g) || []).length, 1, 'pixel script is injected exactly once, inside the gated starter');
+assert.ok(analytics.indexOf('startFacebookPixel();') > analytics.indexOf("accept.onclick"), 'pixel starts from the Accept action');
+assert.ok(analytics.indexOf("if (consent === 'accepted') { startAnalytics().catch(() => {}); startFacebookPixel(); }") > analytics.indexOf('const consent = readConsent()'), 'pixel restarts for returning visitors who already accepted');
+assert.match(analytics, /Meta&#39;s ad measurement pixel/, 'consent banner names Meta');
+assert.match(privacy, /Meta for advertising measurement/, 'policy names Meta in the providers list');
+assert.match(privacy, /Meta&#39;s advertising measurement pixel only after a visitor chooses “Accept”/, 'policy describes the pixel consent gate');
+
+// Signup conversion: fired only after the server confirms the account was
+// created, and only if the pixel is present (consent accepted).
+assert.ok(signup.indexOf("fbq('track','Signup')") > signup.indexOf('if(!response.ok)throw new Error(data.error);'), 'Signup event fires after confirmed account creation');
+assert.ok(signup.includes("if(typeof fbq==='function')"), 'Signup event is a no-op without the pixel');
+
+// Private surfaces stay clean of the pixel too.
+for (const file of ['index.html', 'guest.html', 'app.js'])
+  assert.ok(!read(file).includes('fbq') && !read(file).includes('fbevents'), `${file} must not touch the pixel`);
 
 console.log('analytics consent contracts: ok');
