@@ -254,3 +254,19 @@ test('Fresh scoped project projection retains pending manual proposals without p
   assert.equal(result.candidate.projects[0].estimateProposals.at(-1).privateContext.token, 'secret', 'Projection preserves retained source');
   assert.throws(() => projection.project({ id: 101, estimateProposals: [{ id: 1, name: {} }] }, false), error => error.statusCode === 409);
 });
+
+test('Pending proposal source identity fails closed before scoped bootstrap projection', () => {
+  const { validateWorkspace } = require('./compat-workspace-evidence');
+  const db = seed(); validateWorkspace(db);
+  const own = structuredClone(db); Object.assign(own.projects[0].estimateProposals[0], { companyId: A, projectId: 101 }); validateWorkspace(own);
+  const legacy = structuredClone(db); legacy.projects[0].estimateProposals[0].id = '4'; validateWorkspace(legacy);
+  for (const mutate of [
+    proposal => { proposal.companyId = B; }, proposal => { proposal.companyId = null; },
+    proposal => { proposal.projectId = 202; }, proposal => { proposal.projectId = '01'; },
+    proposal => { proposal.id = 0; }, proposal => { proposal.id = '04'; }, proposal => { proposal.id = Infinity; }
+  ]) { const poisoned = structuredClone(db); mutate(poisoned.projects[0].estimateProposals[0]); reject(() => validateWorkspace(poisoned), 409); }
+  for (const value of [null, {}, [null], [[]], [{ id: 4 }, { id: '4' }], Array.from({ length: 50001 }, (_, i) => ({ id: i + 1 }))]) {
+    const poisoned = structuredClone(db); poisoned.projects[0].estimateProposals = value; reject(() => validateWorkspace(poisoned), 409);
+  }
+  assert.deepEqual(db.projects[0].estimateProposals, seed().projects[0].estimateProposals, 'Validation never rewrites retained proposals');
+});

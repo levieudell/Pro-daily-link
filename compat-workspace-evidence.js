@@ -15,6 +15,12 @@ function validateWorkspace(db) {
     // The normal project form initializes this display count to zero. Crew
     // authority continues to come from linked members and current accounts.
     if(Object.hasOwn(row,'crew')&&row.crew!==null&&typeof row.crew!=='string'&&(!Number.isSafeInteger(row.crew)||row.crew<0||row.crew>100000))fail();
+    // Pending manual review rows are nested tenant resources, not opaque metadata.
+    if(row.estimateProposals!==undefined){
+      if(!Array.isArray(row.estimateProposals)||row.estimateProposals.length>50000)fail();
+      const proposals=identities({company:db.company,estimateProposals:row.estimateProposals},'estimateProposals');
+      for(const proposal of proposals.values())if(proposal.projectId!==undefined&&(!id(proposal.projectId)||Number(proposal.projectId)!==Number(row.id)))fail();
+    }
   }
   const project = value => { if (!id(value) || !projects.has(String(Number(value)))) fail(); };
   const member = value => { if (!id(value) || !team.has(String(Number(value)))) fail(); };
