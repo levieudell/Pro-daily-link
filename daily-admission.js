@@ -17,6 +17,8 @@ const numeric = value => ['number', 'string'].includes(typeof value) && String(v
 const textFields = ['crew', 'foreman', 'notes', 'weather', 'temperature', 'materials', 'equipment', 'delays', 'safety', 'signature', 'summary', 'labor', 'quantity', 'issue', 'next', 'noteLanguage', 'englishTranslation'];
 const productionFields = ['estimateItemId', 'catalogItemId', 'unplanned', 'description', 'workDescription', 'quantity', 'quantityPending', 'unit', 'laborHours', 'laborHoursPending', 'custom', 'scopeEvidence', 'scopeUnverified', 'scopeChoice', 'needsScopeConfirmation', 'needsLaborConfirmation', 'potentialExtraWork'];
 const reportFields = ['id', 'project', 'sourceAssignmentId', 'crew', 'date', 'dateIso', 'foreman', 'status', 'notes', 'originalNotes', 'noteLanguage', 'englishTranslation', 'summary', 'labor', 'quantity', 'issue', 'next', 'weather', 'temperature', 'materials', 'equipment', 'delays', 'safety', 'signature', 'workdayId', 'templateId', 'templateVersion'];
+const safetyVariants = require('./resource-report-variants');
+const safetyFields = safetyVariants.safetyFields;
 const definitions = Object.freeze({
   createReport: ['createReports', 'POST', '/api/reports'],
   editReport: ['editReports', 'PATCH', id => '/api/reports/' + id],
@@ -29,7 +31,7 @@ function parse(input) {
   if (!object(input, ['action', 'id', 'details']) || !Object.hasOwn(definitions, input.action)) fail(400, 'Choose a supported daily action');
   const [permission, method, path] = definitions[input.action], hasId = typeof path === 'function';
   if (hasId ? !positive(input.id) : Object.hasOwn(input, 'id')) fail(400, 'Choose a valid daily action record');
-  const fields = { createReport: ['projectId', 'sourceAssignmentId', 'dateIso', 'status', ...textFields, 'productionEntries', 'laborEntries', 'workSuggestions', 'templateId', 'templateVersion', 'customFields'], editReport: ['sourceAssignmentId', 'dateIso', 'status', ...textFields.filter(name => !['noteLanguage', 'englishTranslation'].includes(name)), 'productionEntries', 'laborEntries', 'laborExclusions', 'workSuggestions', 'customFields'], approveReport: [], startWorkday: ['projectId', 'memberIds', 'startNote'], endWorkday: ['notes', 'next', 'foreman'], captureExport: ['projectId', 'from', 'to', 'supersedesId', 'reason'] }[input.action];
+  const fields = { createReport: ['projectId', 'sourceAssignmentId', 'dateIso', 'status', ...textFields, 'productionEntries', 'laborEntries', 'workSuggestions', 'templateId', 'templateVersion', 'customFields', ...safetyFields], editReport: ['sourceAssignmentId', 'dateIso', 'status', ...textFields.filter(name => !['noteLanguage', 'englishTranslation'].includes(name)), 'productionEntries', 'laborEntries', 'laborExclusions', 'workSuggestions', 'customFields', ...safetyFields], approveReport: [], startWorkday: ['projectId', 'memberIds', 'startNote'], endWorkday: ['notes', 'next', 'foreman'], captureExport: ['projectId', 'from', 'to', 'supersedesId', 'reason'] }[input.action];
   const details = input.details;
   if (!object(details, fields)) fail(400, 'Use only supported daily action details');
   for (const name of [...textFields, 'startNote', 'reason', 'supersedesId', 'templateId']) if (Object.hasOwn(details, name) && (typeof details[name] !== 'string' || details[name].length > (name === 'notes' || name === 'englishTranslation' ? 20000 : 2000))) fail(400, 'Use valid daily text');
@@ -43,7 +45,7 @@ function parse(input) {
   if (Object.hasOwn(details, 'customFields') && (!details.customFields || typeof details.customFields !== 'object' || Array.isArray(details.customFields) || Object.keys(details.customFields).length > 40 || Object.values(details.customFields).some(value => value !== null && !['string', 'number', 'boolean'].includes(typeof value) || typeof value === 'string' && value.length > 2000))) fail(400, 'Use simple template field values');
   if(Object.hasOwn(details,'sourceAssignmentId')&&details.sourceAssignmentId!==null&&!positive(details.sourceAssignmentId))fail(400,'Choose a valid scheduled assignment');
   const id = hasId ? key(input.id) : null;
-  return { action: input.action, permission, method, path: hasId ? path(id) : path, id, details: structuredClone(details) };
+  return { action: input.action, permission, method, path: hasId ? path(id) : path, id, details: { ...structuredClone(details), ...(safetyFields.some(name => Object.hasOwn(details, name)) ? safetyVariants.parse({kind:'reportSafety',method:'PATCH',path:'/api/reports/1/safety',details:pick(details,safetyFields)}).details : {}) } };
 }
 function unique(rows, id, name) { const selected = (rows || []).filter(row => key(row.id) === key(id)); if (selected.length !== 1) fail(selected.length ? 409 : 404, selected.length ? 'Ambiguous ' + name + ' needs reconciliation' : name + ' not found'); return selected[0]; }
 function authority(db, req) { return canonicalHash({ time: timeAuthority(db, req), access: access.access(db, req.auth.user), dailyRolePolicy: db.company.dailyRolePolicy || null, dailyPolicyRequired: access.required(db), pricingAccess: db.company.pricingAccess || null, autoAdoptActualTimes: db.company.autoAdoptActualTimes===true, scheduleView: require('./scheduling-access').access(db,req.auth.user).view }); }
@@ -110,7 +112,7 @@ function validateDelta(before, after, user, operation) {
     const report = unique(after.reports, reportIds[0], 'Report'), old = (before.reports || []).find(row => key(row.id) === reportIds[0]);
     if (['createReport', 'endWorkday'].includes(operation.action) && old || ['editReport', 'approveReport'].includes(operation.action) && !old) fail(409, 'Daily identity needs reconciliation');
     if (!access.reportInScope(after, user, report, operation.action === 'endWorkday' ? 'createReports' : operation.permission)) fail(403, 'Resulting daily is outside current scope');
-    if (old && (old.project !== report.project || !equal(omit(old, operation.action === 'approveReport' ? ['status', 'history', 'rateSnapshot', 'rateReview'] : ['sourceAssignmentId', 'date', 'dateIso', 'status', ...textFields, 'productionEntries', 'laborEntries', 'laborExclusions', 'workSuggestions', 'flags', 'history', 'customFields', 'rateReview']), omit(report, operation.action === 'approveReport' ? ['status', 'history', 'rateSnapshot', 'rateReview'] : ['sourceAssignmentId', 'date', 'dateIso', 'status', ...textFields, 'productionEntries', 'laborEntries', 'laborExclusions', 'workSuggestions', 'flags', 'history', 'customFields', 'rateReview'])))) fail(409, 'Immutable daily bindings or rate records changed');
+    if (old && (old.project !== report.project || !equal(omit(old, operation.action === 'approveReport' ? ['status', 'history', 'rateSnapshot', 'rateReview'] : ['sourceAssignmentId', 'date', 'dateIso', 'status', ...textFields, 'productionEntries', 'laborEntries', 'laborExclusions', 'workSuggestions', 'flags', 'history', 'customFields', 'rateReview', ...(safetyFields.some(name=>Object.hasOwn(operation.details,name))?safetyFields:[])]), omit(report, operation.action === 'approveReport' ? ['status', 'history', 'rateSnapshot', 'rateReview'] : ['sourceAssignmentId', 'date', 'dateIso', 'status', ...textFields, 'productionEntries', 'laborEntries', 'laborExclusions', 'workSuggestions', 'flags', 'history', 'customFields', 'rateReview', ...(safetyFields.some(name=>Object.hasOwn(operation.details,name))?safetyFields:[])])))) fail(409, 'Immutable daily bindings or rate records changed');
   } else if (reportIds.length) fail(409, 'Unrelated reports cannot change');
   if (['startWorkday', 'endWorkday'].includes(operation.action)) {
     if (dayIds.length !== 1 || operation.id && dayIds[0] !== operation.id) fail(409, 'Unrelated workdays cannot change');
@@ -137,7 +139,17 @@ function createHandler({ readDb, writeDb, body, json, raw, revision, run, assert
   const present = (db, user, data, operation) => operation.action === 'captureExport' ? exportProjection(db, user, data) : operation.action === 'startWorkday' ? dayProjection(data) : operation.action === 'endWorkday' ? { workday: dayProjection(data.workday), report: reportProjection(db, user, data.report, presentReport), autoAdoptEnabled:db.company.autoAdoptActualTimes===true, ...(Object.hasOwn(data,'adopted')?{adopted:autoAdopt.present(db,user,operation,data.adopted)}:{}) } : reportProjection(db, user, data, presentReport);
   async function execute(req,operation){
     const source=readDb(), enabled=operation.action==='endWorkday'&&source.company.autoAdoptActualTimes===true;
-    if(!enabled)return run(req,operation);
+    if(!enabled){
+      const compound=['createReport','editReport'].includes(operation.action)&&safetyFields.some(name=>Object.hasOwn(operation.details,name));
+      if(!compound)return run(req,operation);
+      const executed=await run(req,{...operation,details:omit(operation.details,safetyFields)});
+      if(executed.response.status>=400)return executed;
+      const report=executed.response.data, op=safetyVariants.parse({kind:'reportSafety',method:'PATCH',path:'/api/reports/'+report.id+'/safety',details:pick(operation.details,safetyFields)});
+      const followed=await run(req,op,executed.candidate);
+      if(followed.response.status>=400)return followed;
+      safetyVariants.validateSafetyConsequence(executed.candidate,followed.candidate,op,req.auth,{presentReport});
+      return {...followed,dirty:executed.dirty||followed.dirty,response:{...followed.response,status:executed.response.status}};
+    }
     const base={...source,company:{...source.company,autoAdoptActualTimes:false}},executed=await run(req,operation,base);
     if(executed.response.status>=400)return executed;
     if(!equal(executed.candidate.company,base.company))fail(409,'Workday completion cannot change company settings');

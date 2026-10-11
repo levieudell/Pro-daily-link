@@ -966,7 +966,7 @@ function createCompatibilityWorkspace(options){
   const {createWorkspace}=require('./compat-workspace');
   return createWorkspace({options,adoptAssignmentActualTimes,readDb,writeDb,body,json,raw:compatibilityRaw,context:()=>dbContext.getStore(),run:runCompatibilityCandidate,
     authenticate:authenticateRequestAccount,authenticateSession:authenticateWorkspaceSession,accountAccess,prepareWorkspace,ensureOwnerTeamMember,publicCompanyLogo,canViewPricing,fieldWorkspace,managerWorkspace,scopedScheduleAvailability,scopedTemplateList,
-    presentReport,dailyExportProjection,canAccessProject:projectNotesCanAccessProject,companyActivities,presentTimeCard,filterTimeCards,timeCardIsApproved,timeCardStatusText,timeCardOverlap,upsertTimeCard,mergeTimeCardCopies,
+    presentReport,dailyExportProjection,canAccessProject:projectNotesCanAccessProject,enrichEstimateDraft,importBudgetHours,companyActivities,presentTimeCard,filterTimeCards,timeCardIsApproved,timeCardStatusText,timeCardOverlap,upsertTimeCard,mergeTimeCardCopies,
     completeCard:payPeriods.completeCard,fieldAccess:fieldTimeCards.access,buildActionCenter,billingSummary,subcontractorRequirements,billingPlans:BILLING_PLANS,applyBilling:applyStripeSubscription,localDailyExtract:(notes,language)=>({...finishAiExtract(localExtract(notes),notes),customFieldSuggestions:[],originalLanguage:String(language).startsWith('es')?'es':'en',englishTranslation:String(language).startsWith('es')?'Translation unavailable until AI is configured':notes,source:'local'})});
 }
 

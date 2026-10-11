@@ -1,7 +1,7 @@
 'use strict';
 // Named existing resource operations. These identifiers are not permission flags.
 const timezone = require('./company-timezone');
-const extensions = [require('./resource-project-tasks'), require('./resource-templates'), require('./resource-catalog-contract'), require('./resource-subcontractors')];
+const extensions = [require('./resource-project-tasks'), require('./resource-templates'), require('./resource-catalog-contract'), require('./resource-subcontractors'), require('./resource-report-variants'), require('./resource-estimates')];
 const extension = op => extensions.find(module => module.route(op.method, op.path) === op.kind) || null;
 const fail = (statusCode, message) => { throw Object.assign(Error(message), { statusCode }); };
 const object = (value, keys) => value && typeof value === 'object' && !Array.isArray(value) && [Object.prototype, null].includes(Object.getPrototypeOf(value)) && Object.keys(value).every(key => keys.includes(key));

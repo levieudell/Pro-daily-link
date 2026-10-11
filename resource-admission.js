@@ -16,6 +16,19 @@ const requestId = value => typeof value === 'string' && /^[a-zA-Z0-9_-]{8,128}$/
 const exact = (value, keys) => input.object(value, keys) && Object.keys(value).length === keys.length;
 const timestamp = value => typeof value === 'string' && Number.isFinite(Date.parse(value)) && new Date(value).toISOString() === value;
 const fail = input.fail;
+function reviewTarget(db, op) {
+  const estimates=op.kind.startsWith('estimate'),reports=['reportDisposition','reportSafety','reportRate','reportRemove'].includes(op.kind);
+  if(!estimates&&!reports&&op.kind!=='projectRateSettings')return null;
+  const parts=op.path.split('/'),report=reports?db.reports.find(row=>row.id===Number(parts[3])):null;
+  const projectId=reports?db.projects[report.project]?.id:op.kind.startsWith('estimateImport')?op.details.projectId:Number(parts[3]);
+  const project=db.projects.find(row=>row.id===projectId),target={project:{id:project.id,name:String(project.name).slice(0,160)}};
+  if(report)target.report={id:report.id,date:String(report.date).slice(0,10),foreman:String(report.foreman).slice(0,160),status:String(report.status).slice(0,40)};
+  if(op.kind==='estimateItemEdit'||op.kind==='estimateItemRemove'){const row=project.estimateItems.find(row=>row.id===Number(parts[5]));target.item=dtoPick(row);}
+  if(op.kind==='estimateProposalApprove'){const row=project.estimateProposals.find(row=>row.id===Number(parts[5]));target.proposal=dtoPick(row);}
+  if(op.kind.startsWith('estimateImport')){const row=db.estimateImports.find(row=>row.id===Number(parts[3]));target.document={id:row.id,filename:String(row.filename).slice(0,180),status:String(row.status).slice(0,40)};}
+  return target;
+  function dtoPick(row){const quantity=Number(row.plannedQuantity);if(!Number.isFinite(quantity)||quantity<0)fail(409,'Reviewed estimate quantity needs reconciliation.');return {id:row.id,name:String(row.name).slice(0,160),plannedQuantity:quantity,unit:String(row.unit).slice(0,20)};}
+}
 function envelope(value) {
   if (!exact(value, ['token', 'version', 'confirmed', 'requestId']) || !uuid(value.token) || !hash(value.version) || value.confirmed !== true || !requestId(value.requestId)) fail(400, 'Review and explicitly confirm a current resource preview.');
   return value;
@@ -157,8 +170,9 @@ function createHandler(h) {
         const op = input.parse(value.operation), reason = input.text(value.reason, 500, true), proposed = await execute(req, db, op); await h.assertCurrent(req);
         const at = Date.now(), row = sign({ id: crypto.randomUUID(), purpose, companyId: db.company.id, actorId: auth.user.id, actorRole:auth.user.role, sessionHash: auth.session.tokenHash, sessionBinding: opening.sessionBinding, authorityBefore: opening.authority, operation: op, version: version(db, auth), openingRevision:h.revision(),reviewRevision:h.revision()+1, createdAt: new Date(at).toISOString(), expiresAt: new Date(Math.min(at + 600000, Date.parse(auth.session.expiresAt))).toISOString(), reason, impact: proposed.impact });
         if (Buffer.byteLength(JSON.stringify(db[receipts] || [])) + Buffer.byteLength(JSON.stringify({result:proposed.data,retained:proposed.retained,operation:op})) + 30000 > 8000000) fail(409, 'Resource receipt capacity needs review before another save.');
+        const target=reviewTarget(db,op);
         db[previews] ||= []; db[previews].push(row); valid(db); h.writeDb(db);
-        h.json(res, 200, { token: row.id, version: row.version, reason, impact: publicImpact(db,auth,row.impact), proposed: proposed.data, authorityBefore: row.authorityBefore, expiresAt: row.expiresAt }); return true;
+        h.json(res, 200, { token: row.id, version: row.version, reason, impact: publicImpact(db,auth,row.impact), proposed: proposed.data, ...(target?{reviewTarget:target}:{}), authorityBefore: row.authorityBefore, expiresAt: row.expiresAt }); return true;
       }
       if (lookup) {
         if (!exact(value, ['token', 'version', 'requestId', 'method', 'path']) || !uuid(value.token) || !hash(value.version) || !requestId(value.requestId) || !input.route(value.method, value.path)) fail(400, 'Use the original bounded resource receipt identity.');

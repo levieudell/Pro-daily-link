@@ -70,6 +70,14 @@ jobs:
       - run: node resource-subcontractors.test.js
       - run: node resource-extended-http.test.js
       - run: node resource-extended-postgres.test.js
+      - run: node resource-report-variants.test.js
+      - run: node resource-report-variants-http.test.js
+      - run: node resource-report-variants-postgres.test.js
+      - run: node editor-commercial-reads.test.js
+      - run: node resource-estimates.test.js
+      - run: node resource-estimates-http.test.js
+      - run: node editor-assistant-policy.test.js
+      - run: node editor-client-contracts.test.js
       - name: Install isolated browser test dependency
         run: |
           npm install --prefix "$RUNNER_TEMP/compat-browser" --no-save --ignore-scripts playwright@1.63.0
@@ -91,6 +99,12 @@ jobs:
         env:
           TEST_COMPAT_DATABASE_URL: ""
       - run: node resource-browser-extended.test.js --viewport=mobile
+        env:
+          TEST_COMPAT_DATABASE_URL: ""
+      - run: node resource-report-variants-browser.test.js --viewport=desktop
+        env:
+          TEST_COMPAT_DATABASE_URL: ""
+      - run: node resource-report-variants-browser.test.js --viewport=mobile
         env:
           TEST_COMPAT_DATABASE_URL: ""
       - uses: actions/upload-artifact@v4

@@ -8,9 +8,18 @@
       if(/^\/api\/catalog\/[1-9]\d*\/apply$/.test(path))return 'catalogApply';
       if(/^\/api\/projects\/[1-9]\d*\/tasks$/.test(path))return 'projectTaskCreate';
       if(/^\/api\/project-tasks\/[1-9]\d*\/assign$/.test(path))return 'projectTaskAssign';
+      if(/^\/api\/projects\/[1-9]\d*\/estimate-items$/.test(path))return 'estimateItemCreate';
+      if(/^\/api\/projects\/[1-9]\d*\/estimate-proposals$/.test(path))return 'estimateProposalCreate';
+      if(/^\/api\/projects\/[1-9]\d*\/estimate-proposals\/[1-9]\d*\/approve$/.test(path))return 'estimateProposalApprove';
+      if(/^\/api\/estimate-imports\/[1-9]\d*\/approve$/.test(path))return 'estimateImportApprove';
     }
+    if(['PATCH','PUT','DELETE'].includes(method)&&/^\/api\/projects\/[1-9]\d*\/estimate-items\/[1-9]\d*$/.test(path))return method==='DELETE'?'estimateItemRemove':'estimateItemEdit';
+    if(method==='PATCH'&&/^\/api\/estimate-imports\/[1-9]\d*\/draft$/.test(path))return 'estimateImportDraft';
     if(method==='PATCH'&&path==='/api/company')return 'companySettings';
     if(method==='PATCH'&&path==='/api/company/contract-value-tracking')return 'contractTracking';
+    if(method==='DELETE'&&/^\/api\/reports\/[1-9]\d*$/.test(path))return 'reportRemove';
+    if(method==='PATCH'&&/^\/api\/projects\/[1-9]\d*\/rate-settings$/.test(path))return 'projectRateSettings';
+    if(method==='PATCH'&&/^\/api\/reports\/[1-9]\d*\/(disposition|safety|rate)$/.test(path))return {disposition:'reportDisposition',safety:'reportSafety',rate:'reportRate'}[path.split('/').at(-1)];
     if(method==='PATCH'&&/^\/api\/projects\/[1-9]\d*\/archive$/.test(path))return 'projectArchive';
     if(method==='PATCH'&&/^\/api\/projects\/[1-9]\d*\/template$/.test(path))return 'projectTemplates';
     if(['PATCH','PUT'].includes(method)&&/^\/api\/projects\/[1-9]\d*$/.test(path)){
@@ -76,6 +85,7 @@
       if(!preview){const reason=dialog.querySelector('textarea').value.trim();if(!reason){status.textContent='Enter a reason before previewing.';return;}working=true;
         try{const current=await window.pdlWorkspaceActions.identity();if(current.authority!==opening.authority||current.sessionBinding!==opening.sessionBinding)throw fail('Workspace access changed. Review again.');preview=await send('/api/resources/preview',{method:'POST',body:JSON.stringify({operation,expectedRevision:current.revision,reason})});if(settled)return;
           dialog.querySelector('pre').textContent=display(preview.impact.details)+(Object.hasOwn(preview.impact,'affectedMemberCount')?'\n\nAffected existing employees: '+preview.impact.affectedMemberCount+'\nAffected accounts: '+preview.impact.affectedAccountCount:'')+(preview.impact.taskChanges?'\n\n'+display({taskChanges:preview.impact.taskChanges}):'')+(preview.impact.taskAssignment?'\n\n'+display({taskAssignment:preview.impact.taskAssignment}):'')+(preview.impact.subcontractorEffects?'\n\n'+display({subcontractorEffects:preview.impact.subcontractorEffects}):'')+'\nReason: '+preview.reason;
+          if(preview.reviewTarget)dialog.querySelector('pre').textContent+='\n\nCurrent reviewed target:\n'+display(preview.reviewTarget);
           for(const account of preview.impact.accountChanges||[]){for(const change of account.changes)dialog.querySelector('pre').textContent+='\nAccount '+account.id+' ('+account.role+'): '+change.collection+' '+change.removed+' removed, '+change.added+' added';if(Object.hasOwn(account,'pricingBefore'))dialog.querySelector('pre').textContent+='\nAccount '+account.id+': pricing access '+(account.pricingBefore?'enabled':'disabled')+' to '+(account.pricingAfter?'enabled':'disabled');}
           dialog.querySelector('textarea').disabled=true;dialog.querySelector('input').disabled=false;dialog.querySelector('input').checked=false;dialog.querySelector('.primary').textContent='Confirm and save';status.textContent='Server preview ready. Review it before confirming.';
         }catch(error){status.textContent=error.message;}finally{working=false;}return;

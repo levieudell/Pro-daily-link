@@ -7,8 +7,8 @@
     ['scheduling', 'remove', '#remove-assignment,#remove-person'],
     ['scheduling', 'acknowledge', '[data-ack-assignment]'],
     ['daily', 'viewReports', '.nav-item[data-page="reports"],[data-open-daily-report]'],
-    ['daily', 'createReports', '#new-report,[data-assignment-daily]'],
-    ['daily', 'editReports', '[data-edit-report],.labor-resolve-button'],
+    ['daily', 'createReports', '#new-report,[data-open-report],[data-assignment-daily]'],
+    ['daily', 'editReports', '[data-edit-report],.labor-resolve-button,#resolve-exception,#delete-daily-report,#confirm-delete-report,[data-pdl-rate-review]'],
     ['daily', 'approveReports', '[data-approve-report]'],
     ['daily', 'viewWorkdays', '.nav-item[data-page="fieldday"]'],
     ['daily', 'runWorkdays', '#start-day-button,[data-start-day],[data-end-day]'],
@@ -42,7 +42,14 @@
     }
     for(const [action,selector]of [['markOff','#day-action-markoff,#mark-off-save'],['repeatWeek','#repeat-week,#repeat-week-confirm'],['adoptActual','#adopt-actual-times']]) for(const node of document.querySelectorAll(selector)){if(currentUser?.scheduleWorkflows?.[action]!==true){node.dataset.workspaceRestricted='true';node.hidden=true;if('disabled' in node)node.disabled=true;}else if(node.dataset.workspaceRestricted==='true'){delete node.dataset.workspaceRestricted;node.hidden=false;if('disabled' in node)node.disabled=false;}}
     const selectedId = document.querySelector('#report-detail [data-edit-report]')?.dataset.editReport, selected = typeof reports === 'undefined' ? null : reports.find(row => Number(row.id) === Number(selectedId));
-    for (const node of document.querySelectorAll('.labor-resolve-button')) if (!['owner','admin','project_manager'].includes(currentUser?.accessRole || currentUser?.role) || selected?.status === 'Approved' && gates?.daily?.approveReports !== true) { node.dataset.workspaceRestricted = 'true'; node.hidden = true; node.disabled = true; }
+    const restrict = node => { node.dataset.workspaceRestricted = 'true'; node.hidden = true; if ('disabled' in node) node.disabled = true; };
+    for (const node of document.querySelectorAll('.labor-resolve-button,#resolve-exception,#delete-daily-report,#confirm-delete-report,[data-pdl-rate-review]')) if (!['owner','admin','project_manager'].includes(currentUser?.accessRole || currentUser?.role)) restrict(node);
+    // Field/Foreman may edit their own unapproved reports under the existing
+    // scope. Editing an approved report still requires independent approval.
+    for (const node of document.querySelectorAll('.labor-resolve-button,[data-edit-report],#resolve-exception,#delete-daily-report,#confirm-delete-report')) if (selected?.status === 'Approved' && gates?.daily?.approveReports !== true) restrict(node);
+    // Reopening a report does not erase its saved approval/rate snapshot.
+    const approvedBefore = selected?.status === 'Approved' || (selected?.history || []).some(row => row.action === 'Approved') || Boolean(selected?.rateSnapshot || selected?.rateReview);
+    for (const node of document.querySelectorAll('[data-pdl-rate-review]')) if (approvedBefore && gates?.daily?.approveReports !== true) restrict(node);
   }
   const observer = new MutationObserver(apply); observer.observe(document.body, { childList: true, subtree: true }); window.addEventListener('focus', apply); apply();
 })();

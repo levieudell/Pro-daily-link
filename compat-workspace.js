@@ -50,7 +50,7 @@ function createWorkspace(h) {
     return base;
   }
   const helpers = { workspace, canViewPricing: h.canViewPricing };
-  const resources=require('./resource-admission').createHandler({...common,...helpers,key:options.workspaceKey,authenticate:h.authenticate,accountAccess:h.accountAccess,activities:h.companyActivities,canAccessProject:h.canAccessProject,
+  const resources=require('./resource-admission').createHandler({...common,...helpers,key:options.workspaceKey,authenticate:h.authenticate,accountAccess:h.accountAccess,activities:h.companyActivities,canAccessProject:h.canAccessProject,presentReport:h.presentReport,enrichEstimateDraft:h.enrichEstimateDraft,importBudgetHours:h.importBudgetHours,
     validateCompliance:db=>{if(compliance)return compliance.valid(db);if((db.workspaceComplianceJobs||[]).length)fail(503,'Compliance custody requires its reviewed provider contract.');return [];},
     cancelCompliance:(db,id)=>{if(compliance)return compliance.cancelQueued(db,id);if((db.workspaceComplianceJobs||[]).length)fail(503,'Compliance custody requires its reviewed provider contract.');return [];},
     validateAssignment:db=>{if(assignmentDelivery)return assignmentDelivery.valid(db);if((db.workspaceAssignmentJobs||[]).length)fail(503,'Assignment custody requires its reviewed provider contract.');return [];},
@@ -103,6 +103,27 @@ function createWorkspace(h) {
       h.json(res, 200, data); return true;
     }
     if(url.pathname==='/api/company/role-capabilities'){if(user.role!=='owner')fail(403,'Account owner permission required');if(h.accountAccess(db.company).locked)fail(402,'Company account is locked');await assertCurrent(req);h.json(res,200,registry.describe(db));return true;}
+    if(url.pathname==='/api/company/export'){
+      if(url.search)fail(400,'Company export accepts no query overrides.');
+      if(user.role!=='owner')fail(403,'Account owner permission required');
+      const executed=await h.run(req,{method:'GET',path:url.pathname,details:{}},db);
+      if(executed.dirty||executed.response.status!==200||typeof executed.response.raw!=='string')fail(409,'Company export requires current read-only source.');
+      const data=require('./account-credential-delivery').stripPrivate(JSON.parse(executed.response.raw));
+      await assertCurrent(req);
+      h.raw(res,{...executed.response,headers:{...executed.response.headers,'Cache-Control':'no-store'},raw:JSON.stringify(data,null,2)});return true;
+    }
+    const tmSummary=url.pathname.match(/^\/api\/projects\/([1-9]\d*)\/tm-summary$/);
+    if(tmSummary){
+      if(url.search)fail(400,'Choose one current project without query overrides.');
+      const data=require('./editor-commercial-reads').tmSummary(db,user,Number(tmSummary[1]),{canViewPricing:h.canViewPricing});
+      await assertCurrent(req);h.json(res,200,data);return true;
+    }
+    if(url.pathname==='/api/estimate-imports'){
+      const raw=url.searchParams.get('projectId');
+      if([...url.searchParams.keys()].some(key=>key!=='projectId')||url.searchParams.getAll('projectId').length!==1||!raw||!/^[1-9]\d*$/.test(raw))fail(400,'Choose one current estimate project.');
+      const data=require('./resource-estimates').readImports(db,user,Number(raw),{canViewPricing:h.canViewPricing,canAccessProject:h.canAccessProject});
+      await assertCurrent(req);h.json(res,200,data);return true;
+    }
     const plans=url.pathname.match(/^\/api\/projects\/([1-9]\d*)\/plans$/);
     if(plans){const projectId=Number(plans[1]);if(url.search||!db.projects.some(row=>Number(row.id)===projectId)||!h.canAccessProject(db,user,projectId))fail(404,'Project not found.');
       if(['field','foreman'].includes(user.role)&&!['assignments','workdays'].some(name=>(db[name]||[]).some(row=>Number(row.projectId)===projectId&&row.memberIds.map(Number).includes(Number(user.memberId)))))fail(403,'This plan set is not assigned to you.');
@@ -110,7 +131,21 @@ function createWorkspace(h) {
     if(url.pathname==='/api/weather'){const projectId=Number(url.searchParams.get('projectId')),address=url.searchParams.get('address');if(url.searchParams.getAll('projectId').length!==1||url.searchParams.getAll('address').length!==1||[...url.searchParams.keys()].some(k=>!['projectId','address'].includes(k))||!Number.isSafeInteger(projectId)||!h.canAccessProject(db,user,projectId)||address!==db.projects.find(p=>Number(p.id)===projectId)?.site)fail(404,'Project not found.');h.json(res,200,{status:'unavailable',message:'Weather is unavailable in this draft. Enter the conditions recorded on site.'});return true;}
     if (url.pathname === '/api/assignments') { if (!gates.scheduling.view) fail(403, 'Scheduling view permission required'); h.json(res, 200, { assignments: dto.scoped(db,user,helpers).base.assignments.map(dto.assignment) }); return true; }
     if(url.pathname==='/api/changes'){const raw=url.searchParams.get('projectId');if([...url.searchParams.keys()].some(k=>k!=='projectId')||url.searchParams.getAll('projectId').length!==1||!raw||!/^[1-9]\d*$/.test(raw))fail(400,'Choose one current project.');const projectId=Number(raw);if(!['owner','admin','project_manager'].includes(user.role)||!h.canAccessProject(db,user,projectId)||!db.projects.some(p=>Number(p.id)===projectId))fail(404,'Project not found.');
-      h.json(res,200,(db.changes||[]).filter(row=>Number(row.projectId)===projectId).map(row=>({...dto.pick(row,['id','projectId','reportId','number','title','status','createdAt','createdBy','updatedAt',...(h.canViewPricing(db,user)?['amount']:[])]),history:dto.history(row.history)})));return true;}
+      const dailyAccess=require('./daily-access'),visible=(db.changes||[]).filter(row=>Number(row.projectId)===projectId).filter(row=>{
+        if(row.reportId==null)return true;
+        if(!gates.daily.viewReports)return false;
+        // Legacy links carry only recyclable numeric report IDs. Until they
+        // have verified source identity, a later report cannot authorize a PM
+        // to read the original linked title/history. Fixed archival roles keep
+        // their existing visibility; independent commercial changes stay open.
+        if(user.role==='project_manager')return false;
+        if(!Number.isSafeInteger(row.reportId)||row.reportId<1)fail(409,'Linked change source needs reconciliation.');
+        const report=(db.reports||[]).find(value=>value.id===row.reportId);
+        if(!report)return ['owner','admin'].includes(user.role);
+        if(Number(db.projects[report.project]?.id)!==projectId)fail(409,'Linked change project needs reconciliation.');
+        return dailyAccess.reportInScope(db,user,report);
+      });
+      await assertCurrent(req);h.json(res,200,visible.map(row=>({...dto.pick(row,['id','projectId','reportId','number','title','status','createdAt','createdBy','updatedAt',...(h.canViewPricing(db,user)?['amount']:[])]),history:dto.history(row.history)})));return true;}
     if (url.pathname === '/api/billing') { if (user.role !== 'owner') fail(403, 'Account owner permission required');stageBilling(db,req,h.accountAccess(db.company).locked);h.json(res, 200, dto.billing(h.billingSummary(db))); return true; }
     if (url.pathname === '/api/daily-templates') { if (db.company.features?.templates !== true) fail(404, 'Not found'); h.json(res, 200, { templates: h.scopedTemplateList(db, user).map(dto.template), defaultTemplateId: db.company.defaultTemplateId || 'standard' }); return true; }
     if(url.pathname==='/api/workspace-identity'){h.json(res,200,{});return true;}

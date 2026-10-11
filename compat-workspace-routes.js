@@ -12,6 +12,8 @@ function supported(method, path) {
   if(method==='POST'&&path==='/api/billing/recover')return true;
   if(method==='POST'&&path==='/api/ai/extract')return true;
   if(method==='GET'&&path==='/api/changes')return true;
+  if(method==='GET'&&path==='/api/estimate-imports')return true;
+  if(method==='GET'&&(path==='/api/company/export'||/^\/api\/projects\/[1-9]\d*\/tm-summary$/.test(path)))return true;
   if(method==='GET'&&path==='/api/weather')return true;
   if(method==='GET'&&path==='/api/workspace-prepare')return true;
   if (method === 'GET') return read.has(path) || /^\/api\/(?:reports|workdays)\/[1-9]\d*$/.test(path) || /^\/api\/pay-periods\/[^/]+\/(?:summary|exports(?:\/[^/]+(?:\.csv)?)?)$/.test(path) || /^\/api\/reporting-exports\/[0-9a-f-]{36}(?:\.csv)?$/.test(path) || /^\/api\/projects\/[1-9]\d*\/(?:notes-todos|plans)$/.test(path);

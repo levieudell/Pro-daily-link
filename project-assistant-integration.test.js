@@ -1,6 +1,7 @@
 'use strict';
 // Actual current server auth assembly plus the assistant handler. The synthetic
-// restriction callback below is a contract test, not a live role-policy module.
+// restriction callback retains the old effective-grant contract. Actual typed
+// policies/profiles are exercised separately with the real current actor below.
 const assert=require('node:assert/strict'),fs=require('node:fs'),vm=require('node:vm'),crypto=require('node:crypto');
 const {fixture,companyA,companyB,token}=require('./fixtures/project-assistant');
 const {createProjectAssistantHandler}=require('./project-assistant');
@@ -30,6 +31,14 @@ async function main(){
     db=fixture();writes=0;restrict=user=>({...user,permissions:{scheduleCrews:false}});const preview=(await call('preview',proposal)).data;assert.ok(preview.token,'existing project-note authority does not require scheduling permission');const confirmation={token:preview.token,version:preview.version,confirmed:true};restrict=user=>({...user,role:'field'});assert.equal((await call('confirm',confirmation)).status,403);assert.equal(writes,0);restrict=user=>({...user,permissions:{scheduleCrews:false}});assert.equal((await call('confirm',confirmation)).status,201);assert.equal(writes,1);restrict=user=>({...user,projectIds:[]});assert.equal((await call('confirm',confirmation)).status,404);assert.equal(writes,1);
   }
   db=fixture();writes=0;restrict=user=>user;const pending=(await call('preview',batch)).data;restrict=user=>({...user,permissions:{...user.permissions,viewDailies:false}});assert.equal((await call('confirm',{token:pending.token,version:pending.version,confirmed:true})).status,409,'any effective permission version change requires a fresh reviewed proposal');assert.equal(writes,0);
-  console.log('Current-main assistant auth contract passed: actual fresh session/tenant assembly, stale actor clearing, normalization, returned effective restrictions for single/batch/notes/to-do/replay, and changed-permission proposal invalidation. No runtime role overlay imported.');
+  db=fixture();writes=0;restrict=user=>user;const registry=require('./capability-registry');context.compatibilityAccountRuntime={companyId:companyA,actor:registry.actor};
+  const scheduling=require('./scheduling-access'),notes=require('./notes-access');
+  const setPolicy=(family,controller)=>{db.company[family+'PolicyRequired']=true;db.company[family+'RolePolicy']={version:1,revision:1,roles:Object.fromEntries(controller.roles.map(role=>[role,controller.ceiling(role)]))};};
+  const typedPreview=(await call('preview',single)).data;setPolicy('scheduling',scheduling);db.company.schedulingRolePolicy.roles.project_manager.create=false;
+  assert.equal(db.users[1].permissions.scheduleCrews,true,'original grant stays stored');assert.equal((await call('preview',single)).status,403);assert.equal((await call('confirm',{token:typedPreview.token,version:typedPreview.version,confirmed:true})).status,403);assert.equal(writes,0);
+  const notePreview=(await call('preview',note)).data;assert.ok(notePreview.token,'denied scheduling leaves notes independent');setPolicy('notes',notes);db.company.notesRolePolicy.roles.project_manager.create=false;
+  assert.equal((await call('preview',note)).status,403);assert.equal((await call('confirm',{token:notePreview.token,version:notePreview.version,confirmed:true})).status,403);assert.equal(writes,0);
+  context.compatibilityAccountRuntime=null;
+  console.log('Assistant auth integration passed: fresh session/tenant assembly, cached actor clearing, effective grant compatibility, actual typed mask denial at preview/confirm, independent notes/scheduling, and changed-authority invalidation.');
 }
 main().catch(error=>{console.error(error);process.exitCode=1});

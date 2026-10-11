@@ -49,7 +49,7 @@ function assignment(row) {
   return dto;
 }
 function report(row, pricing) {
-  const dto = pick(row, ['id', 'project', 'date', 'dateIso', 'foreman', 'crew', 'sourceAssignmentId', 'status', 'notes', 'originalNotes', 'noteLanguage', 'englishTranslation', 'summary', 'labor', 'quantity', 'issue', 'next', 'weather', 'temperature', 'materials', 'equipment', 'delays', 'safety', 'signature', 'source', 'subcontractorId', 'reportType', 'workdayId', 'templateId', 'templateVersion', 'createdAt', 'updatedAt']);
+  const dto = pick(row, ['id', 'project', 'date', 'dateIso', 'foreman', 'crew', 'sourceAssignmentId', 'status', 'notes', 'originalNotes', 'noteLanguage', 'englishTranslation', 'summary', 'labor', 'quantity', 'issue', 'next', 'weather', 'temperature', 'materials', 'equipment', 'delays', 'safety', 'signature', 'source', 'subcontractorId', 'reportType', 'safetyTalk', 'safetyTalkAttendees', 'safetyInspection', 'noSafetyObservations', 'workdayId', 'templateId', 'templateVersion', 'createdAt', 'updatedAt']);
   dto.productionEntries = list(row.productionEntries, entry => pick(entry, ['estimateItemId', 'catalogItemId', 'description', 'unit', 'quantity', 'laborHours', 'custom', 'scopeEvidence', 'scopeUnverified', 'scopeChoice', 'needsScopeConfirmation', 'needsLaborConfirmation', 'potentialExtraWork']));
   dto.workSuggestions = list(row.workSuggestions, entry => pick(entry, ['estimateItemId', 'catalogItemId', 'description', 'workDescription', 'unit', 'quantity', 'laborHours', 'quantityPending', 'laborHoursPending', 'custom', 'scopeEvidence', 'scopeUnverified', 'scopeChoice', 'needsScopeConfirmation', 'needsLaborConfirmation', 'potentialExtraWork']));
   dto.laborEntries = list(row.laborEntries, entry => pick(entry, ['memberId', 'hours', 'crew']));
@@ -58,7 +58,7 @@ function report(row, pricing) {
   dto.flags = list(row.flags, flag => { const out = pick(flag, ['id', 'type', 'message', 'status', 'severity', 'resolutionNote', 'resolvedBy', 'resolvedAt']); if (flag.resolution) out.resolution = typeof flag.resolution === 'string' ? flag.resolution : pick(flag.resolution, ['decision', 'note', 'by', 'at', 'estimateItemId', 'changeId']); return out; });
   dto.ticketIds = numbers(row.ticketIds);
   if (row.guestTime) dto.guestTime = pick(row.guestTime, ['startedAt', 'endedAt', 'crewCount', 'hoursPerPerson']);
-  dto.safetyItems = list(row.safetyItems, item => pick(item, ['company', 'observation', 'action', 'dueDate', 'status', 'verifiedBy', 'verifiedAt']));
+  dto.safetyItems = list(row.safetyItems, item => pick(item, ['company', 'observation', 'location', 'notified', 'action', 'owner', 'dueDate', 'status', 'verification', 'verifiedBy', 'verifiedAt']));
   if (row.safetyIncident) dto.safetyIncident = scalar(row.safetyIncident) ? row.safetyIncident : pick(row.safetyIncident, ['type', 'description', 'company', 'injury', 'medical', 'reviewStatus', 'reviewedBy', 'reviewedAt']);
   // Template values are bounded primitives bound to declared field IDs.
   if (row.customFields) { if (typeof row.customFields !== 'object' || Array.isArray(row.customFields) || Object.keys(row.customFields).length > 40) fail(); dto.customFields = Object.fromEntries(Object.entries(row.customFields).map(([id, value]) => { if (!/^[a-z0-9-]{1,40}$/.test(id) || !scalar(value)) fail(); return [id, value]; })); }
