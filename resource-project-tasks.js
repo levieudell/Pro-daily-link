@@ -19,11 +19,12 @@ function route(method,path) {
 function parse(op,input) {
   const d=op.details,out={};
   if (['projectTaskCreate','projectTaskEdit'].includes(op.kind)) {
-    if(!input.object(d,['name','durationDays','predecessorIds','memberIds','crew','status']) || !Object.keys(d).length)input.fail(400,'Enter supported task details.');
+    if(!input.object(d,['name','durationDays','predecessorIds','memberIds','crew','status','estimateItemId']) || !Object.keys(d).length)input.fail(400,'Enter supported task details.');
     for(const [key,limit]of [['name',160],['crew',80]])if(Object.hasOwn(d,key))out[key]=input.text(d[key],limit,key==='name');
     if(Object.hasOwn(d,'durationDays')){if(!Number.isSafeInteger(d.durationDays)||d.durationDays<1||d.durationDays>365)input.fail(400,'Choose one to 365 working days.');out.durationDays=d.durationDays;}
     for(const key of ['predecessorIds','memberIds'])if(Object.hasOwn(d,key)){if(!Array.isArray(d[key])||d[key].length>1000||d[key].some(id=>!input.id(id))||new Set(d[key]).size!==d[key].length)input.fail(400,'Choose unique current task or employee IDs.');out[key]=[...d[key]];}
     if(Object.hasOwn(d,'status')){if(!engine.STATUS.includes(d.status))input.fail(400,'Choose a supported task status.');out.status=d.status;}
+    if(Object.hasOwn(d,'estimateItemId')){if(d.estimateItemId!==null&&!input.id(d.estimateItemId))input.fail(400,'Choose a current estimate line or a custom task.');out.estimateItemId=d.estimateItemId;}
     if(op.kind==='projectTaskCreate'&&(!out.name||!out.durationDays))input.fail(400,'Task name and duration are required.');
   } else if(op.kind==='projectDates') {
     if(!input.object(d,['startDate','endDate'])||!Object.keys(d).length)input.fail(400,'Change only the project start and end dates.');
@@ -58,6 +59,7 @@ function graph(db,input) {
     ids.add(row.id);
   }
   for(const row of rows)if(row.predecessorIds.some(id=>!input.id(id)||id===row.id||!rows.some(other=>other.id===id&&Number(other.projectId)===Number(row.projectId))))input.fail(409,'Task dependencies require reconciliation.');
+  for(const row of rows)if(row.estimateItemId!=null&&(!input.id(row.estimateItemId)||!(db.projects.find(project=>Number(project.id)===Number(row.projectId)).estimateItems||[]).some(item=>Number(item.id)===row.estimateItemId)))input.fail(409,'Task estimate bindings require reconciliation.');
   for(const project of db.projects||[]){const tasks=rows.filter(row=>Number(row.projectId)===Number(project.id));if(tasks.length&&engine.scheduleTasks(tasks,project.startDate).error)input.fail(409,'Task dependencies require reconciliation.');}
   return rows;
 }
@@ -72,6 +74,7 @@ function authorize(db,auth,op,h,input) {
   const action={projectTasksView:'view',projectTaskCreate:'create',projectTaskEdit:'edit',projectTaskRemove:'remove',projectDates:'edit',projectTaskAssign:'create'}[op.kind];
   actorScope(db,auth.user,project,action,input);
   if(op.kind==='projectTasksView')return;
+  if(op.details.estimateItemId!=null&&!(project.estimateItems||[]).some(item=>Number(item.id)===op.details.estimateItemId))input.fail(400,'Choose an estimate line from this project.');
   const old=(db.projectTasks||[]).find(row=>Number(row.id)===Number(op.path.split('/')[3]));
   if(!['projectTaskCreate','projectDates'].includes(op.kind)&&!old)input.fail(404,'Task not found.');
   if(old){crewAllowed(auth.user,old,input);membersAllowed(db,auth.user,id,old.memberIds,action,input);}
@@ -84,7 +87,7 @@ function authorize(db,auth,op,h,input) {
   const preds=op.details.predecessorIds||old?.predecessorIds||[];
   if(preds.some(pred=>pred===old?.id||!db.projectTasks.some(row=>row.id===pred&&Number(row.projectId)===id)))input.fail(400,'Link current tasks from this project only.');
 }
-function task(row){return {...dto.pick(row,['id','projectId','name','durationDays','crew','status','startDate','endDate','createdAt','createdBy','updatedAt','updatedBy','assignedAt','assignedBy']),predecessorIds:[...(row.predecessorIds||[])],memberIds:[...(row.memberIds||[])]};}
+function task(row){return {...dto.pick(row,['id','projectId','name','durationDays','crew','status','estimateItemId','startDate','endDate','createdAt','createdBy','updatedAt','updatedBy','assignedAt','assignedBy']),predecessorIds:[...(row.predecessorIds||[])],memberIds:[...(row.memberIds||[])]};}
 function visible(db,user,id,input){
   const project=db.projects.find(row=>Number(row.id)===Number(id));if(!project)input.fail(404,'Project not found.');actorScope(db,user,project,'view',input);graph(db,input);
   const scheduled=engine.scheduleTasks((db.projectTasks||[]).filter(row=>Number(row.projectId)===Number(id)),project.startDate);if(scheduled.error)input.fail(409,'Task graph requires reconciliation.');

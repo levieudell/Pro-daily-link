@@ -53,6 +53,14 @@ rejects(() => op('projectTaskRemove', 'DELETE', '/api/project-tasks/1', { member
 rejects(() => op('projectTaskAssign', 'POST', '/api/project-tasks/1/assign', { memberId: 12, fromDate: '2026-02-30' }), 400);
 
 const db = make(), pm = actor('project_manager');
+const linkedDb = make(); linkedDb.projects[0].estimateItems = [{id:41,name:'Current project estimate'}]; linkedDb.projects[1].estimateItems = [{id:42,name:'Other project estimate'}];
+const linked = op('projectTaskCreate','POST','/api/projects/101/tasks',{name:'Linked task',durationDays:2,memberIds:[12],estimateItemId:41});
+tasks.authorize(linkedDb,auth(pm),linked,{},input); assert.equal(linked.details.estimateItemId,41);
+rejects(()=>tasks.authorize(linkedDb,auth(pm),op('projectTaskCreate','POST','/api/projects/101/tasks',{name:'Foreign estimate',durationDays:2,estimateItemId:42}),{},input),400);
+for(const estimateItemId of ['41',0,-1,{},true]) rejects(()=>op('projectTaskEdit','PATCH','/api/project-tasks/1',{estimateItemId}),400);
+assert.equal(op('projectTaskEdit','PATCH','/api/project-tasks/1',{estimateItemId:null}).details.estimateItemId,null);
+linkedDb.projectTasks[0].estimateItemId=41;assert.equal(tasks.visible(linkedDb,pm,101,input).find(row=>row.id===1).estimateItemId,41);
+linkedDb.projectTasks[0].estimateItemId=42;rejects(()=>tasks.graph(linkedDb,input),409);
 tasks.authorize(db, auth(pm), create, {}, input);
 rejects(() => tasks.authorize(db, auth(actor('project_manager', { permissions: { scheduleCrews: false } })), create, {}, input), 403);
 rejects(() => tasks.authorize(db, auth(pm), op('projectTaskCreate', 'POST', '/api/projects/102/tasks', { name: 'Other project', durationDays: 1 }), {}, input), 404);

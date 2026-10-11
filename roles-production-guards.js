@@ -238,7 +238,7 @@ function changeVisible(db,user,row){
 }
 function changeProjection(db,user,row,h){
   const dto=require('./compat-workspace-projections'),pricing=h.canViewPricing(db,user);
-  const result=dto.pick(row,['id','number','projectId','reportId','title','description','detail','reason','status','fieldFlag','flagDate','hours','createdAt','updatedAt','createdBy','date','submittedAt','decidedAt','decidedBy']);
+  const result=dto.pick(row,['id','number','projectId','reportId','title','description','detail','reason','status','fieldFlag','flagDate','quantity','unit','hours','createdAt','updatedAt','createdBy','date','submittedAt','decidedAt','decidedBy']);
   if(pricing)Object.assign(result,dto.pick(row,['amount','rate','pricingType']));
   result.lines=(row.lines||[]).map(line=>({...dto.pick(line,['description','quantity','unit','laborHours']),...(pricing?dto.pick(line,['materialCost']):{})}));
   result.history=(row.history||[]).map(entry=>({...dto.pick(entry,['by','at']),action:pricing?String(entry.action||'Reviewed'):'Reviewed'}));

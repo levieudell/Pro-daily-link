@@ -50,11 +50,11 @@ async function reviewRegressions(){
 async function changeCards(){
  const guards=require('./roles-production-guards');const db=workspaceSnapshot();setPolicy(db,'daily',{});
  const admin={id:3,role:'admin',companyId:db.company.id,status:'Active'};
- db.changes=[{id:77,number:'PC-077',projectId:101,reportId:db.reports[0].id,title:'Synthetic extra',status:'Pricing',reason:'Synthetic reason',hours:2,amount:120,lines:[{description:'Material',quantity:1,unit:'EA',laborHours:2,materialCost:120}],history:[{action:'Updated amount $0 → $120',by:'Synthetic owner',at:'2026-10-11T00:00:00.000Z'}]}];
+ db.changes=[{id:77,number:'PC-077',projectId:101,reportId:db.reports[0].id,title:'Synthetic extra',status:'Pricing',reason:'Synthetic reason',quantity:40,unit:'cy',hours:2,amount:120,lines:[{description:'Material',quantity:1,unit:'EA',laborHours:2,materialCost:120}],history:[{action:'Updated amount $0 → $120',by:'Synthetic owner',at:'2026-10-11T00:00:00.000Z'}]}];
  const url=new URL('/api/changes','http://fixture');const helpers={canViewPricing:()=>false};
  const safe=guards.projectResponse({method:'GET',auth:{user:admin}},url,db,db.changes,helpers)[0];
- assert.equal(safe.reason,'Synthetic reason');assert.equal(safe.hours,2);assert.equal(safe.lines[0].laborHours,2);assert.equal(safe.amount,undefined);assert.equal(safe.lines[0].materialCost,undefined);assert.equal(safe.history[0].action,'Reviewed');checks++;
- const priced=guards.projectResponse({method:'GET',auth:{user:admin}},url,db,db.changes,{canViewPricing:()=>true})[0];assert.equal(priced.lines[0].materialCost,120);assert.equal(priced.amount,120);checks++;
+ assert.equal(safe.quantity,40);assert.equal(safe.unit,'cy');assert.equal(safe.reason,'Synthetic reason');assert.equal(safe.hours,2);assert.equal(safe.lines[0].laborHours,2);assert.equal(safe.amount,undefined);assert.equal(safe.lines[0].materialCost,undefined);assert.equal(safe.history[0].action,'Reviewed');checks++;
+ const priced=guards.projectResponse({method:'GET',auth:{user:admin}},url,db,db.changes,{canViewPricing:()=>true})[0];assert.equal(priced.quantity,40);assert.equal(priced.unit,'cy');assert.equal(priced.lines[0].materialCost,120);assert.equal(priced.amount,120);checks++;
  setPolicy(db,'daily',{viewReports:false,createReports:false,editReports:false,approveReports:false,viewWorkdays:false,runWorkdays:false});
  assert.deepEqual(guards.projectResponse({method:'GET',auth:{user:admin}},url,db,db.changes,helpers),[]);checks++;
  await assert.rejects(guards.guard({method:'PATCH',auth:{user:admin}},new URL('/api/changes/77','http://fixture'),db,{body:async()=>({status:'Approved'})}),error=>error.statusCode===404);checks++;

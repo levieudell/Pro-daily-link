@@ -5,15 +5,16 @@ permissions, accounts, sessions, credentials, schemas or services. **It is not
 ready to activate.** The earlier compatibility prototype remains frozen.
 
 This candidate integrates repository main through
-`d6c316d7d2b3dd1e2a8e1e05f8bb6d2bfda2bb3c` (change-card details and
-field flag/status updates). Repository main is not evidence of the deployed
+`0fcfc7811a16c9a3098c99bdf768f759807d87d4` (change-card details,
+field flag/status updates and estimate-linked schedule tasks). Repository main is not evidence of the deployed
 commit. No existing PR contains this unpublished production-adapter candidate.
 
 The existing framework uses Owner, Admin (including legacy Office), Project
 Manager, Foreman and Field account roles. Crew names are assignment scopes.
 Owner authority, account management, billing, pricing, feature switches,
 tenant boundaries, project/crew scope and Assistant eligibility remain fixed.
-The editor configures only the six existing typed controller families:
+The editor configures only the six typed controller families introduced in
+the isolated Roles draft, over the production roles and stored grants:
 scheduling, time off, time review, time writing/payroll, daily/workdays and
 project notes/to-dos. Every proposed true value remains below its existing
 role ceiling, stored grants, feature gates and current scope. Owner alone
@@ -32,7 +33,9 @@ Policies use server previews, reasons, finite impact reports, signed original
 bindings, explicit confirmation, revision validation, audit entries and
 idempotent original-result lookup. The normal manual routes and Assistant
 read a freshly assembled effective actor. Fixed Assistant eligibility remains
-signed-in Owner/Admin/Project Manager. Scheduling also requires its existing
+signed-in Owner/Admin/Project Manager within the immutable Forged-only pilot.
+Selecting a company for Roles does not enroll it in Assistant access.
+Scheduling also requires its existing
 grant and project/crew scope. Employee archive/restore remains an immutable
 Owner/Admin route with its own expected version.
 
