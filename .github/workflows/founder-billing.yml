@@ -21,4 +21,8 @@ jobs:
       - run: npm run check
       - run: node --check signup.js
       - run: node founder-billing.test.js
+        env:
+          NODE_OPTIONS: --require ./scripts/audit-test-isolation.cjs
       - run: npm test
+        env:
+          NODE_OPTIONS: --require ./scripts/audit-test-isolation.cjs

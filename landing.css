@@ -19,3 +19,5 @@
 .cta-data-note{font-size:13px;color:var(--muted);max-width:520px;margin:14px auto 0}
 .footer-founder{font-size:13px;color:var(--muted);margin:0 0 14px;font-weight:600}
 @media(max-width:600px){.hero h1 span{font-size:.5em}.pricing-compare{display:block;overflow-x:auto}}
+
+.sample-title{font-size:1.17em;font-weight:700;margin:1em 0}.logo picture,.brand picture{display:block;flex:none}.shot-grid aside img{height:auto}
