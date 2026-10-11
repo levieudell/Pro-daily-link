@@ -33,7 +33,8 @@
     const memberIds=[...new Set((Array.isArray(input.memberIds)?input.memberIds:existing?.memberIds||[]).map(Number).filter(id=>id>0))];
     if(teamIds&&memberIds.some(id=>!teamIds.has(id)))return{error:'Choose people from this company’s team'};
     const crew=String(input.crew??existing?.crew??'').trim().slice(0,80);
-    return{value:{name:name.slice(0,160),durationDays,predecessorIds,memberIds,crew,status:normalizeStatus(input.status??existing?.status)}};
+    const estimateItemId=Math.max(0,Math.round(Number(input.estimateItemId??existing?.estimateItemId??0)))||null;
+    return{value:{name:name.slice(0,160),durationDays,predecessorIds,memberIds,crew,status:normalizeStatus(input.status??existing?.status),estimateItemId}};
   }
 
   // Topological order; returns {order} or {cycle:[ids]}.
