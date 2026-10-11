@@ -85,6 +85,10 @@
     if(suggestion.custom===true)return {mode:'custom',reason:'Custom work selected for office review.'};
     if(direct)return {mode:'estimate',estimateItemId:direct.id,reason:'Saved estimate selection.'};
     if(suggestion.scopeChoice==='review'||suggestion.scopeUnverified===true)return {mode:'review',reason:'Confirm the scope against the original notes.'};
+    // A provider row whose description is exactly an estimate line name is that
+    // line — except when grounded evidence or a saved review says otherwise
+    // (those are handled above), and except when several lines share the name.
+    if(!suggestion.scopeEvidence){const exact=(items||[]).filter(item=>String(item.name||'').trim().toLowerCase()===String(suggestion.description||'').trim().toLowerCase());if(exact.length===1)return {mode:'estimate',estimateItemId:exact[0].id,reason:'Matches the estimate line name. Review before saving.'}}
     const source=scopeFacts(suggestion.scopeEvidence||suggestion.description);
     if(source.categories.length!==1||source.surfaces.length>1||source.materials.length>1||source.rooms.length>1||source.levels.length>1)return {mode:'review',reason:'Mixed or unclear scope needs your choice.'};
     if(!(items||[]).length)return {mode:'custom',reason:'No estimate lines are available. Possible extra work needs office review.'};

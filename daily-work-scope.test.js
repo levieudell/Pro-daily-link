@@ -58,6 +58,11 @@ for(const [description,name] of nonTile){
   const provider=normalize([{description:name,evidence:description,laborHours:0}],description)[0];assert.equal(provider.scopeUnverified,false);assert.equal(scopeProposal(provider,floor).mode,'custom');
 }
 assert.equal(propose('Poured 2.5 CY concrete.')[0].quantity,2.5);assert.equal(propose('Installed 20 LF basement trim.')[0].quantity,20);
+// Fresh AI rows: an exact estimate-line name is picked even when the name has
+// no trade keywords, but grounded evidence and duplicate names still win.
+assert.equal(scopeProposal({description:'Form sidewalk edge',needsScopeConfirmation:true},[{id:7,name:'Form sidewalk edge',unit:'LF'}]).estimateItemId,7,'Exact estimate line name is picked for a fresh AI row');
+assert.equal(scopeProposal({description:'FLOORING',scopeEvidence:'We tiled the bathroom walls.',needsScopeConfirmation:true},floor).mode,'custom','Grounded evidence overrides an exact name match');
+assert.equal(scopeProposal({description:'Floor tile',needsScopeConfirmation:true},[{id:1,name:'Floor tile'},{id:2,name:'Floor tile'}]).mode,'review','Duplicate line names need a human choice');
 for(const note of ['We will paint the kitchen walls.','We did not repair plumbing pipes.','Tomorrow replaced electrical outlets.','Not patched drywall.','I have not painted 20 SF of kitchen walls.','I have not replaced three units of electrical equipment.','Painting is planned for tomorrow.','Repairing is scheduled for tomorrow.'])assert.equal(propose(note).length,0,note+' stays excluded');
 for(const [description,items] of [
   ['Installed plumbing and electrical.',floor],
