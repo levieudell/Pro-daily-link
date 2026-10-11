@@ -237,3 +237,20 @@ test('Saved import read rejects foreign or ambiguous document source and retains
   db.estimateImports[0].companyId = B; reject(() => family.readImports(db, manager, 101, helpers, input), 409);
   delete db.estimateImports[0].companyId; db.estimateImports.push({ ...db.estimateImports[0] }); reject(() => family.readImports(db, manager, 101, helpers, input), 409);
 });
+
+test('Fresh scoped project projection retains pending manual proposals without private source or pricing', async () => {
+  const db = seed(), operation = op(...rows[4]), identity = auth(db, 'field');
+  family.authorize(db, identity, operation, helpers, input);
+  const result = await actual(db, identity, operation);
+  family.validate(db, result.candidate, operation, identity, helpers, input);
+  const saved = result.candidate.projects[0].estimateProposals.at(-1);
+  // Retained legacy/provider fields must never become bootstrap side channels.
+  Object.assign(saved, { sourceFile: { name: 'Private.pdf', url: '/uploads/private.pdf' }, cost: 999, privateContext: { token: 'secret' }, sourceImportId: 7 });
+  const projection = require('./compat-workspace-projections');
+  const expected = Object.fromEntries(['id', 'name', 'plannedQuantity', 'unit', 'createdBy', 'createdAt', 'status'].map(key => [key, saved[key]]));
+  assert.deepEqual(projection.project(result.candidate.projects[0], true).estimateProposals.at(-1), expected);
+  assert.deepEqual(projection.project(result.candidate.projects[0], false).estimateProposals.at(-1), expected);
+  assert.deepEqual(projection.project({ id: 202, name: 'No proposals' }, false).estimateProposals, []);
+  assert.equal(result.candidate.projects[0].estimateProposals.at(-1).privateContext.token, 'secret', 'Projection preserves retained source');
+  assert.throws(() => projection.project({ id: 101, estimateProposals: [{ id: 1, name: {} }] }, false), error => error.statusCode === 409);
+});

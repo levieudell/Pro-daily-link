@@ -37,6 +37,9 @@ function project(row, pricing) {
   const dto = pick(row, ['id', 'name', 'code', 'site', 'address', 'siteContact', 'supervisor', 'color', 'crew', 'status', 'customer', 'customerId', 'contractType', 'progress', 'production', 'startDate', 'endDate', 'archived', 'archivedAt', 'templateId', 'templateVersion', 'notes', 'workType']);
   dto.templateIds = texts(row.templateIds);
   dto.estimateItems = list(row.estimateItems, item => ({ ...pick(item, ['id', 'name', 'description', 'unit', 'plannedQuantity', 'budgetHours', 'source', 'sourceProposalId']), ...(pricing ? pick(item, ['cost']) : {}) }));
+  // Existing scoped project review needs pending proposals after a fresh login.
+  // The manual review surface never needs retained source files or pricing.
+  dto.estimateProposals = list(row.estimateProposals, proposal => pick(proposal, ['id', 'name', 'plannedQuantity', 'unit', 'createdBy', 'createdAt', 'status']));
   if (pricing) { Object.assign(dto, pick(row, ['budget', 'contractValue'])); if (row.tmSettings) dto.tmSettings = pick(row.tmSettings, ['defaultLaborRate', 'materialMarkup', 'equipmentMarkup']); }
   return dto;
 }
