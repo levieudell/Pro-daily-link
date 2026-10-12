@@ -1,0 +1,46 @@
+'use strict';
+const assert=require('node:assert/strict'),crypto=require('node:crypto'),fs=require('node:fs'),os=require('node:os'),path=require('node:path');
+const {A,B,initial,snapshot,memory,credential}=require('./compat-account-fixture');
+const {workspaceSnapshot}=require('./compat-workspace-fixture'),{services}=require('./compat-lifecycle-fixture');
+const daily=require('./daily-access');
+async function main(){
+  const directory=fs.mkdtempSync(path.join(os.tmpdir(),'pdl-compat-labor-exclusions-')),file=path.join(directory,'legacy.json'),legacy=snapshot();legacy.company.id=B;legacy.users[0].companyId=B;fs.writeFileSync(file,JSON.stringify(legacy));const original=fs.readFileSync(file),key=crypto.randomBytes(32);
+  Object.assign(process.env,{NODE_ENV:'test',PDL_COMPAT_ACCOUNT_SYNTHETIC:'1',PDL_REQUIRE_AUTH:'1',PDL_DB_FILE:file,PDL_PLATFORM_FILE:path.join(directory,'platform.json'),PDL_SUPABASE_ENABLED:'0',PDL_TRANSACTIONAL_DB:'off'});
+  for(const name of ['OPENAI_API_KEY','RESEND_API_KEY','STRIPE_SECRET_KEY','SENTRY_DSN','SUPABASE_SECRET_KEY','PDL_PLATFORM_KEY'])process.env[name]='';
+  const mod=require('./server');await new Promise(resolve=>mod.server.listen(0,'127.0.0.1',resolve));const origin='http://127.0.0.1:'+mod.server.address().port;let uninstall;
+  function seed(){const db=workspaceSnapshot();db.reports.push({...structuredClone(db.reports[0]),id:2,notes:'Synthetic duplicate field daily',productionEntries:[{estimateItemId:1,description:'Synthetic wall tile',quantity:3,unit:'SF',laborHours:2}]});return db;}
+  async function scenario(db,email='owner@example.invalid'){
+    uninstall?.();const store=memory(db),fixture=services(store,origin,{key});uninstall=mod.installCompatibilityAccountTests({synthetic:true,companyId:A,origin,globalOrigin:'http://localhost:4999',repository:store,...fixture,workspace:true,workspaceKey:key});
+    let token;const request=async(route,method='GET',data)=>{const res=await fetch(origin+route,{method,signal:AbortSignal.timeout(10000),headers:{'X-PDL-Company':A,...(token?{Authorization:'Bearer '+token}:{}),...(data?{'Content-Type':'application/json'}:{})},...(data?{body:JSON.stringify(data)}:{})});return {status:res.status,data:await res.json()};};
+    const login=await request('/api/auth/login','POST',{email,password:initial});assert.equal(login.status,200,JSON.stringify(login));token=login.data.token;
+    const preview=details=>request('/api/daily-actions/preview','POST',{action:'editReport',id:2,details});
+    const confirm=proof=>request('/api/reports/2','PATCH',proof);
+    return {store,request,preview,confirm};
+  }
+  const exclusion={memberId:12,hours:2,sourceReportId:1};
+  try{
+    let s=await scenario(seed()),before=await s.request('/api/production');assert.equal(before.status,200);assert.equal(before.data.projects[0].items[0].actualLaborHours,4);
+    let p=await s.preview({laborExclusions:[exclusion]});assert.equal(p.status,200,JSON.stringify(p));const proof={token:p.data.token,version:p.data.version,confirmed:true,requestId:crypto.randomUUID()};
+    assert.equal((await s.confirm({...proof,confirmed:false})).status,400);assert.equal(s.store.current().reports[1].laborExclusions,undefined);
+    const saved=await s.confirm(proof);assert.equal(saved.status,200,JSON.stringify(saved));assert.deepEqual(saved.data.laborExclusions.map(({by,at,...row})=>row),[exclusion]);assert.equal(saved.data.laborExclusions[0].by,s.store.current().users[0].name);assert.ok(Date.parse(saved.data.laborExclusions[0].at));assert.ok(saved.data.history.some(row=>row.action==='Labor marked as counted on another daily'));
+    assert.equal((await s.request('/api/production')).data.projects[0].items[0].actualLaborHours,2);const revision=s.store.revision();assert.equal((await s.confirm(proof)).status,200);assert.equal(s.store.revision(),revision);
+    p=await s.preview({laborExclusions:[]});assert.equal(p.status,200);assert.equal((await s.confirm({token:p.data.token,version:p.data.version,confirmed:true,requestId:crypto.randomUUID()})).status,200);assert.equal((await s.request('/api/production')).data.projects[0].items[0].actualLaborHours,4);
+    for(const details of [{laborExclusions:[{...exclusion,by:'Forged actor'}]},{laborExclusions:[{...exclusion,at:'2099-01-01'}]},{laborExclusions:[exclusion,exclusion]},{laborExclusions:[{...exclusion,hours:25}]},{laborExclusions:[{...exclusion,hours:0}]}])assert.equal((await s.preview(details)).status,400);
+    for(const row of [{...exclusion,sourceReportId:2},{...exclusion,hours:3},{...exclusion,memberId:11}])assert.equal((await s.preview({laborExclusions:[row]})).status,409);
+    assert.equal((await s.preview({laborExclusions:[{...exclusion,sourceReportId:999}]})).status,404);
+    s=await scenario(seed(),'field@example.invalid');assert.equal((await s.preview({laborExclusions:[exclusion]})).status,403);
+    const pmDb=seed();pmDb.users.push({id:3,companyId:A,name:'Synthetic PM',email:'pm@example.invalid',role:'project_manager',status:'Active',...credential(initial),projectIds:[101],assignedCrews:['Synthetic Crew'],permissions:{viewDailies:true,approveDailies:true}});
+    s=await scenario(pmDb,'pm@example.invalid');p=await s.preview({laborExclusions:[exclusion]});assert.equal(p.status,200,JSON.stringify(p));
+    const loaded=await s.store.load(A);loaded.snapshot.users[2].permissions.approveDailies=false;await s.store.commit(loaded.snapshot,loaded.revision);assert.equal((await s.confirm({token:p.data.token,version:p.data.version,confirmed:true,requestId:crypto.randomUUID()})).status,403);assert.equal(s.store.current().reports[1].laborExclusions,undefined);assert.equal((await s.preview({laborExclusions:[exclusion]})).status,403);
+    const foreign=seed();foreign.projects.push({id:202,name:'Synthetic other project',estimateItems:[]});foreign.reports[0].project=1;s=await scenario(foreign);assert.equal((await s.preview({laborExclusions:[exclusion]})).status,409);
+    const wrongDate=seed();wrongDate.reports[0].dateIso='2026-10-02';s=await scenario(wrongDate);assert.equal((await s.preview({laborExclusions:[exclusion]})).status,409);
+    for(const hours of ['bogus',null,{},-1]){const invalid=seed();invalid.reports[0].laborEntries[0].hours=hours;s=await scenario(invalid);assert.equal((await s.preview({laborExclusions:[exclusion]})).status,409);}
+    for(const index of [0,1]){const duplicate=seed();duplicate.reports[index].laborEntries.push({...duplicate.reports[index].laborEntries[0]});s=await scenario(duplicate);assert.equal((await s.preview({laborExclusions:[exclusion]})).status,409);}
+    const cycle=seed();cycle.reports[1].laborExclusions=[{...exclusion,by:'Synthetic Owner',at:'2026-10-09T08:00:00Z'}];s=await scenario(cycle);assert.equal((await s.request('/api/daily-actions/preview','POST',{action:'editReport',id:1,details:{laborExclusions:[{...exclusion,sourceReportId:2}]}})).status,409);assert.equal((await s.request('/api/production')).data.projects[0].items[0].actualLaborHours,2);
+    assert.equal((await s.request('/api/daily-actions/preview','POST',{action:'editReport',id:1,details:{dateIso:'2026-10-02'}})).status,409);assert.equal((await s.request('/api/daily-actions/preview','POST',{action:'editReport',id:1,details:{status:'Draft',laborEntries:[{memberId:12,hours:1,crew:'Synthetic Crew'}]}})).status,409);assert.equal((await s.preview({dateIso:'2026-10-02'})).status,409);assert.equal(s.store.current().reports[0].dateIso,'2026-10-01');
+    const pending=seed();pending.reports.forEach(row=>{row.status='Needs review';});s=await scenario(pending);p=await s.preview({laborExclusions:[exclusion]});assert.equal(p.status,200,JSON.stringify(p));assert.equal((await s.confirm({token:p.data.token,version:p.data.version,confirmed:true,requestId:crypto.randomUUID()})).status,200);assert.equal((await s.request('/api/daily-actions/preview','POST',{action:'approveReport',id:2,details:{}})).status,409);for(const id of [1,2]){p=await s.request('/api/daily-actions/preview','POST',{action:'approveReport',id,details:{}});assert.equal(p.status,200,JSON.stringify(p));assert.equal((await s.request('/api/reports/'+id+'/approve','PATCH',{token:p.data.token,version:p.data.version,confirmed:true,requestId:crypto.randomUUID()})).status,200);}assert.equal((await s.request('/api/production')).data.projects[0].items[0].actualLaborHours,2);
+    const restricted=structuredClone(pmDb);restricted.company.dailyPolicyRequired=true;restricted.company.dailyRolePolicy={version:1,revision:1,roles:Object.fromEntries(daily.roles.map(role=>[role,{...daily.ceiling(role)}]))};restricted.company.dailyRolePolicy.roles.project_manager.editReports=false;daily.validatePolicy(restricted.company.dailyRolePolicy);s=await scenario(restricted,'pm@example.invalid');assert.equal((await s.preview({laborExclusions:[exclusion]})).status,403);
+    assert.deepEqual(fs.readFileSync(file),original);assert.equal(fs.existsSync(path.join(directory,'platform.json')),false);console.log('compatibility labor exclusion: reviewed save/replay/clear, actual aggregate, actor audit, Field denial, scope/shape ceilings and current approval revocation passed');
+  }finally{uninstall?.();mod.server.closeAllConnections();await new Promise(resolve=>mod.server.close(resolve));}
+}
+main().catch(error=>{console.error(error);process.exitCode=1;});

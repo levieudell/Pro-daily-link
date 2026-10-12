@@ -26,6 +26,9 @@ assert.equal(engine.businessDaysBetween('2026-10-09', '2026-10-12'), 2, 'Fri and
   assert.equal(ok.error, undefined);
   assert.deepEqual(ok.value.predecessorIds, [1, 2], 'duplicate predecessors collapse');
   assert.equal(ok.value.status, 'not-started');
+  const linked={name:'Dig',durationDays:3,estimateItemId:41};
+  assert.equal(engine.validate({name:'Updated'},linked).value.estimateItemId,41,'Omission retains the existing estimate link');
+  assert.equal(engine.validate({estimateItemId:null},linked).value.estimateItemId,null,'Explicit custom-task selection clears the link');
 }
 
 // Scheduling
