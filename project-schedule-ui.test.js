@@ -24,8 +24,8 @@ assert.match(server, /'projectTasks','projectEvents'\]/, 'test-customer purge co
 assert.match(server, /'projectEvents'\]/, 'test-customer purge covers project events');
 assert.ok(server.includes('projectEventsRoute = url.pathname.match'), 'project events collection route');
 assert.ok(server.includes('projectEventRoute = url.pathname.match'), 'single event route');
-assert.ok(server.includes("filter(event=>scope.allowedIds.has(event.projectId))"), 'field workspace scopes events');
-assert.ok(server.includes("filter(event=>scope.projectIds.has(Number(event.projectId)))"), 'manager workspace scopes events');
+assert.ok(server.includes("projectEvents:require('./project-events-access').visible(db,account||fieldAccount||{role:'field',memberId:Number(member.id)})"), 'field workspace enforces current actor event viewing and readable project scope');
+assert.ok(server.includes("projectEvents:require('./project-events-access').visible(db,accountUser)"), 'manager workspace enforces current actor event viewing and assigned project scope');
 
 // Module contracts.
 assert.match(ui, /openProjectWithSchedule = openProject/);

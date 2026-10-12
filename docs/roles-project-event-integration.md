@@ -26,6 +26,6 @@ Event state and creation responses include a content version calculated from the
 
 The event route does not provide a business receipt, replay endpoint or duplicate suppression. An `X-PDL-Operation` value does not make its POST idempotent. Unknown event results must be reviewed against refreshed current events before another deliberate submission; the UI never automatically retries or claims an original-operation recovery guarantee for events.
 
-The unchanged fixed Assistant eligibility remains signed-in Owner/Admin/PM only, with the existing scheduling/project-note checks. Employee archive remains fixed Owner/Admin and outside editable flags. PR24 dependency changes remain separate.
+The unchanged fixed Assistant eligibility remains signed-in Owner/Admin/PM only, with the existing scheduling/project-note checks. Employee archive is separate PR122; its proposed Owner/Admin authority stays outside editable flags, and this integration does not import that route. PR24 dependency changes remain separate.
 
 Synthetic and source review results must name their exact successor head. Earlier `798` and published `b6` results are historical evidence, not automatic validation of this integration. Hosted CI and any later production gate require separate current-head evidence; production action approval is still required at action time.
