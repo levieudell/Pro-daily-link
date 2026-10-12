@@ -21,7 +21,9 @@ function createRepository(transport){
       if(!uuid(snapshot?.company?.id)||!Number.isSafeInteger(expectedRevision)||expectedRevision<0||expectedRevision>=Number.MAX_SAFE_INTEGER||!guard||typeof guard.deadline!=='string'||!Number.isFinite(Date.parse(guard.deadline)))throw unavailable();
       let response;
       try{
-        response=await transport.request('/rest/v1/rpc/commit_roles_snapshot',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({p_company_id:snapshot.company.id,p_expected_revision:expectedRevision,p_snapshot:snapshot,p_deadline:guard.deadline})});
+        const platform=guard.platformId!==undefined;
+        if(platform&&(!uuid(guard.platformId)||!Number.isSafeInteger(guard.platformRevision)||guard.platformRevision<0))throw unavailable();
+        response=await transport.request(platform?'/rest/v1/rpc/commit_roles_snapshot_with_platform':'/rest/v1/rpc/commit_roles_snapshot',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({p_company_id:snapshot.company.id,p_expected_revision:expectedRevision,p_snapshot:snapshot,p_deadline:guard.deadline,...platform?{p_platform_id:guard.platformId,p_platform_expected_revision:guard.platformRevision}:{} })});
       }catch(error){
         if(/PDL_REVISION_CONFLICT|PDL_ROLES_DEADLINE|40001/.test(String(error.message)))throw new RevisionConflictError(expectedRevision,-1);
         // A transport failure can occur after COMMIT. Never classify it as an

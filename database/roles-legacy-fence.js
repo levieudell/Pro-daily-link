@@ -7,6 +7,6 @@ async function assertUnmanaged(transport,companyId){
   // silently enable an old writer after a managed company has been activated.
   const response=await transport.request('/rest/v1/companies?id=eq.'+encodeURIComponent(companyId)+'&select=*&limit=1');
   const rows=await response.json();if(!Array.isArray(rows)||rows.length>1)fail();
-  if(rows[0]?.roles_managed===true)fail();
+  if(rows[0]?.roles_managed===true||rows[0]?.platform_managed===true)fail();
 }
 module.exports={assertUnmanaged};

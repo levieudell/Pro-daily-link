@@ -21,6 +21,15 @@ function one(rows,id,name){const matches=(rows||[]).filter(row=>String(row.id)==
 function noteRoute(path){return /^\/api\/projects\/([1-9]\d*)\/notes-todos(?:\/([^/]+))?$/.exec(path);}
 async function guard(req,url,db,h){
   const user=req.auth.user,path=url.pathname,method=req.method;
+  await require('./roles-daily-baseline').guard(req,url,db,h);
+  const plainAssignment=/^\/api\/assignments(?:\/([1-9]\d*)(?:\/(acknowledge))?)?$/.exec(path);
+  if(plainAssignment&&['GET','POST','PATCH','DELETE'].includes(method)){
+    const input=method==='GET'?{}:await h.body(req);
+    if(method==='POST'&&!plainAssignment[1]&&input&&input.requestId===undefined)input.requestId=req.headers?.['x-pdl-operation']||h.context?.()?.rolesOperationId||require('node:crypto').randomUUID();
+    const result=require('./scheduling-route-guard').guard(db,user,method,url,input||{});
+    if(result)fail(result.status,result.error);
+    if(method!=='GET')req.rolesPlainScheduling={action:plainAssignment[2]?'acknowledge':method==='POST'?'create':method==='PATCH'?'edit':'remove',id:plainAssignment[1]?Number(plainAssignment[1]):null,input:input||{}};
+  }
   if(method==='POST'&&/^\/api\/projects\/[1-9]\d*\/assistant\/confirm$/.test(path))assistantReplay(db,user,await h.body(req),Number(path.split('/')[3]));
   if(method==='POST'&&/^\/api\/projects\/[1-9]\d*\/assistant\/chat$/.test(path)){
     const input=await h.body(req),kind=input?.action||'schedule';
@@ -36,6 +45,15 @@ async function guard(req,url,db,h){
       const candidates=projectId==null?(db.projects||[]).map(row=>row.id):[projectId];
       if(!candidates.some(id=>require('./project-assistant').allowed(db,user,id,null,kind)))fail(403,'Current assistant action permission required');
     }
+  }
+  const submit=/^\/api\/changes\/([1-9]\d*)\/submit$/.exec(path);
+  if(method==='POST'&&submit){
+    if(!['owner','admin','project_manager'].includes(user.role)||typeof h.canViewPricing!=='function'||!h.canViewPricing(db,user))fail(403,'Existing pricing permission is required to share a change document.');
+    const change=one(db.changes,submit[1],'Change');if(!changeVisible(db,user,change))fail(404,'Change not found');
+    for(const row of (db.photos||[]).filter(photo=>Number(photo.changeId)===change.id))if(!require('./protected-assets-admission').authorized(db,user,{kind:'photo',row,projectId:db.projects[row.project]?.id??row.projectId},h))fail(404,'Change photo not found');
+  }
+  if(['POST','PATCH'].includes(method)&&(path==='/api/reports'||/^\/api\/reports\/[1-9]\d*$/.test(path))){
+    const reportBody=await h.body(req);if(Object.hasOwn(reportBody||{},'extracted'))require('./roles-report-intake').validateExtracted(reportBody.extracted);
   }
   if(!anyPolicy(db))return;
   const data=['POST','PATCH','PUT','DELETE'].includes(method)?await h.body(req):null;
@@ -109,10 +127,7 @@ async function guard(req,url,db,h){
       if(!daily.projectAllowed(db,user,projectId)||(data.laborEntries||[]).some(row=>!daily.memberAllowed(db,user,row.memberId)))fail(403,'Assigned project and entire crew scope required');
     }
     if(['POST','PATCH'].includes(method)&&!report[2]&&data.extracted){
-      if(typeof data.extracted!=='object'||Array.isArray(data.extracted))fail(400,'Use valid extracted daily text');
-      const fields=['summary','labor','quantity','issue','next','originalLanguage','englishTranslation','source','warning'];
-      if(Object.keys(data.extracted).some(key=>!fields.includes(key)))fail(400,'Extracted text cannot supply daily bindings or security fields');
-      if(Object.values(data.extracted).some(value=>typeof value!=='string'))fail(400,'Extracted daily values must be text');
+      require('./roles-report-intake').validateExtracted(data.extracted);
     }
   }
   const day=/^\/api\/workdays(?:\/([1-9]\d*)(?:\/(end))?|\/(start))?$/.exec(path);
@@ -189,12 +204,16 @@ function projectResponse(req,url,db,data,h){
   if(path==='/api/auth/me')return {...data,permissions:user.permissions||{}};
   if(!anyPolicy(db))return data;
   const gates=registry.effective(db,user),copy=structuredClone(data);
+  if(path==='/api/action-center'&&restricted(db,'daily')&&!gates.daily.viewReports){if(Array.isArray(copy))return copy.filter(row=>row.type!=='project_risk');if(Array.isArray(copy.items))copy.items=copy.items.filter(row=>row.type!=='project_risk');return copy;}
   if(path==='/api/state'){
     const dto=require('./compat-workspace-projections'),result=dto.bootstrap(db,user,h),view=readView(db,user,h),pricing=h.canViewPricing(db,user);
     // Keep the product's existing immutable modules through finite projections.
     result.crews=(copy.crews||[]).map(row=>({...dto.pick(row,['id','name','status','createdAt','updatedAt']),memberIds:(row.memberIds||[]).filter(id=>view.team.some(member=>member.id===id))}));
     result.catalog=(copy.catalog||[]).map(row=>dto.pick(row,['id','name','category','unit','targetHoursPerUnit','productionRate','notes']));
-    result.changes=(copy.changes||[]).filter(row=>changeVisible(db,user,row)).map(row=>changeProjection(db,user,row,h));
+    // Main ships finite summaries, not raw change records. Recompute over the
+    // same current source scope as change reads; precomputed totals can expose
+    // hidden report-derived facts even when all money is null.
+    result.projectChanges=changeSummaries(db,user,h);delete result.changes;
     result.photos=result.photos.filter(row=>view.photos.some(photo=>photo.id===row.id)).map(row=>{const source=view.photos.find(photo=>photo.id===row.id);return source?.changeId!=null?{...row,changeId:source.changeId}:row;});
     if(gates.timeReview.viewCards)result.timeCards=view.timeCards.map(row=>require('./time-review-admission').cardProjection(row));
     if(gates.timeOff.viewRequests&&copy.timeOffRequests)result.timeOffRequests=copy.timeOffRequests.filter(row=>leave.inScope(db,user,row)).map(leave.present);
@@ -232,9 +251,37 @@ function projectResponse(req,url,db,data,h){
   return copy;
 }
 function changeVisible(db,user,row){
+  if(!row||row.companyId!==undefined&&row.companyId!==db.company.id||!Number.isSafeInteger(row.projectId)||!(db.projects||[]).some(project=>project.id===row.projectId))fail(409,'Change project source needs reconciliation');
   if(!hProject(db,user,row.projectId))return false;
+  if(row.reportId!=null&&(!Number.isSafeInteger(Number(row.reportId))||Number(row.reportId)<1))fail(409,'Change report source needs reconciliation');
   const references=(db.reports||[]).filter(report=>Number(report.id)===Number(row.reportId)||(report.flags||[]).some(flag=>Number(flag.resolution?.changeId)===Number(row.id)));
+  if(references.some(report=>db.projects[report.project]?.id!==row.projectId))fail(409,'Change report/project binding needs reconciliation');
+  if(restricted(db,'daily')&&(row.reportId!=null||references.length)){
+    if(!daily.access(db,user).viewReports)return false;
+    // Legacy report/change IDs have no immutable lifecycle identity. Under a
+    // restriction, current numeric-ID equality cannot prove a PM's original
+    // source crew after deletion/reuse. Office archival authority stays fixed.
+    if(user.role==='project_manager')return false;
+  }
   return references.every(report=>!restricted(db,'daily')||daily.reportInScope(db,user,report));
+}
+function changeSummaries(db,user,h){
+  if(!['owner','admin','project_manager'].includes(user.role))return [];
+  if(typeof h.canViewPricing!=='function')fail(503,'Existing pricing helper required');
+  const groups=new Map(),pricing=h.canViewPricing(db,user);
+  for(const change of db.changes||[]){
+    if(!changeVisible(db,user,change))continue;
+    if(!['Potential','Pricing','Submitted','Approved','Rejected','Void','T&M'].includes(change.status))fail(409,'Change summary status needs reconciliation');
+    const id=change.projectId,amount=change.amount==null?0:Number(change.amount);
+    if(!Number.isFinite(amount)||amount<0||amount>1e12)fail(409,'Change summary amount needs reconciliation');
+    const row=groups.get(id)||{projectId:id,awaitingDecision:0,openItems:0,approvedCount:0,openExposure:pricing?0:null,approvedTotal:pricing?0:null};
+    if(change.status==='Submitted')row.awaitingDecision++;
+    if(['Potential','Pricing','Submitted','T&M'].includes(change.status)){row.openItems++;if(pricing)row.openExposure+=amount;}
+    if(change.status==='Approved'){row.approvedCount++;if(pricing)row.approvedTotal+=amount;}
+    if(pricing&&(!Number.isFinite(row.openExposure)||!Number.isFinite(row.approvedTotal)||row.openExposure>1e12||row.approvedTotal>1e12))fail(409,'Change summary total needs reconciliation');
+    groups.set(id,row);
+  }
+  return [...groups.values()];
 }
 function changeProjection(db,user,row,h){
   const dto=require('./compat-workspace-projections'),pricing=h.canViewPricing(db,user);
@@ -262,6 +309,7 @@ function readView(db,user,h){
   result.projects=(db.projects||[]).filter((row,index)=>{if(!ids.has(row.id))return false;indexMap.set(index,indexMap.size);return true;}).map(row=>structuredClone(row));
   const reports=new Set((workspace.reports||[]).map(row=>row.id)),days=new Set((workspace.workdays||[]).map(row=>row.id));
   result.reports=(db.reports||[]).filter(row=>reports.has(row.id)&&indexMap.has(row.project)&&(!restricted(db,'daily')||daily.reportInScope(db,user,row))).map(row=>({...structuredClone(row),project:indexMap.get(row.project)}));
+  if(restricted(db,'daily'))for(const row of result.projects){if(!daily.access(db,user).viewReports){delete row.progress;delete row.production;}else Object.assign(row,metrics(result,row));}
   result.workdays=(db.workdays||[]).filter(row=>days.has(row.id)&&ids.has(row.projectId)&&(!restricted(db,'daily')||daily.workdayInScope(db,user,row)));
   const assignments=new Set((workspace.assignments||[]).map(row=>row.id)),cards=new Set((workspace.timeCards||[]).map(row=>row.id));
   result.assignments=(db.assignments||[]).filter(row=>assignments.has(row.id)&&ids.has(row.projectId)&&(!restricted(db,'scheduling')||scheduling.inScope(db,user,row,'view')));
@@ -272,9 +320,12 @@ function readView(db,user,h){
   return result;
 }
 function validateDelta(before,after,req,url,h){
-  if(!anyPolicy(before)||!req.auth)return;
+  if(!req.auth)return;
   const path=url.pathname,user=req.auth.user;
   const clean=value=>{const row={...value};delete row.rolesProviderAttempts;return row;};before=clean(before);after=clean(after);
+  if(req.rolesPlainScheduling)require('./roles-scheduling-consequences').validate(before,after,user,url,req.rolesPlainScheduling);
+  require('./roles-daily-baseline').validate(before,after,req,url);
+  if(!anyPolicy(before))return;
   const timeOperation=require('./time-write-admission').routeOperation(req.method,path);
   if(timeOperation?.kind==='cards'&&controlled(before,'daily','runWorkdays'))for(const row of after.workdays||[]){
     const prior=(before.workdays||[]).find(old=>old.id===row.id);if(canonicalHash(prior??null)===canonicalHash(row))continue;
@@ -331,4 +382,4 @@ function validateDelta(before,after,req,url,h){
     for(const row of after.workdays||[]){const prior=(before.workdays||[]).find(value=>value.id===row.id);if(!prior||canonicalHash(prior)!==canonicalHash(row)){if(path.startsWith('/api/workdays')&&!daily.workdayInScope(after,user,row,'runWorkdays'))fail(403,'Workday must remain in entire project and crew scope');}}
   }
 }
-module.exports={guard,projectResponse,validateDelta,readView,restricted,anyPolicy,permit};
+module.exports={guard,projectResponse,validateDelta,readView,restricted,anyPolicy,permit,changeVisible,changeSummaries};

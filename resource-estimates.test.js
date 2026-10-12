@@ -30,6 +30,7 @@ const denyExternal = () => { throw Error('No provider, physical file or network 
 async function actual(db, auth, operation) {
   const candidate = structuredClone(db); let response, writes = 0;
   const context = {
+    dbContext: { getStore: () => null },
     req: { method: operation.method, auth }, url: new URL('http://127.0.0.1' + operation.path), res: {},
     readDb: () => candidate, body: async () => structuredClone(operation.details),
     writeDb: value => { assert.equal(value, candidate); writes++; },

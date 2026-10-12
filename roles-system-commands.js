@@ -5,13 +5,22 @@ const {canonicalHash}=require('./database/transactional-repository');
 const fail=(statusCode,message)=>{throw Object.assign(Error(message),{statusCode});};
 function createHandler(h){
   return async function handle(req,res,url){
-    const match=/^\/api\/platform\/companies\/([^/]+)\/(roles-authority|features|owner-reset|subscription|demo-reset)$/.exec(url.pathname);
+    const match=/^\/api\/platform\/companies\/([^/]+)\/(roles-authority|features|owner-reset|subscription|demo-reset)(?:\/([a-f0-9-]{36}))?$/.exec(url.pathname);
     if(!match)return false;
     const companyId=decodeURIComponent(match[1]),service=h.service();
     if(!service?.has(companyId)){await h.assertUnmanaged(companyId);if(match[2]==='roles-authority'){h.json(res,200,{managed:false});return true;}return false;}
     const opening=h.platformIdentity(req);if(!opening)fail(403,'Active platform owner permission required');
     const current=()=>{const value=h.platformIdentity(req);if(!value||canonicalHash(value)!==canonicalHash(opening))fail(403,'Current platform owner permission required');return value;};
     const row=await service.repository.load(companyId);current();
+    if(match[3]&&match[2]!=='owner-reset')fail(404,'Original setup recovery route not found');
+    if(match[2]==='owner-reset'){
+      if(match[3]?req.method!=='GET':req.method!=='POST')fail(405,'Original setup recovery uses GET; reset uses POST');
+      if(!match[3]){const input=await h.body(req);if(!input||Array.isArray(input)||Object.keys(input).some(name=>name!=='expectedRevision')||!Number.isSafeInteger(input.expectedRevision)||input.expectedRevision<0)fail(400,'Owner reset accepts only its current expected revision');}
+      const scope=h.manualScope(req),purpose='company-owner-reset',requestHash=canonicalHash({companyId,purpose}),custody=h.manualCustody(),operationId=match[3]||h.operationId();
+      const original=custody.recover(row.snapshot,{operationId,purpose,scope,requestHash});
+      if(original.found){h.clampDeadline(Date.parse(original.metadata.expiresAt));h.deliveryGuard(async()=>{current();const latest=await service.repository.load(companyId);if(latest.revision!==row.revision||latest.contentHash!==row.contentHash)fail(409,'Current setup generation changed before delivery');custody.recover(latest.snapshot,{operationId,purpose,scope:h.manualScope(req,false),requestHash});});h.json(res,200,{companyId,email:original.metadata.email,setupCode:original.setupCode,expiresAt:original.metadata.expiresAt,operationId,recovered:true});return true;}
+      if(match[3])fail(404,'Original owner setup not found');
+    }
     if(match[2]==='roles-authority'&&req.method==='GET'){h.json(res,200,{managed:true,companyId,expectedRevision:row.revision,authorizedUntil:opening.expiresAt});return true;}
     const methods={features:'PATCH','owner-reset':'POST',subscription:'PATCH','demo-reset':'POST'};
     if(req.method!==methods[match[2]])fail(405,'Method not allowed');
@@ -29,7 +38,8 @@ function createHandler(h){
         const owners=db.users.filter(user=>user.role==='owner'&&user.status==='Active');if(owners.length!==1)fail(409,'Active company owner needs reconciliation');
         const owner=owners[0],issued=h.ownerCredential();Object.assign(owner,issued.fields);delete owner.passwordHash;delete owner.passwordSalt;
         db.sessions=(db.sessions||[]).filter(session=>session.userId!==owner.id);
-        result={companyId,email:owner.email,setupCode:issued.code,expiresAt:owner.setupExpiresAt};
+        const purpose='company-owner-reset',operationId=h.operationId(),sealed=h.manualCustody().enclose(db,{operationId,purpose,scope:h.manualScope(req),requestHash:canonicalHash({companyId,purpose}),targetId:owner.id,setupCode:issued.code});db.rolesManualCredentialCustody=sealed.snapshot.rolesManualCredentialCustody;
+        result={companyId,email:owner.email,setupCode:issued.code,expiresAt:owner.setupExpiresAt,operationId};
       }else if(match[2]==='subscription'){
         const fields=['plan','planPrice','status','nextBillingAt','accountType','billingExempt','cohort','discountPercent','commercialNote'];
         if(Object.keys(input).some(key=>!fields.includes(key)&&key!=='expectedRevision'))fail(400,'Unsupported commercial field');
@@ -42,7 +52,7 @@ function createHandler(h){
       const at=new Date().toISOString();db.auditLog||=[];db.auditLog.push({id:h.uuid(),type:kind,platformActorId:opening.actorId,at,expectedRevision:input.expectedRevision});h.writeDb(db);
       return result;
     },{expectedRevision:input.expectedRevision,authority:current,authorizedUntil:opening.expiresAt});
-    current();h.json(res,200,result);return true;
+    current();if(match[2]==='owner-reset'){const currentRow=await service.repository.load(companyId);const original=h.manualCustody().recover(currentRow.snapshot,{operationId:result.operationId,purpose:'company-owner-reset',scope:h.manualScope(req),requestHash:canonicalHash({companyId,purpose:'company-owner-reset'})});h.clampDeadline(Date.parse(original.metadata.expiresAt));h.deliveryGuard(async()=>{current();const latest=await service.repository.load(companyId);if(latest.revision!==currentRow.revision||latest.contentHash!==currentRow.contentHash)fail(409,'Current setup generation changed before delivery');h.manualCustody().recover(latest.snapshot,{operationId:result.operationId,purpose:'company-owner-reset',scope:h.manualScope(req,false),requestHash:canonicalHash({companyId,purpose:'company-owner-reset'})});});}h.json(res,200,result);return true;
   };
 }
 module.exports={createHandler};

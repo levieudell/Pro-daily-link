@@ -28,6 +28,7 @@ function createService(h,env=process.env){
   function authority(context,db){
     deadline(context);
     if(context.rolesSystem){context.rolesSystemAuthority?.();return;}
+    if(context.rolesChangeOrder){require('./change-order-authority').assertSame(db,context.url,context.rolesChangeOrder);return;}
     if(context.rolesGuest){const current=guest(db,context.url);if(canonicalHash(current)!==context.rolesGuest)fail(404,'This guest link is invalid or expired');return;}
     if(publicPaths.has(context.url.pathname))return;
     const {auth}=h.authenticate(context.req,db);if(!auth)fail(401,'Authentication required');
@@ -42,12 +43,12 @@ function createService(h,env=process.env){
   async function commitContext(context){
     if(!context.rolesCandidate)return;
     await assertContext(context);
-    if(!context.rolesSystem&&!context.rolesGuest)require('./roles-production-guards').validateDelta(context.rolesOpeningSnapshot,context.rolesCandidate,context.req,context.url,h);
-    const result=await repository.commit(context.rolesCandidate,context.rolesRevision,{deadline:new Date(context.rolesDeadline).toISOString()});
+    if(context.rolesReportIntake)reportIntakes.validateDelta(context.rolesOpeningSnapshot,context.rolesCandidate,context.req,context.rolesReportIntake);else if(context.rolesCredentialInvalidation)require('./roles-credential-invalidation').validateDelta(context.rolesOpeningSnapshot,context.rolesCandidate,context.rolesCredentialInvalidation);else if(context.rolesChangeOrder)require('./change-order-authority').validateDelta(context.rolesOpeningSnapshot,context.rolesCandidate,context.url,context.rolesCustomerBody,context.rolesChangeOrder);else if(!context.rolesSystem&&!context.rolesGuest)require('./roles-production-guards').validateDelta(context.rolesOpeningSnapshot,context.rolesCandidate,context.req,context.url,h);
+    const result=await repository.commit(context.rolesCandidate,context.rolesRevision,{deadline:new Date(context.rolesDeadline).toISOString(),...(context.rolesSystem&&context.rolesSystem!=='stripe-webhook'?h.platformGuard():{})});
     context.rolesRevision=result.revision;context.rolesOpeningHash=result.contentHash;context.rolesOpeningSnapshot=structuredClone(context.rolesCandidate);context.rolesCandidate=null;
     // An action can deliberately renew a session or change its own immutable
     // account preferences. The original deadline is never extended.
-    if(!context.rolesSystem&&!context.rolesGuest&&!publicPaths.has(context.url.pathname)){
+    if(!context.rolesSystem&&!context.rolesGuest&&!context.rolesChangeOrder&&!publicPaths.has(context.url.pathname)){
       const {auth}=h.authenticate(context.req,context.db);if(!auth)fail(401,'Authentication required');
       context.rolesAuthority=identity(context.db,auth,context.rolesRevision).authority;
     }
@@ -65,9 +66,15 @@ function createService(h,env=process.env){
     const digest=crypto.createHmac('sha256',key).update(canonicalHash({kind,scope})).digest('hex');
     const operationId=context.rolesOperationId||=crypto.randomUUID(),ordinal=(context.rolesEffectOrdinal||0)+1;context.rolesEffectOrdinal=ordinal;
     const rows=context.db.rolesProviderAttempts||[];
-    if(!Array.isArray(rows)||rows.some(row=>row?.kind===kind&&(row.operationId===operationId&&row.ordinal===ordinal||row.status==='unknown'&&row.digest===digest)))fail(409,'Review the original provider operation before retrying.','PDL_PROVIDER_RECONCILIATION');
-    if(!context.rolesSystem&&!context.rolesGuest)require('./roles-production-guards').validateDelta(context.rolesOpeningSnapshot,context.db,context.req,context.url,h);
+    if(!Array.isArray(rows)||rows.some(row=>row?.kind===kind&&(row.operationId===operationId&&row.ordinal===ordinal||row.status==='unknown'&&row.digest===digest&&!(row.credential&&require('./roles-credential-invalidation').invalidated(context.db,row,key)))))fail(409,'Review the original provider operation before retrying.','PDL_PROVIDER_RECONCILIATION');
+    if(context.rolesReportIntake)reportIntakes.admitProvider(context,context.req,kind,facts);
+    if(context.rolesReportIntake)reportIntakes.validateDelta(context.rolesOpeningSnapshot,context.db,context.req,context.rolesReportIntake);else if(context.rolesChangeOrder)require('./change-order-authority').validateDelta(context.rolesOpeningSnapshot,context.db,context.url,context.rolesCustomerBody,context.rolesChangeOrder);else if(!context.rolesSystem&&!context.rolesGuest)require('./roles-production-guards').validateDelta(context.rolesOpeningSnapshot,context.db,context.req,context.url,h);
     const record={id:crypto.randomUUID(),companyId:context.companyId,actorId:context.req?.auth?.user?.id??null,operationId,ordinal,kind,digest,status:'unknown',at:new Date().toISOString()};
+    if(kind==='email'&&facts.credentialPurpose){
+      const purpose=facts.credentialPurpose,field=require('./roles-credential-invalidation').fields[purpose]?.[0],users=(context.db.users||[]).filter(user=>user.status==='Active'&&crypto.createHash('sha256').update(String(user.email).trim().toLowerCase()).digest('hex')===facts.credentialRecipientHash);
+      if(!field||users.length!==1||!/^[a-f0-9]{64}$/.test(users[0][field]||''))fail(503,'Original credential generation needs review.');
+      record.credential={purpose,userId:users[0].id,tokenHash:users[0][field]};
+    }
     context.db.rolesProviderAttempts=[...rows,record];stage(context,context.db);await commitContext(context);
     await assertContext(context); // Immediate admission check before dispatch; no lease takeover.
     let result,outcome='accepted';
@@ -111,9 +118,17 @@ function createService(h,env=process.env){
     baselineProjectAllowed:h.canAccessProject,accountAccess:h.accountAccess,key,queuedEligible:()=>false,
     workspaceAuthority:(db,req)=>identity(db,req.auth,h.context().rolesRevision).authority,policyTransition:(db,proof)=>{h.context().rolesPolicyFrom=proof.workspaceAuthorityBefore;},
     guardCommit:guard=>{const context=h.context();context.rolesDeadline=Math.min(context.rolesDeadline,Date.parse(guard.authorizedUntil));}});
+  const reportIntakes=require('./roles-report-intake').createHandler({key,context:h.context,body:h.body,json:h.json,invoke:h.invoke,presentReport:h.presentReport,currentActor:(req,db)=>h.authenticate(req,db).auth,validateBusinessDependencies:(before,after,req)=>require('./roles-production-guards').validateDelta(before,after,req,h.context().url,h),stage:db=>stage(h.context(),db),commit:()=>commitContext(h.context())});
   async function preHandle(req,res,url){
     const context=h.context();if(!context?.rolesProduction)return false;
     const db=context.db;
+    const customer=require('./change-order-authority').resolve(db,url);
+    if(customer){
+      context.rolesChangeOrder=customer;if(customer.expiresAt)context.rolesDeadline=Math.min(context.rolesDeadline,Date.parse(customer.expiresAt));
+      if(req.method==='POST'&&url.pathname.endsWith('/decision'))context.rolesCustomerBody=require('./change-order-authority').parseDecision(await h.body(req));
+      else if(req.method!=='GET'||url.pathname.endsWith('/decision'))fail(404,'Change order route not found.');
+      return false;
+    }
     const link=guest(db,url);if(link){context.rolesGuest=canonicalHash(link);context.rolesDeadline=Math.min(context.rolesDeadline,Date.parse(link.expiresAt));return false;}
     if(context.rolesSystem)return false;
     if(publicPaths.has(url.pathname))return false;
@@ -124,6 +139,7 @@ function createService(h,env=process.env){
     if(access.locked&&!context.rolesBilling){h.json(res,402,{error:access.reason});return true;}
     if(access.status==='Trial'&&!context.rolesBilling)context.rolesDeadline=Math.min(context.rolesDeadline,Date.parse(db.company.trialEndsAt));
     context.rolesAuthority=identity(db,auth,context.rolesRevision).authority;
+    require('./roles-numeric-routes').assert(url);
     if(url.pathname==='/api/workspace-identity'&&req.method==='GET'){
       await assertCurrent(req);h.json(res,200,identity(db,req.auth,context.rolesRevision));return true;
     }
@@ -133,9 +149,22 @@ function createService(h,env=process.env){
     }
     if(url.pathname==='/api/company/provider-operations'&&req.method==='GET'){
       if(auth.user.role!=='owner')fail(403,'Account owner permission required');
-      await assertCurrent(req);h.json(res,200,(db.rolesProviderAttempts||[]).map(({id,operationId,ordinal,kind,status,at,finishedAt})=>({id,operationId,ordinal,kind,status,at,...finishedAt?{finishedAt}:{}})));return true;
+      await assertCurrent(req);h.json(res,200,(db.rolesProviderAttempts||[]).map(({id,operationId,ordinal,kind,status,at,finishedAt,credential})=>({id,operationId,ordinal,kind,status,at,...finishedAt?{finishedAt}:{},...(credential?{purpose:credential.purpose,accountId:credential.userId,invalidated:require('./roles-credential-invalidation').invalidated(db,db.rolesProviderAttempts.find(row=>row.id===id),key)}:{})})));return true;
+    }
+    const recovery=/^\/api\/company\/provider-operations\/([a-f0-9-]{36})\/invalidation(?:\/(preview|confirm))?$/.exec(url.pathname);
+    if(recovery){
+      if(auth.user.role!=='owner')fail(403,'Account owner permission required');await assertCurrent(req);
+      const recoveryModule=require('./roles-credential-invalidation'),current=identity(db,auth,context.rolesRevision);
+      if(req.method==='GET'&&!recovery[2]){const row=(db[recoveryModule.collection]||[]).find(row=>row.attemptId===recovery[1]),original=(db.rolesProviderAttempts||[]).find(row=>row.id===recovery[1]);if(row&&(!original||!recoveryModule.invalidated(db,original,key)))fail(409,'Original invalidation receipt needs review');h.json(res,200,{found:Boolean(row),...(row?{requestId:row.requestId,previewId:row.previewId,attemptId:row.attemptId,purpose:row.credential.purpose,invalidatedAt:row.invalidatedAt,reason:row.reason,actorId:row.scope.actorId}:{})});return true;}
+      if(req.method!=='POST'||!recovery[2])fail(404,'Credential recovery route not found.');
+      const input=await h.body(req);if(recovery[2]==='preview'){if(!input||Object.keys(input).some(name=>name!=='reason'))fail(400,'Provide only an invalidation reason.');h.json(res,200,recoveryModule.preview(db,current,key,{attemptId:recovery[1],reason:input.reason}));return true;}
+      const result=recoveryModule.confirm(db,current,key,input);
+      if(result.result.attemptId!==recovery[1])fail(403,'Preview belongs to a different original operation.');
+      if(!result.result.replayed){context.rolesCredentialInvalidation=result;stage(context,result.snapshot);}
+      h.json(res,200,result.result);return true;
     }
     if(await handler(req,res,url))return true;
+    if(await reportIntakes.handle(req,res,url))return true;
     await require('./roles-production-guards').guard(req,url,db,h);
     return false;
   }
@@ -168,21 +197,21 @@ function createService(h,env=process.env){
     }
     const headers={},chunks=[];let bytes=0,status=200,rawStarted=false,rawFailed=false;
     const capture=new Writable({write(chunk,encoding,done){bytes+=chunk.length;if(bytes>22_000_000)return done(Object.assign(Error('Response too large'),{statusCode:503}));chunks.push(Buffer.from(chunk));done();}});
-    capture.statusCode=200;capture.headersSent=false;
+    context.rolesCapture=capture;capture.statusCode=200;capture.headersSent=false;
     capture.setHeader=(name,value)=>{headers[name]=value;};capture.getHeader=name=>headers[name];
     capture.writeHead=(code,extra={})=>{status=code;capture.statusCode=code;Object.assign(headers,extra);capture.headersSent=true;rawStarted=true;return capture;};
     const finished=new Promise((resolve,reject)=>{capture.once('finish',resolve);capture.once('error',reject);});
-    await h.run(context,async()=>{try{if(!await preHandle(req,capture,url)){context.rolesPreHandled=true;await h.api(req,capture,url);}if(rawStarted)await finished;}catch(error){if(context.rolesProviderUnknown){context.response={status:503,data:{error:'The original provider operation needs reconciliation before retrying.',code:'PDL_PROVIDER_OUTCOME_UNKNOWN',operationId:context.rolesOperationId}};if(rawStarted){rawFailed=true;chunks.length=0;}return;}if(rawStarted){rawFailed=true;chunks.length=0;context.response={status:503,data:{error:'The complete file could not be delivered. Refresh current records before retrying.'}};return;}if(![400,401,402,403,404,409,503].includes(error.statusCode))throw error;h.json(capture,error.statusCode,{error:error.message,...error.code?{code:error.code}:{}});}});
+    await h.run(context,async()=>{try{if(!await preHandle(req,capture,url)){context.rolesPreHandled=true;await h.api(req,capture,url);}if(rawStarted)await finished;}catch(error){if(context.rolesProviderUnknown){context.response={status:503,data:{error:'The original provider operation needs reconciliation before retrying.',code:'PDL_PROVIDER_OUTCOME_UNKNOWN',operationId:context.rolesOperationId}};if(rawStarted){rawFailed=true;chunks.length=0;}return;}if(rawStarted){rawFailed=true;chunks.length=0;context.response={status:503,data:{error:'The complete file could not be delivered. Refresh current records before retrying.'}};return;}if(![400,401,402,403,404,409,503].includes(error.statusCode))throw error;h.json(capture,error.statusCode,{error:error.message,...error.code?{code:error.code}:{},...(context.rolesReportIntake?{operationId:context.rolesOperationId}:{})});}});
     if(rawStarted&&!rawFailed)context.response={status,headers,raw:Buffer.concat(chunks)};
     if(!context.response)fail(503,'Company response is unavailable.');
     if(context.rolesProviderUnknown&&context.response.status>=400)context.response={status:503,data:{error:'The original provider operation needs reconciliation before retrying.',code:'PDL_PROVIDER_OUTCOME_UNKNOWN',operationId:context.rolesOperationId}};
     if(context.response.status>=400&&!rejectedCredentialCleanup(context))context.rolesCandidate=null;
-    await h.run(context,()=>commitContext(context));
+    try{await h.run(context,()=>commitContext(context));}catch(error){if(!context.rolesReportIntake)throw error;context.rolesClosed=true;res.writeHead(error.statusCode||503,{'Content-Type':'application/json','Cache-Control':'no-store'});res.end(JSON.stringify({error:'Review the original report intake before retrying.',code:error.code||'PDL_REPORT_INTAKE',operationId:context.rolesOperationId}));return;}
     const revision=context.rolesRevision,hash=context.rolesOpeningHash;
     const current=await repository.load(context.companyId);
     if(current.revision!==revision||current.contentHash!==hash)fail(409,'Company changed before delivery. Refresh current records.','PDL_REVISION_CONFLICT');
     if(context.response.status<400)authority(context,current.snapshot);
-    if(!context.rolesGuest&&!publicPaths.has(url.pathname)&&context.response.status<400){
+    if(!context.rolesGuest&&!context.rolesChangeOrder&&!publicPaths.has(url.pathname)&&context.response.status<400){
       const {auth}=h.authenticate(req,current.snapshot);if(!auth)fail(401,'Authentication required');
       if(h.accountAccess(current.snapshot.company).locked&&!context.rolesBilling)fail(402,'Account access requires owner billing review');
       context.response.data=require('./roles-production-guards').projectResponse(req,url,current.snapshot,context.response.data,h);

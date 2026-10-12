@@ -19,6 +19,7 @@ supabase.request=async(relative,options={})=>{
   if(input.p_expected_revision!==revision||Date.parse(input.p_deadline)<=Date.now())throw Error('PDL_REVISION_CONFLICT');
   snapshot=structuredClone(input.p_snapshot);revision++;return new Response(JSON.stringify([{revision}]));
 };
+const platformFixture=require('./roles-production-platform-fixture').wrap(supabase.request);supabase.request=platformFixture.request;
 const {server}=require('./server');
 async function main(){
   await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));const origin='http://127.0.0.1:'+server.address().port;
@@ -46,4 +47,4 @@ async function main(){
   console.log(JSON.stringify({requests,revision,syntheticTransport:true,testInstallerUsed:false,externalCalls:0,oldWrites,passed:true}));
 }
 if(require.main===module)main().then(()=>server.close()).catch(error=>{console.error(error);server.close();process.exitCode=1;});
-module.exports={server,A,B,initial,tokens,read:()=>structuredClone(snapshot),alter:task=>{task(snapshot);revision++;}};
+module.exports={server,A,B,initial,tokens,platformFixture,read:()=>structuredClone(snapshot),alter:task=>{task(snapshot);revision++;}};

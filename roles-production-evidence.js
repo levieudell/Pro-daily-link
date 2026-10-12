@@ -2,6 +2,7 @@
 const {validateAccounts}=require('./account-evidence');
 function validate(db){
   validateAccounts(db);
+  if(Object.hasOwn(db,'rolesManualCredentialCustody'))require('./roles-manual-credential-custody').createCustody({key:Buffer.from(process.env.PDL_ROLE_POLICY_KEY||'','hex')}).validate(db);
   const bad=()=>{throw Object.assign(Error('Company security records need reconciliation.'),{statusCode:503,code:'PDL_ROLES_EVIDENCE'});};
   for(const name of ['team','projects','crews','reports','workdays','assignments','timeCards','photos']){
     const rows=db[name]||[],ids=new Set();if(!Array.isArray(rows))bad();
