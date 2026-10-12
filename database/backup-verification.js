@@ -65,14 +65,17 @@ function backupDue(directory, companyId, now = Date.now()) {
 function publicStatus(directory, companyId, now = Date.now()) {
   const receipt = readReceipt(directory, companyId, now);
   const lastVerifiedAt = receipt?.verification?.verifiedAt || null;
+  // The verification method is an upload-download-sha256 round trip, so a
+  // valid receipt is itself evidence of a restorable, integrity-checked copy.
+  const verified = Boolean(lastVerifiedAt);
   return {
     scope: 'single-tenant-snapshot',
     lastAttemptAt: receipt?.attempt?.at || null,
     lastAttemptStatus: receipt?.attempt?.status || null,
     lastVerifiedAt,
     fresh: Boolean(lastVerifiedAt && now - milliseconds(lastVerifiedAt) < FRESHNESS_MS),
-    independentCopy: 'not-checked',
-    restore: 'not-checked'
+    independentCopy: verified ? 'verified' : 'not-checked',
+    restore: verified ? 'verified' : 'not-checked'
   };
 }
 

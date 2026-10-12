@@ -88,8 +88,9 @@ async function verify(input = snapshot, extra = {}) {
     for (const secret of [companyId, snapshot.company.name, 'Private synthetic note', receipt().verification.sha256, receipt().verification.objectKey]) {
       assert.equal(publicText.includes(secret), false, 'public health must not disclose receipt details');
     }
-    assert.equal(backup.publicStatus(directory, companyId).independentCopy, 'not-checked');
-    assert.equal(backup.publicStatus(directory, companyId).restore, 'not-checked');
+    assert.equal(backup.publicStatus(directory, companyId).independentCopy, 'verified');
+    assert.equal(backup.publicStatus(directory, companyId).restore, 'verified');
+    assert.equal(backup.publicStatus(directory, otherId).restore, 'not-checked', 'no receipt means restore is still unchecked');
     const restart = spawnSync(process.execPath, ['-e',
       `const b=require('./database/backup-verification');process.stdout.write(JSON.stringify(b.publicStatus(${JSON.stringify(directory)},${JSON.stringify(companyId)})))`],
     { cwd: __dirname, encoding: 'utf8' });
