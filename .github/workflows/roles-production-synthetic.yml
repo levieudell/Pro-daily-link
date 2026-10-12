@@ -65,6 +65,12 @@ jobs:
       - run: node roles-production-new-workflows-http.test.js
       - run: node roles-production-route-floor-http.test.js
       - run: node roles-report-client.test.js
+      - run: node original-operation-recovery.test.js
+      - run: node original-result-ui.test.js
+      - run: node roles-original-operation-clients.test.js
+      - run: node roles-production-full-matrix-http.test.js
+      - run: node roles-production-pdf-readback.test.js
+      - run: node roles-production-pdf-readback-http.test.js
       - run: node roles-report-intake.test.js
       - run: node roles-report-intake-http.test.js
       - run: node roles-credential-recovery-ui.test.js
@@ -85,6 +91,9 @@ jobs:
           "$RUNNER_TEMP/roles-browser/node_modules/.bin/playwright" install --with-deps chromium
           echo "PLAYWRIGHT_MODULE=$RUNNER_TEMP/roles-browser/node_modules/playwright" >> "$GITHUB_ENV"
       - run: node roles-production-browser.test.js
+      - run: node roles-normal-workflow-browser.test.js
+        env:
+          PDL_NORMAL_BROWSER_EVIDENCE: roles-production-browser-evidence/full-normal-workflows
       - uses: actions/upload-artifact@v4
         if: always()
         with:

@@ -20,6 +20,9 @@ function bounded(promise, label, ms = 12000) {
 }
 function seed() {
   const db = workspaceSnapshot(); db.team[0].crew = 'Office'; db.team[1].crew = 'North';
+  // The shared fixture's baseline shift uses today's date. Keep it outside this
+  // fixed four-day task matrix; only the explicit bookings below define overlap.
+  for(const assignment of db.assignments)assignment.date='2026-09-30';
   Object.assign(db.company, { contractValueTracking: true, defaultTemplateId: 'standard' });
   Object.assign(db.projects[0], { startDate: '2026-10-05', endDate: '2026-12-31', templateId: 21, templateIds: ['21'], templateVersion: 1 });
   db.projects.push({ id: 102, name: 'Native other project', status: 'Active', startDate: '2026-10-05', endDate: '2026-12-31', estimateItems: [], templateId: 'standard' });

@@ -90,7 +90,7 @@ function harness({ existing = null, identityOverrides = {}, confirmError = null,
   };
   const context = { document, currentUser: { id: 1, role: 'owner' }, currentRole: 'office', signedInCompanyId: () => state.identityOverrides.companyId || state.db.company.id, RoleSaveRecovery: recovery, structuredClone, console, location: { href: '/synthetic-current-page' },
     wakeService: async () => { const gate = state.wakeGates.shift(); if (gate) { gate.entered = true; await gate.promise; } },
-    fetch: async (route, options) => { assert.equal(options.beforeDispatch, undefined, 'Actual API strips the application callback before fetch.'); assert.equal(options.onAcknowledged, undefined); const forced = state.httpResponses.get(route); if (forced) state.calls.push({ route, options }); const result = forced ? forced.body : await backend(route, options), status = forced?.status || 200; return { ok: status < 400, status, headers: { get: key => key === 'content-type' ? 'application/json' : null }, json: async () => { const value = clone(result); if (route.endsWith('/preview')) state.deliveredProofs.push(value); return value; } }; },
+    fetch: async (route, options) => { assert.equal(options.beforeDispatch, undefined, 'Actual API strips the application callback before fetch.'); assert.equal(options.onAcknowledged, undefined); const forced = state.httpResponses.get(route); if (forced) state.calls.push({ route, options }); const result = forced ? forced.body : await backend(route, options), status = forced?.status || 200; return { ok: status < 400, status, headers: { get: key => key === 'content-type' ? 'application/json' : null }, json: async () => { if(forced?.malformed){state.events.push('denial.decode');assert.equal(root.textContent,'','Denied private bytes retire before body decode.');throw Error('Synthetic malformed denial');}const value = clone(result); if (route.endsWith('/preview')) state.deliveredProofs.push(value); return value; } }; },
     pdlWorkspaceActions: { enabled: () => managed === 'compat', rolePolicies: () => true, verifyResponse: async () => {} },
     crypto: { randomUUID: () => `00000000-0000-4000-8000-${String(++state.uuidCount).padStart(12, '0')}` }, setInterval: () => 0,
     Date: class extends Date { constructor(...args) { super(...(args.length ? args : [state.now])); } static now() { return state.now; } },
@@ -190,6 +190,23 @@ for (const managed of ['production', 'compat']) {
     await assert.rejects(h.context.api('/api/synthetic-expired-session'), failure => failure.status === 401 && failure.code === 'PDL_SESSION_EXPIRED'); assert.deepEqual(h.state.events, [managed + '.clear', 'blocked.redirect']); assert.equal(h.root.textContent, ''); assert.deepEqual(h.journal.entries(), original); assert.equal(h.state.remembers.length, 0); assert.equal(h.state.storageWrites, storageBefore); assert.equal(h.confirms().length, 0);
   });
 }
+
+for(const managed of ['production','compat'])for(const status of [401,402,403,409])test(managed+' malformed HTTP'+status+' clears checked private review before body decode and retains denial status',async()=>{
+ const h=harness({managed});await h.review();const old=h.query('[data-role-command="confirm"]'),storageBefore=h.state.storageWrites;
+ h.state.httpResponses.set('/api/synthetic-malformed-denial',{status,body:null,malformed:true});
+ Object.defineProperty(h.context.location,'href',{configurable:true,set(){h.state.events.push('blocked.redirect');assert.equal(h.root.textContent,'');throw Error('Synthetic blocked navigation');}});
+ await assert.rejects(h.context.api('/api/synthetic-malformed-denial'),error=>error.status===status&&(status!==401||error.code==='PDL_SESSION_EXPIRED'));
+ assert.deepEqual(h.state.events,[managed+'.clear',status===401?'blocked.redirect':'denial.decode']);assert.equal(h.root.textContent,'');await old.click();assert.equal(h.confirms().length,0);assert.equal(h.state.remembers.length,0);assert.equal(h.state.storageWrites,storageBefore);
+});
+for(const managed of ['production','compat'])for(const status of [402,403,409])test(managed+' malformed HTTP'+status+' keeps only the original recovery envelope',async()=>{
+ const h=harness({managed,existing:'role-profiles'});await h.context.PDLCompanyRoles.open();const original=clone(h.journal.entries()),storageBefore=h.state.storageWrites;
+ h.state.httpResponses.set('/api/synthetic-malformed-denial',{status,body:null,malformed:true});await assert.rejects(h.context.api('/api/synthetic-malformed-denial'),error=>error.status===status);assert.equal(h.root.textContent,'');assert.deepEqual(h.journal.entries(),original);assert.equal(h.state.storageWrites,storageBefore);assert.equal(h.state.remembers.length,0);assert.equal(h.confirms().length,0);
+});
+test('actual compound-intake caller headers retain captured tenant and content type through the wake await',async()=>{
+ const h=harness(),route='/api/synthetic-header-custody',openingCompany=h.ownerIdentity().companyId,operationId='00000000-0000-4000-8000-000000000077';h.state.httpResponses.set(route,{status:200,body:{complete:true}});
+ const gate=h.holdWake(),saving=h.context.api(route,{method:'POST',body:'{}',headers:{'X-PDL-Operation':operationId}});await flush();assert.equal(gate.entered,true);h.state.identityOverrides.companyId='synthetic-other-company';gate.resolve();await saving;
+ const sent=h.state.calls.find(row=>row.route===route);assert.equal(sent.options.headers['X-PDL-Company'],openingCompany);assert.equal(sent.options.headers['Content-Type'],'application/json');assert.equal(sent.options.headers['X-PDL-Operation'],operationId);assert.equal(h.confirms().length,0);
+});
 
 (async () => {
   let failed = 0; for (const { name, run } of tests) { try { await run(); } catch (error) { failed++; console.error('FAIL:', name); console.error(error); } }

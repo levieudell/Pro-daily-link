@@ -63,4 +63,4 @@ function createHandler(h){return async(req,res,url)=>{
     h.raw(res,{status:200,headers:{'Content-Type':result.type,'Content-Length':String(result.bytes.length),'Cache-Control':'private, no-store','X-Content-Type-Options':'nosniff','Content-Disposition':'inline'},raw:Buffer.from(result.bytes)});return true;
   }catch(error){if(![400,401,402,403,404,409,503].includes(error.statusCode))throw error;h.json(res,error.statusCode,{error:error.message});return true;}
 };}
-module.exports={route,location,authorized,references,createHandler};
+module.exports={route,location,authorized,references,retainedReference,createHandler};

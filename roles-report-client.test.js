@@ -8,10 +8,13 @@ const { workspaceSnapshot } = require('./compat-workspace-fixture');
 const appSource = fs.readFileSync(path.join(__dirname, 'app.js'), 'utf8');
 const clientSource = fs.readFileSync(path.join(__dirname, 'roles-report-client.js'), 'utf8');
 const client = require('./roles-report-client');
+const Recovery = require('./original-operation-recovery');
+const { A, B } = require('./compat-account-fixture');
 const clone = value => JSON.parse(JSON.stringify(value));
 const tests = [], test = (name, run) => tests.push({ name, run });
 const deferred = () => { let resolve, reject; const promise = new Promise((yes, no) => { resolve = yes; reject = no; }); return { promise, resolve, reject }; };
 const flush = async () => { await new Promise(resolve => setImmediate(resolve)); await new Promise(resolve => setImmediate(resolve)); };
+async function until(predicate) { const end = Date.now() + 3000; while (!predicate()) { assert.ok(Date.now() < end, 'Actual asynchronous journal/transport stage did not arrive.'); await flush(); } }
 const actualLine = prefix => { const line = appSource.split('\n').find(row => row.startsWith(prefix)); assert.ok(line, 'Missing actual app source: ' + prefix); return line; };
 const atomicStart = appSource.indexOf('let atomicPhotoStatus=');
 assert.ok(atomicStart > 0, 'Actual report/photo transaction wrapper must exist.');
@@ -46,9 +49,9 @@ function documentFixture() {
 }
 const image = Buffer.concat([Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]), Buffer.from('synthetic-client-image')]);
 const photo = overrides => ({ name: 'synthetic.png', type: 'image/png', size: image.length, lastModified: 7, dataURL: 'data:image/png;base64,' + image.toString('base64'), ...overrides });
-const identity = () => ({ companyId: 'synthetic-company-a', actorId: 2, role: 'field', sessionBinding: 'synthetic-current-session' });
+const identity = () => ({ companyId: A, actorId: 2, role: 'field', sessionBinding: 'a'.repeat(64) });
 function harness({ files = [], editing = null, normal = true, extracted = {}, transport, deferEncoding = false } = {}) {
-  const document = documentFixture(), messages = [], calls = [], state = { identity: identity(), encoded: 0, encodingCallbacks: [], standaloneUploads: 0, originalCreates: 0, sequence: 0, rendered: [], identityCalls: 0 };
+  const document = documentFixture(), messages = [], calls = [], state = { identity: identity(), encoded: 0, encodingCallbacks: [], standaloneUploads: 0, originalCreates: 0, sequence: 0, rendered: [], identityCalls: 0, retired: 0 };
   const field = (id, value = '') => { const node = document.createElement(id.includes('modal') ? 'dialog' : 'input'); node.id = id; node.value = value; document.body.append(node); return node; };
   for (const [id, value] of Object.entries({ 'report-project': '0', 'report-date': '2026-10-12', 'report-language': 'en-US', 'field-notes': 'Synthetic installed wall tile', 'report-signature': 'Synthetic Field', 'report-crew': 'Synthetic Crew', 'report-summary': 'Synthetic reviewed summary', 'report-next': 'Synthetic next step', 'report-weather': 'Clear', 'report-temperature': '70', 'report-materials': 'Synthetic tile', 'report-equipment': 'Synthetic lift', 'report-delays': 'Synthetic access delay', 'report-safety': 'Synthetic controlled edge', 'report-type': 'daily', 'report-photo-tags': ' FIELD, field, SYNTHETIC ', 'project-search': '' })) field(id, value);
   const photoField = field('report-photos'); photoField.files = files; photoField.type = 'file'; const modal = field('report-modal'); modal.open = true;
@@ -61,20 +64,21 @@ function harness({ files = [], editing = null, normal = true, extracted = {}, tr
   const context = {
     console, document, crypto: { randomUUID: () => `00000000-0000-4000-8000-${String(++state.sequence).padStart(12, '0')}` },
     $: selector => document.querySelector(selector), $$: selector => selector === '.production-entry' ? [production] : selector === '[data-labor-member]' ? [labor] : [],
-    projects: clone(db.projects), reports: editing ? [clone(db.reports[0])] : [], photos: [], company: { id: 'synthetic-company-a' }, currentUser: { id: 2, name: 'Synthetic Field', role: 'field' }, currentRole: 'field',
+    projects: clone(db.projects), reports: editing ? [clone(db.reports[0])] : [], photos: [], company: { id: A }, currentUser: { id: 2, name: 'Synthetic Field', role: 'field' }, currentRole: 'field',
     editingReportId: editing, extractedDraft: clone(extracted), reportSourceAssignmentId: null, reportAnalyzeSequence: 1, activeNoteLaborEvidence: null,
     signedInCompanyId: () => context.company.id, timeCardsOn: () => false, templatesOn: () => false,
     reportLaborTotals: () => ({ crew: 2, allocated: 2, balanced: true }), noteLaborUnassigned: () => 0, reportLaborReviewWarnings: () => [], dailyTemplatePayload: () => ({}), reportWorkSuggestions: () => [],
-    offlineReportDraftKey: project => 'synthetic-project-' + (project ?? 0), offlineReportStorageKey: key => key, localStorage: { removeItem: key => storage.delete(key), setItem: (key, value) => storage.set(key, value), getItem: key => storage.get(key) ?? null }, sessionStorage: { removeItem: key => storage.delete(key), setItem: (key, value) => storage.set(key, value), getItem: key => storage.get(key) ?? null },
+    offlineReportDraftKey: project => 'synthetic-project-' + (project ?? 0), offlineReportStorageKey: key => key, localStorage: { get length() { return storage.size; }, key: index => [...storage.keys()][index] ?? null, removeItem: key => storage.delete(key), setItem: (key, value) => storage.set(key, value), getItem: key => storage.get(key) ?? null }, sessionStorage: { removeItem: key => storage.delete(key), setItem: (key, value) => storage.set(key, value), getItem: key => storage.get(key) ?? null },
     showReportMessage: message => messages.push(message), notify: message => messages.push(message), renderReports: id => state.rendered.push(id), renderProjectCards() {}, showPage() {}, syncActionCenter: async () => {}, reportWorkDate: report => report.dateIso,
     uploadPhotos: async options => { if (options.files.length) state.standaloneUploads++; return []; },
     fetch: async () => { throw Error('External transport forbidden'); },
     FileReader: class { readAsDataURL(file) { state.encoded++; this.result = file.dataURL; if (deferEncoding) state.encodingCallbacks.push(() => this.onload()); else queueMicrotask(() => this.onload()); } },
-    pdlProductionRoles: { enabled: () => normal, identity: async () => { state.identityCalls++; return clone(state.identity); } }, pdlWorkspaceActions: { enabled: () => false },
+    pdlProductionRoles: { enabled: () => normal, identity: async () => { state.identityCalls++; return clone(state.identity); }, clear: () => { state.retired++; } }, pdlWorkspaceActions: { enabled: () => false },
+    OriginalOperationRecovery: { create: get => Recovery.create(get, { crypto: crypto.webcrypto }) },
     openReport: report => { state.openedReport = clone(report); document.getElementById('report-modal').open = true; }, loadRole: async () => {}, signedInUserId: () => context.currentUser.id,
   };
   context.window = context;
-  const completed = (report = {}) => ({ operationId: calls.find(row => row.options.headers?.['X-PDL-Operation'])?.options.headers['X-PDL-Operation'], complete: true, report: { id: editing || 51, projectId: 101, dateIso: '2026-10-12', status: 'Needs review', notes: 'Synthetic installed wall tile', ...report }, files: [{ id: 71, reportId: editing || 51, projectId: 101, caption: 'Daily report field photos' }] });
+  const completed = (report = {}) => ({ operationId: calls.find(row => row.options.headers?.['X-PDL-Operation'])?.options.headers['X-PDL-Operation'], complete: true, state: 'complete', retryAllowed: false, reportId: editing || 51, intake: { state: 'complete', complete: true, retryAllowed: false }, report: { id: editing || 51, projectId: 101, dateIso: '2026-10-12', status: 'Needs review', notes: 'Synthetic installed wall tile', ...(state.lastReport || {}), ...report }, files: [{ id: 71, reportId: editing || 51, projectId: 101, caption: 'Daily report field photos' }] });
   const api = async (route, options = {}) => {
     const call = { route, options: clone(options) }; calls.push(call);
     if (transport) return transport(call, { state, context, completed, db, calls });
@@ -82,7 +86,7 @@ function harness({ files = [], editing = null, normal = true, extracted = {}, tr
     if (/^\/api\/reports(?:\/\d+)?$/.test(route)) {
       const body = JSON.parse(options.body), compound = Object.hasOwn(body, 'report');
       const parsed = compound ? intake.parseCompound(body, db, options.method, route).operation : intake.normalizeReport(body, db, { action: options.method === 'PATCH' ? 'editReport' : 'createReport', ...(options.method === 'PATCH' ? { id: editing } : {}) });
-      state.originalCreates++; const report = { id: editing || 51, ...parsed.details, projectId: 101 };
+      state.originalCreates++; const report = { id: editing || 51, ...parsed.details, projectId: 101 }; state.lastReport = clone(report);
       return compound ? { ...completed(report), complete: undefined } : report;
     }
     throw Error('Unexpected client request: ' + route);
@@ -94,7 +98,7 @@ function harness({ files = [], editing = null, normal = true, extracted = {}, tr
   vm.runInContext('const apiBeforeSuperintendent=api;\n' + actualLine('api=async function(url,options={})'), context, { filename: 'app.js:actual-superintendent-api' });
   context.apiBeforeTemplatePhotoTransaction = context.api;
   vm.runInContext(appSource.slice(atomicStart), context, { filename: 'app.js:actual-report-photo-wrapper' });
-  return { context, state, calls, messages, db, document, completed, field: id => document.getElementById(id), save: status => context.saveDailyReport(status), mutations: () => calls.filter(row => ['POST', 'PATCH', 'DELETE'].includes(row.options.method)), lookups: () => calls.filter(row => row.route.startsWith('/api/company/report-intakes/')) };
+  return { context, state, calls, messages, db, document, completed, storage, journal: () => Recovery.create(context.localStorage, { crypto: crypto.webcrypto }), field: id => document.getElementById(id), save: status => context.saveDailyReport(status), mutations: () => calls.filter(row => ['POST', 'PATCH', 'DELETE'].includes(row.options.method)), lookups: () => calls.filter(row => row.route.startsWith('/api/company/report-intakes/')) };
 }
 
 test('finite projection drops account, policy, history, financial and raw extraction bindings', () => {
@@ -136,17 +140,18 @@ test('compound edit retains edit route and cannot create a replacement report', 
 });
 function uncertain({ lookup = 'pending', files = [photo()], editing = null } = {}) {
   return harness({ files, editing, transport: async (call, h) => {
-    if (call.route.startsWith('/api/company/report-intakes/')) { if (lookup instanceof Error) throw lookup; return lookup === 'complete' ? h.completed() : { operationId: call.route.split('/').at(-1), complete: false, retryAllowed: false, state: 'pending' }; }
+    if (call.route.startsWith('/api/company/report-intakes/')) { if (lookup instanceof Error) throw lookup; return lookup === 'complete' ? h.completed() : { operationId: call.route.split('/').at(-1), reportId: editing || 51, complete: false, retryAllowed: false, state: 'pending' }; }
     if (call.options.headers?.['X-PDL-Operation']) { h.state.originalCreates++; throw Object.assign(Error('Synthetic lost acknowledgement'), { status: 503, code: 'synthetic_ack_lost' }); }
     throw Error('Unexpected resend or upload: ' + call.route);
   } });
 }
 test('lost ACK immediately reads the original operation and applies completed result without repeating save or upload', async () => {
-  const h = uncertain({ lookup: 'complete' }); await h.save('Needs review'); assert.equal(h.mutations().length, 1); assert.equal(h.lookups().length, 1); assert.equal(h.state.originalCreates, 1); assert.equal(h.state.encoded, 1); assert.equal(h.state.standaloneUploads, 0); assert.equal(h.context.reports.length, 1); assert.equal(h.context.photos.length, 1); assert.equal(h.field('report-modal').open, false); assert.equal(h.messages.length, 0); assert.equal(h.lookups()[0].route, '/api/company/report-intakes/' + h.mutations()[0].options.headers['X-PDL-Operation']);
+  const h = uncertain({ lookup: 'complete' }); await h.save('Needs review'); assert.equal(h.mutations().length, 1); assert.equal(h.lookups().length, 2); assert.equal(h.state.originalCreates, 1); assert.equal(h.state.encoded, 1); assert.equal(h.state.standaloneUploads, 0); assert.equal(h.context.reports.length, 1); assert.equal(h.context.photos.length, 1); assert.equal(h.field('report-modal').open, false); assert.equal(h.messages.length, 0); assert.equal(h.journal().entries('report').length, 0); assert.ok(h.lookups().every(row => row.route === '/api/company/report-intakes/' + h.mutations()[0].options.headers['X-PDL-Operation']), 'Known current-form success is reviewed by one further fresh original GET.');
 });
-test('pending original intake keeps current form open and exposes exact operation ID; retry is GET-only', async () => {
+test('pending original intake blocks ordinary retry and permits explicit read-only original recovery without clearing custody', async () => {
   const h = uncertain(); await h.save('Needs review'); const original = h.mutations()[0].options.headers['X-PDL-Operation']; assert.equal(h.field('report-modal').open, true); assert.match(h.messages.at(-1), new RegExp(original)); assert.equal(h.context.reports.length, 0); assert.equal(h.context.photos.length, 0);
-  await h.save('Needs review'); assert.equal(h.mutations().length, 1); assert.equal(h.lookups().length, 2); assert.equal(h.state.encoded, 1); assert.equal(h.state.standaloneUploads, 0); assert.ok(h.lookups().every(row => row.route.endsWith(original))); assert.match(h.messages.at(-1), /will not create or upload again/i);
+  await h.save('Needs review'); assert.equal(h.mutations().length, 1); assert.equal(h.lookups().length, 1); assert.equal(h.state.encoded, 1); assert.equal(h.state.standaloneUploads, 0); assert.match(h.messages.at(-1), /Review a previous save/i);
+  const value = await h.context.PDLOriginalReportRecovery.recoverOriginal(original); assert.equal(value.complete, false); assert.equal(h.lookups().length, 2); assert.equal(h.journal().entries('report')[0].operationId, original); await assert.rejects(h.context.PDLOriginalReportRecovery.reviewOriginal(original, { confirmed: true })); assert.equal(h.mutations().length, 1); assert.equal(h.journal().entries('report').length, 1);
 });
 test('clearing selected photos cannot bypass pending intake custody with a new plain report save', async () => {
   const h = uncertain(); await h.save('Needs review'); const before = h.calls.length; h.field('report-photos').files = []; await h.save('Needs review'); assert.equal(h.calls.length, before); assert.equal(h.mutations().length, 1); assert.equal(h.state.encoded, 1); assert.equal(h.context.reports.length, 0); assert.equal(h.context.photos.length, 0); assert.equal(h.field('report-modal').open, true); assert.match(h.messages.at(-1), /original report intake/i);
@@ -166,40 +171,40 @@ for (const [name, change] of [
   ['photo modification time', h => { h.field('report-photos').files = [photo({ lastModified: 8 })]; }],
   ['photo tags', h => { h.field('report-photo-tags').value = 'different'; }],
   ['create versus edit', h => { h.context.editingReportId = 1; h.context.reports = [clone(h.db.reports[0])]; }],
-]) test('pending fingerprint rejects changed ' + name + ' before original lookup, save or re-encoding', async () => {
-  const h = uncertain(); await h.save('Needs review'); const calls = h.calls.length; change(h); await h.save(name === 'final status' ? 'Draft' : 'Needs review'); assert.equal(h.calls.length, calls); assert.equal(h.state.encoded, 1); assert.equal(h.mutations().length, 1); assert.equal(h.field('report-modal').open, true); assert.match(h.messages.at(-1), /original report intake.*different daily form/i);
+]) test('durable pending original blocks changed ' + name + ' before original lookup, save or re-encoding', async () => {
+  const h = uncertain(); await h.save('Needs review'); const calls = h.calls.length, original = h.journal().entries('report'); change(h); await h.save(name === 'final status' ? 'Draft' : 'Needs review'); assert.equal(h.calls.length, calls); assert.equal(h.state.encoded, 1); assert.equal(h.mutations().length, 1); assert.equal(h.field('report-modal').open, true); assert.match(h.messages.at(-1), /original report intake.*before saving another daily/i); assert.deepEqual(h.journal().entries('report'), original);
 });
-for (const [name, key, next] of [['company', 'companyId', 'synthetic-company-b'], ['actor', 'actorId', 3], ['role', 'role', 'admin'], ['session', 'sessionBinding', 'synthetic-new-session']]) test('pending intake rejects changed current ' + name + ' before original lookup or new write', async () => {
-  const h = uncertain(); await h.save('Needs review'); const calls = h.calls.length; h.state.identity[key] = next; await h.save('Needs review'); assert.equal(h.calls.length, calls); assert.equal(h.state.encoded, 1); assert.match(h.messages.at(-1), /earlier account/i); assert.equal(h.field('report-modal').open, true);
+for (const [name, key, next] of [['company', 'companyId', B], ['actor', 'actorId', 3], ['role', 'role', 'admin'], ['session', 'sessionBinding', 'b'.repeat(64)]]) test('pending intake rejects changed current ' + name + ' before original lookup or new write', async () => {
+  const h = uncertain(); await h.save('Needs review'); const calls = h.calls.length, original = h.journal().entries('report'); h.state.identity[key] = next; await h.save('Needs review'); assert.equal(h.calls.length, calls); assert.equal(h.state.encoded, 1); assert.match(h.messages.at(-1), /Review a previous save/i); assert.equal(h.field('report-modal').open, true); await assert.rejects(h.context.PDLOriginalReportRecovery.recoverOriginal(original[0].operationId), value => value.code === 'PDL_ORIGINAL_REPORT_REVIEW'); assert.equal(h.calls.length, calls); assert.deepEqual(h.journal().entries('report'), original); assert.ok(h.state.retired > 0);
 });
 test('concurrent submit cannot launch a second compound report or encode photos twice', async () => {
   const wait = deferred(), h = harness({ files: [photo()], transport: async (call, fixture) => call.route.startsWith('/api/company/report-intakes/') ? fixture.completed() : wait.promise });
-  const first = h.save('Needs review'); await flush(); await h.save('Needs review'); assert.equal(h.mutations().length, 1); assert.equal(h.state.encoded, 1); assert.match(h.messages.at(-1), /Finish the current daily review/); wait.resolve(h.completed()); await first; assert.equal(h.state.standaloneUploads, 0);
+  const first = h.save('Needs review'); await until(() => h.mutations().length === 1); await h.save('Needs review'); assert.equal(h.mutations().length, 1); assert.equal(h.state.encoded, 1); assert.match(h.messages.at(-1), /Finish the current daily review/); wait.resolve(h.completed()); await first; assert.equal(h.state.standaloneUploads, 0); assert.equal(h.journal().entries('report').length, 0);
 });
 test('unavailable original lookup retains operation custody and does not allow blind retry', async () => {
-  const h = uncertain({ lookup: Object.assign(Error('Synthetic lookup unavailable'), { status: 503 }) }); await h.save('Needs review'); const operation = h.mutations()[0].options.headers['X-PDL-Operation']; await h.save('Needs review'); assert.equal(h.mutations().length, 1); assert.equal(h.lookups().length, 2); assert.ok(h.lookups().every(row => row.route.endsWith(operation))); assert.equal(h.state.encoded, 1); assert.equal(h.field('report-modal').open, true);
+  const h = uncertain({ lookup: Object.assign(Error('Synthetic lookup unavailable'), { status: 503 }) }); await h.save('Needs review'); const operation = h.mutations()[0].options.headers['X-PDL-Operation']; await h.save('Needs review'); assert.equal(h.lookups().length, 1); await assert.rejects(h.context.PDLOriginalReportRecovery.recoverOriginal(operation), value => value.status === 503); assert.equal(h.mutations().length, 1); assert.equal(h.lookups().length, 2); assert.ok(h.lookups().every(row => row.route.endsWith(operation))); assert.equal(h.state.encoded, 1); assert.equal(h.field('report-modal').open, true); assert.equal(h.journal().entries('report')[0].operationId, operation);
 });
 for (const status of [401, 403]) test('original lookup denial ' + status + ' retains custody without resend or re-encoding', async () => {
-  const h = uncertain({ lookup: Object.assign(Error('Synthetic current access denied'), { status }) }); await h.save('Needs review'); await h.save('Needs review'); assert.equal(h.mutations().length, 1); assert.equal(h.lookups().length, 2); assert.equal(h.state.encoded, 1); assert.equal(h.context.reports.length, 0); assert.equal(h.context.photos.length, 0); assert.equal(h.field('report-modal').open, true);
+  const h = uncertain({ lookup: Object.assign(Error('Synthetic current access denied'), { status }) }); await h.save('Needs review'); await h.save('Needs review'); assert.equal(h.lookups().length, 1); const original = h.journal().entries('report'); await assert.rejects(h.context.PDLOriginalReportRecovery.recoverOriginal(original[0].operationId), value => value.status === status); assert.equal(h.mutations().length, 1); assert.equal(h.lookups().length, 2); assert.equal(h.state.encoded, 1); assert.equal(h.context.reports.length, 0); assert.equal(h.context.photos.length, 0); assert.equal(h.field('report-modal').open, true); assert.deepEqual(h.journal().entries('report'), original);
 });
-for (const [name, change] of [['form notes', h => { h.field('field-notes').value = 'Synthetic newer form contents'; }], ['session', h => { h.state.identity.sessionBinding = 'synthetic-later-session'; }], ['role', h => { h.state.identity.role = 'admin'; }], ['actor', h => { h.state.identity.actorId = 3; }], ['company', h => { h.state.identity.companyId = 'synthetic-company-b'; }]]) test('late original lookup after changed ' + name + ' cannot apply, close, resend or upload into current form', async () => {
+for (const [name, change] of [['form notes', h => { h.field('field-notes').value = 'Synthetic newer form contents'; }], ['session', h => { h.state.identity.sessionBinding = 'b'.repeat(64); }], ['role', h => { h.state.identity.role = 'admin'; }], ['actor', h => { h.state.identity.actorId = 3; }], ['company', h => { h.state.identity.companyId = B; }]]) test('late explicit original lookup after changed ' + name + ' cannot apply, close, resend or upload into current form', async () => {
   let retry = false; const wait = deferred(), h = harness({ files: [photo()], transport: async (call, fixture) => {
-    if (call.route.startsWith('/api/company/report-intakes/')) return retry ? wait.promise : { complete: false, retryAllowed: false };
+    if (call.route.startsWith('/api/company/report-intakes/')) return retry ? wait.promise : { operationId: call.route.split('/').at(-1), reportId: 51, state: 'pending', complete: false, retryAllowed: false };
     throw Object.assign(Error('Synthetic lost acknowledgement'), { status: 503 });
   } });
-  await h.save('Needs review'); const operation = h.mutations()[0].options.headers['X-PDL-Operation']; retry = true; const checking = h.save('Needs review'); await flush(); change(h); wait.resolve(h.completed()); await checking;
-  assert.equal(h.mutations().length, 1); assert.equal(h.state.encoded, 1); assert.equal(h.state.standaloneUploads, 0); assert.equal(h.context.reports.length, 0); assert.equal(h.context.photos.length, 0); assert.deepEqual(h.state.rendered, []); assert.equal(h.field('report-modal').open, true); assert.match(h.messages.at(-1), /account or daily form changed during delivery/i); assert.ok(h.messages.at(-1).includes(operation));
+  await h.save('Needs review'); const operation = h.mutations()[0].options.headers['X-PDL-Operation'], original = h.journal().entries('report'), openingForm = client.form(h.field('report-modal')); retry = true; const checking = h.context.PDLOriginalReportRecovery.recoverOriginal(operation, { accept: () => openingForm === client.form(h.field('report-modal')) }).then(value => ({ value }), error => ({ error })); await until(() => h.lookups().length === 2); change(h); wait.resolve(h.completed()); const outcome = await checking;
+  assert.equal(outcome.error?.code, 'PDL_ORIGINAL_REPORT_REVIEW'); assert.equal(outcome.value, undefined); assert.equal(h.mutations().length, 1); assert.equal(h.state.encoded, 1); assert.equal(h.state.standaloneUploads, 0); assert.equal(h.context.reports.length, 0); assert.equal(h.context.photos.length, 0); assert.deepEqual(h.state.rendered, []); assert.equal(h.field('report-modal').open, true); assert.deepEqual(h.journal().entries('report'), original); assert.ok(h.state.retired > 0);
 });
 test('form change while selected bytes are encoding prevents the first mutation', async () => {
   const h = harness({ files: [photo()], deferEncoding: true, transport: async () => ({ complete: false, retryAllowed: false }) });
   const saving = h.save('Needs review'); await flush(); assert.equal(h.state.encodingCallbacks.length, 1); h.field('field-notes').value = 'Synthetic changed before upload'; for (const resolve of h.state.encodingCallbacks) resolve(); await saving;
-  assert.equal(h.mutations().length, 0); assert.equal(h.state.standaloneUploads, 0); assert.equal(h.context.reports.length, 0); assert.equal(h.context.photos.length, 0); assert.equal(h.field('report-modal').open, true); assert.match(h.messages.at(-1), /account or daily form changed during delivery/i);
+  assert.equal(h.mutations().length, 0); assert.equal(h.state.standaloneUploads, 0); assert.equal(h.context.reports.length, 0); assert.equal(h.context.photos.length, 0); assert.equal(h.field('report-modal').open, true); assert.match(h.messages.at(-1), /daily form changed before dispatch/i); assert.equal(h.journal().entries('report').length, 0);
 });
 test('late successful original ACK cannot overwrite a newer form or launch a replacement operation', async () => {
   const wait = deferred(), h = harness({ files: [photo()], transport: async () => wait.promise });
-  const saving = h.save('Needs review'); await flush(); assert.equal(h.mutations().length, 1); h.field('field-notes').value = 'Synthetic newer edit'; wait.resolve(h.completed()); await saving;
-  assert.equal(h.context.reports.length, 0); assert.equal(h.context.photos.length, 0); assert.equal(h.field('report-modal').open, true); assert.match(h.messages.at(-1), /account or daily form changed during delivery/i);
-  await h.save('Needs review'); assert.equal(h.mutations().length, 1); assert.equal(h.state.encoded, 1); assert.match(h.messages.at(-1), /different daily form/i);
+  const saving = h.save('Needs review'); await until(() => h.mutations().length === 1); const original = h.journal().entries('report'); h.field('field-notes').value = 'Synthetic newer edit'; wait.resolve(h.completed()); await saving;
+  assert.equal(h.context.reports.length, 0); assert.equal(h.context.photos.length, 0); assert.equal(h.field('report-modal').open, true); assert.match(h.messages.at(-1), /original report intake/i); assert.deepEqual(h.journal().entries('report'), original); assert.ok(h.state.retired > 0);
+  await h.save('Needs review'); assert.equal(h.mutations().length, 1); assert.equal(h.state.encoded, 1); assert.match(h.messages.at(-1), /before saving another daily/i);
 });
 
 (async () => {

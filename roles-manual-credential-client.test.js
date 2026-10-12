@@ -5,13 +5,15 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs'), path = require('node:path'), vm = require('node:vm'), crypto = require('node:crypto');
 const source = fs.readFileSync(path.join(__dirname, 'roles-manual-credential-client.js'), 'utf8');
 const platformSource = fs.readFileSync(path.join(__dirname, 'platform.js'), 'utf8');
+const Recovery = require('./original-operation-recovery');
+const companyA = '10000000-0000-4000-8000-000000000001', companyB = '10000000-0000-4000-8000-000000000002';
 const clone = value => JSON.parse(JSON.stringify(value));
 const tests = [], test = (name, run) => tests.push({ name, run });
 const deferred = () => { let resolve, reject; const promise = new Promise((yes, no) => { resolve = yes; reject = no; }); return { promise, resolve, reject }; };
 const flush = async () => { await new Promise(resolve => setImmediate(resolve)); await new Promise(resolve => setImmediate(resolve)); };
 const identity = () => ({ manualCredentialCustody: true, id: 71, role: 'platform_owner', email: 'synthetic-owner@example.invalid', accountSessionBinding: 'a'.repeat(64) });
-const staffRoute = '/api/platform/users', resetRoute = '/api/platform/companies/synthetic-company-a/owner-reset';
-const staffBody = { name: 'Synthetic staff', email: 'synthetic-staff@example.invalid', role: 'platform_admin' };
+const staffRoute = '/api/platform/users', resetRoute = '/api/platform/companies/' + companyA + '/owner-reset';
+const staffBody = { name: 'Synthetic staff', email: 'synthetic-staff@example.invalid', role: 'support' };
 const error = status => Object.assign(Error('Synthetic original status ' + status), { status });
 function harness({ role, binding, flag = true, writeError = null, receipt = 'complete' } = {}) {
   const state = { identity: { ...identity(), manualCredentialCustody: flag, ...(role === undefined ? {} : { role }), ...(binding === undefined ? {} : { accountSessionBinding: binding }) }, formCurrent: true, acceptedGenerations: 0, uuidCount: 0, records: new Map(), writeError, receipt, identityGates: [], writeGates: [], receiptGates: [] }, calls = [];
@@ -20,7 +22,7 @@ function harness({ role, binding, flag = true, writeError = null, receipt = 'com
     if (route === '/api/platform/auth/me') { const gate = state.identityGates.shift(); if (gate) await gate.promise; return clone(state.identity); }
     if (options.method === 'POST' && (route === staffRoute || /^\/api\/platform\/companies\/[^/]+\/owner-reset$/.test(route))) {
       const originalError = state.writeError, operationId = options.headers?.['X-PDL-Operation'], gate = state.writeGates.shift();
-      const result = { operationId, setupCode: 'SYNTHETIC-SETUP-CODE-ONE', name: 'Synthetic staff', email: route === staffRoute ? staffBody.email : 'synthetic-company-owner@example.invalid' };
+      const result = { operationId, setupCode: 'SYNTHETIC-SETUP-CODE-ONE', name: 'Synthetic staff', id: 901, role: staffBody.role, companyId: route === staffRoute ? companyA : route.split('/')[4], expiresAt: new Date(Date.now() + 3600000).toISOString(), email: route === staffRoute ? staffBody.email : 'synthetic-company-owner@example.invalid' };
       if (!originalError || ![400, 403, 409].includes(originalError.status)) { state.acceptedGenerations++; state.records.set(operationId, result); }
       if (gate) await gate.promise; if (originalError) throw originalError; return clone(result);
     }
@@ -38,7 +40,9 @@ function harness({ role, binding, flag = true, writeError = null, receipt = 'com
     return { passthrough: true, route };
   };
   const context = { module: { exports: {} }, crypto: { randomUUID: () => `00000000-0000-4000-8000-${String(++state.uuidCount).padStart(12, '0')}` } };
-  vm.createContext(context); vm.runInContext(source, context, { filename: 'roles-manual-credential-client.js' }); const request = context.module.exports.create(call);
+  const saved = new Map(), storage = { get length() { return saved.size; }, key: index => [...saved.keys()][index] ?? null, getItem: key => saved.get(key) ?? null, setItem: (key, value) => saved.set(key, value), removeItem: key => saved.delete(key) };
+  const journal = Recovery.create(storage, { crypto: { subtle: { digest: async (_, bytes) => crypto.createHash('sha256').update(bytes).digest() } } });
+  vm.createContext(context); vm.runInContext(source, context, { filename: 'roles-manual-credential-client.js' }); const request = context.module.exports.create(call, { journal });
   const options = (body = staffBody, extra = {}) => ({ method: 'POST', body: JSON.stringify(body), manualAccept: () => state.formCurrent, ...extra });
   const writes = () => calls.filter(row => row.options.method === 'POST' && (row.route === staffRoute || row.route.endsWith('/owner-reset')));
   const reads = () => calls.filter(row => /\/manual-credentials\//.test(row.route) || /\/owner-reset\//.test(row.route));
@@ -73,17 +77,17 @@ test('nonmanaged existing routes and explicit custody-off preserve exact baselin
 test('pending same-route different staff body cannot generate or query a substitute request', async () => {
   const h = harness({ writeError: error(503), receipt: 'pending' }); await assert.rejects(h.request(staffRoute, h.options())); const before = h.calls.length; await assert.rejects(h.request(staffRoute, h.options({ ...staffBody, email: 'different-staff@example.invalid' })), /different account request/); assert.equal(h.calls.length, before + 1); assert.equal(h.writes().length, 1); assert.equal(h.reads().length, 1); assert.equal(h.state.uuidCount, 1);
 });
-for (const route of ['/api/platform/companies/synthetic-company-b/owner-reset', resetRoute]) test('pending staff intent blocks different operation target ' + route, async () => {
+for (const route of ['/api/platform/companies/10000000-0000-4000-8000-000000000002/owner-reset', resetRoute]) test('pending staff intent blocks different operation target ' + route, async () => {
   const h = harness({ writeError: error(503), receipt: 'pending' }); await assert.rejects(h.request(staffRoute, h.options())); await assert.rejects(h.request(route, h.options({})), /different account request/); assert.equal(h.writes().length, 1); assert.equal(h.state.uuidCount, 1); assert.equal(h.reads().length, 1);
 });
 test('pending Owner-reset target blocks a different company and a staff-create generation', async () => {
-  const h = harness({ writeError: error(503), receipt: 'pending' }); await assert.rejects(h.request(resetRoute, h.options({}))); for (const route of ['/api/platform/companies/synthetic-company-b/owner-reset', staffRoute]) await assert.rejects(h.request(route, h.options(route === staffRoute ? staffBody : {})), /different account request/); assert.equal(h.writes().length, 1); assert.equal(h.state.uuidCount, 1);
+  const h = harness({ writeError: error(503), receipt: 'pending' }); await assert.rejects(h.request(resetRoute, h.options({}))); for (const route of ['/api/platform/companies/10000000-0000-4000-8000-000000000002/owner-reset', staffRoute]) await assert.rejects(h.request(route, h.options(route === staffRoute ? staffBody : {})), /different account request/); assert.equal(h.writes().length, 1); assert.equal(h.state.uuidCount, 1);
 });
 for (const [key, value] of [['id', 72], ['role', 'platform_admin'], ['email', 'other-owner@example.invalid'], ['accountSessionBinding', 'b'.repeat(64)]]) test('pending original is retired by changed current ' + key + ' without a new operation or stale code', async () => {
   const h = harness({ writeError: error(503), receipt: 'pending' }); await assert.rejects(h.request(staffRoute, h.options())); h.state.identity[key] = value; await assert.rejects(h.request(staffRoute, h.options())); assert.equal(h.writes().length, 1); assert.equal(h.state.uuidCount, 1); assert.equal(h.reads().length, 1);
 });
-for (const status of [400, 403, 409]) test('known original rejection ' + status + ' plus confirmed readonly absence permits one corrected new intent', async () => {
-  const h = harness({ writeError: error(status), receipt: 'missing' }); await assert.rejects(h.request(staffRoute, h.options())); assert.equal(h.state.acceptedGenerations, 0); const old = h.writes()[0].options.headers['X-PDL-Operation']; h.state.writeError = null; h.state.receipt = 'complete'; const result = await h.request(staffRoute, h.options({ ...staffBody, name: 'Synthetic corrected staff' })); assert.equal(h.writes().length, 2); assert.equal(h.state.acceptedGenerations, 1); assert.equal(h.state.uuidCount, 2); assert.notEqual(result.operationId, old);
+for (const status of [400, 403, 409]) test('known original rejection ' + status + ' plus readonly absence retains the handle for explicit review', async () => {
+  const h = harness({ writeError: error(status), receipt: 'missing' }); await assert.rejects(h.request(staffRoute, h.options())); assert.equal(h.state.acceptedGenerations, 0); const old = h.writes()[0].options.headers['X-PDL-Operation']; h.state.writeError = null; h.state.receipt = 'complete'; await assert.rejects(h.request(staffRoute, h.options({ ...staffBody, name: 'Synthetic corrected staff' }))); assert.equal(h.writes().length, 1); assert.equal(h.state.uuidCount, 1); assert.equal(h.request.originalOperations()[0].operationId, old);
 });
 for (const status of [401, 404, 422, 500, 503]) test('uncertain original status ' + status + ' plus lookup404 preserves custody and cannot issue a replacement', async () => {
   const h = harness({ writeError: error(status), receipt: 'missing' }); await assert.rejects(h.request(staffRoute, h.options()), /original setup operation/i); const id = h.writes()[0].options.headers['X-PDL-Operation']; await assert.rejects(h.request(staffRoute, h.options())); assert.equal(h.writes().length, 1); assert.equal(h.state.uuidCount, 1); assert.equal(h.reads().length, 2); assert.ok(h.reads().every(row => row.route.endsWith(id)));
@@ -112,10 +116,10 @@ test('simultaneous same-intent calls share one operation and only one write gene
 // sites. This catches removal of manualAccept even if the pure factory is sound.
 function platformHarness(h) {
   const nodes = new Map(), listeners = {}, alerts = [];
-  const node = id => { if (!nodes.has(id)) nodes.set(id, { id, value: '', innerHTML: '', textContent: '', open: id === 'staff-modal', dataset: {}, showModal() { this.open = true; }, close() { this.open = false; }, closest: () => nodes.get(id.startsWith('staff-') ? 'staff-modal' : 'work-modal') }); return nodes.get(id); };
-  for (const id of ['staff-modal', 'work-modal', 'staff-name', 'staff-email', 'staff-role', 'staff-code', 'save-staff', 'add-staff', 'work-title', 'work-fields', 'work-message']) node(id);
+  const node = id => { if (!nodes.has(id)) { let html = '', text = ''; nodes.set(id, { id, value: '', get innerHTML() { return html; }, set innerHTML(value) { html = String(value); text = html.replace(/<[^>]+>/g, ''); }, get textContent() { return text; }, set textContent(value) { text = String(value); html = text; }, replaceChildren() { this.textContent = ''; }, open: id === 'staff-modal', dataset: {}, showModal() { this.open = true; }, close() { this.open = false; }, closest: () => nodes.get(id.startsWith('staff-') ? 'staff-modal' : 'work-modal') }); } return nodes.get(id); };
+  for (const id of ['staff-modal', 'work-modal', 'staff-name', 'staff-email', 'staff-role', 'staff-code', 'staff-message', 'save-staff', 'add-staff', 'work-title', 'work-fields', 'work-message']) node(id);
   node('staff-name').value = staffBody.name; node('staff-email').value = staffBody.email; node('staff-role').value = staffBody.role;
-  const context = { $: selector => node(selector.slice(1)), document: { addEventListener: (type, listener) => (listeners[type] ||= []).push(listener) }, api: h.request, reload: async () => {}, alert: value => alerts.push(value), currentView: 'customers', activeCompanyId: 'synthetic-company-a', viewVersion: 0, platformUser: identity(), safe: value => String(value ?? '') };
+  const context = { $: selector => node(selector.slice(1)), document: { addEventListener: (type, listener) => (listeners[type] ||= []).push(listener) }, api: h.request, reload: async () => { if (h.state.reloadError) throw h.state.reloadError; }, alert: value => alerts.push(value), currentView: 'customers', activeCompanyId: companyA, viewVersion: 0, platformUser: identity(), safe: value => String(value ?? '') };
   vm.createContext(context);
   const lines = platformSource.split('\n'), helpers = lines.slice(lines.findIndex(line => line.startsWith('const dialogVersions=')), lines.findIndex(line => line.startsWith('function renderAccountContext('))).filter(line => !line.startsWith('let reloadVersion='));
   vm.runInContext(helpers.join('\n'), context, { filename: 'platform.js:actual-dialog-current' });
@@ -127,13 +131,39 @@ test('actual staff caller provides current-dialog acceptance and renders one acc
   const h = harness(), p = platformHarness(h); await p.staff(); assert.equal(h.writes().length, 1); assert.equal(h.writes()[0].options.manualAccept, undefined); assert.ok(p.node('staff-code').innerHTML.includes('SYNTHETIC-SETUP-CODE-ONE')); assert.deepEqual(JSON.parse(h.writes()[0].options.body), staffBody);
 });
 test('actual staff caller editing its form during ACK await suppresses old bytes and blocks replacement for changed staff', async () => {
-  const h = harness(), p = platformHarness(h), wait = h.defer('write'), sending = p.staff(); await flush(); p.node('staff-email').value = 'different-staff@example.invalid'; await p.input('staff-email'); wait.resolve(); await sending; assert.equal(p.node('staff-code').innerHTML, ''); assert.equal(h.writes().length, 1); await p.staff(); assert.equal(h.writes().length, 1); assert.match(p.node('staff-code').textContent, /original setup operation/i);
+  const h = harness(), p = platformHarness(h), wait = h.defer('write'), sending = p.staff(); await flush(); p.node('staff-email').value = 'different-staff@example.invalid'; await p.input('staff-email'); wait.resolve(); await sending; assert.equal(p.node('staff-code').innerHTML, ''); assert.equal(h.writes().length, 1); await p.staff(); assert.equal(h.writes().length, 1); assert.match(p.node('staff-message').textContent, /original setup operation/i);
 });
 test('actual staff caller closed during initial identity await cannot dispatch a credential mutation', async () => {
   const h = harness(), p = platformHarness(h), wait = h.defer('identity'), sending = p.staff(); await flush(); p.node('staff-modal').close(); wait.resolve(); await sending; assert.equal(h.writes().length, 0); assert.equal(h.state.acceptedGenerations, 0); assert.equal(p.node('staff-code').innerHTML, '');
 });
 test('actual Owner-reset caller binds the current account view and blocks late code after another account is selected', async () => {
-  const h = harness(), p = platformHarness(h), wait = h.defer('write'), sending = p.reset('synthetic-company-a'); await flush(); assert.equal(h.writes().length, 1); p.context.activeCompanyId = 'synthetic-company-b'; wait.resolve(); await sending; assert.equal(p.node('work-fields').innerHTML, ''); assert.equal(p.node('work-modal').open, false); assert.equal(p.alerts.length, 0); await p.reset('synthetic-company-b'); assert.equal(h.writes().length, 1); assert.match(p.alerts.at(-1), /original setup operation/i);
+  const h = harness(), p = platformHarness(h), wait = h.defer('write'), sending = p.reset(companyA); await flush(); assert.equal(h.writes().length, 1); p.context.activeCompanyId = companyB; wait.resolve(); await sending; assert.equal(p.node('work-fields').innerHTML, ''); assert.equal(p.node('work-modal').open, false); assert.equal(p.alerts.length, 0); await p.reset(companyB); assert.equal(h.writes().length, 1); assert.match(p.alerts.at(-1), /original setup operation/i);
+});
+test('actual staff known ACK reviews original before display; consumed old generation cannot block a different staff intent', async () => {
+  const h = harness(), p = platformHarness(h); await p.staff(); const original = h.writes()[0].options.headers['X-PDL-Operation'];
+  assert.equal(h.reads().length, 1); assert.ok(h.reads()[0].route.endsWith(original)); assert.equal(h.request.originalOperations().length, 0); assert.ok(p.node('staff-code').innerHTML.includes('SYNTHETIC-SETUP-CODE-ONE'));
+  h.state.records.delete(original); p.node('staff-email').value = 'synthetic-next-staff@example.invalid'; await p.input('staff-email'); await p.staff();
+  assert.equal(h.writes().length, 2); assert.equal(h.state.acceptedGenerations, 2); assert.notEqual(h.writes()[1].options.headers['X-PDL-Operation'], original); assert.equal(h.request.originalOperations().length, 0); assert.ok(p.node('staff-code').innerHTML.includes('SYNTHETIC-SETUP-CODE-ONE'));
+});
+test('actual Owner-reset known ACK reviews original before handoff; a different tenant intent remains available', async () => {
+  const h = harness(), p = platformHarness(h); await p.reset(companyA); const original = h.writes()[0].options.headers['X-PDL-Operation']; assert.equal(h.request.originalOperations().length, 0); assert.equal(h.reads().length, 1); assert.ok(p.node('work-fields').innerHTML.includes('SYNTHETIC-SETUP-CODE-ONE'));
+  h.state.records.delete(original); p.context.activeCompanyId = companyB; await p.reset(companyB); assert.equal(h.writes().length, 2); assert.equal(h.state.acceptedGenerations, 2); assert.equal(h.request.originalOperations().length, 0); assert.ok(h.reads()[1].route.includes(companyB));
+});
+test('actual staff edit while known-ACK original GET is held suppresses code and retains exact handle without replacement', async () => {
+  const h = harness(), p = platformHarness(h), wait = h.defer('receipt'), sending = p.staff(); await flush(); assert.equal(h.writes().length, 1); assert.equal(h.reads().length, 1); assert.equal(p.node('staff-code').innerHTML, ''); const original = h.writes()[0].options.headers['X-PDL-Operation']; p.node('staff-email').value = 'synthetic-new-form@example.invalid'; await p.input('staff-email'); wait.resolve(); await sending;
+  assert.equal(p.node('staff-code').innerHTML, ''); assert.equal(h.request.originalOperations()[0].operationId, original); await p.staff(); assert.equal(h.writes().length, 1); assert.equal(h.state.acceptedGenerations, 1);
+});
+test('actual Owner-reset view change while known-ACK original GET is held suppresses code and retains original tenant', async () => {
+  const h = harness(), p = platformHarness(h), wait = h.defer('receipt'), sending = p.reset(companyA); await flush(); assert.equal(h.writes().length, 1); assert.equal(h.reads().length, 1); const original = h.writes()[0].options.headers['X-PDL-Operation']; p.context.activeCompanyId = companyB; wait.resolve(); await sending; assert.equal(p.node('work-fields').innerHTML, ''); assert.equal(h.request.originalOperations()[0].operationId, original); await p.reset(companyB); assert.equal(h.writes().length, 1);
+});
+test('actual staff known saved code survives optional directory refresh503 with truthful readback wording', async () => {
+  const h = harness(), p = platformHarness(h); h.state.reloadError = error(503); await p.staff(); assert.equal(h.writes().length, 1); assert.equal(h.reads().length, 1); assert.equal(h.request.originalOperations().length, 0); assert.ok(p.node('staff-code').innerHTML.includes('SYNTHETIC-SETUP-CODE-ONE'), 'optional failed refresh must not erase acknowledged setup code'); assert.match(p.node('staff-message').textContent, /account saved.*refresh/i);
+});
+for (const status of [401, 402, 403]) for (const malformed of [false, true]) test('actual platform API retires manual bytes for HTTP' + status + (malformed ? ' before malformed denial JSON' : ''), async () => {
+  let privateCode = 'SYNTHETIC-PRIVATE-CODE', retired = 0;
+  const context = { window: { pdlRetireManualCredentials: () => { privateCode = ''; retired++; } }, location: {}, fetch: async () => ({ ok: false, status, json: async () => { if (malformed) throw Error('Synthetic malformed denial'); return { error: 'Synthetic authorization denial' }; } }) };
+  vm.createContext(context); vm.runInContext(platformSource.slice(platformSource.indexOf('async function api('), platformSource.indexOf('\nconst safe=')), context, { filename: 'platform.js:actual-api' });
+  await assert.rejects(context.api('/api/platform/overview')); assert.equal(privateCode, ''); assert.equal(retired, 1);
 });
 
 (async () => {

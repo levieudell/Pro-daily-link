@@ -96,7 +96,7 @@ async function guard(req,url,db,h){
   if(/^\/api\/time-off-requests\/[^/]+\/(approve|decline)$/.test(path)){
     permit(db,user,'timeOff','viewRequests');permit(db,user,'timeReview','reviewLeave');
     const row=one(db.timeOffRequests,path.split('/')[3],'Time off request');
-    if(restricted(db,'timeReview')&&!review.crewAllowed(db,user,row.memberId)&&!['owner','admin'].includes(user.role))fail(404,'Time off request not found');
+    if(restricted(db,'timeReview')&&!review.leaveInScope(db,user,row))fail(404,'Time off request not found');
   }
   if(path==='/api/time-cards.csv')permit(db,user,'timeWrite','downloadCards');
   const card=/^\/api\/time-cards(?:\/([1-9]\d*)(?:\/(submit|approve|unapprove|clock-out))?)?$/.exec(path);

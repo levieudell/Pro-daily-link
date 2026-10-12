@@ -123,6 +123,7 @@ function createService(h,env=process.env){
     workspaceAuthority:(db,req)=>identity(db,req.auth,h.context().rolesRevision).authority,policyTransition:(db,proof)=>{h.context().rolesPolicyFrom=proof.workspaceAuthorityBefore;},
     guardCommit:guard=>{const context=h.context();context.rolesDeadline=Math.min(context.rolesDeadline,Date.parse(guard.authorizedUntil));}});
   const reportIntakes=require('./roles-report-intake').createHandler({key,context:h.context,body:h.body,json:h.json,invoke:h.invoke,presentReport:h.presentReport,currentActor:(req,db)=>h.authenticate(req,db).auth,validateBusinessDependencies:(before,after,req)=>require('./roles-production-guards').validateDelta(before,after,req,h.context().url,h),stage:db=>stage(h.context(),db),commit:()=>commitContext(h.context())});
+  const pdfReadback=require('./roles-production-pdf-readback').createHandler({key,readDb:h.readDb,assertCurrent,deadline:()=>h.context().rolesDeadline,canViewPricing:h.canViewPricing,canAccessProject:h.canAccessProject,download:(bucket,objectKey,options)=>h.transport.download(bucket,objectKey,options),localRoot:h.localAssetRoot,json:h.json,raw:(res,value)=>{res.writeHead(value.status,value.headers);res.end(value.raw);}});
   async function preHandle(req,res,url){
     const context=h.context();if(!context?.rolesProduction)return false;
     const db=context.db;
@@ -144,6 +145,7 @@ function createService(h,env=process.env){
     if(access.status==='Trial'&&!context.rolesBilling)context.rolesDeadline=Math.min(context.rolesDeadline,Date.parse(db.company.trialEndsAt));
     context.rolesAuthority=identity(db,auth,context.rolesRevision).authority;
     require('./roles-numeric-routes').assert(url);
+    if(await pdfReadback(req,res,url))return true;
     if(url.pathname==='/api/workspace-identity'&&req.method==='GET'){
       await assertCurrent(req);h.json(res,200,identity(db,req.auth,context.rolesRevision));return true;
     }

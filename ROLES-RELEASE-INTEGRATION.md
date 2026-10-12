@@ -52,7 +52,9 @@ reference validation. Photo intake signs one original create/edit operation,
 uploads/checkpoints and current template/approval/crew dependencies. Accepted
 partial Drafts remain reviewable; original GET recovery never repeats uploads
 or creation. Safety-only forms use one final CAS. Client checks current identity
-and form before applying results; in-memory form custody does not survive reload.
+and form before applying results. The successor keeps opaque original-operation
+metadata across reload and blocks a different report save until the original is
+conclusively reviewed. Private form contents and files are not persisted.
 
 Unknown credential email delivery remains unknown. Current Owner can preview a
 reason and explicitly confirm invalidation of that exact original reset/email
@@ -74,9 +76,20 @@ evidence bind company/request/generation to the original Owner/session or existi
 bootstrap authorization. Natural expiry and fresh generation are checked before
 buffered delivery. GET recovery/original replay issue no new code/grant/provider
 call. Private projections hide custody. Capacity is 1000 receipts / 2 MiB with no
-auto-pruning/key fallback. The platform client preserves uncertain operation
-handles only in its current tab's memory; operators must retain the UUID for
-direct recovery after reload. No reload-proof UI claim is made.
+auto-pruning/key fallback. The successor browser journal retains opaque original
+handles for staff creation and managed owner reset across reload, with fresh
+original GET review. Known current-dialog results receive that fresh review before
+the setup code is displayed. Bootstrap remains outside the browser adapter.
+Complete storage erasure across restart and an original operation without a
+conclusive authorized result still require explicit server reconciliation.
+
+The successor also adds a bounded normal PDF reader. Every matching current and
+retained source must pass existing pricing/project/creator authorization before
+and after delivery. Cloud reads use the original authorization deadline and a
+30-second maximum, cancellation, MIME/magic/size checks; local reads validate
+containment and unchanged file identity. No source identity or custody is inferred
+from a name. New normal Field proposals lack trusted numeric signed author
+custody; their Field author readback remains unsupported.
 
 ## Remaining external release gates
 
@@ -84,9 +97,12 @@ direct recovery after reload. No reload-proof UI claim is made.
    complete manifest, normal HTTP/VM/browser and generated native SQL suites.
    Mutable diagnostics are not exact-head acceptance. Windows cannot establish
    the two existing POSIX 0600 assertions.
-2. Obtain approval to publish THIS NEW exact head and run both Linux workflows
-   there. Earlier approval/CI does not transfer. Publication, CI, merge and deploy
-   remain separate actions; none is authorized by this draft.
+2. Published predecessor b6ff24c remains draft PR186, unchanged and unmerged.
+   Its exact Linux Quality/security, Founder billing and normal Roles workflows
+   passed; Compatibility failed on an inherited date-sensitive fixture, so that
+   head is not fully green. The local successor pins only that baseline fixture
+   date. This successor has not been published or run in hosted CI; its local
+   source/evidence cannot establish hosted CI, merge or deployment readiness.
 3. Before production installation, review exact 009/010 SQL/function bodies/ACLs/
    owners/triggers, approved recoverable backups, every running writer/job, named
    companies/platform flags, stable key custody/version/retention and rollback.
@@ -101,5 +117,6 @@ direct recovery after reload. No reload-proof UI claim is made.
 
 All local proofs use generated accounts, closed memory transports and owned
 loopback PostgreSQL/browser fixtures with real providers blocked. Source CI
-creates distinct fresh generated databases, but has not been uploaded/run.
-Workflow existence is not successful GitHub CI evidence.
+creates distinct fresh generated databases. Workflow existence is not successful
+GitHub CI evidence for the successor. See docs/original-operation-recovery.md and
+the full workflow inventory for the finite coverage and unresolved boundaries.

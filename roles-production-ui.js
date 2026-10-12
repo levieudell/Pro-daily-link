@@ -2,8 +2,8 @@
 (function(){
   let ready=false,binding=null,actor=null,epoch=0,sequence=0,loading=0,loadRevision=null,retire=null,tail=Promise.resolve();
   const fail=message=>Object.assign(Error(message),{status:409,code:'PDL_WORKSPACE_STALE'});
-  function clear(){epoch++;sequence++;actor=null;window.PDLCompanyRoles?.retire();retire?.();document.querySelectorAll('[data-workspace-dialog]').forEach(node=>node.remove());}
-  function configure(config,me,onRetire){if(ready)clear();epoch++;ready=config?.rolesEditor===true&&me?.rolesEditor===true;retire=onRetire;binding=ready?{companyId:me.companyId,actorId:me.id,role:me.accessRole||me.role,sessionBinding:me.accountSessionBinding}:null;actor=null;}
+  function clear(){epoch++;sequence++;actor=null;window.PDLOriginalResultUI?.retire();window.PDLCompanyRoles?.retire();retire?.();document.querySelectorAll('[data-workspace-dialog]').forEach(node=>node.remove());}
+  function configure(config,me,onRetire){if(ready)clear();epoch++;ready=config?.rolesEditor===true&&me?.rolesEditor===true;retire=onRetire;binding=ready?{companyId:me.companyId,actorId:me.id,role:me.accessRole||me.role,sessionBinding:me.accountSessionBinding}:null;actor=null;Promise.resolve().then(()=>window.PDLOriginalResultUI?.refresh());}
   async function identity({transitionFrom=null,billing=false}={}){
     if(!ready||!binding)throw fail('Current permissions are unavailable. Sign in again.');
     const mark=epoch,opening=binding,company=localStorage.getItem('pdl-company-id');

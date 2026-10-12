@@ -210,7 +210,18 @@
     "node --check scripts/create-roles-synthetic-databases.cjs",
     "node --check company-roles-confirmation.test.js",
     "node --check roles-provider-tenant-http.test.js",
-    "node --check roles-platform-configuration-http.test.js"
+    "node --check roles-platform-configuration-http.test.js",
+    "node --check original-operation-recovery.js",
+    "node --check original-operation-recovery.test.js",
+    "node --check original-result-ui.js",
+    "node --check roles-original-operation-clients.test.js",
+    "node --check roles-production-full-matrix-http.test.js",
+    "node --check roles-production-pdf-readback.js",
+    "node --check roles-production-pdf-readback.test.js",
+    "node --check roles-production-pdf-readback-http.test.js",
+    "node --check roles-normal-workflow-fixture.js",
+    "node --check roles-normal-workflow-browser.test.js",
+    "node --check original-result-ui.test.js"
   ],
   "test": [
     "node json-request-body.test.js",
@@ -389,6 +400,12 @@
     "node roles-manual-credential-client.test.js",
     "node company-roles-confirmation.test.js",
     "node roles-provider-tenant-http.test.js",
-    "node roles-platform-configuration-http.test.js"
+    "node roles-platform-configuration-http.test.js",
+    "node original-operation-recovery.test.js",
+    "node roles-original-operation-clients.test.js",
+    "node roles-production-full-matrix-http.test.js",
+    "node roles-production-pdf-readback.test.js",
+    "node roles-production-pdf-readback-http.test.js",
+    "node original-result-ui.test.js"
   ]
 }

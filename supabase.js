@@ -62,9 +62,9 @@ async function upload(bucket, objectKey, bytes, contentType) {
   return { bucket, objectKey, url: `/api/files/${encodeURIComponent(bucket)}/${safeKey}` };
 }
 
-async function download(bucket, objectKey) {
+async function download(bucket, objectKey, { signal } = {}) {
   const safeKey = objectKey.split('/').map(encodeURIComponent).join('/');
-  return request(`/storage/v1/object/${bucket}/${safeKey}`);
+  return request(`/storage/v1/object/${bucket}/${safeKey}`, signal ? { signal } : {});
 }
 
 async function loadCompanySnapshot(companyId) {
