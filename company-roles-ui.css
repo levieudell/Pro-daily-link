@@ -1,4 +1,5 @@
 #company-role-editor { display: grid; gap: 18px; }
+#company-role-editor, #company-role-editor .panel, #company-role-editor .role-table-scroll { min-width: 0; max-width: 100%; }
 #company-role-editor[hidden] { display: none; }
 #company-role-editor .panel { padding: 22px; }
 #company-role-editor h2, #company-role-editor h3 { margin: 0 0 10px; }
