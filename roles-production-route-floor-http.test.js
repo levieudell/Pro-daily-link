@@ -64,6 +64,26 @@ async function main(){
   for(const suffix of ['', '/safety']){reset();await denied('PATCH','/api/reports/1'+suffix,field.id,suffix?{noSafetyObservations:true,safetyItems:[]}:{status:'Draft',notes:'Synthetic approved correction'},403,'Field cannot correct approved source without fixed approval authority.');}
   reset();seedDailies();await denied('PATCH','/api/reports/1',field.id,{status:'Approved'},403,'Field cannot create an approved target through correction.');await denied('POST','/api/reports',field.id,{project:1,status:'Draft',notes:'Synthetic foreign new report',laborEntries:[],productionEntries:[]},403,'No-policy daily creation cannot choose a foreign project.');
   journeys.push('Daily source and resulting target project/entire crew plus fixed approval authority remain enforced with no policy; own Draft/Office corrections and safety follow-up still persist.');
+  reset();fixture.alter(db=>{
+   // A valid signed historical generation remains private after its target has
+   // claimed/replaced that setup credential. The live Owner account is unchanged.
+   const custody=require('./roles-manual-credential-custody'),sample=structuredClone(db),target=sample.users.find(row=>row.id===1),setupCode=crypto.randomBytes(6).toString('base64url'),salt=crypto.randomBytes(16).toString('hex');
+   Object.assign(target,{mustSetPassword:true,setupHash:crypto.scryptSync(setupCode,salt,64).toString('hex'),setupSalt:salt,setupExpiresAt:'2099-01-01T00:00:00.000Z'});
+   const sealed=custody.createCustody({key:Buffer.from(process.env.PDL_ROLE_POLICY_KEY,'hex')}).enclose(sample,{operationId:crypto.randomUUID(),purpose:'company-owner-reset',scope:{kind:'platform-owner',platformId:custody.PLATFORM_ID,actorId:9,role:'platform_owner',status:'Active',mustSetPassword:false,sessionHash:'a'.repeat(64),expiresAt:'2099-01-01T00:00:00.000Z'},requestHash:canonicalHash({companyId:db.company.id,purpose:'company-owner-reset'}),targetId:target.id,setupCode});
+   db[custody.COLLECTION]=sealed.snapshot[custody.COLLECTION];
+   for(const key of ['rolesProviderAttempts','rolesCredentialInvalidations','rolesReportIntakes','workspaceAssetCustody','rolePolicyPreviews','rolePolicyReceipts','rolePolicyAudit','assistantConfirmations'])db[key]=[];
+   db.company.businessExportNote='Synthetic business value retained';db.company.privateCredentialProof={resetTokenHash:'b'.repeat(64),emailVerificationTokenHash:'c'.repeat(64),custodyProof:'d'.repeat(64),description:'Synthetic public business description'};
+   db.auditLog.push({id:crypto.randomUUID(),type:'synthetic_business_review',projectId:101,detail:'Synthetic legitimate business audit',actor:'Synthetic Owner',at:new Date().toISOString()});
+  });
+  const exportSeed=fixture.read(),ownerBefore=canonicalHash(exportSeed),exportCommits=commitCalls,localExport=require('./server').customerDataExport(exportSeed),exported=await call('GET','/api/company/export',1);
+  eq(exported.status,200,'Normal Owner business export remains available.');
+  for(const [label,data]of [['export helper',localExport],['normal raw Owner export',exported.data]]){
+   for(const key of ['rolesManualCredentialCustody','rolesProviderAttempts','rolesCredentialInvalidations','rolesReportIntakes','workspaceAssetCustody','rolePolicyPreviews','rolePolicyReceipts','rolePolicyAudit','assistantConfirmations'])eq(Object.hasOwn(data,key),false,label+' must exclude private operation collection '+key);
+   eq(data.company.privateCredentialProof,{description:'Synthetic public business description'},label+' strips nested security fields while preserving business text.');eq(data.company.businessExportNote,'Synthetic business value retained',label+' retains legitimate Company data.');eq(data.reports.map(row=>row.id),exportSeed.reports.map(row=>row.id),label+' retains business reports.');eq(data.team.map(row=>row.id),exportSeed.team.map(row=>row.id),label+' retains employee history.');eq(data.auditLog.some(row=>row.detail==='Synthetic legitimate business audit'),true,label+' retains business audit.');eq(data.exportMetadata.companyId,fixture.A,label+' retains export metadata.');eq(JSON.stringify(data).includes('passwordHash'),false,label+' removes account password fields.');
+  }
+  eq(canonicalHash(fixture.read()),ownerBefore,'An export must preserve the complete tenant.');eq(commitCalls,exportCommits,'An export performs no tenant commit.');
+  for(const user of [field.id,5,4,admin.id])await denied('GET','/api/company/export',user,undefined,403,'Company export remains the fixed Owner purpose '+initial.users.find(row=>row.id===user).role);
+  journeys.push('Owner export preserves business reports/team/audit and strips valid encrypted historical credential/private operation custody at the helper and actual raw HTTP boundaries; all other roles remain denied.');
   reset();fixture.alter(db=>policy(db,'scheduling',admin.role,{remove:false}));const assignment=fixture.read().assignments[0];assert.ok(assignment);
   await denied('DELETE','/api/assignments/'+assignment.id,admin.id,{},403,'Canonical Admin remove restriction.');
   for(const id of ['0'+assignment.id,'0','9007199254740992'])await denied('DELETE','/api/assignments/'+id,admin.id,{},400,'Noncanonical assignment identity '+id);

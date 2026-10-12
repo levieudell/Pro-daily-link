@@ -79,15 +79,19 @@ function createService(h,env=process.env){
     await assertContext(context); // Immediate admission check before dispatch; no lease takeover.
     let result,outcome='accepted';
     try{result=await h.run({...context,rolesEffectActive:true},dispatch);if(result&&typeof result.ok==='boolean'&&!result.ok)outcome='rejected';if(kind==='founder-alert'&&result?.sent===false)outcome='suppressed';}
-    catch(error){context.rolesProviderUnknown=true;error.code ||= 'PDL_PROVIDER_OUTCOME_UNKNOWN';throw error;}
-    const latest=await repository.load(context.companyId),same=latest.revision===context.rolesRevision&&latest.contentHash===context.rolesOpeningHash;
-    const target=latest.snapshot.rolesProviderAttempts?.find(row=>row.id===record.id&&row.digest===digest&&row.status==='unknown');
-    if(!target)fail(503,'Provider outcome needs reconciliation.','PDL_PROVIDER_OUTCOME_UNKNOWN');
-    target.status=outcome;target.finishedAt=new Date().toISOString();
-    // Outcome evidence may be recorded after a revocation. It confers no
-    // authority and changes only this admitted attempt; business data is not rebased.
-    const saved=await repository.commit(latest.snapshot,latest.revision,{deadline:new Date(Date.now()+5000).toISOString()});
-    if(!same)fail(409,'Company access changed during the provider operation. Review the original result.');
+    catch(error){context.rolesProviderUnknown=true;throw Object.assign(error,{code:'PDL_PROVIDER_OUTCOME_UNKNOWN',operationId});}
+    let latest,target,saved;
+    try{
+      latest=await repository.load(context.companyId);
+      const matches=(latest.snapshot.rolesProviderAttempts||[]).filter(row=>row.id===record.id);target=matches[0];
+      if(matches.length!==1||canonicalHash(target)!==canonicalHash(record))fail(503,'Provider outcome needs reconciliation.','PDL_PROVIDER_OUTCOME_UNKNOWN');
+      target.status=outcome;target.finishedAt=new Date().toISOString();
+      // Outcome evidence may be recorded after a revocation. It confers no
+      // authority and changes only this admitted attempt; business data is not rebased.
+      saved=await repository.commit(latest.snapshot,latest.revision,{deadline:new Date(Date.now()+5000).toISOString()});
+    }catch(error){context.rolesProviderUnknown=true;throw Object.assign(error,{statusCode:503,code:'PDL_PROVIDER_OUTCOME_UNKNOWN',operationId});}
+    const same=latest.revision===context.rolesRevision&&latest.contentHash===context.rolesOpeningHash;
+    if(!same){context.rolesProviderChanged=true;throw Object.assign(Error('Company access changed during the provider operation. Review the original result.'),{statusCode:409,code:'PDL_REVISION_CONFLICT',operationId});}
     Object.assign(record,target);context.db.rolesProviderAttempts=latest.snapshot.rolesProviderAttempts;
     context.rolesRevision=saved.revision;context.rolesOpeningHash=saved.contentHash;context.rolesOpeningSnapshot=structuredClone(latest.snapshot);context.rolesCandidate=null;
     authority(context,latest.snapshot);return result;
@@ -205,6 +209,13 @@ function createService(h,env=process.env){
     if(rawStarted&&!rawFailed)context.response={status,headers,raw:Buffer.concat(chunks)};
     if(!context.response)fail(503,'Company response is unavailable.');
     if(context.rolesProviderUnknown&&context.response.status>=400)context.response={status:503,data:{error:'The original provider operation needs reconciliation before retrying.',code:'PDL_PROVIDER_OUTCOME_UNKNOWN',operationId:context.rolesOperationId}};
+    if(context.rolesProviderUnknown||context.rolesProviderChanged){
+      // Only this finite technical result can leave a revoked/stale provider
+      // request. No captured private bytes, business commit or resend is allowed.
+      context.rolesCandidate=null;context.rolesClosed=true;
+      res.writeHead(context.rolesProviderUnknown?503:409,{'Content-Type':'application/json','Cache-Control':'no-store'});
+      res.end(JSON.stringify({error:context.rolesProviderUnknown?'Review the original provider operation before retrying.':'Current access changed. Review the original provider operation.',code:context.rolesProviderUnknown?'PDL_PROVIDER_OUTCOME_UNKNOWN':'PDL_REVISION_CONFLICT',operationId:context.rolesOperationId}));return;
+    }
     if(context.response.status>=400&&!rejectedCredentialCleanup(context))context.rolesCandidate=null;
     try{await h.run(context,()=>commitContext(context));}catch(error){if(!context.rolesReportIntake)throw error;context.rolesClosed=true;res.writeHead(error.statusCode||503,{'Content-Type':'application/json','Cache-Control':'no-store'});res.end(JSON.stringify({error:'Review the original report intake before retrying.',code:error.code||'PDL_REPORT_INTAKE',operationId:context.rolesOperationId}));return;}
     const revision=context.rolesRevision,hash=context.rolesOpeningHash;

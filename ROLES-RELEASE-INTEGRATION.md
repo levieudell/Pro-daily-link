@@ -14,13 +14,18 @@ base role. Effective permissions intersect existing ceilings, stored grants,
 features, project and entire-crew scope. No policy creates account grants or
 changes stored defaults. Crew names are assignment scope, not permission roles.
 Owner/account/security/billing/tenant/financial management remain fixed. Archive
-remains Owner/Admin with expectedVersion. Assistant eligibility remains the
+for projects/subcontractors retains Owner/Admin and managed snapshot CAS.
+Employee archive is a separate unmerged draft; its Owner/Admin/expectedVersion
+interface must be preserved if it is later integrated. Assistant eligibility remains the
 Forged signed-in Owner/Admin/PM pilot; scheduling also needs its existing grant
 and project/crew scope. Roles does not enroll a company in the Assistant.
 
 Managed fixed baseline checks close inherited daily and project/plan/catalog/
 estimate IDOR/consequence gaps; normal HTTP positives and denials document those
 behavior changes. Broader project/customer/settings/attachment flags are absent.
+Inherited estimate-import/proposal source-PDF readback through the legacy asset
+fallback is outside this phase. Source rows without a trusted numeric author ID
+cannot establish Field authorship; names are not authorization evidence.
 
 ## Shared authority and current workflows
 
@@ -51,6 +56,13 @@ reason and explicitly confirm invalidation of that exact original reset/email
 verification generation. A separate signed receipt is auditable; no resend or
 delivery claim is manufactured. Later requests need new generations/admission.
 Descriptor-less history requires independent evidence and a reviewed action.
+Tenant and platform provider ledgers use closed schemas. Post-dispatch outcomes
+can update only an unchanged original admission descriptor. A changed descriptor
+or uncertain outcome commit returns a finite technical error with the original
+operation ID; no business rebase, private response or automatic resend occurs.
+Concurrent access changes may record the original known outcome while withholding
+the stale private response. Roles confirmation freezes its original preview,
+identity and checkbox proof, then rechecks immediately before actual dispatch.
 
 Exactly three manual-code workflows have encrypted original custody: platform
 bootstrap, staff creation and managed company-owner reset. Mandatory original

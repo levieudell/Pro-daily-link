@@ -207,7 +207,9 @@
     "node --check database/platform-snapshot-postgres.test.js",
     "node --check roles-platform-http-worker.test.cjs",
     "node --check scripts/run-checks.cjs",
-    "node --check scripts/create-roles-synthetic-databases.cjs"
+    "node --check scripts/create-roles-synthetic-databases.cjs",
+    "node --check company-roles-confirmation.test.js",
+    "node --check roles-provider-tenant-http.test.js"
   ],
   "test": [
     "node json-request-body.test.js",
@@ -383,6 +385,8 @@
     "node roles-credential-recovery-ui.test.js",
     "node roles-manual-credential-custody.test.js",
     "node roles-manual-credential-http.test.js",
-    "node roles-manual-credential-client.test.js"
+    "node roles-manual-credential-client.test.js",
+    "node company-roles-confirmation.test.js",
+    "node roles-provider-tenant-http.test.js"
   ]
 }

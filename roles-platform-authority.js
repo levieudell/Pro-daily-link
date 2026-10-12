@@ -107,9 +107,10 @@ function createService(h){
   c.platform[internal]=[...rows,record];c.dirty=true;await flush(c);await assertCurrent(c);
   let result;
   try{result=await contexts.run({...c,effectActive:true},dispatch);}catch(error){c.unknown=true;throw Object.assign(error,{code:'PDL_PROVIDER_OUTCOME_UNKNOWN'});}
-  const latest=await repository.load(),same=latest.revision===c.revision&&latest.contentHash===c.hash;
-  const matches=(latest.snapshot.platform[internal]||[]).filter(row=>row.id===record.id&&row.digest===digest&&row.status==='unknown');
-  if(matches.length!==1)fail(503,'Original provider outcome needs reconciliation.','PDL_PROVIDER_OUTCOME_UNKNOWN');
+  const latest=await repository.load();evidence.validate(latest.snapshot.platform);validateManual(latest.snapshot);
+  const same=latest.revision===c.revision&&latest.contentHash===c.hash;
+  const matches=(latest.snapshot.platform[internal]||[]).filter(row=>row.id===record.id);
+  if(matches.length!==1||canonicalHash(matches[0])!==canonicalHash(record))fail(503,'Original provider outcome needs reconciliation.','PDL_PROVIDER_OUTCOME_UNKNOWN');
   Object.assign(matches[0],{status:result?.ok===false?'rejected':'accepted',finishedAt:new Date().toISOString()});
   const saved=await repository.commit(latest.snapshot,latest.revision,{deadline:new Date(Date.now()+5000).toISOString()});
   if(!same)fail(409,'Platform changed during provider delivery. Review the original result.');
