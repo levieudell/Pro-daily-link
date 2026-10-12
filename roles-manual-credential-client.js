@@ -4,7 +4,12 @@
   const PLATFORM_ID = '5a7f362f-e399-56e3-9458-e34b794a389d';
   function create(call, settings = {}) {
     const journal = settings.journal || (Recovery && Recovery.create(() => localStorage));
-    const retire = () => { if (typeof settings.retire === 'function') settings.retire(); };
+    const retire = isCurrent => {
+      // A cancelled earlier view cannot retire its replacement. This callback
+      // only selects DOM cleanup; it never substitutes for authorization.
+      if (typeof isCurrent === 'function') { try { if (isCurrent() === false) return; } catch {} }
+      if (typeof settings.retire === 'function') settings.retire();
+    };
     const fail = (operationId, status) => Object.assign(Error('Review original setup operation ' + (operationId || '') + '. Current account or form changed, or original result needs review. Read its original result before submitting a different account request.'), { operationId, status, code: 'PDL_ORIGINAL_MANUAL_REVIEW' });
     const entries = () => { if (!journal) throw fail(); return journal.entries('manual'); };
     async function identity() {
@@ -16,9 +21,11 @@
       return journal.intentDigest(JSON.stringify([scope, value.email]));
     }
     function path(row) { return row.purpose === 'platform-staff-create' ? '/api/platform/manual-credentials/' + row.operationId : row.route + '/' + row.operationId; }
-    async function fresh(row, accept, readOnly = false) {
+    async function fresh(row, accept, readOnly = false, isCurrent) {
       journal.assertOriginal(row, { readOnly });
+      if (isCurrent !== undefined && (typeof isCurrent !== 'function' || isCurrent() !== true)) throw fail(row.operationId);
       if (await identity() !== row.identityDigest || accept !== undefined && (typeof accept !== 'function' || accept() !== true)) throw Error('Current account or form changed. Review original setup operation ' + row.operationId + '.');
+      if (isCurrent !== undefined && (typeof isCurrent !== 'function' || isCurrent() !== true)) throw fail(row.operationId);
       journal.assertOriginal(row, { readOnly });
     }
     function result(row, value) {
@@ -28,28 +35,33 @@
       if (row.purpose === 'platform-owner-reset' ? value.companyId !== row.target.companyId : !Number.isSafeInteger(value.id) || value.id <= 0 || typeof value.name !== 'string' || value.name.length > 500 || !['platform_owner', 'customer_success', 'onboarding', 'support', 'billing', 'engineering'].includes(value.role)) throw fail(row.operationId);
       return value;
     }
-    async function recover(row, accept) {
+    async function recover(row, accept, isCurrent) {
       try {
-        await fresh(row, accept, true);
+        await fresh(row, accept, true, isCurrent);
         const value = await call(path(row));
-        await fresh(row, accept, true);
+        await fresh(row, accept, true, isCurrent);
         return result(row, value);
-      } catch (error) { retire(); throw fail(row.operationId, error.status); }
+      } catch (error) { retire(isCurrent); throw fail(row.operationId, error.status); }
     }
     async function recoverOriginal(operationId, options = {}) {
-      const row = entries().find(value => value.operationId === operationId);
-      if (!row) { retire(); throw fail(operationId); }
-      return recover(row, options.accept);
+      let row;
+      try { row = entries().find(value => value.operationId === operationId); if (!row) throw fail(operationId); }
+      catch (error) { retire(options.isCurrent); throw error; }
+      return recover(row, options.accept, options.isCurrent);
     }
     async function reviewOriginal(operationId, options = {}) {
       if (options.confirmed !== true) throw fail(operationId);
-      const row = entries().find(value => value.operationId === operationId);
-      if (!row) throw fail(operationId);
-      const value = await recover(row, options.accept);
+      let row;
+      try { row = entries().find(value => value.operationId === operationId); if (!row) throw fail(operationId); }
+      catch (error) { retire(options.isCurrent); throw error; }
+      const value = await recover(row, options.accept, options.isCurrent);
+      try {
+        if (options.isCurrent !== undefined && (typeof options.isCurrent !== 'function' || options.isCurrent() !== true) || options.accept !== undefined && (typeof options.accept !== 'function' || options.accept() !== true)) throw fail(operationId);
+      } catch (error) { retire(options.isCurrent); throw error; }
       // Cleanup failure follows a known result, not an unknown save.
       try { journal.reviewed(row); } catch {
-        try { await fresh(row, options.accept, true); }
-        catch (error) { retire(); throw Object.assign(fail(row.operationId, error.status), { knownResult: true }); }
+        try { await fresh(row, options.accept, true, options.isCurrent); }
+        catch (error) { retire(options.isCurrent); throw Object.assign(fail(row.operationId, error.status), { knownResult: true }); }
         return { ...value, originalHandleRetained: true };
       }
       return value;

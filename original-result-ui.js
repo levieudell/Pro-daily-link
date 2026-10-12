@@ -29,7 +29,7 @@
     read.onclick=async()=>{
      if(busy||opening!==epoch)return;busy=true;read.disabled=true;const ticket=epoch,accept=()=>ticket===epoch&&root.isConnected&&!root.hidden;
      try{
-      const value=await selected.recoverOriginal(row.operationId,{accept});if(!accept())return;
+      const value=await selected.recoverOriginal(row.operationId,{accept,isCurrent:accept});if(!accept())return;
       const view=element('div');view.dataset.originalResult=row.operationId;item.append(view);
       if(group==='manual'){view.append(element('p',value.email),element('b',value.setupCode),element('small','Expires '+new Date(value.expiresAt||value.setupExpiresAt).toLocaleString()));}
       else{view.append(element('p',value.complete?'Saved daily #'+value.reportId+'. '+(value.report?.status||''):'Original daily #'+value.reportId+' requires further review. Its saved draft and original files remain unchanged.'));}
@@ -38,7 +38,7 @@
       const finish=element('button','Finish review');finish.type='button';finish.disabled=true;finish.dataset.originalFinish=row.operationId;view.append(finish);checked.onchange=()=>{finish.disabled=!checked.checked;};
       finish.onclick=async()=>{
        if(!checked.checked||busy||!accept())return;busy=true;finish.disabled=true;
-       try{const result=await selected.reviewOriginal(row.operationId,{confirmed:true,accept:()=>accept()&&checked.checked});if(!accept())return;if(result.originalHandleRetained){view.append(element('p','The result is known. The original save reference remains until storage can be reviewed.'));}else{busy=false;await refresh();}}
+       try{const result=await selected.reviewOriginal(row.operationId,{confirmed:true,isCurrent:accept,accept:()=>accept()&&checked.checked});if(!accept())return;if(result.originalHandleRetained){view.append(element('p','The result is known. The original save reference remains until storage can be reviewed.'));}else{busy=false;await refresh();}}
        catch(error){if(accept()){view.replaceChildren(element('p',error.message));}else if(ticket===epoch)retire();}finally{if(ticket===epoch)busy=false;}
       };
      }catch(error){if(accept()){item.append(element('p',error.message));}else if(ticket===epoch)retire();}finally{if(ticket===epoch)busy=false;if(read.isConnected)read.disabled=false;}

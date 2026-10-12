@@ -30,8 +30,8 @@ storage cannot be recovered by a browser-only journal; the durable server record
 and their authorization remain authoritative.
 
 The manual callable API exposes `originalOperations()`,
-`recoverOriginal(id, {accept})` and
-`reviewOriginal(id, {confirmed: true, accept})`. The report helper exposes
+`recoverOriginal(id, {accept, isCurrent})` and
+`reviewOriginal(id, {confirmed: true, accept, isCurrent})`. The report helper exposes
 `createIntakeClient({call, identity, journal, retire})` with the same methods plus
 `submit(route, {body, target, accept, headers})`. Its target is exactly
 `{companyId, projectId, resourceId}`; resourceId is null for create and the report
@@ -45,7 +45,13 @@ under their current form fence. Cleanup failure remains a known result with
 `originalHandleRetained: true`; it does not become an unknown save. All report
 POST/PATCH consumers must block while an unresolved intake exists, including
 later forms with no images or safety fields. Page wiring must provide current
-view acceptance and retire private UI on a failed current check.
+view acceptance and retire private UI on a failed current check. Original-result
+reads/reviews may additionally provide `isCurrent()` for the view epoch, separate
+from `accept()` for a checkbox or form. An explicitly obsolete view rejects all
+private delivery without globally retiring its replacement. Missing, invalid or
+current-view predicates preserve forced cleanup on authorization, identity and
+storage failures. These predicates never authorize server access and are not
+stored. Ordinary first submissions retain their existing current-form cleanup.
 
 Pending, unknown or changed report status is read-only and remains blocking. The
 client never uploads again, recreates the report, renews a code, changes an
