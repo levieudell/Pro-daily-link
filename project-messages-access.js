@@ -25,12 +25,21 @@ function parse(operation,input={}){
   return {...operation,details:{text:input.text.trim(),memberId}};
 }
 function index(db){
-  const projects=new Map(),members=new Map(),accounts=new Map();
-  for(const [rows,map] of [[db.projects||[],projects],[db.team||[],members],[db.users||[],accounts]]){
+  const projects=new Map(),members=new Map();
+  for(const [rows,map] of [[db.projects||[],projects],[db.team||[],members]]){
     if(!Array.isArray(rows)||rows.length>50000)fail(409,'Message scope records need reconciliation.');
-    for(const row of rows){if(!object(row)||!id(row.id)||map.has(row.id)||row.companyId!==undefined&&row.companyId!==db.company?.id)fail(409,'Message scope records need reconciliation.');map.set(row.id,row);}
+    // Admit canonical, unique current-tenant references only. Unrelated legacy
+    // rows are not a new global directory migration. No string ID is coerced;
+    // every message reference to an omitted or ambiguous node still fails.
+    const seen=new Set(),ambiguous=new Set();
+    for(const row of rows){
+      if(!object(row)||!id(row.id))continue;
+      if(seen.has(row.id)){ambiguous.add(row.id);map.delete(row.id);}seen.add(row.id);
+      if(ambiguous.has(row.id)||row.companyId!==undefined&&row.companyId!==db.company?.id)continue;
+      map.set(row.id,row);
+    }
   }
-  return {projects,members,accounts};
+  return {projects,members};
 }
 function graph(db){
   const rows=db.projectMessages===undefined?[]:db.projectMessages,ids=new Set(),scope=index(db);
@@ -95,7 +104,7 @@ function audiences(db,user){
   return [...scope.projects].map(projectId=>({projectId,memberIds:office?[...scope.members.keys()].filter(memberId=>scope.memberAllowed(memberId,projectId)):[user.memberId],allowBroadcast:office}));
 }
 function create(db,user,operation,createdAt=new Date().toISOString()){
-  authorize(db,user,operation);const field=['field','foreman'].includes(user.role),member=field?(db.team||[]).find(row=>row.id===user.memberId):null,rows=graph(db),nextId=rows.reduce((maximum,row)=>Math.max(maximum,row.id),0)+1;
+  const scope=authorize(db,user,operation),field=['field','foreman'].includes(user.role),member=field?scope.members.get(user.memberId):null,rows=graph(db),nextId=rows.reduce((maximum,row)=>Math.max(maximum,row.id),0)+1;
   if(!id(nextId))fail(409,'Message IDs need reconciliation.');
   return {id:nextId,projectId:operation.projectId,memberId:field?member.id:operation.details.memberId,sender:field?'field':'office',senderName:user.name||member?.name||(field?'Field':'Office user'),senderId:field?member.id:user.id??null,text:operation.details.text,createdAt,readBy:[]};
 }
