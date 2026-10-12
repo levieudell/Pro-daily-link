@@ -9,7 +9,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Oswald:wght@500;600;700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="styles.css?v=20261012-events" />
+  <link rel="stylesheet" href="styles.css?v=20261012-msgs" />
   <link rel="stylesheet" href="estimate-mobile.css" />
   <link rel="stylesheet" href="project-notes-ui.css?v=20261005-notes-focus" />
   <link rel="manifest" href="manifest.webmanifest" />
@@ -60,6 +60,7 @@
         <button class="nav-item active office-only" data-page="dashboard"><span>▦</span> Overview</button>
         <button class="nav-item office-only" data-page="actions"><span>!</span> Action center <em id="action-count">0</em></button>
         <button class="nav-item office-only" data-page="schedule"><span>▣</span> Schedule</button>
+        <button class="nav-item office-only" data-page="messages"><span>✉</span> Messages <em id="message-count" hidden>0</em></button>
         <button class="nav-item office-only time-cards-nav time-manager-only" data-page="timeoverview"><span>◷</span> Time</button>
         <button class="nav-item field-only" data-page="myday"><span>☀</span> My day</button>
         <button class="nav-item field-only" data-page="fieldday"><span>◷</span> Start / end day</button>
@@ -131,6 +132,18 @@
         <div class="action-stats" id="action-stats"></div><div class="panel action-list" id="action-list"></div>
       </section>
 
+      <section class="page" id="messages-page">
+        <div class="page-heading"><div><p class="eyebrow">OFFICE ⇄ FIELD</p><h1>Messages</h1><p>One thread per job. Crew see these in My Day on their phone — no texting required.</p></div></div>
+        <article class="panel msg-new-panel"><div class="panel-header"><div><h2>New message</h2><p>Send a note to a crew on a project</p></div></div>
+          <div class="msg-new-grid"><label>Project<select id="msg-project"></select></label><label>To<select id="msg-audience"><option value="all">Whole crew</option></select></label></div>
+          <label>Message<textarea id="msg-new-text" rows="2" maxlength="1000" placeholder="e.g. Inspector is coming at 10 — make sure the forms are ready"></textarea></label>
+          <p class="warning" id="msg-warning" role="alert"></p>
+          <div class="modal-actions"><button type="button" class="primary" id="msg-send-new">Send to crew</button></div>
+        </article>
+        <div class="messages-layout"><article class="panel msg-list-panel"><div class="panel-header"><div><h2>Conversations</h2><p>One per project</p></div></div><div id="msg-thread-list"></div></article>
+        <article class="panel msg-convo-panel"><div class="panel-header"><div><h2 id="msg-thread-title">Pick a conversation</h2><p>Replies land on the crew’s phone</p></div></div><div id="msg-thread-body" class="msg-thread-body"></div><div id="msg-reply-row" class="msg-reply-row" hidden><input id="msg-reply-text" maxlength="1000" placeholder="Reply…"><button type="button" class="primary" id="msg-send-reply">Send</button></div></article></div>
+      </section>
+
       <section class="page" id="insights-page">
         <div class="page-heading"><div><p class="eyebrow">VERIFIED PERFORMANCE</p><h1>Production insights</h1><p>Compare estimated and actual production using approved daily reports.</p></div><button class="secondary" id="export-insights">⇩ Export CSV</button></div>
         <div class="insight-filters panel"><label>From<input id="insight-from" type="date"></label><label>To<input id="insight-to" type="date"></label><label>Project<select id="insight-project"><option value="all">All projects</option></select></label><label>Scope<select id="insight-scope"><option value="all">All line items</option></select></label><label>Crew<select id="insight-crew"><option value="all">All crews</option></select></label></div>
@@ -144,7 +157,7 @@
         <div class="field-tip" id="field-first-tip"><strong>Three quick steps</strong><span>Start your day → add photos and notes → end your day.</span><button type="button" id="dismiss-field-tip">Got it</button></div>
         <div class="field-welcome"><p class="eyebrow">MY FIELD DASHBOARD</p><h1 id="field-greeting">Good morning, Marcus.</h1><p>Here’s everything you need for today—nothing you don’t.</p></div>
         <article class="start-day-hero" id="field-start-card"><div><small>READY TO GET TO WORK?</small><h2>Start your day</h2><p id="field-start-detail">Confirm your job site and who is with you. We’ll handle the time.</p></div><button class="hero-start-button" data-start-day>▶ START</button></article>
-        <div class="field-dashboard-grid"><article class="panel"><div class="panel-header"><div><h2>Today’s assignment</h2><p>Your scheduled project and activity</p></div></div><div id="field-today"></div><div id="field-today-events" hidden></div></article><article class="panel"><div class="panel-header"><div><h2>Coming up</h2><p>Your next scheduled work</p></div></div><div id="field-upcoming"></div></article></div>
+        <div class="field-dashboard-grid"><article class="panel"><div class="panel-header"><div><h2>Today’s assignment</h2><p>Your scheduled project and activity</p></div></div><div id="field-today"></div><div id="field-today-events" hidden></div><div id="field-messages" hidden></div></article><article class="panel"><div class="panel-header"><div><h2>Coming up</h2><p>Your next scheduled work</p></div></div><div id="field-upcoming"></div></article></div>
         <article class="panel field-flags-panel" id="my-flags-panel" hidden><div class="panel-header"><div><h2 id="my-flags-title">My flagged work</h2><p id="my-flags-subtitle">Extra work you reported — tracked until the office decides</p></div></div><div id="my-flags"></div></article>
         <article class="panel field-reports-panel"><div class="panel-header"><div><h2>My recent dailies</h2><p>Reports you submitted from the field</p></div><button data-page-link="reports">View my dailies →</button></div><div id="field-reports"></div></article>
       </section>
@@ -527,14 +540,14 @@
   <script src="report-labor-review.js?v=20261009-labor-exclusions"></script>
   <script src="company-timezone.js?v=20261008-saved-zone"></script>
   <script src="schedule-approved-labor.js?v=20261008-approved-evidence"></script>
-  <script src="app.js?v=20261012-events"></script>
+  <script src="app.js?v=20261012-msgs"></script>
   <script src="estimate-mobile.js"></script>
   <script src="time-approval-controls.js?v=20261007-pay-presets-person-total"></script>
   <script src="company-settings-tabs.js?v=20261004-pay-periods"></script>
   <script src="office-workspace.js?v=20261005-office-recovery"></script>
   <script src="reporting-controls.js?v=20261005-project-notes"></script>
   <script src="project-notes-ui.js?v=20261005-notes-focus"></script>
-  <script src="project-schedule-ui.js?v=20261012-events"></script>
+  <script src="project-schedule-ui.js?v=20261012-msgs"></script>
   <link rel="stylesheet" href="project-assistant-ui.css?v=20261007-assistant-draft">
   <script src="project-assistant-voice.js?v=20261007-voice-prototype"></script>
   <script src="project-assistant-conversation.js?v=20261007-natural-names"></script>
