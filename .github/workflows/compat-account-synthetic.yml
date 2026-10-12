@@ -80,6 +80,7 @@ jobs:
       - run: node editor-assistant-policy.test.js
       - run: node project-assistant-provider-context.test.js
       - run: node editor-client-contracts.test.js
+      - run: node compat-workspace-field-flags-http.test.js
       - name: Install isolated browser test dependency
         run: |
           npm install --prefix "$RUNNER_TEMP/compat-browser" --no-save --ignore-scripts playwright@1.63.0

@@ -134,6 +134,11 @@ function createWorkspace(h) {
       h.json(res,200,(db.projectPlans||[]).filter(row=>Number(row.projectId)===projectId).map(dto.plan));return true;}
     if(url.pathname==='/api/weather'){const projectId=Number(url.searchParams.get('projectId')),address=url.searchParams.get('address');if(url.searchParams.getAll('projectId').length!==1||url.searchParams.getAll('address').length!==1||[...url.searchParams.keys()].some(k=>!['projectId','address'].includes(k))||!Number.isSafeInteger(projectId)||!h.canAccessProject(db,user,projectId)||address!==db.projects.find(p=>Number(p.id)===projectId)?.site)fail(404,'Project not found.');h.json(res,200,{status:'unavailable',message:'Weather is unavailable in this draft. Enter the conditions recorded on site.'});return true;}
     if (url.pathname === '/api/assignments') { if (!gates.scheduling.view) fail(403, 'Scheduling view permission required'); h.json(res, 200, { assignments: dto.scoped(db,user,helpers).base.assignments.map(dto.assignment) }); return true; }
+    if(url.pathname==='/api/changes/mine'){
+      if(url.search)fail(400,'Use your current flagged-work view without overrides.');
+      const data=require('./field-change-read').mine(db,user,{canAccessProject:h.canAccessProject});
+      await assertCurrent(req);h.json(res,200,data);return true;
+    }
     if(url.pathname==='/api/changes'){const raw=url.searchParams.get('projectId');if([...url.searchParams.keys()].some(k=>k!=='projectId')||url.searchParams.getAll('projectId').length!==1||!raw||!/^[1-9]\d*$/.test(raw))fail(400,'Choose one current project.');const projectId=Number(raw);if(!['owner','admin','project_manager'].includes(user.role)||!h.canAccessProject(db,user,projectId)||!db.projects.some(p=>Number(p.id)===projectId))fail(404,'Project not found.');
       const dailyAccess=require('./daily-access'),visible=(db.changes||[]).filter(row=>Number(row.projectId)===projectId).filter(row=>{
         if(row.reportId==null)return true;

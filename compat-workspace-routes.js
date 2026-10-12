@@ -12,7 +12,7 @@ function supported(method, path) {
   if(method==='POST'&&path==='/api/workspace-direct-preview')return true;
   if(method==='POST'&&path==='/api/billing/recover')return true;
   if(method==='POST'&&path==='/api/ai/extract')return true;
-  if(method==='GET'&&path==='/api/changes')return true;
+  if(method==='GET'&&['/api/changes','/api/changes/mine'].includes(path))return true;
   if(method==='GET'&&path==='/api/estimate-imports')return true;
   if(method==='GET'&&(path==='/api/company/export'||/^\/api\/projects\/[1-9]\d*\/tm-summary$/.test(path)))return true;
   if(method==='GET'&&path==='/api/weather')return true;

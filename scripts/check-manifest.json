@@ -231,7 +231,9 @@
     "node --check project-messages-access.test.js",
     "node --check roles-production-messages-http.test.js",
     "node --check roles-project-messages-ui.test.js",
-    "node --check project-messages.test.js"
+    "node --check project-messages.test.js",
+    "node --check field-change-read.js",
+    "node --check compat-workspace-field-flags-http.test.js"
   ],
   "test": [
     "node json-request-body.test.js",
@@ -424,6 +426,7 @@
     "node project-messages-access.test.js",
     "node roles-production-messages-http.test.js",
     "node roles-project-messages-ui.test.js",
-    "node project-messages.test.js"
+    "node project-messages.test.js",
+    "node compat-workspace-field-flags-http.test.js"
   ]
 }
