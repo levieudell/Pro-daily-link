@@ -679,6 +679,17 @@ body.schedule-touch-dragging{overflow:hidden;-webkit-user-select:none;user-selec
 
 /* Unassigned project-work lane under the team schedule */
 .schedule-unassigned{margin:16px 0 0;border:1px dashed #c8d4cd;border-radius:14px;background:#f7f9f7;padding:14px 16px}
+.schedule-event{display:inline-flex;align-items:center;gap:4px;max-width:100%;margin:0 0 4px;padding:3px 8px;border:1px solid #d8cfc0;border-radius:999px;background:#fdf8ef;color:#5f4d33;font-size:11px;font-weight:600;cursor:pointer;text-align:left}
+.schedule-event:hover{border-color:#b8382d;color:#8f2b23}
+.schedule-event-inspection{background:#eef4ff;border-color:#c5d8fb;color:#1d4fbf}
+.schedule-event-trade{background:#f0ecfd;border-color:#cfc4f5;color:#4f3aa8}
+.schedule-event-safety{background:#fdf1f1;border-color:#f2c2be;color:#a3322b}
+.field-events{margin-top:12px;border:1px solid #e5dfc9;background:#fdfaf1;border-radius:12px;padding:10px 12px;display:flex;flex-direction:column;gap:8px}
+.field-events>small{font:600 10px "Oswald",sans-serif;letter-spacing:.08em;color:#8a7a4d}
+.field-event{display:flex;gap:9px;align-items:flex-start}
+.field-event span{font-size:16px;line-height:1.2}
+.field-event strong{display:block;font-size:13px;color:#17382d}
+.field-event small{display:block;font-size:12px;color:#64726c;margin-top:2px}
 .schedule-unassigned-head{display:flex;align-items:baseline;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:10px}
 .schedule-unassigned-head h3{margin:0;font:600 13px "Oswald",sans-serif;letter-spacing:.08em;text-transform:uppercase;color:#17382d}
 .schedule-unassigned-head p{margin:0;font-size:13px;color:#64726c}
