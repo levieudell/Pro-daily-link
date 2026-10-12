@@ -36,11 +36,11 @@ async function request(relativePath, options = {}) {
   return response;
 }
 
-async function upload(bucket, objectKey, bytes, contentType) {
+async function upload(bucket, objectKey, bytes, contentType, upsert = false) {
   const safeKey = objectKey.split('/').map(encodeURIComponent).join('/');
   const save = () => request(`/storage/v1/object/${bucket}/${safeKey}`, {
     method: 'POST',
-    headers: { 'Content-Type': contentType, 'x-upsert': 'false' },
+    headers: { 'Content-Type': contentType, 'x-upsert': upsert ? 'true' : 'false' },
     body: bytes
   });
   try {
