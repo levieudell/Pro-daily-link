@@ -622,6 +622,7 @@ dialog[open]{animation:pdl-dialog-in .24s cubic-bezier(.2,.7,.3,1)}
   #report-modal .report-review-summary{margin-top:2px}
   #report-modal .report-gaps{margin-bottom:10px}
 }
+@media(max-width:760px){.page-heading #timecard-export:not([hidden]){display:inline-flex}}
 /* Repeat week */
 .repeat-week-picker-head{display:flex;gap:14px;margin:2px 0 6px}
 .repeat-week-picker-head .link-button{border:0;background:transparent;color:var(--blue);font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;padding:4px 0;cursor:pointer}

@@ -1,0 +1,30 @@
+#company-role-editor { display: grid; gap: 18px; }
+#company-role-editor[hidden] { display: none; }
+#company-role-editor .panel { padding: 22px; }
+#company-role-editor h2, #company-role-editor h3 { margin: 0 0 10px; }
+#company-role-editor p { line-height: 1.5; }
+#company-role-editor .role-editor-heading { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; }
+#company-role-editor .role-fixed { padding: 16px; border-left: 4px solid #d0a653; background: var(--panel, #fff); }
+#company-role-editor #role-editor-message:empty { display: none; }
+#company-role-editor .role-buttons { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin: 12px 0; }
+#company-role-editor .role-table-scroll { overflow-x: auto; }
+#company-role-editor .role-matrix { width: 100%; min-width: 780px; border-collapse: collapse; }
+#company-role-editor .role-matrix th, #company-role-editor .role-matrix td { padding: 12px; border-bottom: 1px solid #ddd; text-align: left; vertical-align: top; }
+#company-role-editor .role-matrix td label { display: flex; gap: 9px; align-items: flex-start; }
+#company-role-editor .role-matrix small { display: block; white-space: nowrap; }
+#company-role-editor .role-matrix input, #company-role-editor .role-confirm input, #company-role-editor .role-profile-flag input { width: auto; flex: none; }
+#company-role-editor .role-confirm { display: flex; align-items: flex-start; gap: 10px; padding: 14px 0; }
+#company-role-editor .role-review { border: 2px solid #d0a653; }
+#company-role-editor .role-profiles { list-style: none; padding: 0; }
+#company-role-editor .role-profiles > li { padding: 14px 0; border-bottom: 1px solid #ddd; }
+#company-role-editor .role-profiles select { margin: 10px 10px 10px 0; width: min(100%, 360px); }
+#company-role-editor fieldset { border: 1px solid #ddd; margin: 16px 0; padding: 14px; }
+#company-role-editor .role-profile-flag { display: flex; align-items: center; gap: 10px; padding: 8px 0; }
+#company-role-editor textarea { min-height: 90px; width: 100%; }
+#company-role-editor details { padding: 14px 0; border-bottom: 1px solid #ddd; }
+@media (max-width: 650px) {
+  #company-role-editor .role-editor-heading { flex-direction: column; }
+  #company-role-editor .panel { padding: 16px; }
+  #company-role-editor .role-buttons button { flex: 1 1 auto; }
+  #company-role-editor .role-profiles select { width: 100%; }
+}

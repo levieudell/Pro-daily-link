@@ -18,6 +18,7 @@ const supabase = require('./database/supabase');
 let cloudEnabled = false, failSave = false, savedSnapshot, saveCount = 0;
 let holdSave = false, releaseSave, activeSaves = 0, maximumActiveSaves = 0;
 supabase.configured = () => cloudEnabled;
+supabase.request = async relative => { assert.match(relative, /^\/rest\/v1\/companies\?id=eq\.[a-f0-9-]+&select=\*&limit=1$/); return new Response('[]'); };
 supabase.listCompanySnapshots = async () => [];
 supabase.saveCompanySnapshot = async snapshot => {
   saveCount++;
