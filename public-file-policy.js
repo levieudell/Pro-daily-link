@@ -1,14 +1,15 @@
 'use strict';
 const path=require('node:path');
 const PUBLIC_FILES=new Set([
-  'company-timezone.js',
-  'schedule-approved-labor.js',
+  'company-timezone.js', 'account-actions-ui.js', 'workspace-actions-ui.js', 'roles-production-ui.js', 'workspace-action-review.js', 'workspace-controls.js', 'workspace-save-recovery.js', 'resource-review-ui.js',
+  'schedule-approved-labor.js','schedule-touch-drag.js','project-schedule-ui.js',
+  'roles-report-client.js','roles-manual-credential-client.js','roles-credential-recovery-ui.js','original-operation-recovery.js','original-result-ui.js',
   'project-assistant-access.js',
   'project-assistant-ui.js','project-assistant-ui.css','project-assistant-voice.js','project-assistant-conversation.js','project-assistant-chat.js','project-assistant-names.js',
   'index.html','landing.html','about.html','blog.html','login.html','signup.html','forgot-password.html','reset-password.html','verify-email.html','guest.html','platform.html','platform-login.html','platform-forgot-password.html','platform-reset-password.html','support.html','privacy.html','terms.html',
   'robots.txt','sitemap.xml','llms.txt','vs/raken.html','vs/procore.html','vs/paper-daily-logs.html','change-order.html','change-order.js',
   'platform-revenue.css','project-notes-ui.css','styles.css','landing.css','landing-demo.css','enterprise-pricing.css','public-content.css','login.css','signup.css','guest.css','platform.css','platform-mobile.css','legal.css','estimate-mobile.css',
-  'office-workspace.js','platform-revenue.js','project-notes-ui.js','schedule-availability.js','schedule-touch-drag.js','project-schedule-ui.js','daily-work-extraction.js','report-labor-review.js','app.js','i18n.js','labor-hours-hint.js','estimate-mobile.js','landing-demo.js','landing-content.js','analytics.js','blog.js','login.js','signup.js','forgot-password.js','reset-password.js','verify-email.js','guest.js','platform.js','platform-demo.js','platform-sales-demo.js','csv-cell.js','reporting-controls.js','time-approval-controls.js','company-settings-tabs.js','manifest.webmanifest',
+  'office-workspace.js','platform-revenue.js','project-notes-ui.js','schedule-availability.js','daily-work-extraction.js','report-labor-review.js','app.js','i18n.js','labor-hours-hint.js','estimate-mobile.js','landing-demo.js','landing-content.js','analytics.js','blog.js','login.js','signup.js','forgot-password.js','reset-password.js','verify-email.js','guest.js','platform.js','platform-demo.js','platform-sales-demo.js','csv-cell.js','reporting-controls.js','time-approval-controls.js','company-settings-tabs.js','company-roles-ui.js','company-roles-ui.css','role-save-recovery.js','manifest.webmanifest',
   'assets/pro-daily-link-logo.png','assets/pro-daily-link-branding-kit.png','assets/og-image.png'
 ]);
 function isPublicFile(root,file){const relative=path.relative(root,file).split(path.sep).join('/');return PUBLIC_FILES.has(relative)}
