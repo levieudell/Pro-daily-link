@@ -28,6 +28,8 @@ function roleFor(value) {
 }
 
 function buildTenantSnapshot(source) {
+  require('../compat-account-boundary').assertLegacySnapshot(source);
+  require('../compat-account-boundary').assertLegacy(stableUuid('company', source.company.id));
   const companyId = stableUuid('company', source.company.id);
   const idFor = (table, id) => stableUuid(`${source.company.id}:${table}`, id);
   const projectId = id => idFor('projects', id);
@@ -94,6 +96,9 @@ async function countRows(baseUrl, secretKey, table, companyId) {
 }
 
 async function applySnapshot(snapshot, env) {
+  require('../compat-account-boundary').assertLegacySnapshot(snapshot);
+  const transport={configured:()=>true,request:async relative=>{const response=await fetch(env.SUPABASE_URL+relative,{headers:{apikey:env.SUPABASE_SECRET_KEY,Authorization:'Bearer '+env.SUPABASE_SECRET_KEY}});if(!response.ok)throw Error('Company migration authority could not be verified');return response;}};
+  await require('./roles-legacy-fence').assertUnmanaged(transport,snapshot.company.id);
   const order = ['company', 'users', 'memberships', 'customers', 'projects', 'team_members', 'subcontractors', 'reports', 'assignments', 'photos', 'workdays', 'changes'];
   for (const key of order) await upsert(env.SUPABASE_URL, env.SUPABASE_SECRET_KEY, key === 'company' ? 'companies' : key, key === 'company' ? [snapshot.company] : snapshot[key]);
   const reconciliation = {};
@@ -113,6 +118,8 @@ async function main() {
   if (!process.argv.includes('--apply')) return console.log(JSON.stringify({ mode: 'dry-run', ...summary(snapshot) }, null, 2));
   const env = { ...process.env, ...loadEnv(path.join(__dirname, '..', '.env.local')) };
   if (!env.SUPABASE_URL || !env.SUPABASE_SECRET_KEY) throw new Error('Supabase configuration is missing.');
+  const transport={configured:()=>true,request:async relative=>{const response=await fetch(env.SUPABASE_URL+relative,{headers:{apikey:env.SUPABASE_SECRET_KEY,Authorization:'Bearer '+env.SUPABASE_SECRET_KEY}});if(!response.ok)throw Error('Source company authority could not be verified');return response;}};
+  await require('./roles-legacy-fence').assertUnmanaged(transport,source.company.id);
   const reconciliation = await applySnapshot(snapshot, env);
   console.log(JSON.stringify({ mode: 'applied', ...summary(snapshot), reconciliation }, null, 2));
 }

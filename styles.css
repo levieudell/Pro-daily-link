@@ -622,6 +622,7 @@ dialog[open]{animation:pdl-dialog-in .24s cubic-bezier(.2,.7,.3,1)}
   #report-modal .report-review-summary{margin-top:2px}
   #report-modal .report-gaps{margin-bottom:10px}
 }
+@media(max-width:760px){.page-heading #timecard-export:not([hidden]){display:inline-flex}}
 /* Repeat week */
 .repeat-week-picker-head{display:flex;gap:14px;margin:2px 0 6px}
 .repeat-week-picker-head .link-button{border:0;background:transparent;color:var(--blue);font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;padding:4px 0;cursor:pointer}
@@ -680,7 +681,15 @@ body.schedule-touch-dragging{overflow:hidden;-webkit-user-select:none;user-selec
 /* Unassigned project-work lane under the team schedule */
 .schedule-unassigned{margin:16px 0 0;border:1px dashed #c8d4cd;border-radius:14px;background:#f7f9f7;padding:14px 16px}
 .schedule-event{display:inline-flex;align-items:center;gap:4px;max-width:100%;margin:0 0 4px;padding:3px 8px;border:1px solid #d8cfc0;border-radius:999px;background:#fdf8ef;color:#5f4d33;font-size:11px;font-weight:600;cursor:pointer;text-align:left}
-.schedule-event:hover{border-color:#b8382d;color:#8f2b23}
+.schedule-event:hover{border-color:var(--green);color:var(--green)}
+.schedule-event:focus-visible{outline:2px solid var(--green);outline-offset:2px}
+.schedule-event small{display:block;font-size:10px;font-weight:400;overflow-wrap:anywhere}
+.schedule-project-events{padding:14px;margin-bottom:14px;border:1px solid var(--line);border-radius:12px;background:var(--panel,#fff)}
+.schedule-project-events h2{font-size:15px;margin:0 0 12px}.schedule-project-events h3{font-size:12px;margin:10px 0 6px;color:var(--muted)}
+.schedule-day-events{display:flex;flex-wrap:wrap;gap:6px;margin:8px 0}
+.event-result-notice{padding:12px;border:1px solid #e4c486;border-radius:10px;background:#fff8e9;font-size:13px;line-height:1.5}
+.event-result-notice button{margin:8px 0 0}.event-detail-notes{white-space:pre-wrap;overflow-wrap:anywhere}
+@media(max-width:760px){.schedule-project-events{display:none}.schedule-mobile-agenda .schedule-day-events{display:grid}.schedule-mobile-agenda .schedule-event{min-height:44px;width:100%;border-radius:10px;font-size:13px;padding:10px;text-align:left;overflow-wrap:anywhere}.schedule-mobile-agenda .schedule-event small{font-size:11px}.schedule-mobile-agenda [data-add-event-date]{min-height:44px;width:100%;margin:6px 0 10px}#schedule-page .page-heading>div:last-child{display:flex;gap:8px;flex-wrap:wrap}#new-project-event{min-height:44px}}
 .schedule-event-inspection{background:#eef4ff;border-color:#c5d8fb;color:#1d4fbf}
 .schedule-event-trade{background:#f0ecfd;border-color:#cfc4f5;color:#4f3aa8}
 .schedule-event-safety{background:#fdf1f1;border-color:#f2c2be;color:#a3322b}

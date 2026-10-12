@@ -28,7 +28,7 @@ const { server } = require('./server');
 (async () => {
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
   const base = 'http://127.0.0.1:' + server.address().port;
-  const call = (method, route, input, token = ownerToken) => fetch(base + route, { method, signal: AbortSignal.timeout(10000), headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json', 'x-pdl-company': companyId }, ...(input !== undefined ? { body: JSON.stringify(input) } : {}) }).then(async response => ({ status: response.status, data: await response.json() }));
+  const call = (method, route, input, token = ownerToken) => fetch(base + route, { method, signal: AbortSignal.timeout(10000), headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json', 'x-pdl-company': companyId, ...(method === 'DELETE' && /^\/api\/project-events\/\d+$/.test(route) && JSON.parse(fs.readFileSync(file)).projectEvents?.find(row => row.id === Number(route.split('/').at(-1))) ? { 'X-PDL-Event-Version': require('./database/transactional-repository').canonicalHash(JSON.parse(fs.readFileSync(file)).projectEvents.find(row => row.id === Number(route.split('/').at(-1)))) } : {}) }, ...(input !== undefined ? { body: JSON.stringify(input) } : {}) }).then(async response => ({ status: response.status, data: await response.json() }));
   const reload = () => JSON.parse(fs.readFileSync(file));
   try {
     // Create: office only, validated, persisted.
@@ -75,7 +75,7 @@ const { server } = require('./server');
     assert.ok(appJs.includes('function scheduleEventChips'), 'board chip renderer exists');
     assert.ok(appJs.includes('${scheduleEventChips(member,day.date)}'), 'week/day cells render event chips');
     assert.ok(appJs.includes('field-today-events'), 'renderMyDay fills the My Day events container');
-    assert.ok(appJs.includes('projectEvents=state.projectEvents||[]'), 'state loads events');
+    assert.ok(appJs.includes('projectEvents=(state.projectEvents||[]).filter(event=>eventProjectAllowed(event.projectId,\'view\'))'), 'state loads events within current event view scope');
     assert.ok(appJs.includes('deleteProjectEvent'), 'chip click can remove an event');
     assert.ok(styles.includes('.schedule-event'), 'chips are styled');
     assert.ok(styles.includes('.field-events'), 'My Day events card is styled');
