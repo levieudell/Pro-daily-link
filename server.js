@@ -95,6 +95,7 @@ let productionRoles=null;
 let sharedPlatform=null;
 function platformAuthorityService(force=false){
   if(!force&&!sharedPlatform&&!require('./roles-production').configured())return null;
+  if(process.env.PDL_REQUIRE_AUTH!=='1')throw Object.assign(Error('Managed platform authentication must be enabled.'),{statusCode:503,code:'PDL_PLATFORM_AUTH_CONFIG'});
   return sharedPlatform ||= require('./roles-platform-authority').createService({repository:require('./database/platform-snapshot-repository').createRepository(supabase,PLATFORM_CLOUD_ID),credentialKey:/^[a-f0-9]{64}$/.test(process.env.PDL_ROLE_POLICY_KEY||'')?Buffer.from(process.env.PDL_ROLE_POLICY_KEY,'hex'):null});
 }
 async function currentPlatformService(){

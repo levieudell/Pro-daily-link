@@ -82,8 +82,8 @@ async function worker(index, flag = true) {
   });
   const result = await bounded(ready); result.output = output; return result;
 }
-async function call(worker, method, route, { data, token = platformToken, tenantHint = A } = {}) {
-  requests++; const response = await fetch(worker.origin + route, { method, signal: AbortSignal.timeout(14000), headers: { ...(token ? { Authorization: 'Bearer ' + token } : {}), ...(tenantHint ? { 'X-PDL-Company': tenantHint } : {}), 'Content-Type': 'application/json' }, ...(data === undefined ? {} : { body: JSON.stringify(data) }) });
+async function call(worker, method, route, { data, token = platformToken, tenantHint = A, operationId = crypto.randomUUID() } = {}) {
+  requests++; const response = await fetch(worker.origin + route, { method, signal: AbortSignal.timeout(14000), headers: { ...(token ? { Authorization: 'Bearer ' + token } : {}), ...(tenantHint ? { 'X-PDL-Company': tenantHint } : {}), 'X-PDL-Operation': operationId, 'Content-Type': 'application/json' }, ...(data === undefined ? {} : { body: JSON.stringify(data) }) });
   const raw = await response.text(); let value; try { value = JSON.parse(raw); } catch { value = raw; } return { status: response.status, value, raw };
 }
 const help = title => ({ title, type: 'article', audience: 'all', content: 'Synthetic help content only', status: 'Published' });
@@ -169,7 +169,7 @@ async function main() {
       journeys.push(kind + ' mutation while a support read waits withholds private response bytes');
     }
     for (const [method, route, details] of [['PATCH', 'features', { templates: !tenant.company.features.templates }], ['POST', 'owner-reset', {}]]) {
-      const command = '/api/platform/companies/' + A + '/' + route, held = hold(event => event.kind === 'cross-commit'), pending = call(second, method, command, { data: { ...details, expectedRevision: tenantRevision } }); await held.ready;
+      const command = '/api/platform/companies/' + A + '/' + route, held = hold(event => event.kind === 'cross-commit'), pending = call(second, method, command, { data: { ...details, expectedRevision: tenantRevision } }); await Promise.race([held.ready,pending.then(value=>{throw Error('System '+route+' returned before cross-store CAS: '+JSON.stringify(value));})]);
       assert.equal(held.entries[0].event.input.p_platform_expected_revision, platformRevision); const before = canonicalHash(tenant); changePlatform(db => { db.auditEvents.push({ id: crypto.randomUUID(), action: 'Synthetic concurrent authority change' }); }); held.release(); const denied = await pending; assert.equal(denied.status, 409, JSON.stringify(denied)); assert.equal(canonicalHash(tenant), before);
       journeys.push('system ' + route + ' rejects a changed platform revision before tenant CAS');
     }

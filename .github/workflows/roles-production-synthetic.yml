@@ -73,6 +73,7 @@ jobs:
       - run: node roles-manual-credential-client.test.js
       - run: node company-roles-confirmation.test.js
       - run: node roles-provider-tenant-http.test.js
+      - run: node roles-platform-configuration-http.test.js
       - run: node database/platform-snapshot-repository.test.js
       - run: node roles-platform-multiworker-http.test.js
       - run: node database/roles-snapshot-postgres.test.js

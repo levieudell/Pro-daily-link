@@ -40,6 +40,9 @@ and support delivery share revision/current-authority fences. Platform authority
 service validates private ledger MACs; SQL/repository validate envelopes/CAS and
 installed metadata. Metadata checks do not attest function-body fingerprints.
 No initializer runs at startup. Missing managed configuration fails closed.
+Managed platform discovery requires PDL_REQUIRE_AUTH=1 even without a Roles
+company allowlist; missing/off authentication rejects startup and HTTP delivery.
+Cached authority also checks this immutable configuration before every return.
 
 Main's token decisions, pricing-authorized change sharing, scoped dashboard
 summaries, stored crew preselection and concurrent end-day photo/AI behavior
