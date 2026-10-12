@@ -751,3 +751,35 @@ button.voice-listening{outline:2px solid #2e6b52;outline-offset:2px;animation:pd
 .project-co-badge{font-size:10px;font-weight:700;color:#8a5a00;background:#fdf0d3;border:1px solid #ecd9a8;border-radius:12px;padding:2px 8px;white-space:nowrap}
 .project-co-open{font-size:10px;font-weight:700;color:#4c554f;background:#eef1ef;border:1px solid #d7dcd9;border-radius:12px;padding:2px 8px;white-space:nowrap}
 .project-co-exposure{font-size:10px;font-weight:700;color:#8a2323;background:#fdeaea;border:1px solid #f2c9c9;border-radius:12px;padding:2px 8px;white-space:nowrap}
+
+/* Messages — office <-> field threads (one per project) */
+.messages-layout{display:grid;grid-template-columns:minmax(240px,320px) 1fr;gap:16px;margin-top:16px}
+@media(max-width:900px){.messages-layout{grid-template-columns:1fr}}
+.msg-new-panel label{display:flex;flex-direction:column;gap:4px;font:600 11px "Oswald",sans-serif;letter-spacing:.06em;color:#5c6b64}
+.msg-new-panel textarea{margin-top:6px}
+.msg-new-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:10px 0}
+@media(max-width:640px){.msg-new-grid{grid-template-columns:1fr}}
+.msg-thread-item{display:flex;width:100%;align-items:center;justify-content:space-between;gap:8px;padding:10px 12px;border:1px solid transparent;border-bottom:1px solid #ece7da;background:none;text-align:left;cursor:pointer;font:inherit}
+.msg-thread-item:hover{background:#f7f4ea}
+.msg-thread-item.active{border-color:#c9b48a;background:#fdfaf1;border-radius:10px}
+.msg-thread-item strong{display:block;font-size:13px;color:#17382d}
+.msg-thread-item small{display:block;font-size:12px;color:#64726c;margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:230px}
+.msg-unread{background:#b8382d;color:#fff;font:700 11px "Oswald",sans-serif;border-radius:999px;padding:2px 7px}
+.msg-thread-body{display:flex;flex-direction:column;gap:8px;max-height:420px;overflow-y:auto;padding:4px 2px}
+.msg-bubble-row{display:flex}
+.msg-bubble-row.from-office{justify-content:flex-end}
+.msg-bubble{max-width:75%;border-radius:12px;padding:8px 12px;background:#f1efe7}
+.msg-bubble-row.from-office .msg-bubble{background:#17382d;color:#f5f2e8}
+.msg-bubble small{display:block;font-size:10.5px;opacity:.75;margin-bottom:2px}
+.msg-bubble p{margin:0;font-size:13.5px;line-height:1.45;white-space:pre-wrap}
+.msg-reply-row{display:flex;gap:8px;margin-top:10px}
+.msg-reply-row input{flex:1}
+.msg-empty{padding:18px;text-align:center;color:#64726c;font-size:13px}
+.field-messages small{font:600 10px "Oswald",sans-serif;letter-spacing:.08em;color:#8a7a4d}
+.field-msg{display:flex;gap:8px;padding:7px 0;border-top:1px dashed #e5dfc9}
+.field-msg strong{font-size:12.5px;color:#17382d}
+.field-msg small{display:block;font-size:11px;color:#8a938e;margin-top:1px}
+.field-msg p{margin:3px 0 0;font-size:13px;color:#2c3a34;line-height:1.4}
+.field-msg.unread strong::after{content:" • new";color:#b8382d;font-size:9.5px;text-transform:uppercase;letter-spacing:.06em}
+.field-msg-reply{display:flex;gap:6px;margin-top:8px}
+.field-msg-reply input{flex:1;min-width:0}
