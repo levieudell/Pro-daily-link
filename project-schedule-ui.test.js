@@ -11,8 +11,8 @@ const { isPublicFile } = require('./public-file-policy');
 
 // Script loads after app.js (it patches openProject) and carries a version.
 assert.ok(index.indexOf('app.js?') < index.indexOf('project-schedule-ui.js?'), 'module loads after app.js so openProject exists');
-assert.match(index, /project-schedule-ui\.js\?v=20261011-step2-ai/);
-assert.match(index, /styles\.css\?v=20261011-step2-ai/);
+assert.match(index, /project-schedule-ui\.js\?v=20261012-events/);
+assert.match(index, /styles\.css\?v=20261012-events/);
 
 // Static serving + server wiring.
 assert.equal(isPublicFile(process.cwd(), path.join(process.cwd(), 'project-schedule-ui.js')), true, 'UI module is publicly served');
@@ -20,7 +20,12 @@ assert.equal(isPublicFile(process.cwd(), path.join(process.cwd(), 'project-sched
 assert.match(server, /require\('\.\/project-schedule'\)/);
 assert.ok(server.includes('projectTasksRoute = url.pathname.match'), 'project tasks collection route');
 assert.ok(server.includes('projectTaskRoute = url.pathname.match'), 'single task route');
-assert.match(server, /'projectTasks'\]/, 'test-customer purge covers project tasks');
+assert.match(server, /'projectTasks','projectEvents'\]/, 'test-customer purge covers project tasks and events');
+assert.match(server, /'projectEvents'\]/, 'test-customer purge covers project events');
+assert.ok(server.includes('projectEventsRoute = url.pathname.match'), 'project events collection route');
+assert.ok(server.includes('projectEventRoute = url.pathname.match'), 'single event route');
+assert.ok(server.includes("filter(event=>scope.allowedIds.has(event.projectId))"), 'field workspace scopes events');
+assert.ok(server.includes("filter(event=>scope.projectIds.has(Number(event.projectId)))"), 'manager workspace scopes events');
 
 // Module contracts.
 assert.match(ui, /openProjectWithSchedule = openProject/);

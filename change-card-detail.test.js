@@ -120,8 +120,8 @@ async function call(method, route, body, auth = ownerToken) {
     assert.ok(app.includes('changeLineRow('), 'line rows render from a helper');
     assert.ok(app.includes('FROM THE FIELD'), 'field-flag context block renders');
     assert.ok(app.includes('data-change-line-row'), 'save gathers line rows');
-    assert.match(index, /app\.js\?v=20261011-step2-ai/);
-    assert.match(index, /styles\.css\?v=20261011-step2-ai/);
+    assert.match(index, /app\.js\?v=20261012-events/);
+    assert.match(index, /styles\.css\?v=20261012-events/);
     const styles = fs.readFileSync('styles.css', 'utf8');
     assert.ok(styles.includes('.change-line-row'), 'line rows are styled');
     assert.ok(styles.includes('.change-photo-strip'), 'photo strip is styled');

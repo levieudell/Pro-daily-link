@@ -9,7 +9,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Oswald:wght@500;600;700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="styles.css?v=20261011-step2-ai" />
+  <link rel="stylesheet" href="styles.css?v=20261012-events" />
   <link rel="stylesheet" href="estimate-mobile.css" />
   <link rel="stylesheet" href="project-notes-ui.css?v=20261005-notes-focus" />
   <link rel="manifest" href="manifest.webmanifest" />
@@ -144,7 +144,7 @@
         <div class="field-tip" id="field-first-tip"><strong>Three quick steps</strong><span>Start your day → add photos and notes → end your day.</span><button type="button" id="dismiss-field-tip">Got it</button></div>
         <div class="field-welcome"><p class="eyebrow">MY FIELD DASHBOARD</p><h1 id="field-greeting">Good morning, Marcus.</h1><p>Here’s everything you need for today—nothing you don’t.</p></div>
         <article class="start-day-hero" id="field-start-card"><div><small>READY TO GET TO WORK?</small><h2>Start your day</h2><p id="field-start-detail">Confirm your job site and who is with you. We’ll handle the time.</p></div><button class="hero-start-button" data-start-day>▶ START</button></article>
-        <div class="field-dashboard-grid"><article class="panel"><div class="panel-header"><div><h2>Today’s assignment</h2><p>Your scheduled project and activity</p></div></div><div id="field-today"></div></article><article class="panel"><div class="panel-header"><div><h2>Coming up</h2><p>Your next scheduled work</p></div></div><div id="field-upcoming"></div></article></div>
+        <div class="field-dashboard-grid"><article class="panel"><div class="panel-header"><div><h2>Today’s assignment</h2><p>Your scheduled project and activity</p></div></div><div id="field-today"></div><div id="field-today-events" hidden></div></article><article class="panel"><div class="panel-header"><div><h2>Coming up</h2><p>Your next scheduled work</p></div></div><div id="field-upcoming"></div></article></div>
         <article class="panel field-flags-panel" id="my-flags-panel" hidden><div class="panel-header"><div><h2 id="my-flags-title">My flagged work</h2><p id="my-flags-subtitle">Extra work you reported — tracked until the office decides</p></div></div><div id="my-flags"></div></article>
         <article class="panel field-reports-panel"><div class="panel-header"><div><h2>My recent dailies</h2><p>Reports you submitted from the field</p></div><button data-page-link="reports">View my dailies →</button></div><div id="field-reports"></div></article>
       </section>
@@ -439,8 +439,20 @@
     <form method="dialog">
       <div class="modal-header"><div><p class="eyebrow">FIELD SCHEDULING</p><h2 id="day-action-title">Plan this day</h2></div><button class="close-button" value="cancel">×</button></div>
       <p class="input-help" id="day-action-summary"></p>
-      <div class="day-action-buttons"><button type="button" class="primary" id="day-action-schedule">Schedule work</button><button type="button" class="secondary" id="day-action-markoff">Mark off · sick / no work</button></div>
+      <div class="day-action-buttons"><button type="button" class="primary" id="day-action-schedule">Schedule work</button><button type="button" class="secondary" id="day-action-event">Add event · delivery / inspection</button><button type="button" class="secondary" id="day-action-markoff">Mark off · sick / no work</button></div>
       <div class="modal-actions"><button value="cancel" class="secondary">Cancel</button></div>
+    </form>
+  </dialog>
+  <dialog id="event-modal">
+    <form method="dialog">
+      <div class="modal-header"><div><p class="eyebrow">PROJECT EVENT</p><h2 id="event-modal-title">Add event</h2></div><button class="close-button" value="cancel">×</button></div>
+      <p class="input-help">Deliveries, inspections, other trades on site — everyone assigned to the project that day sees it in their day.</p>
+      <label>Project<select id="event-project"></select></label>
+      <div class="two-col"><label>Day<input type="date" id="event-date"></label><label>Type<select id="event-type"><option value="delivery">🚚 Delivery</option><option value="inspection">🔍 Inspection</option><option value="trade">🤝 Other trade on site</option><option value="safety">🦺 Safety</option><option value="other">📌 Other</option></select></label></div>
+      <label>Title<input type="text" id="event-title" maxlength="140" placeholder="e.g. Rebar delivery 7 AM" /></label>
+      <label>Notes for the crew (optional)<textarea id="event-notes" rows="2" maxlength="500" placeholder="Where to stage it, who to expect, anything they need to know"></textarea></label>
+      <p class="warning" id="event-warning" role="alert"></p>
+      <div class="modal-actions"><button value="cancel" class="secondary">Cancel</button><button type="button" class="primary" id="save-event">Add event</button></div>
     </form>
   </dialog>
 
@@ -515,14 +527,14 @@
   <script src="report-labor-review.js?v=20261009-labor-exclusions"></script>
   <script src="company-timezone.js?v=20261008-saved-zone"></script>
   <script src="schedule-approved-labor.js?v=20261008-approved-evidence"></script>
-  <script src="app.js?v=20261011-step2-ai"></script>
+  <script src="app.js?v=20261012-events"></script>
   <script src="estimate-mobile.js"></script>
   <script src="time-approval-controls.js?v=20261007-pay-presets-person-total"></script>
   <script src="company-settings-tabs.js?v=20261004-pay-periods"></script>
   <script src="office-workspace.js?v=20261005-office-recovery"></script>
   <script src="reporting-controls.js?v=20261005-project-notes"></script>
   <script src="project-notes-ui.js?v=20261005-notes-focus"></script>
-  <script src="project-schedule-ui.js?v=20261011-step2-ai"></script>
+  <script src="project-schedule-ui.js?v=20261012-events"></script>
   <link rel="stylesheet" href="project-assistant-ui.css?v=20261007-assistant-draft">
   <script src="project-assistant-voice.js?v=20261007-voice-prototype"></script>
   <script src="project-assistant-conversation.js?v=20261007-natural-names"></script>
