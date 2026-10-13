@@ -236,7 +236,16 @@
     "node --check compat-workspace-field-flags-http.test.js",
     "node --check backup-receipt-cloud.test.js",
     "node --check database/backup-receipt-cloud.js",
-    "node --check roles-backup-recovery-integration.test.js"
+    "node --check roles-backup-recovery-integration.test.js",
+    "node --check database/managed-backup-assets.js",
+    "node --check database/managed-backup-transport.js",
+    "node --check database/managed-backup.js",
+    "node --check database/managed-backup-worker.js",
+    "node --check database/managed-backup-fixture.js",
+    "node --check database/managed-backup.test.js",
+    "node --check database/managed-backup-postgres.test.js",
+    "node --check roles-managed-backup-http.test.js",
+    "node --check database/managed-backup-admission.js"
   ],
   "test": [
     "node json-request-body.test.js",
@@ -432,6 +441,9 @@
     "node project-messages.test.js",
     "node compat-workspace-field-flags-http.test.js",
     "node backup-receipt-cloud.test.js",
-    "node roles-backup-recovery-integration.test.js"
+    "node roles-backup-recovery-integration.test.js",
+    "node database/managed-backup.test.js",
+    "node roles-managed-backup-http.test.js",
+    "node database/managed-backup-postgres.test.js"
   ]
 }

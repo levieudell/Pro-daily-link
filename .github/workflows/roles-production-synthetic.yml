@@ -41,6 +41,7 @@ jobs:
       TEST_ROLES_DATABASE_URL: postgresql://postgres@127.0.0.1:5432/pdl_roles_production_synthetic_ci
       TEST_PLATFORM_DATABASE_URL: postgresql://postgres@127.0.0.1:5432/pdl_platform_authority_synthetic_ci
       TEST_PLATFORM_HTTP_DATABASE_URL: postgresql://postgres@127.0.0.1:5432/pdl_platform_authority_synthetic_http_ci
+      TEST_MANAGED_BACKUP_DATABASE_URL: postgresql://postgres@127.0.0.1:5432/pdl_managed_backup_synthetic_ci
       PDL_ROLES_BROWSER_EVIDENCE: roles-production-browser-evidence
     steps:
       - uses: actions/checkout@v4
@@ -55,6 +56,9 @@ jobs:
       - run: node roles-production-contract.test.js
       - run: node backup-receipt-cloud.test.js
       - run: node roles-backup-recovery-integration.test.js
+      - run: node database/managed-backup.test.js
+      - run: node roles-managed-backup-http.test.js
+      - run: node database/managed-backup-postgres.test.js --required
       - run: node roles-production-http.test.js
       - run: node roles-production-changes-http.test.js
       - run: node roles-production-task-ui.test.js

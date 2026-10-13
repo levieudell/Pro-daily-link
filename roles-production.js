@@ -14,7 +14,7 @@ function createService(h,env=process.env){
   const companies=String(env.PDL_ROLES_COMPANIES||'').split(',');
   if(!companies.length||companies.some(id=>!uuid(id))||new Set(companies).size!==companies.length||env.PDL_REQUIRE_AUTH!=='1'||!h.transport.configured()||h.transactionalMode()!=='off'||!/^[a-f0-9]{64}$/.test(env.PDL_ROLE_POLICY_KEY||''))fail(503,'Permission editor configuration needs review.');
   const key=Buffer.from(env.PDL_ROLE_POLICY_KEY,'hex'),transportRepository=createRepository(h.transport);
-  const repository={...transportRepository,async load(id){const row=await transportRepository.load(id);require('./roles-production-evidence').validate(row.snapshot);return row;},async commit(db,revision,guard){require('./roles-production-evidence').validate(db);return transportRepository.commit(db,revision,guard);}};
+  const repository={...transportRepository,async load(id){const row=await transportRepository.load(id);require('./roles-production-evidence').validate(row.snapshot);return row;},async commit(db,revision,guard){require('./roles-production-evidence').validate(db);const result=await transportRepository.commit(db,revision,guard);try{h.onCommitted?.(db.company.id,result.revision);}catch{/* Background recovery does not change an acknowledged business commit. */}return result;}};
   const has=id=>companies.includes(String(id));
   function guest(db,url){
     const match=/^\/api\/guest\/([a-f0-9]{48})(?:\/ticket-scan)?$/.exec(url.pathname);if(!match)return null;
