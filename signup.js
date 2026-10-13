@@ -15,16 +15,6 @@ function showStep(step){
   window.scrollTo({top:0,behavior:'smooth'});
 }
 
-function emailsMatch(){
-  const email=$('#email'),confirm=$('#confirm-email');
-  if(email.value.trim().toLowerCase()!==confirm.value.trim().toLowerCase()){
-    confirm.setCustomValidity('Check the email spelling. The two addresses do not match.');
-    return false;
-  }
-  confirm.setCustomValidity('');
-  return true;
-}
-
 function validateTrade(){
   const trade=$('#trade');
   if(!String(trade.value||'').trim()){
@@ -37,15 +27,8 @@ function validateTrade(){
 }
 
 function validateStepOne(){
-  const fields=['#company','#owner','#email','#confirm-email','#password','#confirm-password'].map($);
+  const fields=['#company','#owner','#email','#password'].map($);
   for(const field of fields)if(!field.reportValidity())return false;
-  if(!emailsMatch()){$('#confirm-email').reportValidity();return false}
-  if($('#password').value!==$('#confirm-password').value){
-    $('#confirm-password').setCustomValidity('Passwords do not match.');
-    $('#confirm-password').reportValidity();
-    return false;
-  }
-  $('#confirm-password').setCustomValidity('');
   return true;
 }
 
@@ -65,8 +48,7 @@ function recommend(){
 $('#trade').onchange=()=>$('#trade').setCustomValidity('');
 $('#employees').oninput=recommend;
 $('#projects').oninput=recommend;
-$('#confirm-password').oninput=()=>$('#confirm-password').setCustomValidity('');
-$('#email').oninput=$('#confirm-email').oninput=()=>$('#confirm-email').setCustomValidity('');
+
 document.querySelectorAll('[data-next]').forEach(button=>button.onclick=()=>{
   if(currentStep===1&&!validateStepOne())return;
   if(currentStep===2&&!validateTrade())return;
@@ -83,11 +65,7 @@ $('#signup').onsubmit=async event=>{
   event.preventDefault();
   const button=$('#create-company');
   const password=$('#password').value;
-  if(!emailsMatch()){$('#confirm-email').reportValidity();return}
-  if(password!==$('#confirm-password').value){
-    $('#result').textContent='Passwords do not match.';
-    return;
-  }
+
   if(!validateTrade()){
     showStep(2);
     $('#result').textContent='Select your trade.';
@@ -165,3 +143,14 @@ function updateFounderOffer(){
 $('#founder-code').addEventListener('input',updateFounderOffer);
 document.querySelectorAll('[name="plan"],[name="billingCycle"]').forEach(el=>el.addEventListener('change',updateFounderOffer));
 fetch('/api/founder-offer').then(response=>response.json()).then(offer=>{founderOffer=offer;$('#founder-invitation').hidden=!offer.enabled;updateFounderOffer()}).catch(()=>{});
+
+document.querySelectorAll('[data-show-password]').forEach(button=>{
+  button.onclick=()=>{
+    const field=document.getElementById(button.dataset.showPassword);
+    if(!field)return;
+    const show=field.type==='password';
+    field.type=show?'text':'password';
+    button.textContent=show?'Hide':'Show';
+    button.setAttribute('aria-label',show?'Hide password':'Show password');
+  };
+});

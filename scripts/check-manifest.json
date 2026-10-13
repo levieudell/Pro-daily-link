@@ -245,7 +245,9 @@
     "node --check database/managed-backup.test.js",
     "node --check database/managed-backup-postgres.test.js",
     "node --check roles-managed-backup-http.test.js",
-    "node --check database/managed-backup-admission.js"
+    "node --check database/managed-backup-admission.js",
+    "node --check roles-main-ux.test.js",
+    "node --check roles-main-ux-http.test.js"
   ],
   "test": [
     "node json-request-body.test.js",
@@ -444,6 +446,8 @@
     "node roles-backup-recovery-integration.test.js",
     "node database/managed-backup.test.js",
     "node roles-managed-backup-http.test.js",
-    "node database/managed-backup-postgres.test.js"
+    "node database/managed-backup-postgres.test.js",
+    "node roles-main-ux.test.js",
+    "node roles-main-ux-http.test.js"
   ]
 }

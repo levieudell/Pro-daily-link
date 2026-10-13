@@ -46,8 +46,9 @@ function parse(value) {
     out.hours = 0; out.site = 'Not assigned';
   } else if (value.kind === 'projectCreate') {
     const keys = ['customerId', 'customer', 'name', 'contractType', 'tmSettings', 'code', 'budget', 'site', 'startDate', 'endDate', 'supervisor', 'siteContact', 'estimateItems', 'color', 'crew', 'progress', 'production', 'status', 'templateId'];
-    if (!object(d, keys) || !id(d.customerId) || !['estimated', 'tm', 'hybrid'].includes(d.contractType)) fail(400, 'Choose a current customer and supported contract type.');
-    out = fields(d, { customer: 140, name: 220, code: 40, budget: 120, site: 500, startDate: 10, endDate: 10, supervisor: 100, siteContact: 200, templateId: 80 }, ['customer', 'name']);
+    const unlinked = d?.customerId === null && d.customer === '';
+    if (!object(d, keys) || !unlinked && !id(d.customerId) || !['estimated', 'tm', 'hybrid'].includes(d.contractType)) fail(400, 'Choose a current customer or leave it unset, and choose a supported contract type.');
+    out = fields(d, { customer: 140, name: 220, code: 40, budget: 120, site: 500, startDate: 10, endDate: 10, supervisor: 100, siteContact: 200, templateId: 80 }, unlinked ? ['name'] : ['customer', 'name']);
     for (const key of ['startDate', 'endDate']) if (out[key] && !date(out[key])) fail(400, 'Enter valid project dates.');
     if (out.startDate && out.endDate && out.endDate < out.startDate) fail(400, 'Project end cannot precede its start.');
     if (out.budget !== undefined && !/^\$?(?:\d+|\d{1,3}(?:,\d{3})+)(?:\.\d{1,2})?$/.test(out.budget)) fail(400, 'Enter a finite non-negative project budget.');
@@ -104,8 +105,10 @@ function authorize(db, auth, op, helpers) {
   authorizeActor(auth, op);const user=auth.user;
   const family = extension(op); if (family) return family.authorize(db, auth, op, helpers, module.exports);
   if (op.kind === 'projectCreate') {
-    const customer = db.customers.find(row => Number(row.id) === op.details.customerId);
-    if (!customer || customer.name !== op.details.customer) fail(404, 'Selected customer not found.');
+    if (op.details.customerId !== null) {
+      const customer = db.customers.find(row => Number(row.id) === op.details.customerId);
+      if (!customer || customer.name !== op.details.customer) fail(404, 'Selected customer not found.');
+    }
     if (op.details.supervisor && db.team.filter(row => row.name === op.details.supervisor).length !== 1) fail(404, 'Selected supervisor not found.');
     if (!helpers.canViewPricing(db, user) && (Number((op.details.budget || '0').replace(/[$,]/g, '')) > 0 || Object.values(op.details.tmSettings || {}).some(value => value > 0))) fail(403, 'Financial project values require existing pricing access.');
     if (op.details.templateId && (db.company.features?.templates !== true || op.details.templateId !== 'standard' && !(db.dailyTemplates || []).some(row => String(row.id) === op.details.templateId))) fail(404, 'Selected template not found.');

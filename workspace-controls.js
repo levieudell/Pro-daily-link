@@ -7,7 +7,7 @@
     ['scheduling', 'remove', '#remove-assignment,#remove-person'],
     ['scheduling', 'acknowledge', '[data-ack-assignment]'],
     ['daily', 'viewReports', '.nav-item[data-page="reports"],[data-open-daily-report]'],
-    ['daily', 'createReports', '#new-report,[data-open-report],[data-assignment-daily]'],
+    ['daily', 'createReports', '#new-report,[data-open-report],[data-assignment-daily],[data-setup="report"]'],
     ['daily', 'editReports', '[data-edit-report],.labor-resolve-button,#resolve-exception,#delete-daily-report,#confirm-delete-report,[data-pdl-rate-review]'],
     ['daily', 'approveReports', '[data-approve-report]'],
     ['daily', 'viewWorkdays', '.nav-item[data-page="fieldday"]'],

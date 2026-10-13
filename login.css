@@ -37,3 +37,4 @@ dialog[open]{animation:pdl-dialog-in .24s cubic-bezier(.2,.7,.3,1)}
 ::-webkit-scrollbar{width:9px;height:9px}
 ::-webkit-scrollbar-thumb{background:rgba(16,37,30,.22);border-radius:99px;border:2px solid transparent;background-clip:content-box}
 ::-webkit-scrollbar-track{background:transparent}
+.verification-continue{display:block;width:100%;margin-top:20px;padding:14px 16px;border-radius:10px;text-align:center;text-decoration:none;font-weight:800;font-size:14px}

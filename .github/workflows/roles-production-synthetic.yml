@@ -60,6 +60,8 @@ jobs:
       - run: node roles-managed-backup-http.test.js
       - run: node database/managed-backup-postgres.test.js --required
       - run: node roles-production-http.test.js
+      - run: node roles-main-ux.test.js
+      - run: node roles-main-ux-http.test.js
       - run: node roles-production-changes-http.test.js
       - run: node roles-production-task-ui.test.js
       - run: node roles-production-tasks-http.test.js
