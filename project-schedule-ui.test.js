@@ -11,8 +11,8 @@ const { isPublicFile } = require('./public-file-policy');
 
 // Script loads after app.js (it patches openProject) and carries a version.
 assert.ok(index.indexOf('app.js?') < index.indexOf('project-schedule-ui.js?'), 'module loads after app.js so openProject exists');
-assert.match(index, /project-schedule-ui\.js\?v=20261013-uxa/);
-assert.match(index, /styles\.css\?v=20261013-uxa/);
+assert.match(index, /project-schedule-ui\.js\?v=20261013-roles-uxa/);
+assert.match(index, /styles\.css\?v=20261013-roles-uxa/);
 
 // Static serving + server wiring.
 assert.equal(isPublicFile(process.cwd(), path.join(process.cwd(), 'project-schedule-ui.js')), true, 'UI module is publicly served');
@@ -24,8 +24,8 @@ assert.match(server, /'projectTasks','projectEvents','projectMessages'\]/, 'test
 assert.match(server, /'projectEvents','projectMessages'\]/, 'test-customer purge covers project events and messages');
 assert.ok(server.includes('projectEventsRoute = url.pathname.match'), 'project events collection route');
 assert.ok(server.includes('projectEventRoute = url.pathname.match'), 'single event route');
-assert.ok(server.includes("filter(event=>scope.allowedIds.has(event.projectId))"), 'field workspace scopes events');
-assert.ok(server.includes("filter(event=>scope.projectIds.has(Number(event.projectId)))"), 'manager workspace scopes events');
+assert.ok(server.includes("projectEvents:require('./project-events-access').visible(db,account||fieldAccount||{role:'field',memberId:Number(member.id)})"), 'field workspace enforces current actor event viewing and readable project scope');
+assert.ok(server.includes("projectEvents:require('./project-events-access').visible(db,accountUser)"), 'manager workspace enforces current actor event viewing and assigned project scope');
 
 // Module contracts.
 assert.match(ui, /openProjectWithSchedule = openProject/);
@@ -50,7 +50,7 @@ assert.ok(server.includes('projectTaskAssignRoute = url.pathname.match'), 'assig
 assert.match(ui, /renderScheduleWithLane = renderSchedule/, 'team schedule render is wrapped');
 assert.match(ui, /class="schedule-unassigned"/);
 assert.match(ui, /data-schedule-task="\$\{Number\(task\.id\)\}"/);
-assert.match(ui, /blockSelector: '\[data-schedule-task\]'/, 'chips get their own touch-drag attach');
+assert.match(ui, /blockSelector: '\[data-schedule-task\]\[draggable="true"\]'/, 'chips get their own touch-drag attach');
 assert.match(ui, /api\(`\/api\/project-tasks\/\$\{taskId\}\/assign`/);
 assert.match(ui, /window\.PDLProjectScheduleUI = \{ assignTaskTo, paintUnassignedLane \}/);
 // The project detail content is itself a <form>, so pane markup must never

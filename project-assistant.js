@@ -7,6 +7,7 @@ const { expandBatch } = require('./project-assistant-batch');
 const { proposeBatchWithAI } = require('./project-assistant-batch-proposal');
 const { createAssignmentRows } = require('./assignment-records');
 const { textValue, createProjectNoteRecord } = require('./project-notes');
+const scheduling = require('./scheduling-access'), notes = require('./notes-access'), profiles = require('./role-profiles');
 const ROLES = new Set(['owner', 'admin', 'project_manager']);
 const MAX_TOKEN_LENGTH = 32768; // Includes base64-encoded 5,000-character Unicode notes.
 const FIELDS = ['action', 'memberId', 'date', 'start', 'end', 'activity', 'instructions', 'timezone'];
@@ -29,13 +30,34 @@ function unambiguousWallTime(date, time, timezone) {
   for (const offset of offsets) { const instant = guess - offset, parts = wallParts(new Date(instant), timezone); if (parts.date === date && parts.time === time) matches.add(instant); }
   return matches.size === 1;
 }
-function allowed(db, user, projectId, memberId, action = 'schedule') {
-  if (!user || !ROLES.has(user.role)) return false;
+// Derive typed restrictions from the current snapshot and authenticated actor.
+// Stored grants, Assistant eligibility and project/crew scope remain unchanged.
+function policyAccess(db, user) {
+  return profiles.evaluate(db, () => ({ scheduling: scheduling.access(db, user), notes: notes.access(db, user) }));
+}
+function policyAuthority(db, user) {
+  return { ...policyAccess(db, user), revision: db.company.rolePolicyRevision ?? 0,
+    profiles: profiles.required(db) ? profiles.authority(db, user) : null };
+}
+function projectScope(db, user, projectId, memberId) {
+  if (!user || user.status !== 'Active' || !ROLES.has(user.role) || user.companyId != null && user.companyId !== db.company.id) return false;
   if (user.role !== 'project_manager') return true;
   const crews = new Set((user.assignedCrews || []).map(name => String(name).trim().toLowerCase()).filter(Boolean));
   const member = (db.team || []).find(row => Number(row.id) === memberId);
-  return (!['schedule', 'schedule_batch'].includes(action) || user.permissions?.scheduleCrews === true) && (user.projectIds || []).map(Number).includes(projectId) &&
+  return (user.projectIds || []).map(Number).includes(projectId) &&
     (memberId == null || member && crews.has(String(member.crew || '').trim().toLowerCase()));
+}
+function visibleProject(db, user, projectId) {
+  if (!projectScope(db, user, projectId)) return false;
+  const access = policyAccess(db, user);
+  return access.scheduling.view || access.notes.view;
+}
+function allowed(db, user, projectId, memberId, action = 'schedule') {
+  if (!projectScope(db, user, projectId, memberId)) return false;
+  const access = policyAccess(db, user);
+  if (['schedule', 'schedule_batch'].includes(action)) return access.scheduling.view && access.scheduling.create &&
+    (user.role !== 'project_manager' || user.permissions?.scheduleCrews === true);
+  return ['note', 'todo'].includes(action) && access.notes.view && access.notes.create;
 }
 function activeProject(db, projectId) { return (db.projects || []).find(row => Number(row.id) === projectId && !row.archived && !['Completed', 'Cancelled'].includes(row.status)); }
 function membersFor(db, user, projectId) { return (db.team || []).filter(row => !row.archived && !row.archivedAt && row.status !== 'Inactive' && allowed(db, user, projectId, Number(row.id))); }
@@ -43,12 +65,12 @@ function minimalContext(db, user, projectId, now = new Date()) {
   return { project: { id: projectId, name: activeProject(db, projectId).name }, timezone: validZone(db.company.timezone) ? db.company.timezone : '',
     today: validZone(db.company.timezone) ? wallParts(now, db.company.timezone).date : '',
     members: membersFor(db, user, projectId).map(row => ({ id: Number(row.id), name: String(row.name), crew: String(row.crew || '') })),
-    aiAvailable: Boolean(process.env.OPENAI_API_KEY), capabilities: { schedule: allowed(db, user, projectId), note: true, todo: true }, limits: 'Single-day or atomic batch scheduling: at most 31 calendar days, 10 people, 100 person/day combinations; explicit weekdays. Project notes and to-dos. No email, notification blast or public sharing.' };
+    aiAvailable: Boolean(process.env.OPENAI_API_KEY), capabilities: { schedule: allowed(db, user, projectId), note: allowed(db, user, projectId, null, 'note'), todo: allowed(db, user, projectId, null, 'todo') }, limits: 'Single-day or atomic batch scheduling: at most 31 calendar days, 10 people, 100 person/day combinations; explicit weekdays. Project notes and to-dos. No email, notification blast or public sharing.' };
 }
 function fingerprint(db, user, projectId, input) {
   const memberIds = input.action === 'schedule_batch' ? input.memberIds : [input.memberId];
   return hash({ companyId: db.company.id, timezone: db.company.timezone || null,
-    actor: { id: user.id, role: user.role, permissions: user.permissions, projectIds: user.projectIds, assignedCrews: user.assignedCrews },
+    actor: { id: user.id, role: user.role, permissions: user.permissions, projectIds: user.projectIds, assignedCrews: user.assignedCrews, policy: policyAuthority(db, user) },
     project: activeProject(db, projectId), members: (db.team || []).filter(row => memberIds.includes(Number(row.id))),
     projectNotes: !['schedule', 'schedule_batch'].includes(input.action) ? (db.projectNotesTodos || []).filter(row => Number(row.projectId) === projectId && row.companyId === db.company.id) : undefined,
     assignments: (db.assignments || []).filter(row => (row.memberIds || []).map(Number).some(id => memberIds.includes(id))),
@@ -92,7 +114,8 @@ function validateBatch(db, user, projectId, input, now) {
   return { input: { ...expanded.input, activity: input.activity.trim(), instructions: input.instructions.trim() }, dates: expanded.dates, personDays: expanded.personDays, conflicts };
 }
 function validateNote(db, user, projectId, input, now) {
-  if (invalidObject(input, ['action', 'text', 'deadline', 'dueDate', 'timezone']) || !allowed(db, user, projectId, null, input.action)) return { status: 400, error: 'Review only the supported project note or to-do fields.' };
+  if (invalidObject(input, ['action', 'text', 'deadline', 'dueDate', 'timezone'])) return { status: 400, error: 'Review only the supported project note or to-do fields.' };
+  if (!allowed(db, user, projectId, null, input.action)) return { status: 403, error: 'Current project note or to-do permission required.' };
   const parsed = textValue(input.text);
   if (parsed.error) return { status: 400, error: parsed.error };
   if (!['none', 'today', 'date'].includes(input.deadline) || input.action === 'note' && input.deadline !== 'none') return { status: 400, error: 'Choose a deadline only for a to-do.' };
@@ -159,7 +182,7 @@ function createProjectAssistantHandler({ readDb, writeDb, body, json, authentica
     const access = accountAccess(db.company);
     if (access.locked) return reply(402, { error: access.reason || 'Company access is unavailable.' });
     if (!ROLES.has(user.role)) return reply(403, { error: 'Project manager, admin, or owner permission required.' });
-    if (!activeProject(db, projectId) || !allowed(db, user, projectId, null, 'note')) return reply(404, { error: 'Project not available.' });
+    if (!activeProject(db, projectId) || !visibleProject(db, user, projectId)) return reply(404, { error: 'Project not available.' });
     const context = { ...minimalContext(db, user, projectId, now()), aiFirst: aiFirst() };
     if (action === 'context' && req.method === 'GET') return reply(200, context);
     if (req.method !== 'POST' || action === 'context') return reply(405, { error: 'Method not allowed.' });
@@ -216,4 +239,4 @@ function createProjectAssistantHandler({ readDb, writeDb, body, json, authentica
   };
 }
 
-module.exports = { allowed, minimalContext, activeProject, membersFor, validate, proposeWithAI, unambiguousWallTime, createProjectAssistantHandler };
+module.exports = { allowed, visibleProject, policyAccess, policyAuthority, minimalContext, activeProject, membersFor, validate, proposeWithAI, unambiguousWallTime, createProjectAssistantHandler };

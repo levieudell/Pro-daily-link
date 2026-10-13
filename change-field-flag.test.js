@@ -121,7 +121,7 @@ const PNG = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJA
     assert.ok(app.includes('changeId=null,isCurrent'), 'uploadPhotos accepts a change link');
     assert.ok(app.includes('changeId:change.id'), 'save flow attaches photos to the created flag');
     assert.ok(app.includes('Created by ${escapeHtml(change.createdBy'), 'office card credits the actual creator');
-    assert.ok(index.includes('app.js?v=20261011'), 'cache-buster pinned');
+    assert.ok(index.includes('app.js?v=20261013-roles-uxa'), 'cache-buster pinned');
 
     console.log('Change field-flagging API passed: field-scoped creation, amount pinning, office visibility, action-center lifecycle, photo ownership, and client wiring.');
   } finally {

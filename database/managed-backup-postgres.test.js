@@ -1,0 +1,38 @@
+'use strict';
+const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path'),{Client}=require('pg');
+const {fixture,key}=require('./managed-backup-fixture'),{createEngine}=require('./managed-backup'),{createRepository}=require('./roles-snapshot-repository');
+const target=process.env.TEST_MANAGED_BACKUP_DATABASE_URL;
+if(!target){if(process.argv.includes('--required'))throw Error('Explicit fresh owned managed backup database required');console.log(JSON.stringify({skipped:true,reason:'Native proof requires explicit fresh generated loopback database'}));}
+else if(!/^postgresql:\/\/postgres@127\.0\.0\.1:\d+\/pdl_managed_backup_synthetic_[a-z0-9_]+$/.test(target))throw Error('Explicit fresh generated loopback database required');
+else main().catch(error=>{console.error(error);process.exitCode=1;});
+async function main(){
+  const c=new Client({connectionString:target}),other=new Client({connectionString:target});await c.connect();await other.connect();let checks=0;
+  try{
+    await c.query("DO $$ BEGIN IF NOT EXISTS(SELECT 1 FROM pg_roles WHERE rolname='anon') THEN CREATE ROLE anon; END IF; IF NOT EXISTS(SELECT 1 FROM pg_roles WHERE rolname='authenticated') THEN CREATE ROLE authenticated; END IF; IF NOT EXISTS(SELECT 1 FROM pg_roles WHERE rolname='service_role') THEN CREATE ROLE service_role; END IF; END $$; CREATE TABLE companies(id uuid PRIMARY KEY,name text,data jsonb NOT NULL); CREATE TABLE tenant_records(company_id uuid,data jsonb); CREATE TABLE tenant_revisions(company_id uuid,revision bigint)");
+    await c.query(fs.readFileSync(path.join(__dirname,'009_roles_snapshot_authority.sql'),'utf8'));
+    await c.query(fs.readFileSync(path.join(__dirname,'010_platform_snapshot_authority.sql'),'utf8'));
+    await c.query(fs.readFileSync(path.join(__dirname,'011_managed_backup_admission.sql'),'utf8'));
+    const f=fixture();f.state.snapshot.company.persistence={revision:999};await c.query('INSERT INTO companies(id,name,data) VALUES($1,$2,$3)',[f.id,'Generated backup company',f.state.snapshot]);await c.query('UPDATE companies SET roles_managed=true WHERE id=$1',[f.id]);
+    const adapter={request:async relative=>{assert.equal(relative,`/rest/v1/companies?id=eq.${f.id}&select=data,roles_revision,roles_managed&limit=1`);const {rows}=await c.query('SELECT data,roles_revision::float8 AS roles_revision,roles_managed FROM companies WHERE id=$1',[f.id]);return new Response(JSON.stringify(rows));}};
+    const admission={get:async(id,base)=>(await c.query('SELECT public.read_managed_backup_job($1,$2) AS value',[id,base])).rows[0].value,list:async id=>(await c.query('SELECT public.list_managed_backup_jobs($1) AS value',[id])).rows[0].value,admit:async(id,base,descriptor)=>(await c.query("SELECT public.admit_managed_backup_job($1,$2,$3,clock_timestamp()+interval '4 seconds') AS value",[id,base,descriptor])).rows[0].value};
+    const repository=createRepository(adapter),engine=createEngine({key,repository,storage:f.storage,admission,allowed:id=>id===f.id});
+    const opening=structuredClone(f.state.snapshot);let raced=false;
+    f.state.beforeRead=async bucket=>{if(bucket!=='tenant-backups'&&!raced){raced=true;const latest=structuredClone(opening);latest.company.name='New committed revision during capture';await other.query("SELECT * FROM commit_roles_snapshot($1,0,$2,clock_timestamp()+interval '10 seconds')",[f.id,latest]);}};
+    const result=await engine.capture(f.id);assert.equal(result.manifest.core.sourceRevision,0);assert.deepEqual(result.snapshot,opening);assert.equal((await repository.load(f.id)).revision,1);assert.equal(result.snapshot.company.persistence.revision,999);checks+=4;
+    const writes=f.writes.length;await engine.verify(f.id,result.base);assert.equal(f.writes.length,writes);checks++;
+    f.state.beforeRead=null;const newer=await engine.capture(f.id);assert.equal(newer.manifest.core.sourceRevision,1);assert.equal(newer.snapshot.company.name,'New committed revision during capture');assert.equal((await repository.load(f.id)).revision,1,'Backup does not mutate authoritative revision');checks+=3;
+    const originalJob=await admission.get(f.id,newer.base),nonce=require('node:crypto').randomUUID(),different={...originalJob,writerNonce:nonce};
+    const concurrent=await Promise.all([c,other].map(client=>client.query("SELECT public.admit_managed_backup_job($1,$2,$3,clock_timestamp()+interval '4 seconds') AS value",[f.id,newer.base,different])));assert.ok(concurrent.every(r=>r.rows[0].value.writerNonce===originalJob.writerNonce));checks++;
+    await c.query('SET ROLE service_role');await assert.rejects(c.query('SELECT * FROM roles_managed_backup_jobs'),e=>e.code==='42501');assert.deepEqual((await c.query('SELECT read_managed_backup_job($1,$2) AS value',[f.id,newer.base])).rows[0].value,originalJob);await c.query('RESET ROLE; SET ROLE anon');await assert.rejects(c.query('SELECT read_managed_backup_job($1,$2)',[f.id,newer.base]),e=>e.code==='42501');await c.query('RESET ROLE');checks+=3;
+    const timed=JSON.parse(JSON.stringify(originalJob));timed.core.snapshot.sha256='a'.repeat(64);const timedBase=f.id+'/managed-v1/'+timed.core.capturedAt.slice(0,10)+'-1-'+'a'.repeat(64);
+    await c.query('BEGIN');await c.query("SELECT admit_managed_backup_job($1,$2,$3,clock_timestamp()+interval '100 milliseconds')",[f.id,timedBase,timed]);await c.query('SELECT pg_sleep(0.15)');await assert.rejects(c.query('COMMIT'),e=>e.code==='40001');assert.equal(await admission.get(f.id,timedBase),null);checks+=2;
+    await c.query('ALTER TABLE roles_managed_backup_jobs DISABLE TRIGGER managed_backup_job_writer');await assert.rejects(engine.verify(f.id,newer.base),e=>/PDL_BACKUP_ADMISSION_CONTRACT/.test(e.message));await c.query('ALTER TABLE roles_managed_backup_jobs ENABLE TRIGGER managed_backup_job_writer');checks++;
+    await c.query('GRANT INSERT ON roles_managed_backup_jobs TO service_role');await assert.rejects(engine.verify(f.id,newer.base),e=>/PDL_BACKUP_ADMISSION_CONTRACT/.test(e.message));await c.query('REVOKE INSERT ON roles_managed_backup_jobs FROM service_role');checks++;
+    await c.query('GRANT INSERT(company_id,job_key,descriptor,admitted_until) ON roles_managed_backup_jobs TO service_role');await assert.rejects(engine.verify(f.id,newer.base),e=>/PDL_BACKUP_ADMISSION_CONTRACT/.test(e.message));await c.query('REVOKE INSERT(company_id,job_key,descriptor,admitted_until) ON roles_managed_backup_jobs FROM service_role');checks++;
+    await c.query('ALTER TABLE roles_managed_backup_jobs DROP CONSTRAINT roles_managed_backup_jobs_pkey');await assert.rejects(engine.verify(f.id,newer.base),e=>/PDL_BACKUP_ADMISSION_CONTRACT/.test(e.message));await c.query('ALTER TABLE roles_managed_backup_jobs ADD PRIMARY KEY(company_id,job_key)');checks++;
+    // Forced synthetic fault only: a revoked managed flag must not fall back.
+    await c.query('ALTER TABLE companies DISABLE TRIGGER roles_snapshot_writer');await c.query('UPDATE companies SET roles_managed=false WHERE id=$1',[f.id]);await c.query('ALTER TABLE companies ENABLE TRIGGER roles_snapshot_writer');
+    await assert.rejects(engine.verify(f.id,newer.base),e=>e.code==='PDL_ROLES_STORAGE');assert.equal(f.writes.length,writes+newer.manifest.core.snapshot.parts.length+newer.manifest.core.objects.reduce((n,o)=>n+o.data.parts.length,0)+2);checks++;
+    console.log(JSON.stringify({passed:true,checks,backend:'owned-native-postgresql-with-closed-storage',migrations:'009-010-011-source-only',capturedHistoricalRevision:true,durableAdmission:true,backupRevisionWrites:0,productionWrites:0,externalCalls:0}));
+  }finally{await other.end();await c.end();}
+}

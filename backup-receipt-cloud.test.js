@@ -24,6 +24,7 @@ const cloudReceipt = {
   attempt: { id: 'attempt-1', at: verifiedAt, status: 'verified' },
   verification: { method: 'upload-download-sha256', verifiedAt, bucket: 'tenant-backups', objectKey: `${companyId}/2026-01-01-abc.json`, sha256: 'a'.repeat(64), bytes: 42, sourceRevision: 3 }
 };
+supabase.request = async () => ({json:async()=>[{roles_managed:false,platform_managed:false}]});
 const uploads = [];
 supabase.download = async (bucket, objectKey) => {
   assert.equal(bucket, 'tenant-backups');

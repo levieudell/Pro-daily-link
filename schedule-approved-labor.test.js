@@ -21,14 +21,20 @@ assert.equal(review({...input,reports:[{...report(10,4),project:null}]}).hours,0
 const missingId={...report(10,2)};delete missingId.id;assert.equal(review({...input,reports:[missingId,{...missingId}]}).hours,4,'unknown report identity is not silently merged');
 
 const app=fs.readFileSync(__dirname+'/app.js','utf8'),lines=app.split('\n'),nodes=new Map(),blocks=[];
-function node(id){if(!nodes.has(id))nodes.set(id,{value:'',checked:false,hidden:false,innerHTML:'',textContent:'',dataset:{},classList:{toggle(){},add(){},remove(){}},setAttribute(){}});return nodes.get(id)}
+function node(id){if(!nodes.has(id))nodes.set(id,{value:'',checked:false,hidden:false,innerHTML:'',textContent:'',dataset:{},open:false,classList:{toggle(){},add(){},remove(){}},setAttribute(){}});return nodes.get(id)}
 function code(name){const start=lines.findIndex(line=>line.startsWith('function '+name+'('));assert.ok(start>=0,name);if(lines[start].trimEnd().endsWith('}'))return lines[start];const end=lines.findIndex((line,i)=>i>start&&line.trimEnd()==='}');return lines.slice(start,end+1).join('\n')}
 const c={$:node,$$:selector=>selector==='[data-assignment]'?blocks:[],reports:[report(10,4)],projects,team:[{id:1,name:'Synthetic visible',initials:'SV',crew:'Visible',role:'field'},{id:2,name:'Hidden person',crew:'Hidden',role:'field'}],assignments:[assignment(1),assignment(2)],workdays:[],
- scheduleView:'week',preferredLanguage:'en',scheduleAvailabilityStatus:'ready',currentUser:{role:'project_manager',preferences:{}},canManageSchedule:()=>false,isOfficeMember:()=>false,localDateIso:()=> '2026-10-08',
+ scheduleView:'week',preferredLanguage:'en',scheduleAvailabilityStatus:'ready',currentRole:'office',currentUser:{id:1,role:'project_manager',projectIds:[1],permissions:{scheduleCrews:false},preferences:{}},isOfficeMember:()=>false,localDateIso:()=> '2026-10-08',
  schedulePeriodDays:()=>[{date,label:'TUE 6'}],scheduleDate:()=>new Date('2026-10-06T12:00:00Z'),scheduleWeekStart:()=>new Date('2026-10-04T12:00:00Z'),
- scheduleLeaveMarkup:()=>'',scheduleEventChips:()=>'',scheduleDayLeaveMarkup:()=>'',scheduleUnavailableSummary:()=>'',scheduleUnavailable:()=>false,formatDate:value=>value,displayTime:value=>value,escapeHtml:value=>String(value).replaceAll('<','&lt;'),
+ scheduleLeaveMarkup:()=>'',scheduleDayLeaveMarkup:()=>'',scheduleUnavailableSummary:()=>'',scheduleUnavailable:()=>false,formatDate:value=>value,displayTime:value=>value,escapeHtml:value=>String(value).replaceAll('<','&lt;'),
  window:{PDLScheduleApprovedLabor:{review},PDLLocale:{refresh(){}}},document:{addEventListener(){},visibilityState:'visible'},scheduleTouchDragAttached:false,PDLScheduleTouchDrag:{attach(){}},openScheduledWork:(id,memberId)=>c.opened={id,memberId},openAssignment(){}};
-node('#schedule-crew-filter').value='Visible';vm.createContext(c);for(const name of ['shiftHours','assignmentActualHours','scheduleMobileMarkup','renderSchedule'])vm.runInContext(code(name),c);
+node('#schedule-crew-filter').value='Visible';vm.createContext(c);
+// Assemble the actual event dependency closures used by the current renderer.
+Object.assign(c,{projectEvents:[],projectEventDialog:0,projectEventUncertain:false,projectEventReviewRequired:false});
+c.document.getElementById=id=>nodes.get('#'+id)||null;
+vm.runInContext(app.match(/^const EVENT_ICONS=.*$/m)[0],c);
+for(const name of ["canManageSchedule","eventIcon","eventSchedulingAccess","eventActionAllowed","eventProjectAllowed","eventProjects","projectEventChip","scheduleDayEvents","scheduleEventsMarkup","scheduleEventChips","bindProjectEvents","closeProjectEventView"])vm.runInContext(code(name),c);
+for(const name of ['canMoveScheduledWork','shiftHours','assignmentActualHours','scheduleMobileMarkup','renderSchedule'])vm.runInContext(code(name),c);
 c.renderSchedule();assert.match(node('#schedule-summary').innerHTML,/<small>APPROVED DAILY HOURS<\/small><strong>4\.0<\/strong>/);assert.match(node('#schedule-summary').innerHTML,/unallocated between assignments/);assert.match(node('#schedule-summary').innerHTML,/<strong>1<\/strong>/);
 assert.equal((node('#schedule-board').innerHTML.match(/assignment split unallocated/g)||[]).length,2);assert.ok(!node('#schedule-board').innerHTML.includes('4.0 actual'),'no daily total repeated as individual actual hours');assert.ok(!node('#schedule-board').innerHTML.includes('Hidden person'));
 c.assignments=[assignment(1)];c.renderSchedule();assert.match(node('#schedule-board').innerHTML,/4\.0h approved for day/);assert.doesNotMatch(node('#schedule-board').innerHTML,/assignment split unallocated/);

@@ -1,5 +1,6 @@
 const fs = require('node:fs');
 const path = require('node:path');
+const compatibilityBoundary = require('../compat-account-boundary');
 const crypto = require('node:crypto');
 
 function loadLocalEnv(root) {
@@ -28,12 +29,13 @@ function headers(extra = {}) {
 }
 
 async function request(relativePath, options = {}) {
+  compatibilityBoundary.adapterRequest(relativePath, options);
   const response = await fetch(`${process.env.SUPABASE_URL}${relativePath}`, {
     ...options,
     headers: headers(options.headers)
   });
   if (!response.ok) throw new Error(`Supabase request failed (${response.status}): ${(await response.text()).slice(0, 300)}`);
-  return response;
+  return compatibilityBoundary.adapterResponse(relativePath, response, options);
 }
 
 async function upload(bucket, objectKey, bytes, contentType, upsert = false) {
@@ -74,7 +76,9 @@ async function ensurePrivateBucket(bucket, fileSizeLimit = 25_000_000, allowedMi
 }
 
 async function createVerifiedBackup(snapshot) {
+  compatibilityBoundary.assertLegacySnapshot(snapshot);
   if (!configured()) return null;
+  await require('./roles-legacy-fence').assertUnmanaged({configured,request}, snapshot.company.id);
   await ensurePrivateBucket('tenant-backups');
   const bytes = Buffer.from(JSON.stringify(snapshot));
   const hash = crypto.createHash('sha256').update(bytes).digest('hex');
@@ -94,6 +98,7 @@ async function download(bucket, objectKey) {
 }
 
 async function loadCompanySnapshot(companyId) {
+  compatibilityBoundary.assertLegacy(companyId);
   if (!configured()) return null;
   const response = await request(`/rest/v1/companies?id=eq.${encodeURIComponent(companyId)}&select=data&limit=1`);
   const rows = await response.json();
@@ -122,11 +127,13 @@ async function listCompanySnapshots() {
   if (!configured()) return [];
   const response = await request('/rest/v1/companies?select=data&limit=1000');
   const rows = await response.json();
-  return rows.map(row => row.data).filter(snapshot => snapshot?.company?.id);
+  return rows.map(row => row.data).filter(snapshot => snapshot?.company?.id && compatibilityBoundary.legacySnapshot(snapshot));
 }
 
 async function saveCompanySnapshot(snapshot) {
+  compatibilityBoundary.assertLegacySnapshot(snapshot);
   if (!configured()) return false;
+  await require('./roles-legacy-fence').assertUnmanaged({configured,request}, snapshot.company.id);
   const id = snapshot.company.id;
   await request('/rest/v1/companies?on_conflict=id', {
     method: 'POST',
@@ -141,7 +148,9 @@ async function loadSnapshot(id) {
 }
 
 async function saveSnapshot(id, name, data) {
+  compatibilityBoundary.assertLegacy(id); compatibilityBoundary.assertLegacySnapshot(data);
   if (!configured()) return false;
+  await require('./roles-legacy-fence').assertUnmanaged({configured,request}, id);
   await request('/rest/v1/companies?on_conflict=id', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Prefer: 'resolution=merge-duplicates,return=minimal' },
@@ -161,7 +170,9 @@ async function health() {
 }
 
 async function saveTransactionalSnapshot(snapshot, expectedRevision = 0) {
+  compatibilityBoundary.assertLegacySnapshot(snapshot);
   if (!configured()) throw new Error('Supabase is not configured');
+  await require('./roles-legacy-fence').assertUnmanaged({configured,request}, snapshot.company.id);
   const { splitSnapshot, canonicalHash, databaseCompanyId } = require('./transactional-repository');
   const companyId = databaseCompanyId(snapshot);
   const { scalarData, records } = splitSnapshot(snapshot);
@@ -176,6 +187,7 @@ async function saveTransactionalSnapshot(snapshot, expectedRevision = 0) {
 }
 
 async function loadTransactionalSnapshot(companyId) {
+  compatibilityBoundary.assertLegacy(companyId);
   if (!configured()) return null;
   const { assembleSnapshot, databaseCompanyId } = require('./transactional-repository');
   const id = databaseCompanyId(companyId);

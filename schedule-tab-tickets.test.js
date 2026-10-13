@@ -65,8 +65,8 @@ async function call(method, route, body, auth = ownerToken) {
     assert.ok(ui.includes('estimateItemId'), 'client sends the estimate link');
     const styles = fs.readFileSync('styles.css', 'utf8');
     assert.ok(styles.includes('.project-schedule-est-tag'), 'estimate tag is styled');
-    assert.match(index, /app\.js\?v=20261013-uxa/);
-    assert.match(index, /styles\.css\?v=20261013-uxa/);
+    assert.match(index, /app\.js\?v=20261013-roles-uxa/);
+    assert.match(index, /styles\.css\?v=20261013-roles-uxa/);
 
     console.log('Schedule tab cleanup passed: tickets get their own tab, tasks link to estimate lines (engine + API + client contracts).');
   } finally {

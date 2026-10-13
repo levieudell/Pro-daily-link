@@ -15,6 +15,7 @@ function createSalesDemoHandler({platformAllowed,withTenantQueue,requestDatabase
   try {
    await withTenantQueue(companyId,async()=>{
     const database=await requestDatabase({headers:{'x-pdl-company':companyId}}),target=database&&freshestTenantSnapshot(database);
+    if(database?.rolesProduction)throw Object.assign(new Error('Managed company demo replacement requires a separate retention review'),{statusCode:409});
     if(!target||target.company.id!==companyId){reply(res,404,{error:'Company not found'});return;}
     const asOf=companyToday(),expectedRevision=Number(target.company.persistence?.revision||0),alreadyPrepared=target.company.demoFixture===FIXTURE;
     if(!Number.isSafeInteger(expectedRevision)||expectedRevision<0)throw Object.assign(new Error('Company revision cannot be verified'),{statusCode:409});

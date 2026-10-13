@@ -1,0 +1,118 @@
+name: Company Roles normal adapter synthetic proof
+on:
+  pull_request:
+    paths:
+      - '**.js'
+      - '**.cjs'
+      - 'index.html'
+      - 'platform.html'
+      - 'database/*.sql'
+      - 'package*.json'
+      - '.github/workflows/roles-production-synthetic.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  production-adapter:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_HOST_AUTH_METHOD: trust
+          POSTGRES_DB: pdl_roles_production_synthetic_ci
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      NODE_ENV: test
+      OPENAI_API_KEY: ''
+      RESEND_API_KEY: ''
+      STRIPE_SECRET_KEY: ''
+      STRIPE_WEBHOOK_SECRET: ''
+      SUPABASE_SECRET_KEY: ''
+      PDL_PLATFORM_KEY: ''
+      SENTRY_DSN: ''
+      TEST_ROLES_DATABASE_URL: postgresql://postgres@127.0.0.1:5432/pdl_roles_production_synthetic_ci
+      TEST_PLATFORM_DATABASE_URL: postgresql://postgres@127.0.0.1:5432/pdl_platform_authority_synthetic_ci
+      TEST_PLATFORM_HTTP_DATABASE_URL: postgresql://postgres@127.0.0.1:5432/pdl_platform_authority_synthetic_http_ci
+      TEST_MANAGED_BACKUP_DATABASE_URL: postgresql://postgres@127.0.0.1:5432/pdl_managed_backup_synthetic_ci
+      PDL_ROLES_BROWSER_EVIDENCE: roles-production-browser-evidence
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - run: node scripts/create-roles-synthetic-databases.cjs
+      - run: node roles-production-contract.test.js
+      - run: node backup-receipt-cloud.test.js
+      - run: node roles-backup-recovery-integration.test.js
+      - run: node database/managed-backup.test.js
+      - run: node roles-managed-backup-http.test.js
+      - run: node database/managed-backup-postgres.test.js --required
+      - run: node roles-production-http.test.js
+      - run: node roles-main-ux.test.js
+      - run: node roles-main-ux-http.test.js
+      - run: node roles-production-changes-http.test.js
+      - run: node roles-production-task-ui.test.js
+      - run: node roles-production-tasks-http.test.js
+      - run: node change-order-authority.test.js
+      - run: node roles-credential-invalidation.test.js
+      - run: node roles-platform-authority.test.js
+      - run: node roles-production-credential-http.test.js
+      - run: node roles-platform-credential-http.test.js
+      - run: node roles-production-new-workflows-http.test.js
+      - run: node roles-production-route-floor-http.test.js
+      - run: node project-events-access.test.js
+      - run: node project-events.test.js
+      - run: node roles-production-events-http.test.js
+      - run: node roles-project-events-ui.test.js
+      - run: node project-messages-access.test.js
+      - run: node project-messages.test.js
+      - run: node roles-production-messages-http.test.js
+      - run: node roles-project-messages-ui.test.js
+      - run: node roles-report-client.test.js
+      - run: node original-operation-recovery.test.js
+      - run: node original-result-ui.test.js
+      - run: node roles-original-operation-clients.test.js
+      - run: node roles-production-full-matrix-http.test.js
+      - run: node roles-production-pdf-readback.test.js
+      - run: node roles-production-pdf-readback-http.test.js
+      - run: node roles-report-intake.test.js
+      - run: node roles-report-intake-http.test.js
+      - run: node roles-credential-recovery-ui.test.js
+      - run: node roles-manual-credential-custody.test.js
+      - run: node roles-manual-credential-http.test.js
+      - run: node roles-manual-credential-client.test.js
+      - run: node company-roles-confirmation.test.js
+      - run: node roles-provider-tenant-http.test.js
+      - run: node roles-platform-configuration-http.test.js
+      - run: node database/platform-snapshot-repository.test.js
+      - run: node roles-platform-multiworker-http.test.js
+      - run: node database/roles-snapshot-postgres.test.js
+      - run: node database/platform-snapshot-postgres.test.js
+      - run: node roles-platform-multiworker-http.test.js --native-claim
+      - name: Install isolated browser test dependency
+        run: |
+          npm install --prefix "$RUNNER_TEMP/roles-browser" --no-save --ignore-scripts playwright@1.63.0
+          "$RUNNER_TEMP/roles-browser/node_modules/.bin/playwright" install --with-deps chromium
+          echo "PLAYWRIGHT_MODULE=$RUNNER_TEMP/roles-browser/node_modules/playwright" >> "$GITHUB_ENV"
+      - run: node roles-production-browser.test.js
+      - run: node roles-normal-workflow-browser.test.js
+        env:
+          PDL_NORMAL_BROWSER_EVIDENCE: roles-production-browser-evidence/full-normal-workflows
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: roles-normal-adapter-${{ github.event.pull_request.head.sha || github.sha }}
+          path: roles-production-browser-evidence
+          if-no-files-found: ignore
