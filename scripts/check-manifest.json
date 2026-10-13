@@ -233,7 +233,10 @@
     "node --check roles-project-messages-ui.test.js",
     "node --check project-messages.test.js",
     "node --check field-change-read.js",
-    "node --check compat-workspace-field-flags-http.test.js"
+    "node --check compat-workspace-field-flags-http.test.js",
+    "node --check backup-receipt-cloud.test.js",
+    "node --check database/backup-receipt-cloud.js",
+    "node --check roles-backup-recovery-integration.test.js"
   ],
   "test": [
     "node json-request-body.test.js",
@@ -427,6 +430,8 @@
     "node roles-production-messages-http.test.js",
     "node roles-project-messages-ui.test.js",
     "node project-messages.test.js",
-    "node compat-workspace-field-flags-http.test.js"
+    "node compat-workspace-field-flags-http.test.js",
+    "node backup-receipt-cloud.test.js",
+    "node roles-backup-recovery-integration.test.js"
   ]
 }

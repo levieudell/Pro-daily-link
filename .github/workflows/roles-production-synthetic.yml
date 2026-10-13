@@ -53,6 +53,8 @@ jobs:
       - run: npm ci
       - run: node scripts/create-roles-synthetic-databases.cjs
       - run: node roles-production-contract.test.js
+      - run: node backup-receipt-cloud.test.js
+      - run: node roles-backup-recovery-integration.test.js
       - run: node roles-production-http.test.js
       - run: node roles-production-changes-http.test.js
       - run: node roles-production-task-ui.test.js
