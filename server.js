@@ -1680,5 +1680,25 @@ readPlatform = function(){
     platform.helpItems.push(...missing.map(item => ({...item, createdAt:now, updatedAt:now})));
     writePlatform(platform);
   }
+  const priorHelpContent = {
+    'pdl-help-02': {
+      title: 'Add your first customer and project',
+      summary: 'Create a customer first, then add the project your crew will work on.',
+      content: '1) Open Customers.\n2) Select Add customer.\n3) Save the customer details.\n4) Open Projects.\n5) Select Add project and choose that customer.\n6) Add project details and save.'
+    }
+  };
+  let refreshedHelp = false;
+  for(const [helpId, prior] of Object.entries(priorHelpContent)){
+    const row = (platform.helpItems || []).find(item => item.id === helpId);
+    if(!row) continue;
+    if(row.title === prior.title && row.summary === prior.summary && row.content === prior.content){
+      const updated = [...PDL_SUPPORT_LIBRARY,TIME_CARD_HELP].find(item => item.id === helpId);
+      if(updated){
+        row.title = updated.title; row.summary = updated.summary; row.content = updated.content;
+        row.updatedAt = new Date().toISOString(); refreshedHelp = true;
+      }
+    }
+  }
+  if(refreshedHelp) writePlatform(platform);
   return platform;
 };
