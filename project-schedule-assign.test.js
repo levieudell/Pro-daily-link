@@ -139,6 +139,15 @@ const { server } = require('./server');
     assert.equal(again.data.merged, 0);
     assert.equal(again.data.skipped, 1);
 
+    // A picked day BEFORE the task starts clamps up to the first task day:
+    // dropping on a crew header while viewing an earlier week must not book
+    // days the task does not occupy.
+    const early = await call('POST', `/api/project-tasks/${task6}/assign`, { memberId: 7, fromDate: '2026-10-19' });
+    assert.equal(early.status, 200);
+    assert.equal(early.data.created, 1, 'the first unbooked day creates a row');
+    assert.equal(early.data.merged, 1, 'the second day merges into the existing same-project shift');
+    assert.ok(!reload().assignments.some(a => a.projectId === 101 && a.activity === 'Punch list' && a.date < '2026-10-22'), 'no task rows before the task starts');
+
     // Email notification: an assignee with an account email gets the same
     // assignment email a manual schedule entry sends; a provider failure marks
     // the rows instead of failing the request; members without an account
