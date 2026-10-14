@@ -69,6 +69,14 @@ console.log('Synthetic demo: deterministic data, privacy, referential integrity,
 const {prepareEmptyDemoTenant}=require('./sales-demo-install');
 const target={company:{id:d.company.id,name:d.company.name,createdAt:'2026-10-05T00:00:00.000Z',persistence:{revision:2}},users:[{id:1,companyId:d.company.id,name:'Existing Owner',role:'owner',status:'Active',memberId:null,projectIds:[]}],sessions:[],projects:[]};
 const saved=structuredClone(target),prepared=prepareEmptyDemoTenant(target,{expectedCompanyId:d.company.id});assert.deepEqual(target,saved);assert.deepEqual(prepared.users,target.users);assert.deepEqual(prepared.sessions,target.sessions);assert.equal(prepared.company.persistence.revision,2);assert.equal(prepared.projects.length,3);
+{ // An owner linked by a first-run click (memberId/projectIds) prepares fine: links are stripped in the prepared copy, input untouched.
+  const linked={...target,users:[{...target.users[0],memberId:9,projectIds:[3]}]};
+  const linkedCopy=structuredClone(linked),fixed=prepareEmptyDemoTenant(linked,{expectedCompanyId:d.company.id});
+  assert.deepEqual(linked,linkedCopy,'input tenant is not mutated');
+  assert.equal(fixed.users[0].memberId,null,'stale member link stripped');
+  assert.deepEqual(fixed.users[0].projectIds,[],'stale project links stripped');
+  assert.equal(fixed.users[0].name,'Existing Owner','owner identity and credentials preserved');
+}
 for(const changed of [{...target,projects:[{id:1}]},{...target,company:{...target.company,stripeCustomerId:'cus_example'}},{...target,company:{...target.company,name:'Real Builder'}},{...target,company:{...target.company,demoFixture:'already-seeded'}},{...target,users:[...target.users,{id:2,role:'field'}]},{...target,projectNotesTodos:[{text:'real work'}]}])assert.throws(()=>prepareEmptyDemoTenant(changed,{expectedCompanyId:d.company.id}));
 assert.throws(()=>prepareEmptyDemoTenant(target,{expectedCompanyId:'wrong'}));
 console.log('Synthetic demo: empty-tenant installation guards preserve existing owner/session data and reject populated, payment-linked, mismatched and previously seeded tenants.');
