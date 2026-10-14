@@ -13,7 +13,11 @@ function prepareEmptyDemoTenant(target,{expectedCompanyId,asOf='2026-10-05'}={})
  // (some first-run flows link an operating profile). The seed replaces all
  // operating data and every operating array is verified empty above, so a
  // stale link is stripped in the prepared copy instead of blocking prepare.
- for(const [key,value] of Object.entries(target))if(Array.isArray(value)&&!['users','sessions'].includes(key)&&value.length)throw new Error(`The demo must be empty: ${key} contains records`);
+ // Light "crumb" collections may contain rows from the owner clicking around
+ // the fresh workspace (e.g. a first-run team profile): the seed replaces
+ // them wholesale, so they are wiped rather than blocking prepare. Real work
+ // content (projects, reports, customers, time cards, …) still refuses below.
+ for(const [key,value] of Object.entries(target))if(Array.isArray(value)&&!['users','sessions','team','crews','catalog','auditLog'].includes(key)&&value.length)throw new Error(`The demo must be empty: ${key} contains records`);
  if(target.company.features?.timeCards===false)throw new Error('Enable time cards for the new demo company before preparing it');
  if(target.company.logo)throw new Error('The demo must not contain a real company logo');
  const seed=buildSalesDemo({companyId:expectedCompanyId,asOf});

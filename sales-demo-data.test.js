@@ -77,6 +77,15 @@ const saved=structuredClone(target),prepared=prepareEmptyDemoTenant(target,{expe
   assert.deepEqual(fixed.users[0].projectIds,[],'stale project links stripped');
   assert.equal(fixed.users[0].name,'Existing Owner','owner identity and credentials preserved');
 }
+{ // First-run crumbs (a team profile, audit log) are wiped and replaced by the synthetic crew instead of blocking prepare.
+  const crumb={...target,team:[{id:1,name:'Clicked Around',crew:'',role:'Foreman'}],auditLog:[{action:'Signed in'}]};
+  const fixed=prepareEmptyDemoTenant(crumb,{expectedCompanyId:d.company.id});
+  assert.ok(fixed.team.every(member=>/^DEMO /.test(member.name)),'crumb team replaced by synthetic DEMO crew');
+  assert.ok(fixed.auditLog.length>0,'synthetic audit trail present');
+  assert.ok(fixed.auditLog.every(entry=>/DEMO/i.test(JSON.stringify(entry))),'audit log fully replaced by synthetic entries');
+  assert.equal(fixed.team.some(member=>member.name==='Clicked Around'),false,'no crumb rows survive');
+  assert.equal(fixed.auditLog.some(entry=>JSON.stringify(entry).includes('Signed in')),false,'crumb audit entries do not survive');
+}
 for(const changed of [{...target,projects:[{id:1}]},{...target,company:{...target.company,stripeCustomerId:'cus_example'}},{...target,company:{...target.company,name:'Real Builder'}},{...target,company:{...target.company,demoFixture:'already-seeded'}},{...target,users:[...target.users,{id:2,role:'field'}]},{...target,projectNotesTodos:[{text:'real work'}]}])assert.throws(()=>prepareEmptyDemoTenant(changed,{expectedCompanyId:d.company.id}));
 assert.throws(()=>prepareEmptyDemoTenant(target,{expectedCompanyId:'wrong'}));
 console.log('Synthetic demo: empty-tenant installation guards preserve existing owner/session data and reject populated, payment-linked, mismatched and previously seeded tenants.');
