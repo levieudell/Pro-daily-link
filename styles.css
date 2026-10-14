@@ -813,7 +813,7 @@ button.voice-listening{outline:2px solid #2e6b52;outline-offset:2px;animation:pd
 .msg-bubble small{display:block;font-size:10.5px;opacity:.75;margin-bottom:2px}
 .msg-bubble p{margin:0;font-size:13.5px;line-height:1.45;white-space:pre-wrap}
 .msg-reply-row{display:flex;gap:8px;margin-top:10px}
-.msg-reply-row input{flex:1}
+.msg-reply-row input{flex:1;min-width:0}
 .msg-empty{padding:18px;text-align:center;color:#64726c;font-size:13px}
 .field-messages small{font:600 10px "Oswald",sans-serif;letter-spacing:.08em;color:#8a7a4d}
 .field-msg{display:flex;gap:8px;padding:7px 0;border-top:1px dashed #e5dfc9}
@@ -823,6 +823,13 @@ button.voice-listening{outline:2px solid #2e6b52;outline-offset:2px;animation:pd
 .field-msg.unread strong::after{content:" • new";color:#b8382d;font-size:9.5px;text-transform:uppercase;letter-spacing:.06em}
 .field-msg-reply{display:flex;gap:6px;margin-top:8px}
 .field-msg-reply input{flex:1;min-width:0}
+/* overflow guards: keep the Messages screen inside its cards at any viewport */
+.messages-layout>.panel{min-width:0}
+.msg-new-panel select{width:100%;max-width:100%;min-width:0}
+.msg-thread-item>span{min-width:0}
+.msg-thread-body{overflow-x:hidden}
+.msg-bubble p{overflow-wrap:anywhere}
+.field-messages{min-width:0}
 .dashboard-empty{border:2px dashed #cfd8d3;border-radius:14px;padding:36px 28px;text-align:center;background:#fff;margin:18px 0}
 .dashboard-empty h2{margin:0 0 8px;font-size:20px}
 .dashboard-empty p{margin:0 auto;max-width:520px;color:#4d5a53;font-size:14px;line-height:1.55}

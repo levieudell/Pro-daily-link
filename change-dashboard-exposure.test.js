@@ -81,8 +81,8 @@ async function call(method, route, body, auth = ownerToken) {
     assert.ok(app.includes('coSummary.approvedTotal'), 'revised contract = contract value + approved changes');
     const styles = fs.readFileSync('styles.css', 'utf8');
     assert.ok(styles.includes('.project-co-badge'), 'badges are styled');
-    assert.match(index, /app\.js\?v=20261014-crewsnap/);
-    assert.match(index, /styles\.css\?v=20261014-crewsnap/);
+    assert.match(index, /app\.js\?v=20261014-uifix/);
+    assert.match(index, /styles\.css\?v=20261014-uifix/);
 
     console.log('Change dashboard exposure passed: per-project summaries, pricing-gated amounts, raw-row removal, revised contract, and client contracts.');
   } finally {
