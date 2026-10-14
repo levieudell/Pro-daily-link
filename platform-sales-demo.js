@@ -7,7 +7,7 @@
     if(!button||busy)return;
     const companyId=button.dataset.prepareSalesDemo,originView=currentView,originVersion=viewVersion;
     const current=()=>currentView===originView&&viewVersion===originVersion;
-    if(platformUser?.role!=='platform_owner'||!data.companies.some(c=>c.id===companyId&&c.name==='DEMO | Alder Ridge Builders'))return;
+    if(platformUser?.role!=='platform_owner'||!data.companies.some(c=>c.id===companyId&&['DEMO | Alder Ridge Excavation & Concrete','DEMO | Alder Ridge Builders'].includes(c.name)))return;
     busy=true;button.disabled=true;
     try {
       const preview=await api(`/api/platform/companies/${encodeURIComponent(companyId)}/sales-demo`);

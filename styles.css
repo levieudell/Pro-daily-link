@@ -559,9 +559,9 @@ input:focus-visible,select:focus-visible,textarea:focus-visible{outline:0;box-sh
 .nav-item:active{transform:translateX(1px)}
 .trial-card{border-radius:var(--r-sm)}
 
-/* --- Topbar: glassy sticky header --- */
-.topbar{background:rgba(255,255,255,.86);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px)}
-:root[data-theme="dark"] .topbar{background:rgba(23,27,25,.82)}
+/* --- Topbar: solid sticky header (the translucent blur read as a ghost over long pages) --- */
+.topbar{background:var(--panel,#fff);backdrop-filter:none;-webkit-backdrop-filter:none}
+:root[data-theme="dark"] .topbar{background:var(--panel)}
 
 /* --- Dialogs: softer, deeper --- */
 dialog{border-radius:var(--r-lg);border:1px solid var(--line);box-shadow:var(--elev-3)}
@@ -879,3 +879,6 @@ small{font-size:12px}
 .gantt-bar.is-done{background:#4aa47b;border:1px solid #2e7a55;color:#fff}
 .gantt-today{position:absolute;top:0;bottom:0;width:2px;background:#e05a3a;z-index:2;opacity:.65}
 @media(max-width:760px){.gantt-head,.gantt-row{grid-template-columns:130px 1fr}.project-schedule-gantt-inner{min-width:560px}}
+/* Fixed reporting export rows: three tidy columns, content-sized download buttons */
+#pdl-export-list .customer-project{grid-template-columns:minmax(0,1fr) auto auto;align-items:center;gap:10px}
+#pdl-export-list .customer-project .secondary{width:auto;min-width:0;padding:8px 14px;justify-self:end;white-space:nowrap}

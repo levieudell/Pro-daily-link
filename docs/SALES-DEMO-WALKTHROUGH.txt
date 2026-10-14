@@ -1,37 +1,39 @@
 PRO DAILY LINK SALES DEMO
-DEMO | Alder Ridge Builders
-Prepared October 5, 2026. All operating names, locations, work, approvals and history are fictional.
+DEMO | Alder Ridge Excavation & Concrete
+Prepared October 14, 2026. All operating names, locations, work, approvals and history are fictional.
 
 STATUS
 The dataset is validated against the actual PDL application APIs in an isolated local test. It is not installed in a live tenant. This package creates no login, password, session, permission grant, Stripe record, payment, email, invitation, notification or remote write. Its tenant ID is a fixture identifier, not proof of an existing account.
+The company is a fictional excavation, utilities and concrete contractor. Sitework buyers should see their own world: dirt crews, pipe crews, and a concrete crew, with quantities in CY/LF instead of only SF.
 
 FIVE-MINUTE WALKTHROUGH
 0:00–0:30 | Set the context
-“This is Alder Ridge Builders, a fictional contractor with concrete, framing and interiors crews. We have four weeks of history so you can see what changes over time.”
-Start in Projects or choose This month on Overview. On Monday October 5, This week has no approved work yet; the visible schedule is intentional. For the full historical story use September 7 through October 2 in Production insights.
+“This is Alder Ridge Excavation & Concrete, a fictional sitework contractor with dirt, pipe and concrete crews. We have two weeks of history so you can see what changes over time.”
+Start in Projects or choose This month on Overview. The current week starts empty on purpose; the visible schedule is the week ahead. For the full historical story use September 21 through October 2 in Production insights.
 
 0:30–1:45 | Compare the plan with field production
-Open Projects → DEMO Cedar Grove Clinic → Estimate & actual.
-Slab: 13,200 of 18,000 SF complete; 480 of 720 budget hours used. Installed work earns 528 budget hours, so efficiency is 110%.
-Open DEMO Juniper Townhomes. Approved framing: 11,340 of 20,000 SF using 456 of 720 budget hours. Efficiency is 89.53%. Explain that labor is running ahead of installed work. Open the header-delivery report and its Notes & To-dos to show the recovery action.
-The third project has 8,025 SF approved using 304 hours and 105.59% efficiency.
+Open Projects → DEMO Riverbend Subdivision Phase 2 → Estimate & actual.
+Mass excavation: 1,800 of 2,000 CY complete at 144 of 160 budget hours; structural fill: 1,200 of 1,200 CY at 96 of 96. Earned equals actual, so efficiency is 100%. This is the on-track job.
+Open DEMO Hwy 99 Waterline Replacement. Approved work: 300 of 1,500 LF of trenching and 480 of 1,400 LF of pipe, using 216 hours against 440 budget. Efficiency is 50% — labor is running far ahead of installed work. Open the daily notes: a sandstone lens at station 12+40 is the stated cause. Notes & To-dos carries the recovery action (rent the rock trencher; confirm the district inspector).
+The third project, DEMO Cedar Grove Commercial Pad, is at 100% with footings complete and the slab sequence running ahead.
 Efficiency compares earned budget hours with actual approved labor. It is not percent complete or profit margin.
 
 1:45–2:45 | Show field-to-office review
-Open Daily Reports. There are 60 reports across four weeks: 58 approved and 2 needing review on October 2.
-Open the Juniper report: 660 SF framing, three people, 24 labor hours, signature, notes, next step and recorded submission history. Pending reports do not enter approved production totals.
-After reviewing, approve the two pending dailies. Juniper becomes 12,000 SF / 480 hours / 90% efficiency. Harbor becomes 8,500 SF / 320 hours / 106.25% efficiency.
+Open Daily Reports. There are 30 reports across two weeks: 28 approved and 2 needing review on October 2.
+Open a Hwy 99 report: 60 LF of trench, three people, 24 labor hours, signature, notes, next step and recorded submission history. Pending reports do not enter approved production totals.
+After reviewing, approve the two pending dailies. Hwy 99 pipe becomes 600 of 1,400 LF; Cedar Grove slab gains another 600 SF.
 These actions change the demo dataset. Use a verified reset process or a separate prepared copy for another demonstration; do not imply the package automatically resets itself.
 
 2:45–4:00 | Trace time and fixed period records
-Open Time cards and the September 28–October 4 period. It has 280 approved hours, four submitted cards (32 hours), and one draft card (8 hours). No scheduled historical entries are missing.
-Review the draft for DEMO Finley Hart on October 2 and submit it. Review and approve the five outstanding cards. The period then contains 320 approved hours and is ready to end and export.
-Show one of the previous three closed weekly periods. Each has 320 approved hours with a fixed version-1 CSV export. The synthetic exports match their source records and are unchanged.
+Open Time cards and the September 28–October 4 period. It has 312 approved hours, five submitted cards (40 hours), and one draft card (8 hours). No scheduled historical entries are missing.
+Review the draft for DEMO Dev Khatri on October 2 and submit it. Review and approve the five outstanding cards. The period then contains 360 approved hours and is ready to end and export.
+Show the closed September 21–27 period: 360 approved hours with a fixed version-1 CSV export. The synthetic export matches its source records and is unchanged.
 An hours export is an audit artifact, not a payroll payment or payroll-system integration.
 
 4:00–5:00 | Plan the next shift
-Open Schedule for October 5–9: three crews, eight people, three jobs.
-Open Juniper → Notes & To-dos: header staging is the specific follow-up prompted by the production trend. Show the completed clinic inspection task and one open framing task.
+Open Schedule for the current week: three crews, nine people, three jobs.
+Point out the field signals without opening every page: the action center shows a scheduled day with no daily (September 17, mass excavation), the at-risk flag on Hwy 99, the field-flagged utility strike (CO-101, Potential), the submitted rock-excavation T&M (CO-102), and the approved owner-added sidewalk (CO-103). The September 23 daily records a 45-minute late start (pump-trailer flat).
+Open Projects → any project → Photos: six DEMO placeholder photos render from local data, no remote imagery.
 Close: “The point is to connect the estimate, the daily field record, review, approved time and the next schedule decision.”
 
 CONTENTS
@@ -45,7 +47,7 @@ prepare-sales-demo.js: offline package writer; place under scripts/ in the PDL r
 
 SECURE LIVE ACCESS PATH
 1. First verify whether the owner already has authorized ordinary access to a separately owned demo workspace. Do not reset Northstar, Sample Builders or an internal test account without verifying their purpose and ownership.
-2. If none exists, the owner creates a separate company named exactly DEMO | Alder Ridge Builders using normal signup and enters their own password. The owner must accept the applicable linked terms. No credentials are included here.
+2. If none exists, the owner creates a separate company named exactly DEMO | Alder Ridge Excavation & Concrete using normal signup and enters their own password. (The legacy name DEMO | Alder Ridge Builders is still accepted so older demo companies keep working.) The owner must accept the applicable linked terms. No credentials are included here.
 3. After the exact tenant ID and empty state are verified, an authorized platform-owner operation must install the fixture inside normal tenant concurrency, persistence and backup controls. The included preparation function rejects nonempty tenants, billing links, multiple users, ID mismatch, or an already seeded fixture. It performs no write by itself. The guarded Prepare sales demo button is included in the reviewed initializer release; it becomes available only after that release is deployed.
 4. Keep the tenant marked demo=true, billingExempt=true, planPrice=0, with no Stripe customer or subscription link. Preserve the owner's existing login. Do not copy owner credentials to another account or manufacture support access.
 5. Verify the live app with that owner, counts and totals against summary.json, then verify persistence after reload. Only then share its actual app URL as ready. Browser, live access and production persistence remain unverified by this package.
