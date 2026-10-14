@@ -1311,8 +1311,10 @@ async function api(req,res,url){
     const assignToMember = async member => {
       const memberId = Number(member.id);
       if (req.auth?.user?.role === 'project_manager' && !managerAssignmentAllowed(db, req.auth.user, { projectId: task.projectId, memberIds: [memberId] })) return { forbidden: true };
+      // A picked day before the task starts means "start at the beginning" —
+      // the task does not exist before its first day, so never book earlier.
       const from = scheduleAvailability.validDate(input.fromDate) ? String(input.fromDate).slice(0, 10) : task.startDate;
-      const first = new Date(`${from}T12:00:00Z`), last = new Date(`${task.endDate}T12:00:00Z`);
+      const first = new Date(`${from < task.startDate ? task.startDate : from}T12:00:00Z`), last = new Date(`${task.endDate}T12:00:00Z`);
       if (Number.isNaN(+first) || Number.isNaN(+last) || last < first) return { error: 'Pick a day on or before the task ends' };
       if ((last - first) / 86400000 > 90) return { error: 'Schedule ranges can be up to 90 days' };
       const dates = [];
