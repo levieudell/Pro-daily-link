@@ -84,6 +84,8 @@ const aiUsage = require('./ai-usage');
   assert.match(platformJs, /if\(name==='ai'&&typeof loadAIUsageView==='function'\)loadAIUsageView\(\)/);
   const viewJs = fs.readFileSync(path.join(__dirname, 'platform-ai.js'), 'utf8');
   assert.match(viewJs, /\/api\/platform\/ai-usage/);
+  const { isPublicFile } = require('./public-file-policy');
+  assert.equal(isPublicFile(__dirname, path.join(__dirname, 'platform-ai.js')), true, 'the server must actually serve the view script (public-file-policy allowlist)');
 }
 
 // --- API: owner-gated, company names resolved, assistant null offline -------
