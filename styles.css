@@ -795,3 +795,40 @@ small{font-size:12px}
 .estimate-row.header{font-size:11px}
 .assignment-hours{font-size:11px}
 .schedule-empty{font-size:11px}
+
+/* Project schedule 2026: timeline view, forecast banner, assignees, status tints */
+.project-schedule-view-toggle{display:inline-flex;border:1px solid var(--line);border-radius:9px;overflow:hidden;flex:none}
+.project-schedule-view-toggle button{border:0;background:#fff;padding:7px 14px;font-size:12px;font-weight:700;color:var(--muted)}
+.project-schedule-view-toggle button.active{background:#10251e;color:#fff}
+.project-schedule-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;flex-wrap:wrap}
+.project-schedule-forecast{display:flex;gap:4px 14px;align-items:baseline;flex-wrap:wrap;margin:0 0 12px;padding:10px 14px;border-radius:12px;font-size:13px;background:#eef4f0;border:1px solid #d3e4da}
+.project-schedule-forecast strong{font-size:13px}
+.project-schedule-forecast span{color:#4d5a53}
+.project-schedule-forecast.is-ahead{background:#e8f7ef;border-color:#bfe6cf}
+.project-schedule-forecast.is-behind{background:#fdf1ec;border-color:#f2c4ad}
+.project-schedule-forecast.is-behind strong{color:#a13a2b}
+.project-schedule-track.is-progress i{background:linear-gradient(90deg,#d98a3d,#b87518)}
+.project-schedule-track.is-done i{background:linear-gradient(90deg,#3f9a6d,#2e7a55)}
+.project-schedule-gantt{border:1px solid var(--line);border-radius:12px;overflow-x:auto;background:#fff}
+.project-schedule-gantt-inner{min-width:680px}
+.gantt-head{display:grid;grid-template-columns:210px 1fr;align-items:stretch;position:sticky;top:0;background:#f7f6f2;border-bottom:1px solid var(--line);z-index:2}
+.gantt-corner{padding:8px 10px;font-size:10px;font-weight:800;color:var(--muted);letter-spacing:.06em;display:flex;align-items:flex-end}
+.gantt-months{display:flex}
+.gantt-month{flex:1 0 0;text-align:center;font-size:9.5px;font-weight:800;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;border-left:1px solid var(--line);padding:3px 0;overflow:hidden;white-space:nowrap}
+.gantt-days{display:flex}
+.gantt-day{flex:1;display:grid;justify-items:center;padding:2px 0;font-style:normal;border-left:1px solid #eef0ee}
+.gantt-day small{font-size:8.5px;color:#98a5a0}
+.gantt-day b{font-size:10px;font-weight:600;color:#43514c}
+.gantt-day.gantt-weekend{background:#f2f0ea}
+.gantt-row{display:grid;grid-template-columns:210px 1fr;align-items:stretch;border-bottom:1px solid var(--line)}
+.gantt-row:last-child{border-bottom:0}
+.gantt-row-label{padding:8px 10px;min-width:0}
+.gantt-row-label strong{display:block;font-size:12.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.gantt-row-label small{display:block;font-size:10.5px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.gantt-row-track{position:relative;display:flex;min-height:40px}
+.gantt-bar{position:absolute;top:8px;bottom:8px;border-radius:6px;font-size:10px;font-weight:800;display:flex;align-items:center;justify-content:center;min-width:14px;z-index:1;overflow:hidden}
+.gantt-bar.is-todo{background:#d7e4f0;border:1px solid #a9c4da;color:#28455e}
+.gantt-bar.is-progress{background:#f4c08a;border:1px solid #d98a3d;color:#5c3a10}
+.gantt-bar.is-done{background:#4aa47b;border:1px solid #2e7a55;color:#fff}
+.gantt-today{position:absolute;top:0;bottom:0;width:2px;background:#e05a3a;z-index:2;opacity:.65}
+@media(max-width:760px){.gantt-head,.gantt-row{grid-template-columns:130px 1fr}.project-schedule-gantt-inner{min-width:560px}}
