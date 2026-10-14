@@ -1,4 +1,8 @@
 'use strict';
+// Windows cannot honor POSIX modes: there the file comes back 0o666.
+// Assert owner-readability there and the exact mode everywhere else.
+function expectMode600(file){const mode=fs.statSync(file).mode&0o777;if(process.platform==='win32')assert.ok(mode&0o400,'owner-readable (POSIX modes not enforceable on Windows)');else assert.equal(mode,0o600)}
+
 const assert=require('node:assert/strict'),fs=require('node:fs'),os=require('node:os'),path=require('node:path'),crypto=require('node:crypto');
 const {createSalesDemoHandler}=require('./sales-demo-route');
 const {COMPANY_ID}=require('./sales-demo-data');
@@ -37,7 +41,7 @@ function emptyTenant(id=COMPANY_ID){return {company:{id,name:'DEMO | Alder Ridge
   const saved=await request(route,{method:'POST',body:JSON.stringify(input)});assert.equal(saved.status,201);assert.equal(saved.data.prepared,true);assert.equal(saved.data.url,'/app?tenant='+COMPANY_ID);
   let seeded=JSON.parse(fs.readFileSync(targetFile));assert.deepEqual(seeded.users,target.users);assert.deepEqual(seeded.sessions,target.sessions);assert.equal(seeded.company.billingExempt,true);assert.equal(seeded.company.demo,true);assert.equal(seeded.company.features.timeCards,true);
   const overview=await request('/api/platform/overview');assert.equal(overview.data.companies.find(c=>c.id===COMPANY_ID).demoResetAvailable,false);
-  const files=fs.readdirSync(path.join(dir,'.demo-recovery'));assert.equal(files.length,1);assert.deepEqual(JSON.parse(fs.readFileSync(path.join(dir,'.demo-recovery',files[0]))),target);assert.equal(fs.statSync(path.join(dir,'.demo-recovery',files[0])).mode&0o777,0o600);
+  const files=fs.readdirSync(path.join(dir,'.demo-recovery'));assert.equal(files.length,1);assert.deepEqual(JSON.parse(fs.readFileSync(path.join(dir,'.demo-recovery',files[0]))),target);expectMode600(path.join(dir,'.demo-recovery',files[0]));
   assert.deepEqual(JSON.parse(fs.readFileSync(primaryFile)),primary);const livePlatform=JSON.parse(fs.readFileSync(path.join(dir,'platform.json')));assert.deepEqual(livePlatform.users,platform.users);assert.deepEqual(livePlatform.sessions,platform.sessions);
   assert.equal((await fetch(base+'/.demo-recovery/'+files[0])).status,404);
   // A retry must preserve edits and the established owner, not reinstall seed.
