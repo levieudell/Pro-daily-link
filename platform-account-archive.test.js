@@ -52,7 +52,13 @@ const { server } = require('./server');
   assert.match(platformJs, /\/api\/platform\/companies\/\$\{encodeURIComponent\(e\.target\.dataset\.archiveAccount\)\}\/archive/);
   const serverSrc = fs.readFileSync(path.join(__dirname, 'server.js'), 'utf8');
   assert.ok(serverSrc.includes("url.pathname.match(/^\\/api\\/platform\\/companies\\/([^/]+)\\/archive$/)"), 'archive route exists');
+  assert.ok(serverSrc.includes("url.pathname.match(/^\\/api\\/platform\\/companies\\/([^/]+)\\/unarchive$/)"), 'unarchive route exists');
   assert.match(serverSrc, /!tenant\.company\?\.archivedDuplicate&&\(tenant\.users\|\|\[\]\)\.some/, 'login email lookup skips archived tenants');
+  assert.match(serverSrc, /archived:Boolean\(company\.archivedDuplicate\)/, 'console payload flags archived accounts');
+  const html = fs.readFileSync(path.join(__dirname, 'platform.html'), 'utf8');
+  assert.match(html, /<option value="archived">Archived<\/option>/, 'scope filter exposes archived accounts');
+  const platformCss = fs.readFileSync(path.join(__dirname, 'platform.css'), 'utf8');
+  assert.match(platformCss, /\.customer-card\.archived\{opacity:\.6\}/, 'archived cards render muted');
 }
 
 server.listen(0, async () => {
@@ -99,18 +105,40 @@ server.listen(0, async () => {
     const platformNow = JSON.parse(fs.readFileSync(platformFile, 'utf8'));
     assert.ok((platformNow.auditEvents || []).some(e => e.action === 'company_archived' && e.reason === 'Test QA Company'), 'archive is audited');
 
-    // After: gone from the console, and login lookup no longer finds the company.
+    // After: still in the payload (findable under the Archived scope) but flagged,
+    // and login lookup no longer finds the company.
     overview = await call('/api/platform/overview');
-    assert.ok(!overview.data.companies.some(c => c.name === 'Test QA Company'), 'archived tenant hidden from the console');
+    const archivedRow = overview.data.companies.find(c => c.name === 'Test QA Company');
+    assert.ok(archivedRow, 'archived tenant remains in the payload for the Archived scope');
+    assert.equal(archivedRow.archived, true, 'archived flag is set');
+    const activeRow = overview.data.companies.find(c => c.name === 'Acme Builders');
+    assert.equal(activeRow.archived, false, 'active accounts are not flagged');
     lookup = await fetch(base + '/api/auth/company', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email: 'tester@example.com' }) }).then(r => r.json());
     assert.equal(lookup.companyId, null, 'archived tenant users cannot sign in');
 
-    // Idempotent: archiving again reports alreadyArchived, no duplicate audit.
+    // Unarchive restores access and clears the flag.
+    result = await call(`/api/platform/companies/${tenantId}/unarchive`, { method: 'POST', body: {} });
+    assert.equal(result.response.status, 200, JSON.stringify(result.data));
+    assert.equal(result.data.unarchived, true);
+    const restored = JSON.parse(fs.readFileSync(path.join(tenantDir, `${tenantId}.json`), 'utf8'));
+    assert.equal(restored.company.archivedDuplicate, false, 'unarchive clears the flag on disk');
+    overview = await call('/api/platform/overview');
+    assert.equal(overview.data.companies.find(c => c.name === 'Test QA Company').archived, false);
+    lookup = await fetch(base + '/api/auth/company', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email: 'tester@example.com' }) }).then(r => r.json());
+    assert.equal(lookup.companyId, tenantId, 'unarchived users can sign in again');
+    const platformAfterRestore = JSON.parse(fs.readFileSync(platformFile, 'utf8'));
+    assert.ok((platformAfterRestore.auditEvents || []).some(e => e.action === 'company_unarchived'), 'unarchive is audited');
+
+    // Re-archive works after an unarchive, then reports alreadyArchived without
+    // writing duplicate audit events.
+    result = await call(`/api/platform/companies/${tenantId}/archive`, { method: 'POST', body: {} });
+    assert.equal(result.response.status, 200);
+    assert.equal(result.data.archived, true, 're-archive after unarchive succeeds');
     result = await call(`/api/platform/companies/${tenantId}/archive`, { method: 'POST', body: {} });
     assert.equal(result.response.status, 200);
     assert.equal(result.data.alreadyArchived, true);
     const auditCount = (JSON.parse(fs.readFileSync(platformFile, 'utf8')).auditEvents || []).filter(e => e.action === 'company_archived').length;
-    assert.equal(auditCount, 1, 'repeat archive does not write a second audit event');
+    assert.equal(auditCount, 2, 'one audit event per archive action, no duplicates');
 
     console.log('platform-account-archive tests passed');
   } catch (error) {
