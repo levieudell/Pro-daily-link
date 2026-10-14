@@ -6,7 +6,7 @@ const conversation = require('./project-assistant-conversation');
 const { digest } = require('./project-assistant-budget');
 const FIELDS = ['action', 'project', 'people', 'date', 'startDate', 'endDate', 'weekdays', 'start', 'end', 'activity', 'instructions', 'text', 'deadline'];
 const ACTIONS = ['schedule', 'schedule_batch', 'note', 'todo'];
-const PRICE = Object.freeze({ model: 'gpt-5.4-mini', input: 0.75, output: 4.5, maxInput: 400000, expires: Date.parse('2026-10-14T00:00:00Z'), source: 'https://developers.openai.com/api/docs/models/gpt-5.4-mini' });
+const PRICE = Object.freeze({ model: 'gpt-5.4-mini', input: 0.75, output: 4.5, maxInput: 400000, expires: Date.parse('2026-11-13T00:00:00Z'), source: 'https://developers.openai.com/api/docs/models/gpt-5.4-mini' });
 const safeText = text => typeof text === 'string' && text.length <= 2000 && !/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/.test(text);
 const copy = value => JSON.parse(JSON.stringify(value));
 const grounded = (value, text) => value == null || safeText(value) && names.normalize(text).includes(names.normalize(value)) && Boolean(names.normalize(value));
