@@ -36,9 +36,22 @@ vm.createContext(context);vm.runInContext(source.split('\n').find(line=>line.sta
   // A session replacement after the report save must not start another user's upload.
   node('#report-modal').closed=undefined;context.editingReportId=null;context.currentUser={id:1,name:'QA'};let resolveSave;context.api=()=>new Promise(resolve=>resolveSave=resolve);let uploadCalls=0;context.uploadPhotos=async()=>{uploadCalls++;return[]};const saving=context.saveDailyReport('Draft');await new Promise(resolve=>setImmediate(resolve));context.currentUser={id:2,name:'Other user'};resolveSave({id:11});await saving;assert.equal(uploadCalls,0);assert.equal(context.editingReportId,null);assert.equal(node('#report-modal').closed,undefined);
   context.currentUser={id:1,name:'QA'};context.reportAnalyzeSequence=1;context.editingReportId=null;const changedReport=context.saveDailyReport('Draft');await new Promise(resolve=>setImmediate(resolve));context.reportAnalyzeSequence=2;context.editingReportId=22;resolveSave({id:11});await changedReport;assert.equal(context.editingReportId,22,'late saved report must not retarget a different open report');assert.equal(uploadCalls,0);
-  // Existing upload semantics fail explicitly offline; no background queue is claimed.
+  // Offline uploads now stash photos in the device queue instead of failing.
   const upload=source.split('\n').find(line=>line.startsWith('async function uploadPhotos('));
-  const offline=vm.createContext({...context,navigator:{onLine:false},preferredLanguage:'en'});vm.runInContext(upload,offline);
-  await assert.rejects(offline.uploadPhotos({files:[{name:'synthetic.jpg'}],project:0}),/need a connection/);
-  console.log('Photo retry tests passed: production save preserves server identity, retries with PATCH, keeps device selection, and explicitly rejects offline upload (VM fixture).');
+  const queued=[];let enqueueCalls=0;
+  const offline=vm.createContext({...context,navigator:{onLine:false},preferredLanguage:'en',
+    encodeFiles:async files=>files.map(file=>({name:file.name,type:'image/jpeg',lastModified:1,data:'data:image/jpeg;base64,x'})),
+    photoTags:()=>['site'],notify:()=>{},
+    window:{PDLOffline:{enqueuePhotos:async payload=>{enqueueCalls++;queued.push(payload);return{tag:'pdlq-test'}}}}});
+  vm.runInContext(upload,offline);
+  await assert.rejects(offline.uploadPhotos({files:[{name:'synthetic.jpg'}],project:0}),/saved on this device/);
+  assert.equal(enqueueCalls,1,'offline upload stashes the photos in the device queue');
+  assert.equal(queued[0].reportId,null);assert.equal(queued[0].files.length,1);
+  // Without the queue module the honest fallback remains: reject, notes are saved.
+  const bare=vm.createContext({...context,navigator:{onLine:false},preferredLanguage:'en',
+    encodeFiles:async files=>files.map(file=>({name:file.name,type:'image/jpeg',lastModified:1,data:'data:x'})),
+    photoTags:()=>[],notify:()=>{},window:{}});
+  vm.runInContext(upload,bare);
+  await assert.rejects(bare.uploadPhotos({files:[{name:'synthetic.jpg'}],project:0}),/need a connection/);
+  console.log('Photo retry tests passed: production save preserves server identity, retries with PATCH, keeps device selection, and queues offline photos on the device (VM fixture).');
 })().catch(error=>{console.error(error);process.exitCode=1});
