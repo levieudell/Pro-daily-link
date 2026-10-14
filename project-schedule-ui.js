@@ -311,10 +311,12 @@ function renderSchedulePane(pane, project, tasks, editingId){
         event.preventDefault();
         event.stopPropagation();
         const cell = typeof event.target.closest === 'function' ? event.target.closest('[data-schedule-date]') : null;
+        const crewRow = !cell && typeof event.target.closest === 'function' ? event.target.closest('[data-schedule-crew-drop]') : null;
         document.querySelectorAll('.drag-over').forEach(element => element.classList.remove('drag-over'));
         const taskId = draggedTaskId;
         draggedTaskId = null;
-        if (cell) assignTaskTo(taskId, Number(cell.dataset.scheduleMember), cell.dataset.scheduleDate);
+        if (cell) assignTaskTo(taskId, { memberId: Number(cell.dataset.scheduleMember) }, cell.dataset.scheduleDate);
+        else if (crewRow) assignTaskTo(taskId, { crew: crewRow.dataset.scheduleCrewDrop }, firstDay);
       }, true);
     }
     section.querySelectorAll('.schedule-task-chip').forEach(chip => {
@@ -336,7 +338,7 @@ function renderSchedulePane(pane, project, tasks, editingId){
       const select = section.querySelector(`[data-task-assign-member="${button.dataset.taskAssignGo}"]`);
       const memberId = Number(select && select.value);
       if (!memberId) return notify('Pick a person first');
-      assignTaskTo(Number(button.dataset.taskAssignGo), memberId, firstDay);
+      assignTaskTo(Number(button.dataset.taskAssignGo), { memberId }, firstDay);
     });
   }
 
@@ -379,14 +381,14 @@ function renderSchedulePane(pane, project, tasks, editingId){
   function attachLaneTouchDrag(){
     if (laneTouchAttached || typeof PDLScheduleTouchDrag === 'undefined' || !PDLScheduleTouchDrag || typeof PDLScheduleTouchDrag.attach !== 'function') return;
     laneTouchAttached = true;
-    PDLScheduleTouchDrag.attach(document, { blockSelector: '[data-schedule-task]', canManage: canAssignTasks, onMove: work => { if (work.taskId) assignTaskTo(work.taskId, work.targetMemberId, work.date); } });
+    PDLScheduleTouchDrag.attach(document, { blockSelector: '[data-schedule-task]', canManage: canAssignTasks, onMove: work => { if (work.taskId) assignTaskTo(work.taskId, { memberId: work.targetMemberId }, work.date); } });
   }
 
-  async function assignTaskTo(taskId, memberId, fromDate){
-    if (!canAssignTasks() || !taskId || !memberId) return;
+  async function assignTaskTo(taskId, target, fromDate){
+    if (!canAssignTasks() || !taskId || !target || (!target.memberId && !target.crew)) return;
     const task = (laneTasksCache || []).find(item => Number(item.id) === Number(taskId));
     try {
-      const payload = await api(`/api/project-tasks/${taskId}/assign`, { method: 'POST', body: JSON.stringify({ memberId, fromDate }) });
+      const payload = await api(`/api/project-tasks/${taskId}/assign`, { method: 'POST', body: JSON.stringify(target.crew ? { crew: target.crew, fromDate } : { memberId: target.memberId, fromDate }) });
       const state = await api('/api/state');
       if (typeof assignments !== 'undefined') assignments = state.assignments || [];
       laneTasksCache = state.projectTasks || [];
@@ -396,7 +398,8 @@ function renderSchedulePane(pane, project, tasks, editingId){
       const notes = [`${payload.created} day${Number(payload.created) === 1 ? '' : 's'} scheduled`];
       if (payload.merged) notes.push(`${payload.merged} joined an existing shift`);
       if (payload.skipped) notes.push(`${payload.skipped} skipped (time off or another job)`);
-      notify(`${payload.memberName} is on “${task ? task.name : 'the task'}” — ${notes.join(', ')}`);
+      const who = target.crew ? `Crew ${payload.crew} (${payload.members} ${Number(payload.members) === 1 ? 'person' : 'people'})` : payload.memberName;
+      notify(`${who} is on “${task ? task.name : 'the task'}” — ${notes.join(', ')}`);
     } catch (error) {
       notify(error.message);
     }
@@ -412,7 +415,7 @@ function renderSchedulePane(pane, project, tasks, editingId){
     };
   }
   window.paintProjectScheduleTab = paintProjectScheduleTab;
-  window.PDLProjectScheduleUI = { assignTaskTo, paintUnassignedLane };
+  window.PDLProjectScheduleUI = { assignTaskTo, paintUnassignedLane, get draggingTaskId(){ return draggedTaskId; } };
   wrapRenderSchedule();
   attachLaneTouchDrag();
 })();

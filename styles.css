@@ -729,6 +729,19 @@ body.schedule-touch-dragging{overflow:hidden;-webkit-user-select:none;user-selec
 :root[data-theme="dark"] .schedule-task-chip:hover{border-color:#4c8a6d;box-shadow:0 4px 14px #0006}
 :root[data-theme="dark"] .schedule-task-chip-main strong{color:#e6efe9}
 :root[data-theme="dark"] .schedule-unassigned-head h3{color:#cde3d8}
+/* Crew group headers on the team schedule board (drag-and-drop crew booking) */
+.schedule-crew-row{grid-column:1/-1;display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;margin:14px 0 4px;padding:7px 12px;border:1px dashed transparent;border-radius:10px;background:#eef2ef;transition:border-color .15s,background .15s,box-shadow .15s}
+.schedule-crew-row strong{font:600 11px "Oswald",sans-serif;letter-spacing:.1em;text-transform:uppercase;color:#17382d}
+.schedule-crew-row span{font-size:12px;color:#64726c}
+.schedule-crew-row.is-muted{background:transparent;padding:6px 12px}
+.schedule-crew-row.is-muted strong{color:#98a5a0}
+.schedule-crew-row.drag-over{border-color:#2e6b52;background:#e2efe8;box-shadow:0 0 0 3px #2e6b5226}
+@media(max-width:760px){.schedule-crew-row{padding:6px 10px}.schedule-crew-row span{display:none}}
+:root[data-theme="dark"] .schedule-crew-row{background:#1a2620}
+:root[data-theme="dark"] .schedule-crew-row strong{color:#cde3d8}
+:root[data-theme="dark"] .schedule-crew-row.is-muted{background:transparent}
+:root[data-theme="dark"] .schedule-crew-row.is-muted strong{color:#4c5f57}
+:root[data-theme="dark"] .schedule-crew-row.drag-over{border-color:#4c8a6d;background:#1d332a;box-shadow:0 0 0 3px #4c8a6d33}
 .voice-status{margin:8px 0 0;font-size:13px;color:#64726c;min-height:18px}
 .voice-status.voice-listening{color:#17382d;font-weight:600}
 .voice-status.voice-listening:before{content:"🎙 "}

@@ -178,6 +178,72 @@ const { server } = require('./server');
     globalThis.fetch = realFetch;
     delete process.env.RESEND_API_KEY;
 
+    // Crew booking: dropping a task on a crew header books every active field
+    // member of that crew, claims the task for the crew (no memberIds), and
+    // aggregates the per-member results. Crew A is Chloe + Andi.
+    patchDb(current => {
+      current.projects.push({ id: 104, name: 'Crew Job', customer: 'Test Customer', site: 'Site D', startDate: '2026-12-14', endDate: '2026-12-31', status: 'Active' });
+    });
+    const crewTask = await call('POST', '/api/projects/104/tasks', { name: 'Crew pour', durationDays: 2 });
+    const crewTaskId = crewTask.data.tasks[0].id;
+    const crew = await call('POST', `/api/project-tasks/${crewTaskId}/assign`, { crew: 'A' });
+    assert.equal(crew.status, 200);
+    assert.equal(crew.data.crew, 'A');
+    assert.equal(crew.data.members, 2, 'both active field members are booked');
+    assert.deepEqual(crew.data.memberNames.sort(), ['Andi', 'Chloe']);
+    assert.equal(crew.data.created, 2, 'the first member creates one row per day');
+    assert.equal(crew.data.merged, 2, 'the second member merges into those same-project shifts');
+    assert.equal(crew.data.skipped, 0);
+    const claimed = reload().projectTasks.find(t => t.id === crewTaskId);
+    assert.equal(claimed.crew, 'A', 'the task is claimed by the crew');
+    assert.deepEqual(claimed.memberIds, [], 'crew ownership carries no memberIds');
+    for (const memberId of [7, 8]) {
+      const dates = reload().assignments.filter(a => a.projectId === 104 && a.memberIds.includes(memberId)).map(a => a.date).sort();
+      assert.deepEqual(dates, ['2026-12-14', '2026-12-15'], `member ${memberId} holds both days`);
+    }
+    const crewRows = reload().assignments.filter(a => a.projectId === 104);
+    assert.equal(crewRows.length, 2, 'both members share one shift row per day');
+    for (const row of crewRows) assert.deepEqual(row.memberIds, [7, 8]);
+
+    // Office-role members in the crew name are excluded from a crew booking.
+    patchDb(current => {
+      current.team.push({ id: 9, name: 'Office Pam', crew: 'A', role: 'office manager', status: 'Active' });
+      current.team.push({ id: 10, name: 'Inactive Ian', crew: 'A', role: 'laborer', status: 'Inactive' });
+      current.projects.push({ id: 105, name: 'Crew Filter Job', customer: 'Test Customer', site: 'Site E', startDate: '2026-12-17', endDate: '2026-12-31', status: 'Active' });
+    });
+    const filterTask = await call('POST', '/api/projects/105/tasks', { name: 'Filtered pour', durationDays: 1 });
+    const filterTaskId = filterTask.data.tasks[0].id;
+    const filtered = await call('POST', `/api/project-tasks/${filterTaskId}/assign`, { crew: 'A' });
+    assert.equal(filtered.status, 200);
+    assert.equal(filtered.data.members, 2, 'the office-role and inactive members are not booked');
+    const filteredRows = reload().assignments.filter(a => a.projectId === 105);
+    assert.ok(filteredRows.every(a => a.memberIds.every(id => id !== 9 && id !== 10)), 'Pam and Ian hold no rows');
+
+    // Unknown crew and a crew with no field members are rejected; field role stays forbidden.
+    assert.equal((await call('POST', `/api/project-tasks/${filterTaskId}/assign`, { crew: 'No Such Crew' })).status, 400);
+    patchDb(current => current.team.push({ id: 11, name: 'Only Admin', crew: 'B', role: 'administrator', status: 'Active' }));
+    assert.equal((await call('POST', `/api/project-tasks/${filterTaskId}/assign`, { crew: 'B' })).status, 400, 'a crew with no active field members is rejected');
+    assert.equal((await call('POST', `/api/project-tasks/${crewTaskId}/assign`, { crew: 'A' }, fieldToken)).status, 403);
+
+    // An explicit person assignment supersedes crew ownership: a member outside
+    // the booked crew takes the task over, clearing the crew claim.
+    patchDb(current => {
+      current.team.push({ id: 12, name: 'Sam', crew: 'C', role: 'laborer', status: 'Active' });
+    });
+    const soloTaskResp = await call('POST', '/api/projects/104/tasks', { name: 'Solo takeover', durationDays: 1, predecessorIds: [crewTaskId] });
+    const soloTaskId = soloTaskResp.data.tasks.find(t => t.name === 'Solo takeover').id;
+    const crewBooked = await call('POST', `/api/project-tasks/${soloTaskId}/assign`, { crew: 'A' });
+    assert.equal(crewBooked.status, 200);
+    assert.equal(reload().projectTasks.find(t => t.id === soloTaskId).crew, 'A');
+    const solo = await call('POST', `/api/project-tasks/${soloTaskId}/assign`, { memberId: 12 });
+    assert.equal(solo.status, 200);
+    const soloTask = reload().projectTasks.find(t => t.id === soloTaskId);
+    assert.deepEqual(soloTask.memberIds, [12]);
+    assert.ok(!('crew' in soloTask), 'person assignment clears the crew claim');
+    assert.ok(reload().assignments.some(a => a.projectId === 104 && a.memberIds.includes(12)), 'Sam holds the task day');
+    // Chloe and Andi keep their originally booked day — a takeover adds, it does not erase.
+    assert.ok(reload().assignments.some(a => a.projectId === 104 && a.memberIds.includes(7)), 'Chloe keeps her booked day');
+
     // Gates: field role, unknown task, unknown member, and a fromDate past the end.
     assert.equal((await call('POST', `/api/project-tasks/${task1}/assign`, { memberId: 7 }, fieldToken)).status, 403);
     assert.equal((await call('POST', '/api/project-tasks/999/assign', { memberId: 7 })).status, 404);
