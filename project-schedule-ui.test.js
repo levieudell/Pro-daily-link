@@ -108,7 +108,7 @@ assert.match(ui, /target\.crew \? \{ crew: target\.crew, fromDate \} : \{ member
 assert.match(ui, /closest\('\[data-schedule-crew-drop\]'\)/, 'the lane drop listener accepts crew group headers');
 assert.match(ui, /Crew \$\{payload\.crew\}/, 'crew bookings name the crew in the confirmation');
 assert.match(server, /input\.crew != null && String\(input\.crew\)\.trim\(\) !== ''/, 'assign endpoint accepts a whole crew');
-assert.match(server, /task\.memberIds = \[\];\s*\n?\s*task\.assignedAt = now;\s*\n?\s*task\.assignedBy = req\.auth\?\.user\.name/, 'crew booking claims the task for the crew without memberIds');
+assert.match(server, /task\.memberIds = bookedIds;\s*\n?\s*task\.assignedAt = now;\s*\n?\s*task\.assignedBy = req\.auth\?\.user\.name/, 'crew booking snapshots the booked members onto the task');
 assert.match(server, /officeLike/, 'office-role members are excluded from crew bookings');
 assert.match(server, /That crew has no active field members/, 'a crewless crew is rejected with a plain message');
 const app = fs.readFileSync('app.js', 'utf8');

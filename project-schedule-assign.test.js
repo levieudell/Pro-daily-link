@@ -188,7 +188,8 @@ const { server } = require('./server');
     delete process.env.RESEND_API_KEY;
 
     // Crew booking: dropping a task on a crew header books every active field
-    // member of that crew, claims the task for the crew (no memberIds), and
+    // member of that crew, claims the task for the crew, and snapshots the
+    // booked members as the task's starting assignment. Crew A is Chloe + Andi.
     // aggregates the per-member results. Crew A is Chloe + Andi.
     patchDb(current => {
       current.projects.push({ id: 104, name: 'Crew Job', customer: 'Test Customer', site: 'Site D', startDate: '2026-12-14', endDate: '2026-12-31', status: 'Active' });
@@ -205,7 +206,8 @@ const { server } = require('./server');
     assert.equal(crew.data.skipped, 0);
     const claimed = reload().projectTasks.find(t => t.id === crewTaskId);
     assert.equal(claimed.crew, 'A', 'the task is claimed by the crew');
-    assert.deepEqual(claimed.memberIds, [], 'crew ownership carries no memberIds');
+    assert.deepEqual([...claimed.memberIds].sort((a, b) => a - b), [7, 8], 'crew drop snapshots the booked members as the starting assignment');
+    assert.deepEqual(crew.data.memberIds.slice().sort((a, b) => a - b), [7, 8], 'the response carries the snapshot too');
     for (const memberId of [7, 8]) {
       const dates = reload().assignments.filter(a => a.projectId === 104 && a.memberIds.includes(memberId)).map(a => a.date).sort();
       assert.deepEqual(dates, ['2026-12-14', '2026-12-15'], `member ${memberId} holds both days`);

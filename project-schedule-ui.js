@@ -11,8 +11,8 @@ let scheduleView = 'table';
   function memberNames(ids){ return (ids || []).map(id => (team || []).find(m => Number(m.id) === Number(id))?.name).filter(Boolean); }
   function assigneeLabel(task){
     const people = memberNames(task.memberIds);
+    if (task.crew) return people.length ? task.crew + ' · ' + people.join(', ') : task.crew + ' (crew)';
     if (people.length) return people.join(', ');
-    if (task.crew) return task.crew + ' (crew)';
     return 'Unassigned';
   }
   function taskById(tasks, id){ return (tasks || []).find(t => Number(t.id) === Number(id)); }
