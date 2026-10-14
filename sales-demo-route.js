@@ -22,7 +22,7 @@ function createSalesDemoHandler({platformAllowed,withTenantQueue,requestDatabase
     let prepared;
     try {
      if(alreadyPrepared){
-      if(target.company.demo!==true||target.company.billingExempt!==true||target.company.name!=='DEMO | Alder Ridge Builders'||target.company.stripeCustomerId||target.company.stripeSubscriptionId)throw new Error('The prepared demo metadata changed; review it before proceeding');
+      if(target.company.demo!==true||target.company.billingExempt!==true||!['DEMO | Alder Ridge Excavation & Concrete','DEMO | Alder Ridge Builders'].includes(target.company.name)||target.company.stripeCustomerId||target.company.stripeSubscriptionId)throw new Error('The prepared demo metadata changed; review it before proceeding');
       prepared=target;
      } else {
       const created=Date.parse(target.company.createdAt);if(!Number.isFinite(created)||Date.now()-created>86400000||created>Date.now()+60000)throw new Error('Use a new dedicated demo company created within the last 24 hours');

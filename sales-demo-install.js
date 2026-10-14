@@ -2,10 +2,12 @@
 // Pure preparation only. Persistence must run inside the authorized tenant write
 // queue with its normal revision and backup controls; this module performs no I/O.
 const {buildSalesDemo}=require('./sales-demo-data');
-const NAME='DEMO | Alder Ridge Builders';
+// The sitework demo name (new empty companies) and the original general-contractor
+// name (legacy demo tenants that must keep their safe idempotent retry path).
+const NAMES=['DEMO | Alder Ridge Excavation & Concrete','DEMO | Alder Ridge Builders'];
 function prepareEmptyDemoTenant(target,{expectedCompanyId,asOf='2026-10-05'}={}) {
  if(!target?.company||!expectedCompanyId||target.company.id!==expectedCompanyId)throw new Error('Confirm the exact new demo company ID');
- if(target.company.name!==NAME)throw new Error(`Only a separately created company named ${NAME} may be prepared`);
+ if(!NAMES.includes(target.company.name))throw new Error(`Only a separately created company named ${NAMES[0]} may be prepared`);
  if(target.company.demoFixture)throw new Error('This demo has already been seeded; reset is a separate, destructive operation');
  for(const [key,value] of Object.entries(target.company))if(/stripe|founder|subscriptionId|payment|billingCustomer/i.test(key)&&value)throw new Error('A company with payment or subscription links cannot be converted to a demo');
  if(!Array.isArray(target.users)||target.users.length!==1||target.users[0].role!=='owner'||target.users[0].status!=='Active'||target.users[0].companyId!==expectedCompanyId)throw new Error('A single existing active company owner is required; no accounts will be created');

@@ -6,7 +6,7 @@ function expectMode600(file){const mode=fs.statSync(file).mode&0o777;if(process.
 const assert=require('node:assert/strict'),fs=require('node:fs'),os=require('node:os'),path=require('node:path'),crypto=require('node:crypto');
 const {createSalesDemoHandler}=require('./sales-demo-route');
 const {COMPANY_ID}=require('./sales-demo-data');
-function emptyTenant(id=COMPANY_ID){return {company:{id,name:'DEMO | Alder Ridge Builders',createdAt:new Date().toISOString(),persistence:{revision:1}},users:[{id:1,companyId:id,name:'DEMO Existing Owner',email:'owner@example.invalid',role:'owner',status:'Active',projectIds:[],memberId:null}],sessions:[],customers:[],projects:[],team:[],reports:[],assignments:[]};}
+function emptyTenant(id=COMPANY_ID){return {company:{id,name:'DEMO | Alder Ridge Excavation & Concrete',createdAt:new Date().toISOString(),persistence:{revision:1}},users:[{id:1,companyId:id,name:'DEMO Existing Owner',email:'owner@example.invalid',role:'owner',status:'Active',projectIds:[],memberId:null}],sessions:[],customers:[],projects:[],team:[],reports:[],assignments:[]};}
 (async()=>{
  // Injected asynchronous persistence proves that success cannot precede durable
  // confirmation, and a backup failure prevents any tenant write.
@@ -15,7 +15,7 @@ function emptyTenant(id=COMPANY_ID){return {company:{id,name:'DEMO | Alder Ridge
  const req={method:'POST',platformAuth:{user:{id:1,name:'DEMO Platform Owner',role:'platform_owner'},session:{}},input:{expectedRevision:1,confirmCompanyName:stored.company.name,asOf:'2026-10-05'}};
  const url=new URL('http://localhost/api/platform/companies/'+COMPANY_ID+'/sales-demo');
  backupFailure=true;await handler(req,{},url);assert.equal(writes,0);assert.equal(sent.at(-1).status,503);
- backupFailure=false;sent=[];delay=true;const running=handler(req,{},url);await new Promise(resolve=>setImmediate(resolve));assert.equal(writes,1);assert.equal(sent.length,0);release();await running;assert.equal(sent[0].status,201);assert.equal(stored.reports.length,60);assert.deepEqual(stored.users,emptyTenant().users);
+ backupFailure=false;sent=[];delay=true;const running=handler(req,{},url);await new Promise(resolve=>setImmediate(resolve));assert.equal(writes,1);assert.equal(sent.length,0);release();await running;assert.equal(sent[0].status,201);assert.equal(stored.reports.length,30);assert.deepEqual(stored.users,emptyTenant().users);
  stored=emptyTenant();sent=[];rejectSave=true;const failing=handler(req,{},url);await new Promise(resolve=>setImmediate(resolve));assert.equal(sent.length,0,'A failed write must retain queue ownership until every initiated durable write settles');release();await failing;assert.equal(sent[0].status,503);
  sent=[];await handler({...req,method:'GET',platformAuth:{user:{role:'platform_support'},session:{}}},{},url);assert.equal(sent[0].status,403);
  sent=[];await handler({...req,method:'GET',platformAuth:undefined},{},url);assert.equal(sent[0].status,403);
@@ -34,7 +34,7 @@ function emptyTenant(id=COMPANY_ID){return {company:{id,name:'DEMO | Alder Ridge
   assert.equal((await request(route,{headers:{cookie:''}})).status,403);
   assert.equal((await request(route,{headers:{cookie:`pdl_platform=${staffToken}`}})).status,403);
   assert.equal((await request(route,{headers:{cookie:'','x-pdl-platform-key':process.env.PDL_PLATFORM_KEY}})).status,403);
-  const preview=await request(route);assert.equal(preview.status,200);assert.equal(preview.data.readyToPrepare,true);assert.deepEqual(preview.data.plannedCounts,{projects:3,team:8,reports:60,timeCards:160,assignments:75});assert.deepEqual(JSON.parse(fs.readFileSync(targetFile)),target);
+  const preview=await request(route);assert.equal(preview.status,200);assert.equal(preview.data.readyToPrepare,true);const weekdayIndex=(new Date(preview.data.asOf+'T12:00:00Z').getUTCDay()+6)%7,expectedAssignments=30+1+Math.max(0,5-weekdayIndex)*3;assert.deepEqual(preview.data.plannedCounts,{projects:3,team:9,reports:30,timeCards:90,assignments:expectedAssignments});assert.deepEqual(JSON.parse(fs.readFileSync(targetFile)),target);
   const input={expectedRevision:preview.data.expectedRevision,confirmCompanyName:preview.data.companyName,asOf:preview.data.asOf};
   assert.equal((await request(route,{method:'POST',body:JSON.stringify({...input,expectedRevision:0})})).status,409);
   assert.equal((await request(route,{method:'POST',body:JSON.stringify({...input,companyId:'other'})})).status,409);

@@ -11,9 +11,9 @@ assert.deepEqual(buildSalesDemo(),d,'The fixture must be reproducible');
 assert.equal(d.users.length,0);assert.equal(d.sessions.length,0);
 assert.equal(d.company.demo,true);assert.equal(d.company.billingExempt,true);assert.equal(d.company.planPrice,0);
 assert.doesNotMatch(JSON.stringify(d),/password|tokenHash|stripeCustomerId|stripeSubscriptionId|https?:\/\//i,'No credentials, live billing IDs, photos, or remote links');
-assert.deepEqual(summary.time,{approved:{cards:155,hours:1240},submitted:{cards:4,hours:32},draft:{cards:1,hours:8}});
-assert.equal(summary.approvedReports,58);assert.equal(summary.reviewReports,2);
-assert.deepEqual(summary.projects.map(p=>[p.quantity,p.hours,p.efficiency]),[[13200,480,110],[11340,456,89.53],[8025,304,105.59]]);
+assert.deepEqual(summary.time,{approved:{cards:84,hours:672},submitted:{cards:5,hours:40},draft:{cards:1,hours:8}});
+assert.equal(summary.approvedReports,28);assert.equal(summary.reviewReports,2);
+assert.deepEqual(summary.projects.map(p=>[p.quantity,p.hours,p.efficiency]),[[3000,240,100],[780,216,50],[3096,216,100]]);
 for(const key of ['customers','projects','team','crews','catalog','reports','assignments','timeCards','workdays','payPeriods','payPeriodExports','reportingExports','projectNotesTodos'])assert.equal(new Set(d[key].map(x=>x.id)).size,d[key].length,`${key}: unique IDs`);
 for(const key of ['customers','projects','team','crews'])for(const row of d[key])assert.match(row.name,/^DEMO\b/);
 for(const row of d.team)assert.match(row.email,/@alder-ridge\.example$/);
@@ -31,11 +31,11 @@ for(const card of d.timeCards){
  const same=d.timeCards.filter(c=>c.memberId===card.memberId&&c.id!==card.id);assert.ok(same.every(c=>Date.parse(c.outAt)<=Date.parse(card.inAt)||Date.parse(c.inAt)>=Date.parse(card.outAt)));
  if(card.status==='approved'){assert.ok(card.approvedAt);assert.equal(card.history.at(-1).action,'Approved');}
 }
-for(const p of d.payPeriods){const s=payPeriods.summary(d,p),exp=d.payPeriodExports.find(e=>e.periodId===p.id);assert.equal(s.missingEntries.length,0);if(p.status==='closed'){assert.equal(s.ready,true);assert.equal(s.approvedHours,320);assert.equal(payPeriods.hash(s),exp.sourceHash);assert.deepEqual(exp.summary,s);}else{assert.equal(s.ready,false);assert.equal(s.review.submitted,4);assert.equal(s.review.draft,1);assert.throws(()=>payPeriods.capture(d,p,{}, {name:'test'}),/Resolve/);}}
-for(const e of d.reportingExports){assert.equal(e.companyId,d.company.id);assert.equal(e.snapshotSha256,crypto.createHash('sha256').update(JSON.stringify(e.snapshot)).digest('hex'));assert.equal(e.snapshot.totals.approvedReports,15);}
+for(const p of d.payPeriods){const s=payPeriods.summary(d,p),exp=d.payPeriodExports.find(e=>e.periodId===p.id);assert.equal(s.missingEntries.length,0);if(p.status==='closed'){assert.equal(s.ready,true);assert.equal(s.approvedHours,360);assert.equal(payPeriods.hash(s),exp.sourceHash);assert.deepEqual(exp.summary,s);}else{assert.equal(s.ready,false);assert.equal(s.review.submitted,5);assert.equal(s.review.draft,1);assert.throws(()=>payPeriods.capture(d,p,{}, {name:'test'}),/Resolve/);}}
+for(const e of d.reportingExports){assert.equal(e.companyId,d.company.id);assert.equal(e.snapshotSha256,crypto.createHash('sha256').update(JSON.stringify(e.snapshot)).digest('hex'));assert.equal(e.snapshot.totals.approvedReports,5);}
 for(const e of d.reportingExports){const quantity=e.snapshot.totals.production[0].quantity,planned=e.snapshot.project.estimateItems[0].plannedQuantity;assert.equal(e.snapshot.project.production,Math.round(quantity/planned*1000)/10,'Historical export progress must not include future reports');}
 for(const note of d.projectNotesTodos){assert.deepEqual(note.history.at(-1).after,{text:note.text,completed:note.completed,revision:note.revision});if(note.completed){assert.equal(note.revision,2);assert.equal(note.history.at(-1).action,'Completed');assert.equal(note.history[0].after.completed,false);}}
-for(const asOf of ['2026-11-09','2027-01-04','2027-03-15'])for(const card of buildSalesDemo({asOf}).timeCards){const clock=new Intl.DateTimeFormat('en-GB',{timeZone:'America/Los_Angeles',hour:'2-digit',minute:'2-digit',hourCycle:'h23'}).format(new Date(card.inAt));assert.equal(clock,'07:00');}
+for(const asOf of ['2026-11-09','2027-01-04','2027-03-15'])for(const card of buildSalesDemo({asOf}).timeCards){const clock=new Intl.DateTimeFormat('en-GB',{timeZone:'America/Los_Angeles',hour:'2-digit',minute:'2-digit',hourCycle:'h23'}).format(new Date(card.inAt));assert.ok(['07:00','07:45'].includes(clock),'clock-in at 07:00, with one deliberate late start at 07:45');}
 assert.throws(()=>buildSalesDemo({asOf:'2026-02-30'}),/ISO/);
 assert.throws(()=>buildSalesDemo({companyId:'northstar'}),/UUID/);
 console.log('Synthetic demo: deterministic data, privacy, referential integrity, non-overlap, DST and arithmetic checks passed.');
@@ -49,19 +49,19 @@ console.log('Synthetic demo: deterministic data, privacy, referential integrity,
  const {server}=require('./server');await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));const base=`http://127.0.0.1:${server.address().port}`;
  const request=async(route,options={})=>{const res=await fetch(base+route,{...options,headers:{cookie:`pdl_session=${session}; pdl_company=${db.company.id}`,'Content-Type':'application/json',...options.headers}});return{status:res.status,data:await res.json()};};
  try{
-  const state=await request('/api/state');assert.equal(state.status,200);assert.equal(state.data.projects.length,3);assert.equal(state.data.reports.length,60);
-  const prod=await request('/api/production');assert.equal(prod.status,200);assert.equal(prod.data.approvedReports,58);assert.deepEqual(prod.data.projects.map(p=>[p.items[0].actualQuantity,p.items[0].actualLaborHours]),[[13200,480],[11340,456],[8025,304]]);
-  const insights=await request('/api/insights?from=2026-09-07&to=2026-10-02');assert.equal(insights.status,200);assert.equal(insights.data.records.length,58);
-  const periods=await request('/api/pay-periods');assert.equal(periods.status,200);assert.equal(periods.data.periods.length,4);
+  const state=await request('/api/state');assert.equal(state.status,200);assert.equal(state.data.projects.length,3);assert.equal(state.data.reports.length,30);
+  const prod=await request('/api/production');assert.equal(prod.status,200);assert.equal(prod.data.approvedReports,28);assert.deepEqual(prod.data.projects.map(p=>[p.items[0].actualQuantity,p.items[0].actualLaborHours]),[[1800,144],[300,120],[96,96]]);
+  const insights=await request('/api/insights?from=2026-09-21&to=2026-10-02');assert.equal(insights.status,200);assert.equal(insights.data.records.length,28);
+  const periods=await request('/api/pay-periods');assert.equal(periods.status,200);assert.equal(periods.data.periods.length,2);
   const notes=await request('/api/projects/2/notes-todos');assert.equal(notes.status,200);assert.equal(notes.data.items.length,2);
-  const open=await request(`/api/pay-periods/${db.payPeriods[3].id}/summary`);assert.equal(open.status,200);assert.equal(open.data.ready,false);assert.equal(open.data.approvedHours,280);
+  const open=await request(`/api/pay-periods/${db.payPeriods[1].id}/summary`);assert.equal(open.status,200);assert.equal(open.data.ready,false);assert.equal(open.data.approvedHours,312);
   const historical=await request(`/api/pay-periods/${db.payPeriods[0].id}/summary`);assert.equal(historical.data.latestExport.changed,false);
   const draft=db.timeCards.find(c=>c.status==='draft');assert.equal((await request(`/api/time-cards/${draft.id}/submit`,{method:'POST',body:'{}'})).status,200);
   const ids=db.timeCards.filter(c=>c.status!=='approved').map(c=>c.id);assert.equal((await request('/api/time-cards/approve',{method:'POST',body:JSON.stringify({ids})})).status,200);
-  const ready=await request(`/api/pay-periods/${db.payPeriods[3].id}/summary`);assert.equal(ready.data.ready,true);assert.equal(ready.data.approvedHours,320);
-  assert.equal((await request(`/api/pay-periods/${db.payPeriods[3].id}/exports`,{method:'POST',body:'{}'})).status,201);
+  const ready=await request(`/api/pay-periods/${db.payPeriods[1].id}/summary`);assert.equal(ready.data.ready,true);assert.equal(ready.data.approvedHours,360);
+  assert.equal((await request(`/api/pay-periods/${db.payPeriods[1].id}/exports`,{method:'POST',body:'{}'})).status,201);
   for(const report of db.reports.filter(r=>r.status==='Needs review'))assert.equal((await request(`/api/reports/${report.id}/approve`,{method:'PATCH',body:'{}'})).status,200);
-  const after=await request('/api/production');assert.equal(after.data.approvedReports,60);assert.deepEqual(after.data.projects.map(p=>[p.items[0].actualQuantity,p.items[0].actualLaborHours]),[[13200,480],[12000,480],[8500,320]]);
+  const after=await request('/api/production');assert.equal(after.data.approvedReports,30);assert.deepEqual(after.data.projects.map(p=>[p.items[0].actualQuantity,p.items[0].actualLaborHours]),[[1800,144],[300,120],[96,96]]);
   const denied=await fetch(base+'/api/state');assert.equal(denied.status,401);
   console.log('Synthetic demo: real authenticated local API verifies state, production, insights, notes, review → approvals → fixed export, and anonymous denial.');
  }finally{await new Promise(resolve=>server.close(resolve));fs.rmSync(directory,{recursive:true,force:true});}

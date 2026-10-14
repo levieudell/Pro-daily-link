@@ -106,10 +106,13 @@ function clientLineHours(report) {
 
 function loadClientHoursFns() {
   const source = fs.readFileSync(path.join(__dirname, 'app.js'), 'utf8');
-  const dashboard = source.split('\n').find(line => line.startsWith('function dashboardProduction'));
-  const assignment = source.split('\n').find(line => line.startsWith('function assignmentActualHours'));
-  if (!dashboard || !assignment) throw new Error('Client hours functions were not found in app.js');
-  return new Function('reports', 'projects', `${dashboard}\n${assignment}\nreturn {dashboardProduction, assignmentActualHours};`);
+  const take = prefix => source.split('\n').find(line => line.startsWith(prefix));
+  const accumulate = take('function accumulateApprovedProduction');
+  const summarize = take('function summarizeProductionGroups');
+  const dashboard = take('function dashboardProduction');
+  const assignment = take('function assignmentActualHours');
+  if (!dashboard || !assignment || !accumulate || !summarize) throw new Error('Client hours functions were not found in app.js');
+  return new Function('reports', 'projects', `${accumulate}\n${summarize}\n${dashboard}\n${assignment}\nreturn {dashboardProduction, assignmentActualHours};`);
 }
 
 async function request(route, options = {}) {

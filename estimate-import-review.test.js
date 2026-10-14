@@ -46,11 +46,13 @@ const metrics={projects:[{projectId:1,items:[{plannedQuantity:100,actualQuantity
 const health=new Function('productionData',source.slice(healthStart,healthEnd).join('\n')+';return projectHealthDetails;')(metrics);
 assert.match(health({id:1,status:'On track'}).reason,/Add both planned/,'Unknown budget prevents a misleading aggregate labor risk comparison');
 
+const dashboardHelpers=['function accumulateApprovedProduction','function summarizeProductionGroups'].map(prefix=>source.find(line=>line.startsWith(prefix)));
+assert.ok(dashboardHelpers.every(Boolean),'dashboard helpers found in app.js source');
 const dashboardSource=source.find(line=>line.startsWith('function dashboardProduction('));
 class FixtureDate extends Date{constructor(...args){super(...(args.length?args:['2026-10-07T18:00:00Z']))}}const day='2026-10-06';
 const daily=[{status:'Approved',dateIso:day,project:0,productionEntries:[{estimateItemId:1,quantity:10,laborHours:3},{estimateItemId:2,quantity:10,laborHours:4}],laborEntries:[]}];
 const scopes=[{estimateItems:[{id:1,plannedQuantity:100,budgetHours:18},{id:2,plannedQuantity:100,budgetHours:null}]}];
-const dashboard=new Function('reports','projects','Date',dashboardSource+';return dashboardProduction;')(daily,scopes,FixtureDate);
+const dashboard=new Function('reports','projects','Date',dashboardHelpers.join('\n')+'\n'+dashboardSource+';return dashboardProduction;')(daily,scopes,FixtureDate);
 const period=dashboard();assert.equal(period.efficiency,null);assert.equal(period.groups.reduce((sum,row)=>sum+row.actual,0),7);
 const chartSource=source.find(line=>line.startsWith('function renderChart('));
 const chartControls=new Map();const chartGet=selector=>{if(!chartControls.has(selector))chartControls.set(selector,{classList:{add(){},remove(){}}});return chartControls.get(selector)};
