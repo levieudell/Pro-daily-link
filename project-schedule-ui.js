@@ -35,12 +35,16 @@ let scheduleView = 'table';
     if (!crews.length) return '';
     return `<select ${field} aria-label="Crew (optional)"><option value="">No crew</option>${crews.map(crew => `<option value="${escapeHtml(crew)}" ${String(selected || '') === crew ? 'selected' : ''}>${escapeHtml(crew)}</option>`).join('')}</select>`;
   }
+  function chipPick(field, options, selected){
+    const chosen = new Set((selected || []).map(Number));
+    const opts = (options || []).filter(o => o && o.value != null);
+    const select = `<select ${field} multiple class="schedule-chip-select" size="2" aria-label="Pick one or more">${opts.length ? opts.map(o => `<option value="${Number(o.value)}" ${chosen.has(Number(o.value)) ? 'selected' : ''}>${escapeHtml(o.label)}</option>`).join('') : '<option value="" disabled>Nothing to pick yet</option>'}</select>`;
+    if (!opts.length) return select;
+    return `<div class="schedule-chip-pick">${select}<div class="schedule-chip-row">${opts.map(o => `<button type="button" class="schedule-chip${chosen.has(Number(o.value)) ? ' is-on' : ''}" data-chip-value="${Number(o.value)}" aria-pressed="${chosen.has(Number(o.value))}">${escapeHtml(o.label)}</button>`).join('')}</div></div>`;
+  }
   function memberPick(field, selected){
     const people = (typeof team !== 'undefined' ? team : []) || [];
-    if (!people.length) return '';
-    const chosen = (selected || []).map(Number);
-    const size = Math.min(4, Math.max(2, people.length));
-    return `<select ${field} multiple size="${size}" aria-label="Assigned people (optional)">${people.map(member => `<option value="${Number(member.id)}" ${chosen.includes(Number(member.id)) ? 'selected' : ''}>${escapeHtml(member.name)}</option>`).join('')}</select>`;
+    return chipPick(field, people.map(member => ({ value: Number(member.id), label: member.name })), selected);
   }
 
   function forecastBanner(project, sorted){
@@ -100,7 +104,6 @@ function renderSchedulePane(pane, project, tasks, editingId){
     const sorted = (tasks || []).slice().sort((a, b) => String(a.startDate).localeCompare(String(b.startDate)) || Number(a.id) - Number(b.id));
     const dates = sorted.map(t => t.startDate).concat(sorted.map(t => t.endDate)).filter(Boolean).sort();
     const windowStart = dates[0], windowEnd = dates[dates.length - 1];
-    const depsOptions = sorted.map(t => `<option value="${Number(t.id)}">${escapeHtml(t.name)}</option>`).join('');
     const estimateItems = project.estimateItems || [];
     const linkedEstimateIds = new Set((tasks || []).map(t => Number(t.estimateItemId)).filter(Boolean));
     const estimatePick = (field, selected) => estimateItems.length ? `<select ${field} aria-label="Linked estimate line (optional)"><option value="">Custom task / milestone</option>${estimateItems.filter(item => !linkedEstimateIds.has(Number(item.id)) || Number(item.id) === Number(selected)).map(item => `<option value="${Number(item.id)}" ${Number(selected) === Number(item.id) ? 'selected' : ''}>${escapeHtml(item.name)} · ${Number(item.plannedQuantity) || 0} ${escapeHtml(item.unit || '')}</option>`).join('')}</select>` : '';
@@ -108,12 +111,12 @@ function renderSchedulePane(pane, project, tasks, editingId){
       <tr class="project-schedule-edit-row" data-schedule-edit-row="${Number(task.id)}">
         <td colspan="6">
           <div class="project-schedule-editor">
-            <label>Task<input type="text" data-edit-task-name value="${escapeHtml(task.name)}" maxlength="160"></label>
-            ${estimatePick('data-edit-task-estimate', task.estimateItemId)}
-            <label>Working days<input type="number" data-edit-task-duration min="1" max="365" step="1" value="${Number(task.durationDays)}"></label>
-            <label>Waits for<select data-edit-task-deps multiple size="${Math.min(4, Math.max(2, sorted.length))}">${depsOptions.replace(`value="${Number(task.id)}"`, 'value="" disabled')}</select></label>
-            ${memberPick('data-edit-task-members', task.memberIds)}
-            ${crewOptions('data-edit-task-crew', task.crew)}
+            <label class="schedule-field schedule-span-3"><span>Task</span><input type="text" data-edit-task-name value="${escapeHtml(task.name)}" maxlength="160"></label>
+            ${estimateItems.length ? `<label class="schedule-field schedule-span-3"><span>From estimate <em>optional</em></span>${estimatePick('data-edit-task-estimate', task.estimateItemId)}</label>` : ''}
+            <label class="schedule-field"><span>Working days</span><input type="number" data-edit-task-duration min="1" max="365" step="1" value="${Number(task.durationDays)}"></label>
+            <div class="schedule-field schedule-span-2"><span>Waits for <em>links dates</em></span>${chipPick('data-edit-task-deps', sorted.filter(t => Number(t.id) !== Number(task.id)).map(t => ({ value: Number(t.id), label: t.name })), task.predecessorIds)}</div>
+            <div class="schedule-field schedule-span-2"><span>People <em>optional</em></span>${memberPick('data-edit-task-members', task.memberIds)}</div>
+            <label class="schedule-field"><span>Crew <em>optional</em></span>${crewOptions('data-edit-task-crew', task.crew)}</label>
             <div class="project-schedule-editor-actions"><button type="button" class="primary small" data-save-task-edit="${Number(task.id)}">Save task</button><button type="button" class="secondary small" data-cancel-task-edit>Cancel</button></div>
           </div>
         </td>
@@ -138,13 +141,15 @@ function renderSchedulePane(pane, project, tasks, editingId){
         <span style="font-size:12px;color:#98a5a0;flex:1 1 180px">Tasks count working days from the start date. Change it any time and the dates follow.</span>
       </div>
       <div class="project-schedule-add" data-schedule-add-form>
-        ${estimatePick('data-new-task-estimate', '')}
-        <input type="text" data-new-task-name placeholder="Task name — or pick an estimate line above" maxlength="160" aria-label="Task name">
-        <input type="number" data-new-task-duration min="1" max="365" step="1" value="1" aria-label="Working days">
-        <select data-new-task-deps multiple size="${Math.min(4, Math.max(2, sorted.length))}" aria-label="Waits for">${depsOptions || '<option value="" disabled>No tasks yet</option>'}</select>
-        ${memberPick('data-new-task-members', [])}
-        ${crewOptions('data-new-task-crew', '')}
-        <button type="button" class="primary" data-add-task>＋ Add task</button>
+        <div class="schedule-add-grid">
+          <label class="schedule-field schedule-span-3"><span>Task name</span><input type="text" data-new-task-name placeholder="e.g. Form footings, pour slab, rough inspection…" maxlength="160"></label>
+          ${estimateItems.length ? `<label class="schedule-field schedule-span-3"><span>From estimate <em>optional — prefills the name</em></span>${estimatePick('data-new-task-estimate', '')}</label>` : ''}
+          <label class="schedule-field"><span>Working days</span><input type="number" data-new-task-duration min="1" max="365" step="1" value="1"></label>
+          <div class="schedule-field schedule-span-2"><span>Waits for <em>links the dates</em></span>${chipPick('data-new-task-deps', sorted.map(t => ({ value: Number(t.id), label: t.name })), [])}</div>
+          <div class="schedule-field schedule-span-2"><span>People <em>optional</em></span>${memberPick('data-new-task-members', [])}</div>
+          <label class="schedule-field"><span>Crew <em>optional</em></span>${crewOptions('data-new-task-crew', '')}</label>
+        </div>
+        <div class="schedule-add-actions"><button type="button" class="primary" data-add-task>＋ Add task</button><span class="schedule-add-hint">Dates set themselves from the links — no calendar needed.</span></div>
       </div>` : ''}
       ${sorted.length ? (scheduleView === 'timeline' ? ganttChart(project, sorted) : `<div class="project-schedule-table-wrap"><table class="project-schedule-table"><thead><tr><th>Task</th><th>Waits for</th><th>Length</th><th>Dates</th><th>Assigned</th><th>${editable ? 'Status / actions' : 'Status'}</th></tr></thead><tbody>${rows}</tbody></table></div>`) : `<div class="project-tab-empty"><strong>No scheduled tasks yet</strong><p>${editable ? 'Add the project’s phases or milestones above and link them so the dates keep themselves honest.' : 'Your office will add the project schedule here.'}</p></div>`}`;
     if (Number(editingId)) { const select = pane.querySelector(`[data-schedule-edit-row="${Number(editingId)}"] [data-edit-task-deps]`); if (select) { const editing = taskById(tasks, editingId); [...select.options].forEach(option => { option.selected = (editing?.predecessorIds || []).map(Number).includes(Number(option.value)); }); } }
@@ -159,6 +164,12 @@ function renderSchedulePane(pane, project, tasks, editingId){
       if (scheduleView === button.dataset.scheduleView) return;
       scheduleView = button.dataset.scheduleView;
       renderSchedulePane(pane, project, tasks, null);
+    });
+    pane.querySelectorAll('.schedule-chip').forEach(chip => chip.onclick = () => {
+      const pick = chip.closest('.schedule-chip-pick'), select = pick && pick.querySelector('select');
+      const on = chip.classList.toggle('is-on');
+      chip.setAttribute('aria-pressed', String(on));
+      if (select) [...select.options].forEach(option => { if (String(option.value) === String(chip.dataset.chipValue)) option.selected = on; });
     });
     const refresh = payload => { renderSchedulePane(pane, project, payload.tasks, null); syncLaneWithServer(); };
     const notifyChanged = payload => { const others = (payload.changed || []).filter(id => true).length; notify(others > 1 ? `Schedule updated — ${others} tasks moved` : 'Schedule updated'); };

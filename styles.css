@@ -646,10 +646,21 @@ body.schedule-touch-dragging{overflow:hidden;-webkit-user-select:none;user-selec
 .project-schedule-head{display:flex;justify-content:space-between;gap:16px;align-items:flex-start;margin:4px 0 14px}
 .project-schedule-head h3{margin:0 0 4px;font:600 20px "Oswald",sans-serif;letter-spacing:.02em}
 .project-schedule-head p{margin:0;color:#64726c;font-size:14px;max-width:640px}
-.project-schedule-add{display:flex;flex-wrap:wrap;gap:10px;align-items:flex-end;padding:12px;border:1px solid #dfe5e1;border-radius:12px;background:#faf9f6;margin-bottom:14px}
-.project-schedule-add input[type=text]{flex:1 1 220px;min-width:180px}
-.project-schedule-add input[type=number]{width:96px}
-.project-schedule-add select[multiple]{min-width:180px;min-height:64px}
+.project-schedule-add{padding:14px 16px;border:1px solid #dfe5e1;border-radius:14px;background:#faf9f6;margin-bottom:14px}
+.schedule-add-grid{display:grid;grid-template-columns:repeat(6,1fr);gap:12px 14px}
+.schedule-field{display:grid;gap:5px;align-content:start;font-size:11px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;color:#64726c}
+.schedule-field input,.schedule-field select{width:100%;text-transform:none;letter-spacing:normal;font-size:14px}
+.schedule-field>span em{font-style:normal;font-weight:400;text-transform:none;letter-spacing:normal;color:#98a5a0}
+.schedule-span-2{grid-column:span 2}
+.schedule-span-3{grid-column:span 3}
+.schedule-chip-pick{display:grid;gap:6px}
+.schedule-chip-select{position:absolute;width:1px;height:1px;opacity:0;pointer-events:none;overflow:hidden}
+.schedule-chip-row{display:flex;flex-wrap:wrap;gap:6px}
+.schedule-chip{border:1px solid #d5ddd7;background:#fff;border-radius:999px;padding:5px 13px;font-size:12.5px;font-weight:600;letter-spacing:normal;text-transform:none;color:#3c4a44;cursor:pointer;transition:background .15s,color .15s,border-color .15s}
+.schedule-chip:hover{border-color:#2e6b52;color:#17382d}
+.schedule-chip.is-on{background:#17382d;border-color:#17382d;color:#fff}
+.schedule-add-actions{display:flex;align-items:center;gap:14px;margin-top:14px;padding-top:13px;border-top:1px solid #e7ebe8}
+.schedule-add-hint{font-size:12.5px;color:#98a5a0}
 .project-schedule-table-wrap{overflow-x:auto;border:1px solid #dfe5e1;border-radius:12px}
 .project-schedule-table{width:100%;border-collapse:collapse;font-size:14px}
 .project-schedule-table th{text-align:left;font:600 11px "Oswald",sans-serif;letter-spacing:.08em;text-transform:uppercase;color:#64726c;padding:10px 12px;background:#f4f2ec;border-bottom:1px solid #dfe5e1}
@@ -663,23 +674,26 @@ body.schedule-touch-dragging{overflow:hidden;-webkit-user-select:none;user-selec
 .project-schedule-actions{white-space:nowrap}
 .project-schedule-actions select{margin-right:6px}
 .project-schedule-edit-row td{background:#f7f8f6}
-.project-schedule-editor{display:grid;grid-template-columns:2fr 1fr 2fr;gap:12px;align-items:end}
-.project-schedule-editor label{display:grid;gap:4px;font-size:12px;font-weight:600;color:#64726c}
+.project-schedule-editor{display:grid;grid-template-columns:repeat(6,1fr);gap:12px 14px;align-items:end;padding:4px 0}
 .project-schedule-editor-actions{display:flex;gap:8px;grid-column:1/-1}
 @media(max-width:760px){
-  .project-schedule-editor{grid-template-columns:1fr}
-  .project-schedule-add{flex-direction:column;align-items:stretch}
-  .project-schedule-add input[type=text],.project-schedule-add select[multiple]{width:100%}
+  .schedule-add-grid,.project-schedule-editor{grid-template-columns:1fr}
+  .schedule-span-2,.schedule-span-3{grid-column:span 1}
   .project-schedule-actions select{display:block;margin:0 0 6px}
 }
 :root[data-theme="dark"] .project-schedule-table th{background:#1d2b25;color:#9fb3aa}
 :root[data-theme="dark"] .project-schedule-add{background:#1d2b25;border-color:#2c3d35}
+:root[data-theme="dark"] .schedule-field{color:#9fb3aa}
+:root[data-theme="dark"] .schedule-field>span em,:root[data-theme="dark"] .schedule-add-hint{color:#6e7f78}
+:root[data-theme="dark"] .schedule-chip{background:#223029;border-color:#3a4c43;color:#c6d6ce}
+:root[data-theme="dark"] .schedule-chip:hover{border-color:#4c8a6d;color:#e6f2eb}
+:root[data-theme="dark"] .schedule-chip.is-on{background:#2e6b52;border-color:#2e6b52;color:#fff}
+:root[data-theme="dark"] .schedule-add-actions{border-color:#2c3d35}
 :root[data-theme="dark"] .project-schedule-dep{background:#24463a;color:#cde3d8}
 :root[data-theme="dark"] .project-schedule-track{background:#22302a}
 
 /* Unassigned project-work lane under the team schedule */
-.schedule-unassigned{margin:16px 0 0;border:1px dashed #c8d4cd;border-radius:14px;background:#f7f9f7;padding:14px 16px}
-.schedule-event{display:inline-flex;align-items:center;gap:4px;max-width:100%;margin:0 0 4px;padding:3px 8px;border:1px solid #d8cfc0;border-radius:999px;background:#fdf8ef;color:#5f4d33;font-size:11px;font-weight:600;cursor:pointer;text-align:left}
+.schedule-unassigned{margin:16px 0 0;border:1px dashed #c8d4cd;border-radius:14px;background:#f7f9f7;padding:14px 16px}.schedule-event{display:inline-flex;align-items:center;gap:4px;max-width:100%;margin:0 0 4px;padding:3px 8px;border:1px solid #d8cfc0;border-radius:999px;background:#fdf8ef;color:#5f4d33;font-size:11px;font-weight:600;cursor:pointer;text-align:left}
 .schedule-event:hover{border-color:#b8382d;color:#8f2b23}
 .schedule-event-inspection{background:#eef4ff;border-color:#c5d8fb;color:#1d4fbf}
 .schedule-event-trade{background:#f0ecfd;border-color:#cfc4f5;color:#4f3aa8}
@@ -694,8 +708,10 @@ body.schedule-touch-dragging{overflow:hidden;-webkit-user-select:none;user-selec
 .schedule-unassigned-head h3{margin:0;font:600 13px "Oswald",sans-serif;letter-spacing:.08em;text-transform:uppercase;color:#17382d}
 .schedule-unassigned-head p{margin:0;font-size:13px;color:#64726c}
 .schedule-unassigned-list{display:flex;flex-direction:column;gap:8px}
-.schedule-task-chip{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;background:#fff;border:1px solid #dfe5e1;border-radius:10px;padding:10px 12px;cursor:grab}
-.schedule-task-chip.dragging{opacity:.5;cursor:grabbing}
+.schedule-task-chip{position:relative;display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;background:#fff;border:1px solid #dfe5e1;border-radius:12px;padding:11px 14px 11px 30px;cursor:grab;box-shadow:0 1px 2px #1c2b250f;transition:box-shadow .15s,transform .15s,border-color .15s}
+.schedule-task-chip::before{content:"⠿";position:absolute;left:11px;top:50%;transform:translateY(-50%);color:#b7c2bc;font-size:13px;letter-spacing:-2px}
+.schedule-task-chip:hover{border-color:#2e6b52;box-shadow:0 4px 14px #1c2b251a;transform:translateY(-1px)}
+.schedule-task-chip.dragging{opacity:.55;cursor:grabbing;box-shadow:0 10px 26px #1c2b2526}
 .schedule-task-chip-main{display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;min-width:0}
 .schedule-task-chip-main b{font:600 11px "Oswald",sans-serif;letter-spacing:.06em;background:#17382d;color:#fff;border-radius:6px;padding:2px 8px}
 .schedule-task-chip-main strong{font-size:14px;color:#1c2b25}
@@ -708,7 +724,9 @@ body.schedule-touch-dragging{overflow:hidden;-webkit-user-select:none;user-selec
   .schedule-task-assign select{max-width:none;flex:1}
 }
 :root[data-theme="dark"] .schedule-unassigned{background:#17211c;border-color:#2c3d35}
-:root[data-theme="dark"] .schedule-task-chip{background:#1d2b25;border-color:#2c3d35}
+:root[data-theme="dark"] .schedule-task-chip{background:#1d2b25;border-color:#2c3d35;box-shadow:none}
+:root[data-theme="dark"] .schedule-task-chip::before{color:#4c5f57}
+:root[data-theme="dark"] .schedule-task-chip:hover{border-color:#4c8a6d;box-shadow:0 4px 14px #0006}
 :root[data-theme="dark"] .schedule-task-chip-main strong{color:#e6efe9}
 :root[data-theme="dark"] .schedule-unassigned-head h3{color:#cde3d8}
 .voice-status{margin:8px 0 0;font-size:13px;color:#64726c;min-height:18px}

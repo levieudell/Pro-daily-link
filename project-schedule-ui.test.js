@@ -11,8 +11,8 @@ const { isPublicFile } = require('./public-file-policy');
 
 // Script loads after app.js (it patches openProject) and carries a version.
 assert.ok(index.indexOf('app.js?') < index.indexOf('project-schedule-ui.js?'), 'module loads after app.js so openProject exists');
-assert.match(index, /project-schedule-ui\.js\?v=20261013-gantt/);
-assert.match(index, /styles\.css\?v=20261013-gantt/);
+assert.match(index, /project-schedule-ui\.js\?v=20261014-forms/);
+assert.match(index, /styles\.css\?v=20261014-forms/);
 
 // Static serving + server wiring.
 assert.equal(isPublicFile(process.cwd(), path.join(process.cwd(), 'project-schedule-ui.js')), true, 'UI module is publicly served');
@@ -90,6 +90,20 @@ assert.match(ui, /data-edit-task-crew/, 'edit form assigns a crew');
 assert.match(ui, /memberIds, crew \}\)/, 'payloads send assignees to the server');
 assert.match(ui, /project-schedule-track\$\{statusClass\}/, 'table mini-bars carry status tints');
 for (const selector of ['.project-schedule-gantt', '.gantt-head', '.gantt-row', '.gantt-bar', '.gantt-day', '.gantt-month', '.project-schedule-forecast', '.project-schedule-view-toggle'])
+  assert.ok(styles.includes(selector), `${selector} styled`);
+
+// 2026 add/edit form: chip pickers hide the native multi-select but keep it in
+// the DOM so selectedValues() still reads selections, and both forms use the
+// labeled grid fields.
+assert.match(ui, /function chipPick\(field, options, selected\)/, 'chip picker builder exists');
+assert.match(ui, /data-chip-value="\$\{Number\(o\.value\)\}"/, 'chips toggle option selection');
+assert.match(ui, /schedule-chip-select/, 'native multi-select stays in the DOM for wiring');
+assert.match(ui, /option\.selected = on/, 'chip clicks write back to the select');
+assert.match(ui, /class="schedule-add-grid"/, 'add form uses the labeled grid');
+assert.match(ui, /schedule-span-2/, 'form fields span grid columns');
+assert.match(ui, /data-new-task-name placeholder="e\.g\. Form footings/, 'name field carries a real example placeholder');
+assert.match(ui, /sorted\.filter\(t => Number\(t\.id\) !== Number\(task\.id\)\)/, 'edit form cannot link a task to itself');
+for (const selector of ['.schedule-add-grid', '.schedule-field', '.schedule-chip', '.schedule-chip-row', '.schedule-add-actions'])
   assert.ok(styles.includes(selector), `${selector} styled`);
 
 console.log('project-schedule UI contracts: ok');
