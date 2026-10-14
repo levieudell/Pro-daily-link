@@ -24,7 +24,7 @@ assert.match(app, /window\.PDLOffline\.loadState\(\)/, 'api() falls back to the 
 assert.match(app, /window\.PDLOffline\.saveState\(data\)/, 'successful state loads refresh the cache');
 assert.match(app, /window\.PDLOffline\.enqueue\(method,path,options\.body\)/, 'eligible offline mutations are queued');
 assert.match(app, /queuedError\.queued=true/, 'queued throws are marked so callers could special-case');
-assert.match(app, /!navigator\.onLine&&typeof window!=='undefined'&&window\.PDLOffline/, 'offline check runs before the 36s wake poll');
+assert.match(app, /\(typeof navigator==='undefined'\|\|!navigator\.onLine\)&&typeof window!=='undefined'&&window\.PDLOffline/, 'offline check runs before the 36s wake poll');
 assert.match(app, /PDLOffline\.queuedCount\(\)/, 'the connection banner counts queued changes');
 assert.match(server, /clientTag=String\(input\.clientTag\|\|''\)\.trim\(\)\.slice\(0,64\)/, 'server reads the client tag');
 assert.ok((server.match(/clientTag/g) || []).length >= 4, 'clientTag dedupe on reports and workdays start');
