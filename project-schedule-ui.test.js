@@ -52,7 +52,7 @@ assert.match(ui, /class="schedule-unassigned"/);
 assert.match(ui, /data-schedule-task="\$\{Number\(task\.id\)\}"/);
 assert.match(ui, /blockSelector: '\[data-schedule-task\]'/, 'chips get their own touch-drag attach');
 assert.match(ui, /api\(`\/api\/project-tasks\/\$\{taskId\}\/assign`/);
-assert.match(ui, /window\.PDLProjectScheduleUI = \{ assignTaskTo, paintUnassignedLane \}/);
+assert.match(ui, /window\.PDLProjectScheduleUI = \{ assignTaskTo, paintUnassignedLane, get draggingTaskId\(\)\{ return draggedTaskId; \} \}/, 'lane module exposes its drag state for crew-row highlighting');
 // The project detail content is itself a <form>, so pane markup must never
 // emit a nested <form> — the parser drops the tag and the handler never binds.
 assert.equal((ui.match(/<form[\s>]/g) || []).length, 0, 'no nested form tags in schedule pane markup');
@@ -102,6 +102,21 @@ assert.match(ui, /option\.selected = on/, 'chip clicks write back to the select'
 assert.match(ui, /class="schedule-add-grid"/, 'add form uses the labeled grid');
 assert.match(ui, /schedule-span-2/, 'form fields span grid columns');
 assert.match(ui, /data-new-task-name placeholder="e\.g\. Form footings/, 'name field carries a real example placeholder');
+// Crew drag-and-drop: dropping a task on a crew group header books every
+// active field member of that crew and claims the task for the crew.
+assert.match(ui, /target\.crew \? \{ crew: target\.crew, fromDate \} : \{ memberId: target\.memberId, fromDate \}/, 'crew drops send the crew name to the assign endpoint');
+assert.match(ui, /closest\('\[data-schedule-crew-drop\]'\)/, 'the lane drop listener accepts crew group headers');
+assert.match(ui, /Crew \$\{payload\.crew\}/, 'crew bookings name the crew in the confirmation');
+assert.match(server, /input\.crew != null && String\(input\.crew\)\.trim\(\) !== ''/, 'assign endpoint accepts a whole crew');
+assert.match(server, /task\.memberIds = \[\];\s*\n?\s*task\.assignedAt = now;\s*\n?\s*task\.assignedBy = req\.auth\?\.user\.name/, 'crew booking claims the task for the crew without memberIds');
+assert.match(server, /officeLike/, 'office-role members are excluded from crew bookings');
+assert.match(server, /That crew has no active field members/, 'a crewless crew is rejected with a plain message');
+const app = fs.readFileSync('app.js', 'utf8');
+assert.ok(app.includes('data-schedule-crew-drop'), 'team schedule board renders crew group header rows');
+assert.ok(app.includes('boardTeam'), 'the board groups members by crew when the All crews filter is on');
+assert.ok(app.includes('drop a task here to book the whole crew'), 'crew headers tell the office what dropping does');
+for (const selector of ['.schedule-crew-row', '.schedule-crew-row.drag-over', '.schedule-crew-row.is-muted'])
+  assert.ok(styles.includes(selector), `${selector} styled`);
 assert.match(ui, /sorted\.filter\(t => Number\(t\.id\) !== Number\(task\.id\)\)/, 'edit form cannot link a task to itself');
 for (const selector of ['.schedule-add-grid', '.schedule-field', '.schedule-chip', '.schedule-chip-row', '.schedule-add-actions'])
   assert.ok(styles.includes(selector), `${selector} styled`);
