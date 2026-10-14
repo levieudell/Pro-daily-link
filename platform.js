@@ -55,6 +55,7 @@ const platformViews={
   onboarding:['Onboarding','Track setup progress and implementation work.'],
   support:['Support','Resolve issues and follow up before customers drift.'],
   subscriptions:['Subscriptions','Review configured plans and commercial account status.'],
+  ai:['AI usage','Watch model spend across every account.'],
   blog:['Field Notes blog','Publish practical Field Notes for contractors.'],
   help:['Help Center','Manage customer-facing education.'],
   team:['Platform team','Control internal access and review activity.']
@@ -92,7 +93,7 @@ function showView(name,{companyId='',historyMode='push',focus=true}={}){
   $$('nav button').forEach(b=>{const selected=b.dataset.view===name;b.classList.toggle('active',selected);if(selected)b.setAttribute('aria-current','page');else b.removeAttribute('aria-current')});
   const title=name==='overview'&&platformUser?`Welcome, ${platformUser.name.split(' ')[0]}.`:platformViews[name][0];
   $('#view-title').textContent=title;document.title=`${name==='overview'?'Platform Operations':title} · Pro Daily Link`;
-  $('#view-description').textContent=platformViews[name][1];$('#primary-action').hidden=!['overview','onboarding'].includes(name);
+  $('#view-description').textContent=platformViews[name][1];$('#primary-action').hidden=!['overview','onboarding'].includes(name);if(name==='ai'&&typeof loadAIUsageView==='function')loadAIUsageView();
   if(data){renderAccountContext();if(accountChanged){renderCompanies();renderOnboarding();renderSupport();renderSubscriptions()}}
   if(focus)$('#view-title').focus();
 }
