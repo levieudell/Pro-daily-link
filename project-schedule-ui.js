@@ -4,6 +4,7 @@
   // The server schedules (project-schedule.js engine); this module renders
   // the tab, wires add/edit/delete/status, and repaints after every change.
   let scheduleTabSequence = 0;
+let scheduleView = 'table';
 
   function canEditTasks(){ return typeof canManageSchedule === 'function' && canManageSchedule(); }
   function taskStatusLabel(status){ return status === 'done' ? 'Done' : status === 'in-progress' ? 'In progress' : 'Not started'; }
@@ -25,10 +26,75 @@
     const total = Math.max(1, Date.parse(windowEnd + 'T12:00:00') - Date.parse(windowStart + 'T12:00:00'));
     const left = Math.min(96, Math.max(0, (Date.parse(task.startDate + 'T12:00:00') - Date.parse(windowStart + 'T12:00:00')) / total * 100));
     const right = Math.min(96, Math.max(0, (Date.parse(windowEnd + 'T12:00:00') - Date.parse(task.endDate + 'T12:00:00')) / total * 100));
-    return `<div class="project-schedule-track" aria-hidden="true"><i style="left:${left}%;right:${right}%"></i></div>`;
+        const statusClass = task.status === 'done' ? ' is-done' : task.status === 'in-progress' ? ' is-progress' : ' is-todo';
+    return `<div class="project-schedule-track${statusClass}" aria-hidden="true"><i style="left:${left}%;right:${right}%"></i></div>`;
   }
 
-  function renderSchedulePane(pane, project, tasks, editingId){
+  function crewOptions(field, selected){
+    const crews = [...new Set((typeof team !== 'undefined' ? team : []).map(m => m.crew).filter(Boolean))];
+    if (!crews.length) return '';
+    return `<select ${field} aria-label="Crew (optional)"><option value="">No crew</option>${crews.map(crew => `<option value="${escapeHtml(crew)}" ${String(selected || '') === crew ? 'selected' : ''}>${escapeHtml(crew)}</option>`).join('')}</select>`;
+  }
+  function memberPick(field, selected){
+    const people = (typeof team !== 'undefined' ? team : []) || [];
+    if (!people.length) return '';
+    const chosen = (selected || []).map(Number);
+    const size = Math.min(4, Math.max(2, people.length));
+    return `<select ${field} multiple size="${size}" aria-label="Assigned people (optional)">${people.map(member => `<option value="${Number(member.id)}" ${chosen.includes(Number(member.id)) ? 'selected' : ''}>${escapeHtml(member.name)}</option>`).join('')}</select>`;
+  }
+
+  function forecastBanner(project, sorted){
+    if (!sorted.length) return '';
+    const ends = sorted.map(t => t.endDate).filter(Boolean).sort();
+    const finish = ends[ends.length - 1];
+    if (!finish) return '';
+    const target = project.endDate && /^\d{4}-\d{2}-\d{2}$/.test(String(project.endDate)) ? String(project.endDate) : null;
+    const label = formatDate(finish);
+    if (!target) return `<div class="project-schedule-forecast" data-schedule-forecast><strong>Forecast finish ${escapeHtml(label)}</strong><span>Set a target end date above to track the schedule against it.</span></div>`;
+    const diffDays = Math.round((Date.parse(finish + 'T12:00:00') - Date.parse(target + 'T12:00:00')) / 86400000);
+    if (diffDays <= 0) return `<div class=\"project-schedule-forecast is-ahead\" data-schedule-forecast><strong>Forecast finish ${escapeHtml(label)}</strong><span>${diffDays === 0 ? 'Right on the target end date.' : `${Math.abs(diffDays)} calendar day${Math.abs(diffDays) === 1 ? '' : 's'} ahead of target.`}</span></div>`;
+    return `<div class="project-schedule-forecast is-behind" data-schedule-forecast><strong>Forecast finish ${escapeHtml(label)}</strong><span>${diffDays} calendar day${diffDays === 1 ? '' : 's'} past the target end ${escapeHtml(formatDate(target))} — trim scope, add crew, or move the target.</span></div>`;
+  }
+
+  function ganttChart(project, sorted){
+    if (!sorted.length) return '';
+    const dates = sorted.map(t => t.startDate).concat(sorted.map(t => t.endDate)).filter(Boolean).sort();
+    if (!dates.length) return '';
+    const DAY = 86400000;
+    const start = Date.parse(dates[0] + 'T12:00:00') - 2 * DAY;
+    let end = Date.parse(dates[dates.length - 1] + 'T12:00:00') + 2 * DAY;
+    if ((end - start) / DAY > 62) end = start + 62 * DAY;
+    const span = end - start + DAY;
+    const days = [];
+    for (let t = start; t <= end; t += DAY) days.push(new Date(t));
+    const isoOf = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    const dayCells = days.map(d => `<i class="gantt-day${(d.getDay() === 0 || d.getDay() === 6) ? ' gantt-weekend' : ''}"><small>${'SMTWTFS'[d.getDay()]}</small><b>${d.getDate()}</b></i>`).join('');
+    const months = [];
+    for (const d of days) {
+      const key = `${d.getFullYear()}-${d.getMonth()}`;
+      if (months.length && months[months.length - 1].key === key) months[months.length - 1].count++;
+      else months.push({ key, label: d.toLocaleDateString('en-US', { month: 'short' }), count: 1 });
+    }
+    const monthRow = months.map(m => `<span class="gantt-month" style="flex-grow:${m.count}">${escapeHtml(m.label)}</span>`).join('');
+    const todayIso = typeof localDateIso === 'function' ? localDateIso() : '';
+    const todayLeft = todayIso && todayIso >= isoOf(days[0]) && todayIso <= isoOf(days[days.length - 1]) ? (Date.parse(todayIso + 'T12:00:00') - start) / span * 100 : null;
+    const rows = sorted.map(task => {
+      const statusClass = task.status === 'done' ? ' is-done' : task.status === 'in-progress' ? ' is-progress' : ' is-todo';
+      const deps = (task.predecessorIds || []).map(id => taskById(sorted, id)).filter(Boolean).map(d => d.name).join(', ');
+      const left = Math.max(0, (Date.parse(task.startDate + 'T12:00:00') - start) / span * 100);
+      const right = Math.min(100, (Date.parse(task.endDate + 'T12:00:00') + DAY - start) / span * 100);
+      return `<div class="gantt-row">
+        <div class="gantt-row-label"><strong>${escapeHtml(task.name)}</strong><small>${escapeHtml(assigneeLabel(task))}${deps ? ` · waits for ${escapeHtml(deps)}` : ''}</small></div>
+        <div class="gantt-row-track">${dayCells}<i class="gantt-bar${statusClass}" style="left:${left.toFixed(2)}%;width:${Math.max(0.8, right - left).toFixed(2)}%" title="${escapeHtml(task.name)} · ${escapeHtml(formatDate(task.startDate))} – ${escapeHtml(formatDate(task.endDate))}">${task.status === 'done' ? '✓' : ''}</i>${todayLeft == null ? '' : `<i class="gantt-today" style="left:${todayLeft.toFixed(2)}%" title="Today"></i>`}</div>
+      </div>`;
+    }).join('');
+    return `<div class="project-schedule-gantt" data-schedule-gantt><div class="project-schedule-gantt-inner">
+      <div class="gantt-head"><div class="gantt-corner">TASK</div><div><div class="gantt-months">${monthRow}</div><div class="gantt-days">${dayCells}</div></div></div>
+      ${rows}
+    </div></div>`;
+  }
+
+function renderSchedulePane(pane, project, tasks, editingId){
     const editable = canEditTasks();
     const hasStart = Boolean(project.startDate && /^\d{4}-\d{2}-\d{2}$/.test(String(project.startDate)));
     const sorted = (tasks || []).slice().sort((a, b) => String(a.startDate).localeCompare(String(b.startDate)) || Number(a.id) - Number(b.id));
@@ -46,6 +112,8 @@
             ${estimatePick('data-edit-task-estimate', task.estimateItemId)}
             <label>Working days<input type="number" data-edit-task-duration min="1" max="365" step="1" value="${Number(task.durationDays)}"></label>
             <label>Waits for<select data-edit-task-deps multiple size="${Math.min(4, Math.max(2, sorted.length))}">${depsOptions.replace(`value="${Number(task.id)}"`, 'value="" disabled')}</select></label>
+            ${memberPick('data-edit-task-members', task.memberIds)}
+            ${crewOptions('data-edit-task-crew', task.crew)}
             <div class="project-schedule-editor-actions"><button type="button" class="primary small" data-save-task-edit="${Number(task.id)}">Save task</button><button type="button" class="secondary small" data-cancel-task-edit>Cancel</button></div>
           </div>
         </td>
@@ -60,7 +128,8 @@
         <td class="project-schedule-actions">${editable ? `<select data-task-status="${Number(task.id)}" aria-label="Status for ${escapeHtml(task.name)}"><option value="not-started" ${task.status === 'not-started' ? 'selected' : ''}>Not started</option><option value="in-progress" ${task.status === 'in-progress' ? 'selected' : ''}>In progress</option><option value="done" ${task.status === 'done' ? 'selected' : ''}>Done</option></select><button type="button" class="secondary small" data-edit-task="${Number(task.id)}">Edit</button><button type="button" class="danger small" data-delete-task="${Number(task.id)}" aria-label="Delete ${escapeHtml(task.name)}">Delete</button>` : `<span class="status">${taskStatusLabel(task.status)}</span>`}</td>
       </tr>`)).join('');
     pane.innerHTML = `
-      <div class="project-schedule-head"><div><h3>Project schedule</h3><p>Linked tasks auto-schedule: a task starts the next working day after everything it waits for is done. Change one and the rest follow.</p></div></div>
+      <div class="project-schedule-head"><div><h3>Project schedule</h3><p>Linked tasks auto-schedule: a task starts the next working day after everything it waits for is done. Change one and the rest follow.</p></div><div class="project-schedule-view-toggle" role="tablist" aria-label="Schedule view"><button type="button" data-schedule-view="table" class="${scheduleView === 'table' ? 'active' : ''}">Table</button><button type="button" data-schedule-view="timeline" class="${scheduleView === 'timeline' ? 'active' : ''}">Timeline</button></div></div>
+      ${forecastBanner(project, sorted)}
       ${editable ? `${!hasStart ? `<div data-schedule-needs-start style="display:flex;gap:8px 16px;align-items:baseline;flex-wrap:wrap;padding:12px 14px;margin-bottom:12px;border:1px solid #e5c97a;background:#fdf6e3;border-radius:12px;font-size:14px"><strong>No start date on this project yet.</strong><span style="color:#6b5d33">Set one below and every task will schedule itself from that day.</span></div>` : ''}
       <div class="project-schedule-add" data-project-dates-form>
         <label style="display:grid;gap:4px;font-size:12px;font-weight:600;color:#64726c">Start date<input type="date" data-project-start-date value="${escapeHtml(String(project.startDate || (typeof localDateIso === 'function' ? localDateIso() : new Date().toISOString().slice(0, 10))))}"></label>
@@ -73,9 +142,11 @@
         <input type="text" data-new-task-name placeholder="Task name — or pick an estimate line above" maxlength="160" aria-label="Task name">
         <input type="number" data-new-task-duration min="1" max="365" step="1" value="1" aria-label="Working days">
         <select data-new-task-deps multiple size="${Math.min(4, Math.max(2, sorted.length))}" aria-label="Waits for">${depsOptions || '<option value="" disabled>No tasks yet</option>'}</select>
+        ${memberPick('data-new-task-members', [])}
+        ${crewOptions('data-new-task-crew', '')}
         <button type="button" class="primary" data-add-task>＋ Add task</button>
       </div>` : ''}
-      ${sorted.length ? `<div class="project-schedule-table-wrap"><table class="project-schedule-table"><thead><tr><th>Task</th><th>Waits for</th><th>Length</th><th>Dates</th><th>Assigned</th><th>${editable ? 'Status / actions' : 'Status'}</th></tr></thead><tbody>${rows}</tbody></table></div>` : `<div class="project-tab-empty"><strong>No scheduled tasks yet</strong><p>${editable ? 'Add the project’s phases or milestones above and link them so the dates keep themselves honest.' : 'Your office will add the project schedule here.'}</p></div>`}`;
+      ${sorted.length ? (scheduleView === 'timeline' ? ganttChart(project, sorted) : `<div class="project-schedule-table-wrap"><table class="project-schedule-table"><thead><tr><th>Task</th><th>Waits for</th><th>Length</th><th>Dates</th><th>Assigned</th><th>${editable ? 'Status / actions' : 'Status'}</th></tr></thead><tbody>${rows}</tbody></table></div>`) : `<div class="project-tab-empty"><strong>No scheduled tasks yet</strong><p>${editable ? 'Add the project’s phases or milestones above and link them so the dates keep themselves honest.' : 'Your office will add the project schedule here.'}</p></div>`}`;
     if (Number(editingId)) { const select = pane.querySelector(`[data-schedule-edit-row="${Number(editingId)}"] [data-edit-task-deps]`); if (select) { const editing = taskById(tasks, editingId); [...select.options].forEach(option => { option.selected = (editing?.predecessorIds || []).map(Number).includes(Number(option.value)); }); } }
     wireSchedulePane(pane, project, tasks, editingId);
   }
@@ -84,6 +155,11 @@
 
   function wireSchedulePane(pane, project, tasks){
     const editable = canEditTasks();
+    pane.querySelectorAll('[data-schedule-view]').forEach(button => button.onclick = () => {
+      if (scheduleView === button.dataset.scheduleView) return;
+      scheduleView = button.dataset.scheduleView;
+      renderSchedulePane(pane, project, tasks, null);
+    });
     const refresh = payload => { renderSchedulePane(pane, project, payload.tasks, null); syncLaneWithServer(); };
     const notifyChanged = payload => { const others = (payload.changed || []).filter(id => true).length; notify(others > 1 ? `Schedule updated — ${others} tasks moved` : 'Schedule updated'); };
     const saveDates = pane.querySelector('[data-save-project-dates]');
@@ -110,8 +186,9 @@
     };
     if (addButton) addButton.onclick = async () => {
       const name = pane.querySelector('[data-new-task-name]').value.trim(), durationDays = Number(pane.querySelector('[data-new-task-duration]').value), predecessorIds = selectedValues(pane.querySelector('[data-new-task-deps]')), estimateItemId = Number(pane.querySelector('[data-new-task-estimate]')?.value) || null;
+      const memberIds = selectedValues(pane.querySelector('[data-new-task-members]')), crew = pane.querySelector('[data-new-task-crew]')?.value || '';
       if (!name) return notify('Give the task a name first');
-      try { const payload = await api(`/api/projects/${project.id}/tasks`, { method: 'POST', body: JSON.stringify({ name, durationDays, predecessorIds, estimateItemId }) }); refresh(payload); notifyChanged(payload); }
+      try { const payload = await api(`/api/projects/${project.id}/tasks`, { method: 'POST', body: JSON.stringify({ name, durationDays, predecessorIds, estimateItemId, memberIds, crew }) }); refresh(payload); notifyChanged(payload); }
       catch (error) { notify(error.message); }
     };
     if (!editable) return;
@@ -130,8 +207,9 @@
     if (saveEdit) saveEdit.onclick = async () => {
       const row = pane.querySelector(`[data-schedule-edit-row="${saveEdit.dataset.saveTaskEdit}"]`);
       const name = row.querySelector('[data-edit-task-name]').value.trim(), durationDays = Number(row.querySelector('[data-edit-task-duration]').value), predecessorIds = selectedValues(row.querySelector('[data-edit-task-deps]')), estimateItemId = Number(row.querySelector('[data-edit-task-estimate]')?.value) || null;
+      const memberIds = selectedValues(row.querySelector('[data-edit-task-members]')), crew = row.querySelector('[data-edit-task-crew]')?.value || '';
       if (!name) return notify('Give the task a name first');
-      try { const payload = await api(`/api/project-tasks/${saveEdit.dataset.saveTaskEdit}`, { method: 'PATCH', body: JSON.stringify({ name, durationDays, predecessorIds, estimateItemId }) }); refresh(payload); notifyChanged(payload); }
+      try { const payload = await api(`/api/project-tasks/${saveEdit.dataset.saveTaskEdit}`, { method: 'PATCH', body: JSON.stringify({ name, durationDays, predecessorIds, estimateItemId, memberIds, crew }) }); refresh(payload); notifyChanged(payload); }
       catch (error) { notify(error.message); }
     };
     const cancelEdit = pane.querySelector('[data-cancel-task-edit]');

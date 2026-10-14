@@ -11,8 +11,8 @@ const { isPublicFile } = require('./public-file-policy');
 
 // Script loads after app.js (it patches openProject) and carries a version.
 assert.ok(index.indexOf('app.js?') < index.indexOf('project-schedule-ui.js?'), 'module loads after app.js so openProject exists');
-assert.match(index, /project-schedule-ui\.js\?v=20261013-uxa/);
-assert.match(index, /styles\.css\?v=20261013-uxa/);
+assert.match(index, /project-schedule-ui\.js\?v=20261013-gantt/);
+assert.match(index, /styles\.css\?v=20261013-gantt/);
 
 // Static serving + server wiring.
 assert.equal(isPublicFile(process.cwd(), path.join(process.cwd(), 'project-schedule-ui.js')), true, 'UI module is publicly served');
@@ -71,6 +71,25 @@ assert.match(ui, /data-project-start-date/);
 assert.match(ui, /data-schedule-needs-start/, 'a no-start-date project gets a set-one prompt');
 assert.match(ui, /api\(`\/api\/projects\/\$\{project\.id\}`/, 'dates save through the project PATCH');
 for (const selector of ['.schedule-unassigned', '.schedule-task-chip', '.schedule-task-assign'])
+  assert.ok(styles.includes(selector), `${selector} styled`);
+
+// 2026 schedule enhancements: timeline view, forecast banner, assignee pickers.
+assert.match(ui, /data-schedule-view="table"/, 'table/timeline view toggle renders');
+assert.match(ui, /function ganttChart\(project, sorted\)/, 'gantt builder exists');
+assert.match(ui, /class="gantt-bar\$\{statusClass\}"/, 'gantt bars carry status color classes');
+assert.match(ui, /gantt-weekend/, 'weekend columns shaded');
+assert.match(ui, /gantt-today/, 'today marker on the timeline');
+assert.match(ui, /function forecastBanner\(project, sorted\)/, 'forecast banner builder exists');
+assert.match(ui, /data-schedule-forecast/, 'forecast banner rendered');
+assert.match(ui, /is-ahead/, 'ahead-of-target state');
+assert.match(ui, /is-behind/, 'past-target state');
+assert.match(ui, /data-new-task-members/, 'add form assigns people');
+assert.match(ui, /data-new-task-crew/, 'add form assigns a crew');
+assert.match(ui, /data-edit-task-members/, 'edit form assigns people');
+assert.match(ui, /data-edit-task-crew/, 'edit form assigns a crew');
+assert.match(ui, /memberIds, crew \}\)/, 'payloads send assignees to the server');
+assert.match(ui, /project-schedule-track\$\{statusClass\}/, 'table mini-bars carry status tints');
+for (const selector of ['.project-schedule-gantt', '.gantt-head', '.gantt-row', '.gantt-bar', '.gantt-day', '.gantt-month', '.project-schedule-forecast', '.project-schedule-view-toggle'])
   assert.ok(styles.includes(selector), `${selector} styled`);
 
 console.log('project-schedule UI contracts: ok');
