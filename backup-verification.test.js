@@ -1,4 +1,8 @@
 'use strict';
+// Windows cannot honor POSIX modes: there the file comes back 0o666.
+// Assert owner-readability there and the exact mode everywhere else.
+function expectMode600(file){const mode=fs.statSync(file).mode&0o777;if(process.platform==='win32')assert.ok(mode&0o400,'owner-readable (POSIX modes not enforceable on Windows)');else assert.equal(mode,0o600)}
+
 
 const assert = require('node:assert/strict');
 const crypto = require('node:crypto');
@@ -83,7 +87,7 @@ async function verify(input = snapshot, extra = {}) {
     assert.equal(backup.publicStatus(directory, otherId).fresh, false, 'one tenant cannot establish coverage for another');
     assert.equal(backup.backupDue(directory, companyId), false);
     assert.equal(receipt().verification.sourceRevision, 7);
-    assert.equal(fs.statSync(backup.receiptFile(directory, companyId)).mode & 0o777, 0o600);
+    expectMode600(backup.receiptFile(directory, companyId));
     const publicText = JSON.stringify(backup.publicStatus(directory, companyId));
     for (const secret of [companyId, snapshot.company.name, 'Private synthetic note', receipt().verification.sha256, receipt().verification.objectKey]) {
       assert.equal(publicText.includes(secret), false, 'public health must not disclose receipt details');
