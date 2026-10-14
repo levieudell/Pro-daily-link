@@ -11,8 +11,8 @@ const { isPublicFile } = require('./public-file-policy');
 
 // Script loads after app.js (it patches openProject) and carries a version.
 assert.ok(index.indexOf('app.js?') < index.indexOf('project-schedule-ui.js?'), 'module loads after app.js so openProject exists');
-assert.match(index, /project-schedule-ui\.js\?v=20261014-forms/);
-assert.match(index, /styles\.css\?v=20261014-forms/);
+assert.match(index, /project-schedule-ui\.js\?v=20261014-crewsnap/);
+assert.match(index, /styles\.css\?v=20261014-crewsnap/);
 
 // Static serving + server wiring.
 assert.equal(isPublicFile(process.cwd(), path.join(process.cwd(), 'project-schedule-ui.js')), true, 'UI module is publicly served');
@@ -108,7 +108,7 @@ assert.match(ui, /target\.crew \? \{ crew: target\.crew, fromDate \} : \{ member
 assert.match(ui, /closest\('\[data-schedule-crew-drop\]'\)/, 'the lane drop listener accepts crew group headers');
 assert.match(ui, /Crew \$\{payload\.crew\}/, 'crew bookings name the crew in the confirmation');
 assert.match(server, /input\.crew != null && String\(input\.crew\)\.trim\(\) !== ''/, 'assign endpoint accepts a whole crew');
-assert.match(server, /task\.memberIds = \[\];\s*\n?\s*task\.assignedAt = now;\s*\n?\s*task\.assignedBy = req\.auth\?\.user\.name/, 'crew booking claims the task for the crew without memberIds');
+assert.match(server, /task\.memberIds = bookedIds;\s*\n?\s*task\.assignedAt = now;\s*\n?\s*task\.assignedBy = req\.auth\?\.user\.name/, 'crew booking snapshots the booked members onto the task');
 assert.match(server, /officeLike/, 'office-role members are excluded from crew bookings');
 assert.match(server, /That crew has no active field members/, 'a crewless crew is rejected with a plain message');
 const app = fs.readFileSync('app.js', 'utf8');

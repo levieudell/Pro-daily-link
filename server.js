@@ -1377,24 +1377,26 @@ async function api(req,res,url){
       const crewMembers = (db.team || []).filter(row => row.crew === crewName && (row.status || 'Active') === 'Active' && !officeLike(row));
       if (!crewMembers.length) return json(res, 400, { error: 'That crew has no active field members' });
       let created = 0, merged = 0, skipped = 0, forbidden = 0;
-      const bookedNames = [];
+      const bookedNames = [], bookedIds = [];
       for (const member of crewMembers) {
         const result = await assignToMember(member);
         if (result.forbidden) { forbidden++; continue; }
         if (result.error) return json(res, 400, { error: result.error });
         created += result.created; merged += result.merged; skipped += result.skipped;
-        if (result.created + result.merged > 0) bookedNames.push(member.name);
+        if (result.created + result.merged > 0) { bookedNames.push(member.name); bookedIds.push(Number(member.id)); }
       }
       if (forbidden === crewMembers.length) return json(res, 403, { error: 'You can only schedule your assigned crews on your assigned projects' });
       if (created + merged > 0) {
+        // Snapshot the members who actually got booked so the task carries a
+        // concrete starting assignment; a later single-person assign replaces it.
         task.crew = crewName;
-        task.memberIds = [];
+        task.memberIds = bookedIds;
         task.assignedAt = now;
         task.assignedBy = req.auth?.user.name || 'Office user';
         writeDb(db);
       }
       const scheduled = PDLProjectSchedule.scheduleTasks((db.projectTasks || []).filter(t => Number(t.projectId) === Number(task.projectId)), (db.projects || []).find(p => Number(p.id) === Number(task.projectId))?.startDate);
-      return json(res, 200, { tasks: scheduled.tasks || [], changed: [], created, merged, skipped, crew: crewName, members: bookedNames.length, memberNames: bookedNames });
+      return json(res, 200, { tasks: scheduled.tasks || [], changed: [], created, merged, skipped, crew: crewName, members: bookedNames.length, memberNames: bookedNames, memberIds: bookedIds });
     }
     const memberId = Number(input.memberId), member = (db.team || []).find(m => Number(m.id) === memberId);
     if (!member) return json(res, 400, { error: 'Choose a person from the team' });
