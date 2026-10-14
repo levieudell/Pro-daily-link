@@ -742,6 +742,15 @@ body.schedule-touch-dragging{overflow:hidden;-webkit-user-select:none;user-selec
 :root[data-theme="dark"] .schedule-crew-row.is-muted{background:transparent}
 :root[data-theme="dark"] .schedule-crew-row.is-muted strong{color:#4c5f57}
 :root[data-theme="dark"] .schedule-crew-row.drag-over{border-color:#4c8a6d;background:#1d332a;box-shadow:0 0 0 3px #4c8a6d33}
+/* Planned-vs-done progress on tasks linked to an estimate line */
+.project-schedule-progress{display:inline-flex;align-items:center;gap:8px;margin:6px 0 2px;font-size:11px;line-height:1}
+.project-schedule-progress i{width:84px;height:6px;border-radius:99px;background:#e3e9e5;overflow:hidden;flex:0 0 auto}
+.project-schedule-progress u{display:block;height:100%;border-radius:inherit;background:#2e6b52;transition:width .25s}
+.project-schedule-progress b{font-weight:600;color:#17382d;white-space:nowrap}
+.project-schedule-progress small{color:#98a5a0}
+@media(max-width:760px){.project-schedule-progress i{width:56px}}
+:root[data-theme="dark"] .project-schedule-progress i{background:#2c3d35}
+:root[data-theme="dark"] .project-schedule-progress b{color:#cde3d8}
 .voice-status{margin:8px 0 0;font-size:13px;color:#64726c;min-height:18px}
 .voice-status.voice-listening{color:#17382d;font-weight:600}
 .voice-status.voice-listening:before{content:"🎙 "}

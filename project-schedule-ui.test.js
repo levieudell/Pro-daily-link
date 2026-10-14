@@ -52,7 +52,7 @@ assert.match(ui, /class="schedule-unassigned"/);
 assert.match(ui, /data-schedule-task="\$\{Number\(task\.id\)\}"/);
 assert.match(ui, /blockSelector: '\[data-schedule-task\]'/, 'chips get their own touch-drag attach');
 assert.match(ui, /api\(`\/api\/project-tasks\/\$\{taskId\}\/assign`/);
-assert.match(ui, /window\.PDLProjectScheduleUI = \{ assignTaskTo, paintUnassignedLane, get draggingTaskId\(\)\{ return draggedTaskId; \} \}/, 'lane module exposes its drag state for crew-row highlighting');
+assert.match(ui, /window\.PDLProjectScheduleUI = \{ assignTaskTo, paintUnassignedLane, estimateProgress, get draggingTaskId\(\)\{ return draggedTaskId; \} \}/, 'lane module exposes its drag state and the progress rollup');
 // The project detail content is itself a <form>, so pane markup must never
 // emit a nested <form> — the parser drops the tag and the handler never binds.
 assert.equal((ui.match(/<form[\s>]/g) || []).length, 0, 'no nested form tags in schedule pane markup');
@@ -119,6 +119,18 @@ for (const selector of ['.schedule-crew-row', '.schedule-crew-row.drag-over', '.
   assert.ok(styles.includes(selector), `${selector} styled`);
 assert.match(ui, /sorted\.filter\(t => Number\(t\.id\) !== Number\(task\.id\)\)/, 'edit form cannot link a task to itself');
 for (const selector of ['.schedule-add-grid', '.schedule-field', '.schedule-chip', '.schedule-chip-row', '.schedule-add-actions'])
+  assert.ok(styles.includes(selector), `${selector} styled`);
+
+// Planned-vs-done progress on estimate-linked tasks: planned quantity from the
+// estimate line, done from approved daily-report production entries. Office
+// workspace only (the field report subset has no production entries).
+assert.match(ui, /function estimateProgress\(project, estimateItemId\)/, 'progress rollup helper exists');
+assert.match(ui, /row\.status === 'Approved' && !row\.deletedAt/, 'only approved, live reports count');
+assert.match(ui, /currentRole === 'field'\) return null/, 'field workspace skips progress instead of reading zero');
+assert.match(ui, /class="project-schedule-progress"/, 'table rows render the progress chip');
+assert.match(ui, /Approved daily-report quantities/, 'progress chip explains its source');
+assert.match(ui, /progressText\(progress\) \? ` · \$\{escapeHtml\(progressText\(progress\)\)\}`/, 'gantt labels carry progress');
+for (const selector of ['.project-schedule-progress', '.project-schedule-progress i', '.project-schedule-progress u'])
   assert.ok(styles.includes(selector), `${selector} styled`);
 
 console.log('project-schedule UI contracts: ok');
