@@ -21,6 +21,33 @@ let scheduleView = 'table';
     return deps.length ? deps.map(d => `<span class="project-schedule-dep">${escapeHtml(d.name)}</span>`).join('') : '<span class="project-schedule-none">None</span>';
   }
 
+  // Planned-vs-done for a task linked to an estimate line: planned quantity
+  // from the estimate, done from approved daily-report production entries.
+  // Office workspace only — the field workspace ships a scoped report subset
+  // without production entries, so progress there would always read zero.
+  function estimateProgress(project, estimateItemId){
+    if (typeof currentRole !== 'undefined' && currentRole === 'field') return null;
+    const item = (project.estimateItems || []).find(row => Number(row.id) === Number(estimateItemId));
+    const planned = Number(item?.plannedQuantity) || 0;
+    if (!item || !(planned > 0)) return null;
+    const allProjects = (typeof projects !== 'undefined' ? projects : []);
+    const done = ((typeof reports !== 'undefined' ? reports : []) || [])
+      .filter(row => row && row.status === 'Approved' && !row.deletedAt && Number(allProjects[Number(row.project)]?.id) === Number(project.id))
+      .flatMap(row => (row.productionEntries || []).filter(entry => Number(entry.estimateItemId) === Number(estimateItemId)))
+      .reduce((sum, entry) => sum + (Number(entry.quantity) || 0), 0);
+    return { done, planned, unit: String(item.unit || ''), pct: Math.min(100, Math.round(done / planned * 100)) };
+  }
+  function progressMarkup(progress){
+    if (!progress) return '';
+    const fmt = value => Number(value).toLocaleString('en-US', { maximumFractionDigits: 1 });
+    return `<span class="project-schedule-progress" title="Approved daily-report quantities"><i><u style="width:${progress.pct}%"></u></i><b>${fmt(progress.done)} / ${fmt(progress.planned)} ${escapeHtml(progress.unit)}</b><small>${progress.pct}%</small></span>`;
+  }
+  function progressText(progress){
+    if (!progress) return '';
+    const fmt = value => Number(value).toLocaleString('en-US', { maximumFractionDigits: 1 });
+    return `${fmt(progress.done)} / ${fmt(progress.planned)} ${progress.unit} (${progress.pct}%)`;
+  }
+
   function timelineRow(task, windowStart, windowEnd){
     if (!windowStart || !windowEnd) return '';
     const total = Math.max(1, Date.parse(windowEnd + 'T12:00:00') - Date.parse(windowStart + 'T12:00:00'));
@@ -87,8 +114,9 @@ let scheduleView = 'table';
       const deps = (task.predecessorIds || []).map(id => taskById(sorted, id)).filter(Boolean).map(d => d.name).join(', ');
       const left = Math.max(0, (Date.parse(task.startDate + 'T12:00:00') - start) / span * 100);
       const right = Math.min(100, (Date.parse(task.endDate + 'T12:00:00') + DAY - start) / span * 100);
+      const progress = estimateProgress(project, task.estimateItemId);
       return `<div class="gantt-row">
-        <div class="gantt-row-label"><strong>${escapeHtml(task.name)}</strong><small>${escapeHtml(assigneeLabel(task))}${deps ? ` · waits for ${escapeHtml(deps)}` : ''}</small></div>
+        <div class="gantt-row-label"><strong>${escapeHtml(task.name)}</strong><small>${escapeHtml(assigneeLabel(task))}${deps ? ` · waits for ${escapeHtml(deps)}` : ''}${progressText(progress) ? ` · ${escapeHtml(progressText(progress))}` : ''}</small></div>
         <div class="gantt-row-track">${dayCells}<i class="gantt-bar${statusClass}" style="left:${left.toFixed(2)}%;width:${Math.max(0.8, right - left).toFixed(2)}%" title="${escapeHtml(task.name)} · ${escapeHtml(formatDate(task.startDate))} – ${escapeHtml(formatDate(task.endDate))}">${task.status === 'done' ? '✓' : ''}</i>${todayLeft == null ? '' : `<i class="gantt-today" style="left:${todayLeft.toFixed(2)}%" title="Today"></i>`}</div>
       </div>`;
     }).join('');
@@ -123,7 +151,7 @@ function renderSchedulePane(pane, project, tasks, editingId){
       </tr>`;
     const rows = sorted.map(task => (Number(editingId) === Number(task.id) ? editorRow(task) : `
       <tr data-schedule-task-row="${Number(task.id)}">
-        <td><strong>${escapeHtml(task.name)}</strong>${task.estimateItemId ? `<small class="project-schedule-est-tag">From estimate · ${escapeHtml(estimateItems.find(item => Number(item.id) === Number(task.estimateItemId))?.name || 'line item')}</small>` : ''}${timelineRow(task, windowStart, windowEnd)}</td>
+        <td><strong>${escapeHtml(task.name)}</strong>${task.estimateItemId ? `<small class="project-schedule-est-tag">From estimate · ${escapeHtml(estimateItems.find(item => Number(item.id) === Number(task.estimateItemId))?.name || 'line item')}</small>` : ''}${progressMarkup(estimateProgress(project, task.estimateItemId))}${timelineRow(task, windowStart, windowEnd)}</td>
         <td>${dependencyChips(sorted, task)}</td>
         <td>${Number(task.durationDays)}d</td>
         <td><small>${formatDate(task.startDate)} – ${formatDate(task.endDate)}</small></td>
@@ -415,7 +443,7 @@ function renderSchedulePane(pane, project, tasks, editingId){
     };
   }
   window.paintProjectScheduleTab = paintProjectScheduleTab;
-  window.PDLProjectScheduleUI = { assignTaskTo, paintUnassignedLane, get draggingTaskId(){ return draggedTaskId; } };
+  window.PDLProjectScheduleUI = { assignTaskTo, paintUnassignedLane, estimateProgress, get draggingTaskId(){ return draggedTaskId; } };
   wrapRenderSchedule();
   attachLaneTouchDrag();
 })();
