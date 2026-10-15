@@ -51,7 +51,7 @@ vm.runInContext([
  one("$('#report-modal').addEventListener('cancel',event=>{if(confirmReportDiscard())"),
  lines.find(line=>line.includes('function renderReports(selected=')),
  source.slice(approvalStart,approvalEnd),
- declaration('reportRecoverySnapshot'),declaration('restoreRecoveredReportFields'),declaration('saveDailyReport'),
+ declaration('reportRecoverySnapshot'),declaration('restoreRecoveredReportFields'),declaration('reportSignatureRequired'),declaration('saveDailyReport'),
  source.slice(source.indexOf('// Show the saved typed signature independently'))
 ].join('\n'),c);
 const report={id:1,project:0,dateIso:'2026-10-01',foreman:'Synthetic author',status:'Draft',notes:'Synthetic work',
