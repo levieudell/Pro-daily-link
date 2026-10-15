@@ -50,7 +50,16 @@ function createHost(deps) {
         db.sessions ||= [];
         db.sessions.push({ id: crypto.randomUUID(), tokenHash, userId: stored.id, companyId: db.company.id, createdAt: new Date().toISOString(), expiresAt: new Date(Date.now() + 60_000).toISOString(), mcpConnector: true });
         const revisionBefore = Number(db.company.persistence?.revision || 0);
-        const actor = { id: stored.id, name: stored.name, role, memberId: stored.memberId ?? null, companyId: db.company.id };
+        const actor = {
+          id: stored.id,
+          name: stored.name,
+          role,
+          memberId: stored.memberId ?? null,
+          companyId: db.company.id,
+          projectIds: Array.isArray(stored.projectIds) ? stored.projectIds.map(Number) : [],
+          assignedCrews: Array.isArray(stored.assignedCrews) ? stored.assignedCrews.map(name => String(name)) : [],
+          permissions: stored.permissions && typeof stored.permissions === 'object' ? { ...stored.permissions } : {}
+        };
         async function call(method, pathname, payload) {
           const req = new EventEmitter();
           Object.assign(req, {

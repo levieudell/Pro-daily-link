@@ -22,8 +22,8 @@ function isoDate() {
   const value = type => parts.find(part => part.type === type).value;
   return `${value('year')}-${value('month')}-${value('day')}`;
 }
-function user(id, name, email, role, memberId) {
-  return { id, companyId: demoId, name, email, role, memberId, status: 'Active', mustSetPassword: false, ...credential(password) };
+function user(id, name, email, role, memberId, extra = {}) {
+  return { id, companyId: demoId, name, email, role, memberId, status: 'Active', mustSetPassword: false, ...extra, ...credential(password) };
 }
 
 const today = isoDate();
@@ -42,13 +42,17 @@ const demo = {
     user(1, 'DEMO Jordan Reed', 'jordan@demo.test', 'field', 1),
     user(2, 'DEMO Alex Stone', 'alex@demo.test', 'field', 2),
     user(3, 'DEMO Office Pat', 'pat@demo.test', 'admin', 3),
-    user(4, 'DEMO Pat Manager', 'pm@demo.test', 'project_manager', null)
+    user(4, 'DEMO Pat Manager', 'pm@demo.test', 'project_manager', null, { projectIds: [11], assignedCrews: ['Concrete'], permissions: { viewDailies: true, approveDailies: true } })
   ],
   assignments: [
     { id: 1, date: today, projectId: 11, memberIds: [1], activity: 'Pour footings' },
     { id: 2, date: today, projectId: 22, memberIds: [2], activity: 'Frame walls' }
   ],
-  reports: [{ id: 1, project: 0, dateIso: '2020-01-02', date: 'Jan 2', status: 'Approved', foreman: 'DEMO Office Pat', notes: 'Earlier pour', productionEntries: [{ estimateItemId: 1, description: 'Footings', quantity: 10, unit: 'CY', laborHours: 4 }], laborEntries: [{ memberId: 3, hours: 4, crew: 'Office' }] }],
+  reports: [
+    { id: 1, project: 0, dateIso: '2020-01-02', date: 'Jan 2', status: 'Approved', foreman: 'DEMO Office Pat', notes: 'Earlier pour', productionEntries: [{ estimateItemId: 1, description: 'Footings', quantity: 10, unit: 'CY', laborHours: 4 }], laborEntries: [{ memberId: 3, hours: 4, crew: 'Office' }] },
+    { id: 2, project: 1, dateIso: '2020-03-03', date: 'Mar 3', status: 'Draft', foreman: 'DEMO Alex Stone', notes: 'Alex private draft', productionEntries: [{ estimateItemId: 2, description: 'Walls', quantity: 4, unit: 'LF', laborHours: 2 }], laborEntries: [{ memberId: 2, hours: 2, crew: 'Framing' }] },
+    { id: 3, project: 0, dateIso: '2020-03-04', date: 'Mar 4', status: 'Needs review', foreman: 'DEMO Jordan Reed', notes: 'Needs a look', productionEntries: [{ estimateItemId: 1, description: 'Footings', quantity: 5, unit: 'CY', laborHours: 3 }], laborEntries: [{ memberId: 1, hours: 3, crew: 'Concrete' }] }
+  ],
   workdays: [], timeCards: [], photos: [], sessions: [], auditLog: [], changes: [], catalog: [], subcontractors: []
 };
 const other = {
@@ -130,12 +134,14 @@ let base;
     assert.equal(anonymous.status, 401);
     assert.match(anonymous.headers.get('www-authenticate'), /resource_metadata="http:\/\/127\.0\.0\.1:\d+\/\.well-known\/oauth-protected-resource\/mcp"/);
 
-    const refused = await connect('pm@demo.test');
-    assert.equal(refused.login.status, 403);
-    assert.match(refused.html, /cannot connect/i);
-    assert.doesNotMatch(refused.html, /name="ticket"/);
+    const managerConsent = await connect('pm@demo.test');
+    assert.equal(managerConsent.login.status, 200, managerConsent.html);
+    assert.match(managerConsent.html, /Project manager/);
+    assert.match(managerConsent.html, /cannot approve/i);
+    assert.match(managerConsent.html, /name="ticket"/);
 
     const jordan = await tokenFor('jordan@demo.test');
+    const manager = await tokenFor('pm@demo.test');
     const office = await tokenFor('pat@demo.test');
     const outsider = await tokenFor('sam@other.test');
     const fieldNames = (await mcp(jordan, 'tools/list', {})).data.result.tools.map(tool => tool.name);
@@ -206,6 +212,60 @@ let base;
     const locked = toolBody((await mcp(office, 'tools/call', { name: 'update_daily', arguments: { idempotencyKey: 'office-lock-1', id: 1, notes: 'Should not change' } })).data);
     assert.equal(locked.isError, true);
     assert.match(locked.parsed.error, /locked/i);
+
+    const managerNames = (await mcp(manager, 'tools/list', {})).data.result.tools.map(tool => tool.name).sort();
+    assert.deepEqual(managerNames, ['create_daily', 'get_daily', 'get_estimate', 'list_dailies', 'list_projects', 'update_daily']);
+    assert.equal(managerNames.some(name => /approve|delete|clock_|log_work|submit_daily|get_my_day/.test(name)), false);
+    const managerProjects = toolBody((await mcp(manager, 'tools/call', { name: 'list_projects', arguments: {} })).data).parsed.projects;
+    assert.deepEqual(managerProjects.map(project => project.name), ['Jordan Footings']);
+    const outsideEstimate = toolBody((await mcp(manager, 'tools/call', { name: 'get_estimate', arguments: { projectId: 22 } })).data);
+    assert.equal(outsideEstimate.isError, true);
+    assert.equal(outsideEstimate.parsed.error, 'Project not found.');
+    const insideEstimate = toolBody((await mcp(manager, 'tools/call', { name: 'get_estimate', arguments: { projectId: 11 } })).data);
+    assert.equal(insideEstimate.isError, false, JSON.stringify(insideEstimate.parsed));
+    assert.equal(insideEstimate.parsed.lines[0].remaining, 90);
+    const managerDailies = toolBody((await mcp(manager, 'tools/call', { name: 'list_dailies', arguments: {} })).data).parsed.dailies;
+    assert.equal(managerDailies.some(row => row.projectName === 'Alex Framing' || row.id === 2), false);
+    assert.ok(managerDailies.some(row => row.id === 1 && row.projectName === 'Jordan Footings'));
+    assert.ok(managerDailies.some(row => row.id === 3 && row.status === 'Needs review'));
+    const hiddenDaily = toolBody((await mcp(manager, 'tools/call', { name: 'get_daily', arguments: { id: 2 } })).data);
+    assert.equal(hiddenDaily.isError, true);
+    assert.equal(hiddenDaily.parsed.error, 'Daily not found.');
+    const approvedDaily = toolBody((await mcp(manager, 'tools/call', { name: 'get_daily', arguments: { id: 1 } })).data);
+    assert.equal(approvedDaily.isError, false, JSON.stringify(approvedDaily.parsed));
+    assert.equal(approvedDaily.parsed.status, 'Approved');
+    const outsideUpdate = toolBody((await mcp(manager, 'tools/call', { name: 'update_daily', arguments: { idempotencyKey: 'pm-outside-update', id: 2, notes: 'Should stay hidden' } })).data);
+    assert.equal(outsideUpdate.isError, true);
+    assert.equal(outsideUpdate.parsed.error, 'Daily not found.');
+    assert.doesNotMatch(outsideUpdate.parsed.error, /locked/i);
+    const approvedLock = toolBody((await mcp(manager, 'tools/call', { name: 'update_daily', arguments: { idempotencyKey: 'pm-approved-lock', id: 1, notes: 'Should stay approved' } })).data);
+    assert.equal(approvedLock.isError, true);
+    assert.match(approvedLock.parsed.error, /locked/i);
+    const outsideCreate = toolBody((await mcp(manager, 'tools/call', { name: 'create_daily', arguments: { idempotencyKey: 'pm-outside-create', projectId: 22, date: '2020-04-04', notes: 'Wrong project', status: 'Approved' } })).data);
+    assert.equal(outsideCreate.isError, true);
+    assert.equal(outsideCreate.parsed.error, 'Project not found.');
+    const wrongCrew = toolBody((await mcp(manager, 'tools/call', { name: 'create_daily', arguments: { idempotencyKey: 'pm-wrong-crew', projectId: 11, date: '2020-04-05', notes: 'Wrong crew', crewHours: [{ memberId: 2, hours: 2 }] } })).data);
+    assert.equal(wrongCrew.isError, true);
+    assert.match(wrongCrew.parsed.error, /assigned crews/i);
+    const managerDraft = toolBody((await mcp(manager, 'tools/call', { name: 'create_daily', arguments: { idempotencyKey: 'pm-create-draft', projectId: 11, date: '2020-04-06', notes: 'Manager draft', status: 'Approved', quantities: [{ estimateItemId: 1, quantity: 1 }], crewHours: [{ memberId: 1, hours: 1 }] } })).data);
+    assert.equal(managerDraft.isError, false, JSON.stringify(managerDraft.parsed));
+    assert.equal(managerDraft.parsed.status, 'Draft');
+    assert.equal(managerDraft.parsed.projectName, 'Jordan Footings');
+    const managerRevise = toolBody((await mcp(manager, 'tools/call', { name: 'update_daily', arguments: { idempotencyKey: 'pm-revise-draft', id: managerDraft.parsed.id, notes: 'Manager draft revised' } })).data);
+    assert.equal(managerRevise.isError, false, JSON.stringify(managerRevise.parsed));
+    assert.equal(managerRevise.parsed.notes, 'Manager draft revised');
+    assert.equal(managerRevise.parsed.status, 'Draft');
+    const keepReview = toolBody((await mcp(manager, 'tools/call', { name: 'update_daily', arguments: { idempotencyKey: 'pm-keep-review', id: 3, notes: 'Still needs a look' } })).data);
+    assert.equal(keepReview.isError, false, JSON.stringify(keepReview.parsed));
+    assert.equal(keepReview.parsed.status, 'Needs review');
+    assert.notEqual(keepReview.parsed.status, 'Approved');
+    const beforeApproveAttempt = toolBody((await mcp(manager, 'tools/call', { name: 'get_daily', arguments: { id: managerDraft.parsed.id } })).data).parsed;
+    const approveAttempt = toolBody((await mcp(manager, 'tools/call', { name: 'update_daily', arguments: { idempotencyKey: 'pm-no-approve', id: managerDraft.parsed.id, status: 'Approved', notes: 'Should not land' } })).data);
+    assert.equal(approveAttempt.isError, true);
+    assert.match(approveAttempt.parsed.error, /never approves/i);
+    const afterApproveAttempt = toolBody((await mcp(manager, 'tools/call', { name: 'get_daily', arguments: { id: managerDraft.parsed.id } })).data).parsed;
+    assert.equal(afterApproveAttempt.notes, beforeApproveAttempt.notes);
+    assert.equal(afterApproveAttempt.status, 'Draft');
 
     const stored = JSON.parse(fs.readFileSync(file, 'utf8'));
     const jordanDaily = stored.reports.find(report => report.foreman === 'DEMO Jordan Reed' && report.dateIso === today);
