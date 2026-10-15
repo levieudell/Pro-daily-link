@@ -109,10 +109,11 @@ function loadClientHoursFns() {
   const take = prefix => source.split('\n').find(line => line.startsWith(prefix));
   const accumulate = take('function accumulateApprovedProduction');
   const summarize = take('function summarizeProductionGroups');
+  const periodWindow = take('function dashboardPeriodWindow');
   const dashboard = take('function dashboardProduction');
   const assignment = take('function assignmentActualHours');
-  if (!dashboard || !assignment || !accumulate || !summarize) throw new Error('Client hours functions were not found in app.js');
-  return new Function('reports', 'projects', `${accumulate}\n${summarize}\n${dashboard}\n${assignment}\nreturn {dashboardProduction, assignmentActualHours};`);
+  if (!dashboard || !assignment || !accumulate || !summarize || !periodWindow) throw new Error('Client hours functions were not found in app.js');
+  return new Function('reports', 'projects', `${accumulate}\n${summarize}\n${periodWindow}\n${dashboard}\n${assignment}\nreturn {dashboardProduction, assignmentActualHours};`);
 }
 
 async function request(route, options = {}) {
