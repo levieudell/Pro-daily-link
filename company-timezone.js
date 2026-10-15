@@ -16,10 +16,10 @@
   function render(select, status, stored, document) {
     select.querySelector('[data-saved-timezone]')?.remove();
     const saved = valid(stored);
-    if (saved && !choices.includes(stored)) {
-      const option = document.createElement('option'); option.value = stored; option.textContent = stored + ' (saved timezone)'; option.setAttribute('data-saved-timezone', ''); select.append(option);
-    }
     select.value = saved ? stored : '';
+    if (saved && select.value !== stored) {
+      const option = document.createElement('option'); option.value = stored; option.textContent = stored + ' (saved timezone)'; option.setAttribute('data-saved-timezone', ''); select.append(option); select.value = stored;
+    }
     status.textContent = saved ? 'Saved company timezone: ' + stored + '.' : stored ? 'The saved company timezone is invalid. Choose a timezone and save changes.' : 'No company timezone is saved. Choose one and save changes to set company dates and times.';
   }
   return { valid, change, fields, render };
