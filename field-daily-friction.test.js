@@ -19,6 +19,18 @@ const next=lines.find(line=>line.includes("$('#report-next-step').onclick"));
 assert.ok(next,'next step handler');
 assert.doesNotMatch(next,/ai-convert/);
 assert.match(next,/showReportStep\(2\)/);
+assert.doesNotMatch(next,/before continuing/);
+assert.doesNotMatch(source,/Add a quick note about what happened today before continuing/);
+assert.doesNotMatch(source,/Needs acknowledgement/);
+assert.match(source,/New assignment/);
+assert.match(source,/Number\(saved\?\.hours\)>0\?saved\.hours:''/);
+assert.doesNotMatch(html,/AI will draft this summary/);
+assert.match(html,/Summary for the office\. Leave blank if the quantities are enough\./);
+assert.doesNotMatch(html,/id="field-notes"[^>]*required/);
+const styles=fs.readFileSync(__dirname+'/styles.css','utf8');
+assert.match(styles,/\.field-mode #report-modal \.weather-row/);
+assert.match(styles,/#report-modal\.report-field-compact \.verify-banner:not\(\.report-edit-warning\)/);
+assert.match(styles,/#report-modal\.report-field-compact #report-gaps\{display:none\}/);
 const handler=lines.find(line=>line.startsWith("$('#ai-convert').onclick=async()=>"));
 assert.ok(handler);
 assert.doesNotMatch(handler,/addProductionRow/);
@@ -92,4 +104,47 @@ assert.equal(signatureContext.reportSignatureRequired(),true,'a general foreman 
   assert.equal(applied[0].estimateItemId,9);
   assert.equal(applied[0].unit,'YD');
   console.log('Field daily friction checks passed.');
-})().catch(error=>{console.error(error);process.exitCode=1});
+})().then(async()=>{
+  const weather=declaration('loadReportWeather');
+  const label=declaration('weatherLabel');
+  function harness({role,site,api}){
+    const calls=[];
+    const fields={
+      '#report-project':{value:'0'},
+      '#report-weather':{value:'stale'},
+      '#report-temperature':{value:'99'},
+      '#manual-weather':{hidden:false},
+      '#load-weather':{disabled:false,textContent:'↻ Refresh weather'},
+      '#weather-summary':{textContent:'Loading from the job address…',classList:{classes:new Set(),add(c){this.classes.add(c)},remove(c){this.classes.delete(c)},contains(c){return this.classes.has(c)}}}
+    };
+    const row={hidden:false};
+    const context={
+      currentRole:role,projects:[{site}],$:id=>fields[id],weatherLabel:null,api:async(route)=>{calls.push(route);return api(route)},
+      document:{querySelector:()=>row}
+    };
+    vm.createContext(context);
+    vm.runInContext(label+'\n'+weather,context);
+    return {context,fields,row,calls,run:()=>context.loadReportWeather({silent:true})};
+  }
+  const missing=harness({role:'field',site:'Address not entered',api(){throw new Error('should not fetch')}});
+  await missing.run();
+  assert.equal(missing.calls.length,0,'field weather waits for a real address');
+  assert.equal(missing.fields['#report-weather'].value,'','a placeholder address leaves weather off the daily');
+  assert.equal(missing.fields['#weather-summary'].textContent,'Loading from the job address…','field fetch does not rewrite the hidden summary');
+  assert.equal(missing.row.hidden,true);
+  const failed=harness({role:'field',site:'100 Division Street',api(){throw new Error('offline')}});
+  await failed.run();
+  assert.equal(failed.calls.length,1);
+  assert.equal(failed.fields['#report-weather'].value,'');
+  assert.equal(failed.fields['#report-temperature'].value,'');
+  assert.equal(failed.fields['#weather-summary'].classList.contains('weather-error'),false,'a failed field fetch stays invisible');
+  const loaded=harness({role:'field',site:'100 Division Street',api:async()=>({weather_code:0,temperature_2m:71.4,wind_speed_10m:4})});
+  await loaded.run();
+  assert.equal(loaded.fields['#report-weather'].value,'Clear');
+  assert.equal(loaded.fields['#report-temperature'].value,71);
+  const office=harness({role:'office',site:'',api(){throw new Error('should not fetch')}});
+  await office.run();
+  assert.equal(office.fields['#weather-summary'].classList.contains('weather-error'),true,'office can still add weather when the address is missing');
+  assert.match(office.fields['#weather-summary'].textContent,/enter the weather manually/);
+  console.log('Field weather stays quiet.');
+}).catch(error=>{console.error(error);process.exitCode=1});

@@ -304,7 +304,7 @@
         <div class="weather-row"><div><small>JOB-SITE WEATHER</small><strong id="weather-summary">Loading from the job address…</strong></div><div class="weather-actions"><button type="button" class="secondary" id="load-weather">↻ Refresh weather</button><button type="button" class="secondary small" id="enter-weather-manually">Enter manually</button></div></div>
         <div id="manual-weather" class="manual-weather two-col" hidden><label>Conditions<input id="manual-weather-condition" placeholder="Clear, rain, windy…"></label><label>Temperature °F<input id="manual-weather-temperature" type="number" inputmode="numeric" placeholder="72"></label><button type="button" class="secondary" id="save-manual-weather">Use this weather</button></div>
         <input type="hidden" id="report-weather" /><input type="hidden" id="report-temperature" />
-        <label id="field-notes-label">Tell us what happened today<textarea id="field-notes" rows="8" placeholder="Example: Concrete crew poured 86 yards on the east foundation with 3 people for 8 hours. Pump arrived 45 minutes late…" required></textarea></label>
+        <label id="field-notes-label">Tell us what happened today<textarea id="field-notes" rows="8" placeholder="Example: Concrete crew poured 86 yards on the east foundation with 3 people for 8 hours. Pump arrived 45 minutes late…"></textarea></label>
         <div class="note-tools"><button type="button" id="voice-notes">🎙 Speak notes</button><button type="button" id="flag-extra-work">＋ Flag extra work</button><button type="button" data-note-chip="No delays today. ">No delays</button><button type="button" data-note-chip="No safety incidents. ">No incidents</button><button type="button" data-note-chip="Tomorrow we plan to ">Tomorrow</button></div>
         <p class="voice-status" id="voice-status" role="status" aria-live="polite" hidden></p>
         <div class="autosave-status" id="autosave-status">Notes save automatically on this device</div>
@@ -335,7 +335,7 @@
           <div class="two-col"><label>Inspection or competent-person check<textarea id="safety-inspection" rows="2" placeholder="Type, person, and findings"></textarea></label><label>Incident / near miss / first aid<textarea id="safety-incident" rows="2" placeholder="Facts only; office or safety team decides recordability"></textarea></label></div>
           <label class="safety-none"><input type="checkbox" id="no-safety-observations"> No safety observations reported today <small>This does not certify that the site was hazard-free.</small></label>
         </section>
-        <label>Office summary<textarea id="report-summary" rows="3" placeholder="AI will draft this summary. Tap here to correct it."></textarea></label>
+        <label>Office summary<textarea id="report-summary" rows="3" placeholder="Summary for the office. Leave blank if the quantities are enough."></textarea></label>
         <label>Next step<textarea id="report-next" rows="2" placeholder="What should happen next? Leave blank if unknown."></textarea></label>
         <label id="report-signature-field"><span data-signature-label>Foreman signature</span><input id="report-signature" placeholder="Type full name to sign" /><small class="input-help" id="report-signature-help">Choose Save draft or Submit to office to save this signature.</small></label>
         <div id="report-custom-fields" class="templates-only"></div>

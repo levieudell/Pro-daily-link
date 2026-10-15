@@ -914,7 +914,11 @@ small{font-size:12px}
 #report-modal.report-field-compact:not(.report-more-open) #suggest-hour-split,
 #report-modal.report-field-compact:not(.report-more-open) #add-custom-production,
 #report-modal.report-field-compact:not(.report-more-open) #hour-split-note,
-#report-modal.report-field-compact:not(.report-more-open) #report-review-summary{display:none}
+#report-modal.report-field-compact:not(.report-more-open) #report-review-summary,
+.field-mode #report-modal .weather-row,
+.field-mode #report-modal #manual-weather,
+#report-modal.report-field-compact .verify-banner:not(.report-edit-warning),
+#report-modal.report-field-compact #report-gaps{display:none}
 #report-modal.report-field-compact:not(.report-more-open) #production-heading>div{grid-template-columns:1fr}
 .scope-remaining{font-size:13px;line-height:1.35}
 @media(max-width:760px){.clock-card,.ai-suggestion,.clock-hour{flex-direction:column;align-items:stretch}.clock-card .big-action,.ai-suggestion-actions button{width:100%}}
