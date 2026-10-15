@@ -23,6 +23,11 @@ assert.doesNotMatch(next,/before continuing/);
 assert.doesNotMatch(source,/Add a quick note about what happened today before continuing/);
 assert.doesNotMatch(source,/Needs acknowledgement/);
 assert.match(source,/New assignment/);
+assert.match(source,/upcomingCard\|\|ack\?'':`<button type="button" class="secondary acknowledge-assignment"/);
+assert.match(source,/const fieldHours=typeof currentRole!=='undefined'&&currentRole==='field',scheduled=fieldHours\|\|total\?\[]:scheduledReportLabor/);
+assert.match(source,/fieldOfflineDraftAction\(draft/);
+assert.match(source,/action==='discard'\)/);
+assert.match(source,/row\.source!=='schedule'/);
 assert.match(source,/Number\(saved\?\.hours\)>0\?saved\.hours:''/);
 assert.doesNotMatch(html,/AI will draft this summary/);
 assert.match(html,/Summary for the office\. Leave blank if the quantities are enough\./);
@@ -147,4 +152,26 @@ assert.equal(signatureContext.reportSignatureRequired(),true,'a general foreman 
   assert.equal(office.fields['#weather-summary'].classList.contains('weather-error'),true,'office can still add weather when the address is missing');
   assert.match(office.fields['#weather-summary'].textContent,/enter the weather manually/);
   console.log('Field weather stays quiet.');
+}).then(()=>{
+  const context={
+    currentRole:'field',
+    projects:[{id:1}],
+    assignments:[{id:4,projectId:1,date:'2026-10-15',start:'07:00',end:'15:30',memberIds:[1,2]}],
+    $:id=>id==='#report-project'?{value:'0'}:id==='#report-date'?{value:'2026-10-15'}:null
+  };
+  vm.createContext(context);
+  vm.runInContext([declaration('reportAssignmentsOnDate'),declaration('scheduledReportLabor'),declaration('fieldOfflineDraftAction'),declaration('fieldDraftLabor')].join('\n'),context);
+  assert.deepEqual(context.scheduledReportLabor(1,'2026-10-15').map(row=>row.hours),[8.5,8.5]);
+  const draft={dateIso:'2026-10-15',notes:'poured the east wall',laborEntries:[
+    {memberId:1,hours:8.5},{memberId:1,hours:8.5,source:'schedule'},{memberId:2,hours:8.5,source:'entered'},{memberId:3,hours:6,source:'timecard'}
+  ]};
+  assert.equal(context.fieldOfflineDraftAction(draft,'2026-10-15'),'resume');
+  assert.equal(context.fieldOfflineDraftAction({...draft,dateIso:'2026-10-14',notes:'yesterday'},'2026-10-15'),'discard');
+  assert.equal(context.fieldOfflineDraftAction({notes:''},'2026-10-15'),'resume');
+  context.hasOfflineReportContent=value=>Boolean(String(value?.notes||'').trim());
+  assert.equal(context.fieldOfflineDraftAction({notes:''},'2026-10-15'),'ignore');
+  const kept=context.fieldDraftLabor(draft);
+  assert.deepEqual(kept.map(row=>[row.memberId,row.hours,row.source||'']),[[2,8.5,'entered'],[3,6,'timecard']]);
+  assert.equal(context.fieldDraftLabor({dateIso:'2026-10-14',notes:'old',laborEntries:[{memberId:1,hours:8.5,source:'entered'}]}).length,0);
+  console.log('Field hours and drafts stay quiet.');
 }).catch(error=>{console.error(error);process.exitCode=1});
