@@ -13,7 +13,7 @@ function persistenceRevision(snapshot) { return Number(snapshot?.company?.persis
 function mergeTenantSnapshots(local, remote, platformCloudId) {
   const byId = new Map();
   for (const tenant of [...(local || []), ...(remote || [])]) {
-    if (!tenant?.company?.id || tenant.company.id === platformCloudId) continue;
+    if (!tenant?.company?.id || tenant.company.id === platformCloudId || tenant.company.mcpConnector === true || tenant.mcpOauth) continue;
     const id = String(tenant.company.id), existing = byId.get(id);
     if (!existing || persistenceRevision(tenant) > persistenceRevision(existing)) byId.set(id, tenant);
   }

@@ -14,7 +14,7 @@ async function list(prefix) {
 
 (async () => {
   if (!supabase.configured()) throw new Error('Supabase configuration is missing.');
-  const snapshots = (await supabase.listCompanySnapshots()).filter(snapshot => snapshot?.company?.id && !snapshot.platform && !snapshot.company.archivedDuplicate);
+  const snapshots = (await supabase.listCompanySnapshots()).filter(snapshot => snapshot?.company?.id && !snapshot.platform && !snapshot.company.archivedDuplicate && !snapshot.mcpOauth && snapshot.company.mcpConnector !== true);
   const results = [];
   for (const snapshot of snapshots) {
     const prefix = databaseCompanyId(snapshot.company.id);

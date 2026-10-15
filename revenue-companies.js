@@ -34,6 +34,7 @@ async function loadRevenueCompanies({ localCompanies = [], supabase, signal, exc
   checkSignal(signal); if (!Array.isArray(localCompanies) || !supabase || typeof supabase.configured !== 'function') fail('invalid_data');
   const companies = new Map();
   function merge(company) {
+    if (company?.mcpConnector === true) return;
     const record = companyRecord(company); if (record.company.id === excludeCompanyId) return;
     const previous = companies.get(record.company.id); if (!previous) { companies.set(record.company.id, record); return; }
     const order = record.revision - previous.revision || record.timestamp - previous.timestamp;
