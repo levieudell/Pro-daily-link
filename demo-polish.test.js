@@ -95,9 +95,9 @@ for (const source of [install, route, platformDemo, platform]) {
   assert.match(source, /DEMO \| Alder Ridge Builders/);
 }
 // Cache pins carry the new release marker.
-assert.match(index, /app\.js\?v=20261014-review2/);
-assert.match(index, /styles\.css\?v=20261014-review2/);
-assert.match(index, /company-timezone\.js\?v=20261014-review2/);
+assert.match(index, /app\.js\?v=20261014-review3/);
+assert.match(index, /styles\.css\?v=20261014-review3/);
+assert.match(index, /company-timezone\.js\?v=20261014-review3/);
 
 // R2.1 Dashboard metric consistency: people and sites come from the same live
 // entries feed as Today's Field Activity, and the production card is labeled
@@ -137,4 +137,11 @@ assert.match(app, /\$\('#help-modal'\)\.showModal\(\);try\{helpItems=await api\(
 // R2.12 Mobile drawer: the nav scrolls instead of cutting off items.
 assert.match(styles, /\.sidebar nav\{display:grid;gap:5px;overflow-y:auto;min-height:0\}/);
 
-console.log('Demo polish: catalog badge/precision, crews fallback, availability timeout, period-windowed chart with axis, export dedupe + tz timestamps, opaque topbar, approve gating, excavation fixture, demo-name gates, dashboard consistency, report autofill, loading states, draft details, timezone select, help modal and mobile nav all guarded.');
+// R2.14 Reports-submitted card: the denominator always includes today's
+// scheduled projects (never 0/0 while crews are assigned), and the remainder
+// reads "scheduled today" until a shift has ended or a crew is on the clock.
+assert.match(app, /scheduledProjects=new Set\(assignments\.filter\(row=>row\.date===today\)/);
+assert.match(app, /expectedProjects=new Set\(\[\.\.\.scheduledProjects,\.\.\.activeProjectIds,\.\.\.submittedProjects\]\)/);
+assert.match(app, /'scheduled today'/);
+
+console.log('Demo polish: catalog badge/precision, crews fallback, availability timeout, period-windowed chart with axis, export dedupe + tz timestamps, opaque topbar, approve gating, excavation fixture, demo-name gates, dashboard consistency, report autofill, loading states, draft details, timezone select, help modal, mobile nav and reports-due card all guarded.');
