@@ -930,6 +930,7 @@ small{font-size:12px}
 #report-modal.report-field-compact .modal-header{position:relative;min-height:44px;margin:0 0 8px}
 #report-modal.report-field-compact .modal-header>div{display:none}
 #report-modal.report-field-compact .close-button{position:absolute;top:0;right:0;width:44px;height:44px}
+#report-modal.report-field-compact #field-clock-out{position:absolute;top:8px;left:12px;z-index:6;min-height:40px;padding:8px 12px}
 #report-modal.report-field-compact .report-steps,
 #report-modal.report-field-compact label:has(#report-type),
 #report-modal.report-field-compact #report-project-picker,

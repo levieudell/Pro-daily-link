@@ -50,7 +50,8 @@ function buildStagingDb(env = process.env, now = new Date()) {
     { id: 1, name: 'Curb', plannedQuantity: 800, unit: 'LF', budgetHours: 80, cost: 24000 },
     { id: 2, name: 'Slab on grade', plannedQuantity: 12000, unit: 'SF', budgetHours: 480, cost: 144000 },
     { id: 3, name: 'Footings', plannedQuantity: 240, unit: 'CY', budgetHours: 240, cost: 72000 },
-    { id: 4, name: 'Sidewalk', plannedQuantity: 400, unit: 'SF', budgetHours: 40, cost: 12000 }
+    { id: 4, name: 'Sidewalk', plannedQuantity: 400, unit: 'SF', budgetHours: 40, cost: 12000 },
+    { id: 5, name: 'Gutter', plannedQuantity: 600, unit: 'LF', budgetHours: 60, cost: 18000 }
   ];
   const projects = [
     {

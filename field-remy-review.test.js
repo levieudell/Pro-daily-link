@@ -38,6 +38,30 @@ assert.equal(/^0 h/.test(scope.punchLengthLabel({ inAt: punchStart, outAt: '2026
 assert.equal(scope.formatHours(0.05), '3 min');
 assert.equal(scope.formatHours(1.5), '1.50 h');
 assert.equal(scope.hoursFromMinutes(3), 0.05);
+assert.equal(scope.hoursFromMinutes(7), 0.12);
+assert.equal(scope.formatHours(0.12), '7 min');
+assert.equal(scope.formatHours(scope.hoursFromMinutes(7)), '7 min');
+const clinicItems = [
+  { id: 1, name: 'Curb', unit: 'LF', plannedQuantity: 800, budgetHours: 80 },
+  { id: 5, name: 'Gutter', unit: 'LF', plannedQuantity: 600, budgetHours: 60 }
+];
+const multi = scope.reviewNotes({ notes: 'Poured 40 LF of curb on north side, set 20 LF of gutter', estimateItems: clinicItems });
+assert.deepEqual(multi.lines.map(line => [line.description, line.quantity, line.estimateItemId]), [['Curb', 40, 1], ['Gutter', 20, 5]]);
+const oneClause = scope.reviewNotes({ notes: 'poured 40 LF of curb and set 20 LF of gutter', estimateItems: clinicItems });
+assert.deepEqual(oneClause.lines.map(line => line.estimateItemId), [1, 5]);
+const emptyKept = scope.keepProductionLines([
+  { description: 'Clock out text', quantity: 0, laborHours: 0.12 },
+  { description: 'Curb', estimateItemId: 1, quantity: 40, laborHours: 0.12 }
+], 'A different daily note');
+assert.equal(emptyKept.length, 1);
+assert.equal(emptyKept[0].estimateItemId, 1);
+const firstPass = scope.mergeScopeFlags([], [{ reason: 'stated_extra', description: 'patch the gate', who_asked: 'owner' }]);
+const answered = firstPass.map(flag => ({ ...flag, decision: 'extra', who_asked: 'site owner', extra_work: true }));
+const secondPass = scope.mergeScopeFlags(answered, [{ reason: 'stated_extra', description: 'owner asked us to patch the gate', who_asked: 'owner' }]);
+const thirdPass = scope.mergeScopeFlags(secondPass, [{ reason: 'stated_extra', description: 'owner asked us to patch the gate', who_asked: 'owner' }]);
+assert.equal(thirdPass[0].id, secondPass[0].id);
+assert.equal(thirdPass[0].decision, 'extra');
+assert.equal(thirdPass[0].who_asked, 'site owner');
 const doubled = scope.laborTotal({ punches: [{ memberId: 1, minutes: 3 }], entered: [{ memberId: 1, hours: 0.05 }, { memberId: 2, hours: 8 }] });
 assert.equal(doubled.total, 8.05);
 assert.deepEqual(doubled.entries.map(row => row.memberId), [1, 2]);
@@ -88,6 +112,8 @@ assert.equal(scope.sameDayDaily(sameDay, { projectIndex: 2, dateIso: '2026-10-16
 const serverSource = fs.readFileSync(__dirname + '/server.js', 'utf8');
 const endHandler = serverSource.slice(serverSource.indexOf('const endWorkday'), serverSource.indexOf('const changeOrderDecision'));
 assert.match(endHandler, /let report=/);
+assert.match(endHandler, /dateIso:companyDateIso\(db\.company,new Date\(workday\.startedAt\)\)/);
+assert.match(serverSource, /card\.date=companyDateIso\(db\.company,new Date\(card\.inAt\|\|workday\.startedAt\)\)/);
 assert.match(endHandler, /sameDayDaily\(/);
 assert.match(endHandler, /attached:Boolean\(existingDaily\)/);
 assert.match(serverSource.slice(serverSource.indexOf('function presentReport'), serverSource.indexOf('function fieldProjectIds')), /presented\.projectId=project\.id/);
@@ -176,6 +202,18 @@ function todayIso() {
     assert.equal(freshEnd.data.report.foreman, 'Field team');
     assert.equal(freshEnd.data.workday.status, 'complete');
     assert.ok(freshEnd.data.timeCards[0].outAt);
+    const night = await call('POST', '/api/workdays/start', { projectId: 102, memberIds: [12] });
+    assert.equal(night.status, 201);
+    const nightDb = JSON.parse(fs.readFileSync(file, 'utf8'));
+    const startedAt = '2026-10-15T23:56:00.000Z';
+    for (const day of nightDb.workdays) if (day.id === night.data.id) day.startedAt = startedAt;
+    for (const card of nightDb.timeCards) if (card.workdayId === night.data.id) card.inAt = startedAt;
+    fs.writeFileSync(file, JSON.stringify(nightDb));
+    const nightEnd = await call('POST', '/api/workdays/' + night.data.id + '/end', { notes: 'Crossed midnight on the curb.' });
+    assert.equal(nightEnd.status, 200, JSON.stringify(nightEnd.data));
+    assert.equal(nightEnd.data.timeCards[0].date, '2026-10-15');
+    assert.equal(nightEnd.data.report.dateIso, '2026-10-15');
+    assert.equal(nightEnd.data.report.productionEntries.length, 0);
     const before = await call('GET', '/api/state');
     const start = await call('POST', '/api/workdays/start', { projectId: 101, memberIds: [11] });
     assert.equal(start.status, 201);

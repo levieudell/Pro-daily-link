@@ -40,5 +40,5 @@ assert.equal(validator.reportSourceAssignment(db,user,{dateIso:'2026-10-09'},0,s
 let closed,cleared=0;$('#report-modal').addEventListener=(event,handler)=>{closed=handler;};context.activeReportRecovery=()=>({key:'synthetic'});context.clearActiveReportRecovery=()=>cleared++;
 const closeStart=source.indexOf("$('#report-modal').addEventListener('close',()=>{\n  if($('#report-modal').open)return;");assert.ok(closeStart>=0);vm.runInContext(source.slice(closeStart,source.indexOf('\n});',closeStart)+4),context);
 context.reportSourceAssignmentId=2;$('#report-modal').open=true;closed();assert.equal(context.reportSourceAssignmentId,2);assert.equal(cleared,0,'queued old close event cannot clear reopened form');
-$('#report-modal').open=false;closed();assert.equal(context.reportSourceAssignmentId,null);assert.equal(cleared,1);
+$('#report-modal').open=false;closed();assert.equal(context.reportSourceAssignmentId,null);assert.equal(cleared,0,'a field close keeps the device draft so the notes are not lost');
 console.log('Assignment daily passed: exact shift, ambiguity/deletion, membership/project/role boundaries, recovery, edited crew and repeated clicks.');

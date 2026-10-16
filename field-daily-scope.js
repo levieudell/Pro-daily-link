@@ -95,6 +95,31 @@
     return {quantity:Number(match[1]),unit:normalizeUnit(match[2])};
   }
 
+  function quantitySpans(text){
+    const re=new RegExp(QUANTITY_LANGUAGE.source,'gi');
+    const spans=[];
+    let match;
+    while((match=re.exec(String(text||'')))){
+      spans.push({index:match.index,quantity:Number(match[1]),unit:normalizeUnit(match[2])});
+      if(!match[0])break;
+    }
+    return spans;
+  }
+
+  function quantityPieces(text){
+    const source=String(text||'');
+    const spans=quantitySpans(source);
+    if(spans.length<=1){
+      const fact=quantityFact(source);
+      return [{text:source,quantity:fact.quantity,unit:fact.unit}];
+    }
+    return spans.map((span,index)=>{
+      const start=index===0?0:span.index;
+      const end=index===spans.length-1?source.length:spans[index+1].index;
+      return {text:source.slice(start,end).trim(),quantity:span.quantity,unit:span.unit};
+    }).filter(piece=>piece.text);
+  }
+
   function namedEstimateLine(description,unit,items){
     const words=tokens(description).filter(word=>!['concrete','extra','work','owner','asked','guys','guy','used','using','north','side','gate'].includes(word));
     const scored=(items||[]).map(item=>{
@@ -155,11 +180,12 @@
       }
       if(MATERIAL_LANGUAGE.test(clause)){materials.push(clause.replace(/^\s*(?:used|using|usage)\s+/i,'').trim());continue}
       if(!WORK_LANGUAGE.test(clause)&&!QUANTITY_LANGUAGE.test(clause))continue;
-      const fact=quantityFact(clause);
-      const match=namedEstimateLine(clause,fact.unit,items);
+      for(const piece of quantityPieces(clause)){
+      const fact={quantity:piece.quantity,unit:piece.unit};
+      const match=namedEstimateLine(piece.text,fact.unit,items);
       if(!match){
-        unmatchedNotes.push(clause);
-        flags.push({kind:'pick',reason:'no_match',description:clause.slice(0,300),quantity:fact.quantity,unit:fact.unit,estimateItemId:null,createsChange:false,decision:null,message:'No estimate line matches. Pick the line, or mark it extra work.'});
+        unmatchedNotes.push(piece.text);
+        flags.push({kind:'pick',reason:'no_match',description:piece.text.slice(0,300),quantity:fact.quantity,unit:fact.unit,estimateItemId:null,createsChange:false,decision:null,message:'No estimate line matches. Pick the line, or mark it extra work.'});
         continue;
       }
       const key=`${match.id}|${fact.quantity}|${normalizeUnit(match.unit)}`;
@@ -172,6 +198,7 @@
       const planned=Number(match.plannedQuantity),already=Number(approved[match.id]??approved[String(match.id)]??0)||0;
       if(quantity!=null&&planned>0&&already+quantity>planned*(1+QUANTITY_TOLERANCE)){
         flags.push({kind:'extra',reason:'over_quantity',description:line.description,quantity,unit,estimateItemId:match.id,plannedQuantity:planned,approvedQuantity:already,createsChange:false,decision:null,message:`Approved ${already} plus today ${quantity} ${unit} is over the ${planned} ${unit} estimate.`});
+      }
       }
     }
     const crew=statedCrew(notes);
@@ -306,9 +333,21 @@
     return kept;
   }
 
+  function emptyProductionLine(entry){
+    const item=entry?.estimateItemId!=null&&String(entry.estimateItemId)!=='';
+    const qty=Number(entry?.quantity)>0;
+    return !item&&!qty;
+  }
+
   function keepProductionLines(entries,notes){
-    const kept=(entries||[]).filter(entry=>entry&&String(entry.description||'').trim()&&!rawNoteLine(entry,notes));
+    const kept=(entries||[]).filter(entry=>entry&&!emptyProductionLine(entry)&&String(entry.description||'').trim()&&!rawNoteLine(entry,notes));
     return dedupeProductionLines(kept);
+  }
+
+  function flagIdentity(flag){
+    const reason=String(flag?.reason||'note');
+    const desc=String(flag?.description||'').toLowerCase().replace(/[^a-z0-9]+/g,' ').replace(/\s+/g,' ').trim();
+    return `${reason}:${desc}`;
   }
 
   function normalizeLaborGaps(rows){
@@ -316,13 +355,17 @@
   }
 
   function mergeScopeFlags(previous,incoming){
-    const prior=Array.isArray(previous)?previous:[];
-    return (Array.isArray(incoming)?incoming:[]).map(flag=>{
-      const exact=prior.find(row=>row&&row.reason===flag.reason&&String(row.description||'')===String(flag.description||''));
-      const stated=prior.filter(row=>row&&row.reason==='stated_extra'&&flag?.reason==='stated_extra');
-      const match=exact||(stated.length===1?stated[0]:null);
-      if(!match||!match.decision)return {...flag,decision:null,createsChange:false,who_asked:String(match?.who_asked||flag?.who_asked||'')};
-      return {...flag,decision:match.decision,createsChange:false,extra_work:match.decision==='extra',who_asked:String(match.who_asked||flag.who_asked||'')};
+    const prior=(Array.isArray(previous)?previous:[]).filter(Boolean).map(flag=>({...flag,id:flag.id||flagIdentity(flag)}));
+    const rows=(Array.isArray(incoming)?incoming:[]).filter(Boolean);
+    const statedIncoming=rows.filter(flag=>flag.reason==='stated_extra').length;
+    return rows.map(flag=>{
+      const identity=flagIdentity(flag);
+      const exact=prior.find(row=>row.id===flag.id||row.id===identity||(row.reason===flag.reason&&String(row.description||'')===String(flag.description||'')));
+      const stated=prior.filter(row=>row.reason==='stated_extra'&&flag.reason==='stated_extra');
+      const match=exact||(stated.length===1&&statedIncoming===1?stated[0]:null);
+      const id=match?.id||flag.id||identity;
+      if(!match||!match.decision)return {...flag,id,decision:null,createsChange:false,who_asked:String(match?.who_asked||flag?.who_asked||'')};
+      return {...flag,id,decision:match.decision,createsChange:false,extra_work:match.decision==='extra',who_asked:String(match.who_asked||flag.who_asked||'')};
     });
   }
 
@@ -486,5 +529,5 @@
     return Math.round(crew*100)/100;
   }
 
-  return {normalizeUnit,matchEstimateLine,reviewScope,reviewNotes,decideFlag,confirmedExtraChanges,fieldExtraItems,whoAsked,approvedQuantityMap,hoursFromClock,statedCrew,sendGate,clockOutMessage,submissionStatus,namedCrewGaps,crewGapReason,noPunchLabel,punchLengthLabel,formatMinutes,formatHours,hoursFromMinutes,elapsedMinutes,laborTotal,dedupeLaborEntries,rawNoteLine,dedupeProductionLines,keepProductionLines,normalizeLaborGaps,mergeScopeFlags,allocateLaborHours,sameDayDaily,clientProjectIndex,singleLineLaborHours,QUANTITY_TOLERANCE,PRODUCTIVITY_LIMIT};
+  return {normalizeUnit,matchEstimateLine,reviewScope,reviewNotes,decideFlag,confirmedExtraChanges,fieldExtraItems,whoAsked,approvedQuantityMap,hoursFromClock,statedCrew,sendGate,clockOutMessage,submissionStatus,namedCrewGaps,crewGapReason,noPunchLabel,punchLengthLabel,formatMinutes,formatHours,hoursFromMinutes,elapsedMinutes,laborTotal,dedupeLaborEntries,rawNoteLine,emptyProductionLine,dedupeProductionLines,keepProductionLines,flagIdentity,normalizeLaborGaps,mergeScopeFlags,allocateLaborHours,sameDayDaily,clientProjectIndex,singleLineLaborHours,QUANTITY_TOLERANCE,PRODUCTIVITY_LIMIT};
 });

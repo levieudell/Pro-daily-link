@@ -8,6 +8,7 @@ var fieldScopeFlags=[];
     const compact=fieldCompact(),next=$('#report-next-step'),send=$('#save-report'),modal=$('#report-modal');
     if(next&&compact)next.textContent=preferredLanguage==='es'?'Listo':'Done';
     if(send&&compact&&!editingReportId)send.textContent=preferredLanguage==='es'?'Enviar a la oficina':'Send to office';
+    ensureFieldClockOut();
     modal?.classList.toggle('field-manual-entry',compact&&!fieldScopeFlags.length&&![...$$('.production-entry')].some(row=>row.dataset.aiFilled==='true'));
     if(!compact){const flags=$('#field-scope-flags'),cards=$('#field-review-cards');if(flags)flags.hidden=true;if(cards)cards.hidden=true}
   }
@@ -48,44 +49,52 @@ var fieldScopeFlags=[];
   function enteredLaborHours(){return [...$$('[data-labor-member]')].reduce((sum,input)=>sum+(Number(input.value)||0),0)}
   function crewStillClockedIn(){const projectId=projects?.[+$('#report-project')?.value]?.id,date=$('#report-date')?.value,cards=typeof timeCards==='undefined'?[]:timeCards,days=typeof workdays==='undefined'?[]:workdays;return cards.some(card=>card&&!card.deletedAt&&Number(card.projectId)===Number(projectId)&&String(card.date||'')===String(date||'')&&card.inAt&&!card.outAt)||days.some(day=>day&&Number(day.projectId)===Number(projectId)&&day.status==='active'&&!day.endedAt)}
   function applyAskedHours(value,headcount){const each=Number(value),inputs=[...$$('[data-labor-member]')];if(!(each>0)){inputs.forEach(input=>{if(input.dataset.noteDerived==='true')input.value=''});return}const count=Math.max(1,Math.min(inputs.length,Math.floor(Number(headcount)||1)));inputs.forEach(input=>{if(input.dataset.noteDerived==='true')input.value=''});inputs.slice(0,count).forEach(input=>{input.value=Math.min(24,each);input.dataset.noteDerived='true'})}
+  function stampFlags(flags){return (Array.isArray(flags)?flags:[]).filter(Boolean).map(flag=>({...flag,id:flag.id||(typeof FieldDailyScope!=='undefined'&&FieldDailyScope.flagIdentity?FieldDailyScope.flagIdentity(flag):`${flag.reason||'note'}:${String(flag.description||'').toLowerCase()}`)}))}
+  function flagById(id){return fieldScopeFlags.find(flag=>String(flag?.id)===String(id))}
+  function harvestFlagAnswers(){const host=$('#field-scope-flags');if(!host)return;host.querySelectorAll('[data-flag-asker]').forEach(input=>{const flag=flagById(input.dataset.flagAsker);if(flag)flag.who_asked=input.value})}
   function renderFlags(){
     const host=$('#field-scope-flags');if(!host)return;
+    fieldScopeFlags=stampFlags(fieldScopeFlags);
     if(!fieldCompact()||!fieldScopeFlags.length){host.hidden=true;host.innerHTML='';return}
     host.hidden=false;
     host.innerHTML=fieldScopeFlags.map((flag,index)=>{
       const answered=Boolean(flag.decision);
       const label=flag.kind==='productivity'?'Productivity':flag.kind==='pick'?'Needs your pick':'Possible extra work';
       const items=projects?.[+$('#report-project')?.value]?.estimateItems||[];
-      const picker=flag.kind==='pick'?`<label class="field-pick">Pick an estimate line<select data-flag-index="${index}" data-pick-line><option value="">Choose a line</option>${items.map(item=>`<option value="${escapeText(item.id)}">${escapeText(item.name)} · ${escapeText(item.unit||'')}</option>`).join('')}</select></label><button type="button" data-flag-index="${index}" data-flag-choice="extra">Extra work</button>`:'';
+      const picker=flag.kind==='pick'?`<label class="field-pick">Pick an estimate line<select data-flag-id="${escapeText(flag.id)}" data-flag-index="${index}" data-pick-line><option value="">Choose a line</option>${items.map(item=>`<option value="${escapeText(item.id)}">${escapeText(item.name)} · ${escapeText(item.unit||'')}</option>`).join('')}</select></label><button type="button" data-flag-id="${escapeText(flag.id)}" data-flag-index="${index}" data-flag-choice="extra">Extra work</button>`:'';
       const who=String(flag.who_asked||'');
       const actions=flag.kind==='productivity'
-        ?`<button type="button" data-flag-index="${index}" data-flag-choice="noted">Noted</button>`
+        ?`<button type="button" data-flag-id="${escapeText(flag.id)}" data-flag-index="${index}" data-flag-choice="noted">Noted</button>`
         :flag.kind==='pick'?picker
         :flag.reason==='stated_extra'
-          ?`<div class="field-extra-ask"><span>Extra work?</span><button type="button" class="${flag.decision==='extra'?'is-selected':''}" data-flag-index="${index}" data-flag-choice="yes">Yes, extra</button><button type="button" class="${flag.decision==='not'?'is-selected':''}" data-flag-index="${index}" data-flag-choice="no">No, normal scope</button></div><label class="field-who-asked">Who asked?<input data-flag-asker="${index}" maxlength="80" value="${escapeText(who)}" aria-label="Who asked?"></label>`
-          :`<button type="button" class="${flag.decision==='extra'?'is-selected':''}" data-flag-index="${index}" data-flag-choice="extra">Extra work</button><button type="button" class="${flag.decision==='estimate'?'is-selected':''}" data-flag-index="${index}" data-flag-choice="estimate">Part of estimate</button>`;
+          ?`<div class="field-extra-ask"><span>Extra work?</span><button type="button" class="${flag.decision==='extra'?'is-selected':''}" data-flag-id="${escapeText(flag.id)}" data-flag-index="${index}" data-flag-choice="yes">Yes, extra</button><button type="button" class="${flag.decision==='not'?'is-selected':''}" data-flag-id="${escapeText(flag.id)}" data-flag-index="${index}" data-flag-choice="no">No, normal scope</button></div><label class="field-who-asked">Who asked?<input data-flag-asker="${escapeText(flag.id)}" maxlength="80" value="${escapeText(who)}" aria-label="Who asked?"></label>`
+          :`<button type="button" class="${flag.decision==='extra'?'is-selected':''}" data-flag-id="${escapeText(flag.id)}" data-flag-index="${index}" data-flag-choice="extra">Extra work</button><button type="button" class="${flag.decision==='estimate'?'is-selected':''}" data-flag-id="${escapeText(flag.id)}" data-flag-index="${index}" data-flag-choice="estimate">Part of estimate</button>`;
       return `<article class="field-flag ${answered?'is-answered':''}" data-flag-kind="${escapeText(flag.kind)}"><small>${escapeText(label)}</small><strong>${escapeText(flag.description||'Field note')}</strong><p>${escapeText(flag.message||'')}</p>${actions}</article>`;
     }).join('');
     host.querySelectorAll('[data-flag-choice]').forEach(button=>button.onclick=()=>{
-      const flag=fieldScopeFlags[Number(button.dataset.flagIndex)];
+      const at=fieldScopeFlags.findIndex(row=>String(row.id)===String(button.dataset.flagId));
+      const flag=at>=0?fieldScopeFlags[at]:fieldScopeFlags[Number(button.dataset.flagIndex)];
       if(!flag||typeof FieldDailyScope==='undefined')return;
       const choice=button.dataset.flagChoice;
       const mapped=choice==='yes'||choice==='extra'||choice==='bill'?'extra':choice==='no'||choice==='not'?'not':choice;
-      const asker=host.querySelector(`[data-flag-asker="${button.dataset.flagIndex}"]`);
+      const asker=host.querySelector(`[data-flag-asker="${CSS.escape(String(flag.id))}"]`);
       const whoAsked=asker?asker.value:String(flag.who_asked||'');
       const same=flag.decision===mapped;
-      fieldScopeFlags[Number(button.dataset.flagIndex)]=same?{...flag,decision:null,createsChange:false,extra_work:false,who_asked:whoAsked}:FieldDailyScope.decideFlag({...flag,who_asked:whoAsked},choice);
+      const next=same?{...flag,decision:null,createsChange:false,extra_work:false,who_asked:whoAsked}:FieldDailyScope.decideFlag({...flag,who_asked:whoAsked},choice);
+      fieldScopeFlags[at>=0?at:Number(button.dataset.flagIndex)]={...next,id:flag.id};
       renderFlags();
       renderFieldReview();
     });
-    host.querySelectorAll('[data-flag-asker]').forEach(input=>input.oninput=()=>{const flag=fieldScopeFlags[Number(input.dataset.flagAsker)];if(flag)fieldScopeFlags[Number(input.dataset.flagAsker)]={...flag,who_asked:input.value}});
+    host.querySelectorAll('[data-flag-asker]').forEach(input=>input.oninput=()=>{const at=fieldScopeFlags.findIndex(row=>String(row.id)===String(input.dataset.flagAsker));if(at>=0)fieldScopeFlags[at]={...fieldScopeFlags[at],who_asked:input.value}});
     host.querySelectorAll('[data-pick-line]').forEach(select=>select.onchange=()=>{
-      const flag=fieldScopeFlags[Number(select.dataset.flagIndex)];
+      const at=fieldScopeFlags.findIndex(row=>String(row.id)===String(select.dataset.flagId));
+      const flag=at>=0?fieldScopeFlags[at]:fieldScopeFlags[Number(select.dataset.flagIndex)];
       const item=(projects?.[+$('#report-project')?.value]?.estimateItems||[]).find(entry=>String(entry.id)===String(select.value));
       if(!flag||!item||typeof FieldDailyScope==='undefined'||typeof addProductionRow!=='function')return;
       const chosen=FieldDailyScope.decideFlag({...flag,estimateItemId:item.id},'estimate');
       chosen.estimateItemId=item.id;
-      fieldScopeFlags[Number(select.dataset.flagIndex)]=chosen;
+      chosen.id=flag.id;
+      fieldScopeFlags[at>=0?at:Number(select.dataset.flagIndex)]=chosen;
       const row=addProductionRow({description:item.name,estimateItemId:item.id,quantity:flag.quantity,unit:item.unit,needsScopeConfirmation:false});
       if(row){row.dataset.aiFilled='true';const quantity=row.querySelector('.production-quantity');if(quantity&&flag.quantity!=null)quantity.value=flag.quantity;const unit=row.querySelector('.production-unit');if(unit)unit.value=item.unit||''}
       renderFlags();
@@ -94,7 +103,10 @@ var fieldScopeFlags=[];
   }
   function renderFieldReview(){
     const host=$('#field-review-cards');if(!host||!fieldCompact()){if(host)host.hidden=true;return}
+    syncEstimateBindings();
+    dropEmptyLines();
     dropRawProductionRows();
+    applyPunchHours();
     applyLaborAllocation();
     const cards=[];
     const notesForLines=$('#field-notes')?.value||'';
@@ -193,7 +205,8 @@ var fieldScopeFlags=[];
         applyPunchHours();
         if(!clockHoursPresent()&&fieldHoursReview?.total>0&&typeof applyNoteLaborEvidence==='function')applyNoteLaborEvidence(draft.laborEvidence?.total>0?draft.laborEvidence:{total:fieldHoursReview.total,headcount:fieldHoursReview.headcount,perPerson:fieldHoursReview.perPerson});
         else if(!clockHoursPresent()&&draft?.laborEvidence&&typeof applyNoteLaborEvidence==='function'&&!fieldHoursReview?.ask)applyNoteLaborEvidence(draft.laborEvidence);
-        fieldScopeFlags=typeof FieldDailyScope!=='undefined'&&FieldDailyScope.mergeScopeFlags?FieldDailyScope.mergeScopeFlags(fieldScopeFlags,draft?.scopeReview?.flags||[]):(draft?.scopeReview?.flags||[]).map(flag=>({...flag,decision:null,createsChange:false,who_asked:String(flag.who_asked||'')}));
+        harvestFlagAnswers();
+        fieldScopeFlags=stampFlags(typeof FieldDailyScope!=='undefined'&&FieldDailyScope.mergeScopeFlags?FieldDailyScope.mergeScopeFlags(fieldScopeFlags,draft?.scopeReview?.flags||[]):(draft?.scopeReview?.flags||[]).map(flag=>({...flag,decision:null,createsChange:false,who_asked:String(flag.who_asked||'')})));
         if(draft?.changesCreated)fieldScopeFlags=[];
       }
     }catch{
@@ -236,7 +249,7 @@ var fieldScopeFlags=[];
   }
   if(typeof openReport==='function'){
     const openBefore=openReport;
-    openReport=function(report=null,context={}){fieldScopeFlags=[];fieldHoursReview=null;const result=openBefore(report,context);dropRawProductionRows();bindLaborAllocation();polishFieldDaily();renderFlags();if(fieldCompact()&&$('#report-form')?.getAttribute('data-current-step')==='2')renderFieldReview();return result};
+    openReport=function(report=null,context={}){fieldScopeFlags=[];fieldHoursReview=null;const result=openBefore(report,context);if(fieldCompact()){const saved=(report?.productionEntries||[]).some(row=>row&&((row.estimateItemId!=null&&String(row.estimateItemId)!=='')||Number(row.quantity)>0));if(report?.workSuggestions?.length&&!saved&&$('#production-rows'))$('#production-rows').innerHTML='';const draft=typeof readOfflineDraft==='function'&&typeof offlineReportDraftKey==='function'?readOfflineDraft(offlineReportDraftKey()):null;if(Array.isArray(draft?.scopeFlags)&&String(draft.notes||'').trim()&&String(draft.notes||'').trim()===String($('#field-notes')?.value||'').trim())fieldScopeFlags=stampFlags(draft.scopeFlags)}dropEmptyLines();dropRawProductionRows();bindLaborAllocation();polishFieldDaily();renderFlags();if(fieldCompact()&&$('#report-form')?.getAttribute('data-current-step')==='2')renderFieldReview();return result};
   }
   if(typeof showReportStep==='function'){
     const stepBefore=showReportStep;
@@ -262,21 +275,67 @@ var fieldScopeFlags=[];
     const total=typeof FieldDailyScope!=='undefined'&&FieldDailyScope.laborTotal?FieldDailyScope.laborTotal({punches,entered}):{entries:[],total:enteredLaborHours()};
     return {punches,entered,gaps,total};
   }
+  function syncEstimateBindings(){
+    $$('.production-entry').forEach(row=>{
+      if(typeof rowEstimateItemId==='function'){rowEstimateItemId(row);return}
+      const select=row.querySelector('.production-item');
+      if(!select)return;
+      let id=String(row.dataset.estimateItemId||select.value||'');
+      if(!id||id.startsWith('custom:')){
+        const label=String(select.selectedOptions?.[0]?.textContent||'').trim().toLowerCase();
+        const named=label&&label!=='select estimate line'?(projects?.[+$('#report-project')?.value]?.estimateItems||[]).find(item=>String(item.name||'').trim().toLowerCase()===label):null;
+        id=named?String(named.id):'';
+      }
+      if(id&&[...select.options].some(option=>String(option.value)===id))select.value=id;
+      row.dataset.estimateItemId=id.startsWith('custom:')?'':id;
+    });
+  }
+  function dropEmptyLines(){
+    if(typeof dropEmptyProductionRows==='function'){dropEmptyProductionRows();return}
+    $$('.production-entry').forEach(row=>{
+      const id=row.dataset.estimateItemId||row.querySelector('.production-item')?.value||'';
+      const custom=row.querySelector('.custom-description')?.value.trim();
+      const qty=Number(row.querySelector('.production-quantity')?.value)>0;
+      if(!id&&!custom&&!qty)row.remove();
+    });
+  }
+  function ensureFieldClockOut(){
+    if(!fieldCompact())return;
+    const modal=$('#report-modal');if(!modal)return;
+    let button=$('#field-clock-out');
+    if(!button){button=document.createElement('button');button.type='button';button.id='field-clock-out';button.className='secondary';modal.append(button)}
+    else if(button.parentElement!==modal)modal.append(button);
+    const memberId=Number(currentUser?.memberId);
+    const active=(typeof workdays==='undefined'?[]:workdays).find(row=>row&&row.status==='active'&&(row.memberIds||[]).map(Number).includes(memberId));
+    button.hidden=!active;
+    button.textContent=preferredLanguage==='es'?'Registrar salida':'Clock out';
+    button.onclick=()=>{
+      if(!active||typeof openEndDay!=='function')return;
+      if(typeof rememberActiveReport==='function')rememberActiveReport();
+      const notes=$('#field-notes')?.value.trim()||'';
+      openEndDay(active.id);
+      const end=$('#end-day-notes');
+      if(end&&!end.value.trim()&&notes)end.value=notes;
+    };
+  }
   function dropRawProductionRows(){
     if(typeof FieldDailyScope==='undefined'||!FieldDailyScope.rawNoteLine)return;
     const notes=$('#field-notes')?.value||'';
     $$('.production-entry').forEach(row=>{
       const select=row.querySelector('.production-item'),custom=row.querySelector('.custom-description');
       const description=custom?.value||row.dataset.suggestedDescription||'';
-      if(FieldDailyScope.rawNoteLine({description,quantity:row.querySelector('.production-quantity')?.value,estimateItemId:select?.value||null},notes))row.remove();
+      const id=(typeof rowEstimateItemId==='function'?rowEstimateItemId(row):'')||row.dataset.estimateItemId||select?.value||'';
+      if(FieldDailyScope.rawNoteLine({description,quantity:row.querySelector('.production-quantity')?.value,estimateItemId:id||null},notes))row.remove();
     });
   }
   function applyLaborAllocation(){
     if(typeof FieldDailyScope==='undefined'||!FieldDailyScope.allocateLaborHours)return null;
+    syncEstimateBindings();
+    dropEmptyLines();
     const total=fieldLaborContext().total.total;
     const items=projects?.[+$('#report-project')?.value]?.estimateItems||[];
     const lines=[...$$('.production-entry')].map(row=>{
-      const id=row.querySelector('.production-item')?.value,item=items.find(entry=>String(entry.id)===String(id));
+      const id=(typeof rowEstimateItemId==='function'?rowEstimateItemId(row):'')||row.dataset.estimateItemId||row.querySelector('.production-item')?.value,item=items.find(entry=>String(entry.id)===String(id));
       const planned=Number(item?.plannedQuantity)||0,budget=Number(item?.budgetHours)||0;
       return {row,quantity:Number(row.querySelector('.production-quantity')?.value)||0,unitRate:planned>0&&budget>0?budget/planned:0,manual:row.dataset.laborManual==='true',hours:Number(row.querySelector('.production-hours')?.value)||0};
     });
@@ -304,6 +363,24 @@ var fieldScopeFlags=[];
       input.addEventListener('input',()=>applyLaborAllocation());
     });
   }
+  let liveLaborDepth=0;
+  function applyLiveLabor(){
+    if(liveLaborDepth)return null;
+    const activeEl=document.activeElement;
+    if(activeEl&&$('#report-modal')?.contains(activeEl)&&activeEl.matches?.('input,textarea,select'))return null;
+    liveLaborDepth++;
+    try{
+      syncEstimateBindings();
+      dropEmptyLines();
+      applyPunchHours();
+      const result=applyLaborAllocation();
+      if($('#report-modal')?.open&&fieldCompact())renderFieldReview();
+      if($('#report-modal')?.open&&typeof rememberActiveReport==='function')rememberActiveReport();
+      ensureFieldClockOut();
+      return result;
+    }finally{liveLaborDepth--}
+  }
+  window.applyLiveLabor=applyLiveLabor;
   window.fieldLaborContext=fieldLaborContext;
   function applyPunchHours(){
     const totals=new Map(punchRows().map(row=>[row.memberId,row.minutes]));
@@ -320,5 +397,8 @@ var fieldScopeFlags=[];
   }
   window.presentReportSent=presentReportSent;
   window.renderFieldReview=renderFieldReview;
+  if(typeof suggestReportHourSplit==='function'){const officeSplit=suggestReportHourSplit;suggestReportHourSplit=function(options){if(fieldCompact()){applyLiveLabor();if(typeof updateReportGaps==='function')updateReportGaps();return true}return officeSplit(options)}}
+  if(typeof saveDailyReport==='function'){const saveBefore=saveDailyReport;saveDailyReport=async function(status){harvestFlagAnswers();syncEstimateBindings();dropEmptyLines();if(fieldCompact())applyLaborAllocation();return saveBefore(status)}}
+  if(typeof confirmReportDiscard==='function'){const officeConfirm=confirmReportDiscard;confirmReportDiscard=function(){if(typeof currentRole!=='undefined'&&currentRole==='field')return true;return officeConfirm()}}
   polishFieldDaily();
 })();
