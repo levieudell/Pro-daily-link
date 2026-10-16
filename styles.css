@@ -995,7 +995,7 @@ small{font-size:12px}
 :root[data-theme="dark"] #report-modal.report-field-compact .field-review-card,
 :root[data-theme="dark"] #report-modal.report-field-compact .field-flag,
 :root[data-theme="dark"] #report-modal.report-field-compact #field-notes{background:var(--panel)}
-.staging-banner{position:sticky;top:0;z-index:2000;background:#ef6c19;color:#111416;text-align:center;font:800 13px/1.2 "DM Sans",sans-serif;letter-spacing:.12em;padding:8px 12px}
+.staging-banner{position:sticky;top:0;z-index:2000;width:100%;box-sizing:border-box;flex:0 0 auto;background:#ef6c19;color:#111416;text-align:center;font:800 13px/1.2 "DM Sans",sans-serif;letter-spacing:.12em;padding:8px 12px}
 #report-modal.report-field-compact .modal-header{min-height:0;height:0;margin:0;padding:0;border:0;background:transparent;overflow:visible}
 #report-modal.report-field-compact .close-button{top:8px;right:8px;z-index:5}
 #report-modal.report-field-compact .field-hours-card,

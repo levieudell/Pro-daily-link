@@ -15,7 +15,7 @@
 fetch('/api/config',{credentials:'include',cache:'no-store'}).then(response=>response.json()).then(config=>{
   if(!config.staging)return;
   const style=document.createElement('style');
-  style.textContent='.staging-banner{position:sticky;top:0;z-index:2000;background:#ef6c19;color:#111416;text-align:center;font:800 13px/1.2 "DM Sans",sans-serif;letter-spacing:.12em;padding:8px 12px}';
+  style.textContent='.staging-banner{position:sticky;top:0;z-index:2000;width:100%;box-sizing:border-box;flex:0 0 auto;background:#ef6c19;color:#111416;text-align:center;font:800 13px/1.2 "DM Sans",sans-serif;letter-spacing:.12em;padding:8px 12px}';
   document.head.appendChild(style);
   const bar=document.createElement('div');
   bar.className='staging-banner';
