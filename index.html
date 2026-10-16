@@ -310,6 +310,7 @@
         <div class="autosave-status" id="autosave-status">Notes save automatically on this device</div>
         <label>Daily photos<input type="file" id="report-photos" accept="image/jpeg,image/png,image/webp" multiple /><small class="input-help">Add progress, material, issue, or completed-work photos.</small></label><label id="report-photo-tags-field">Photo tags<input id="report-photo-tags" placeholder="progress, concrete, east wall"><small class="input-help">Separate tags with commas. Date and time are added automatically.</small></label>
         <button type="button" class="ai-button" id="ai-convert"><span>✦</span><b>Suggest lines from notes</b><small>Sends these notes to AI. Nothing is added until you accept each suggestion.</small></button>
+        <p id="field-ai-disclosure" class="field-ai-disclosure">Notes are processed by AI to fill your report.</p>
         <div class="modal-actions"><button type="button" id="cancel-report" value="cancel" class="secondary">Cancel</button><button type="button" class="secondary" id="save-report-draft">Save notes as draft</button><button type="button" class="primary" id="report-next-step">Next: production & labor →</button></div>
       </div>
       <div class="report-step" data-report-step="2">
@@ -319,6 +320,8 @@
         <div id="ai-suggestion-list" class="ai-suggestion-list" hidden></div>
         <div class="report-review-summary" id="report-review-summary" aria-live="polite"></div>
         <div class="report-gaps" id="report-gaps"></div>
+        <div id="field-scope-flags" class="field-scope-flags" hidden></div>
+        <div id="field-review-cards" class="field-review-cards" hidden></div>
         <div class="section-heading" id="production-heading"><h3>Quantities done</h3><div><button type="button" id="ai-suggest-step2">Suggest from notes with AI</button><button type="button" id="suggest-hour-split">✦ Suggest hour split</button><button type="button" id="add-production-row">＋ Estimate line</button><button type="button" id="add-custom-production">＋ Custom work</button></div></div>
         <p class="input-help" id="ai-suggest-help">Sends your notes to AI. Accept each suggestion before it is added.</p>
         <div id="hour-split-note" class="hour-split-note" hidden></div>
@@ -569,6 +572,8 @@
   <script src="company-timezone.js?v=20261014-review3"></script>
   <script src="schedule-approved-labor.js?v=20261008-approved-evidence"></script>
   <script src="app.js?v=20261014-review3"></script>
+  <script src="field-daily-scope.js?v=20261016-field-ai"></script>
+  <script src="field-instant-daily.js?v=20261016-field-ai"></script>
   <script src="estimate-mobile.js"></script>
   <script src="time-approval-controls.js?v=20261007-pay-presets-person-total"></script>
   <script src="company-settings-tabs.js?v=20261004-pay-periods"></script>

@@ -922,3 +922,76 @@ small{font-size:12px}
 #report-modal.report-field-compact:not(.report-more-open) #production-heading>div{grid-template-columns:1fr}
 .scope-remaining{font-size:13px;line-height:1.35}
 @media(max-width:760px){.clock-card,.ai-suggestion,.clock-hour{flex-direction:column;align-items:stretch}.clock-card .big-action,.ai-suggestion-actions button{width:100%}}
+
+/* Field daily: one notes screen, then one review. Office keeps the full form. */
+.field-ai-disclosure{display:none;margin:8px 0 0;color:var(--muted);font-size:13px;font-weight:500;line-height:1.4}
+#report-modal.report-field-compact{width:min(440px,100%);background:var(--bg)}
+#report-modal.report-field-compact form{padding:20px 20px 28px}
+#report-modal.report-field-compact .modal-header{position:relative;min-height:44px;margin:0 0 8px}
+#report-modal.report-field-compact .modal-header>div{display:none}
+#report-modal.report-field-compact .close-button{position:absolute;top:0;right:0;width:44px;height:44px}
+#report-modal.report-field-compact .report-steps,
+#report-modal.report-field-compact label:has(#report-type),
+#report-modal.report-field-compact #report-project-picker,
+#report-modal.report-field-compact #report-date-field,
+#report-modal.report-field-compact #report-crew-field,
+#report-modal.report-field-compact .note-tools button:not(#voice-notes),
+#report-modal.report-field-compact #ai-convert,
+#report-modal.report-field-compact .autosave-status,
+#report-modal.report-field-compact label:has(#report-photos),
+#report-modal.report-field-compact #report-photo-tags-field,
+#report-modal.report-field-compact #cancel-report,
+#report-modal.report-field-compact #save-report-draft,
+#report-modal.report-field-compact #save-report-step2-draft,
+#report-modal.report-field-compact #ai-preview,
+#report-modal.report-field-compact #ai-suggestion-list,
+#report-modal.report-field-compact #ai-suggest-help,
+#report-modal.report-field-compact #production-heading,
+#report-modal.report-field-compact #report-timecard-status,
+#report-modal.report-field-compact .job-map-link,
+#report-modal.report-field-compact #report-job-context dl>div:not([data-report-context-date]){display:none}
+#report-modal.report-field-compact .field-ai-disclosure{display:block}
+#report-modal.report-field-compact #report-job-context{margin:0 36px 18px 0;padding:0;border:0;background:transparent}
+#report-modal.report-field-compact #report-job-context dl{display:block;margin:6px 0 0;padding:0;border:0}
+#report-modal.report-field-compact #report-job-context dt{font-size:12px;letter-spacing:.04em}
+#report-modal.report-field-compact #report-job-context dd{margin:0;font-size:16px;font-weight:650}
+#report-modal.report-field-compact .report-job-heading small{font-size:12px;letter-spacing:.08em}
+#report-modal.report-field-compact .report-job-heading h3{font:700 28px/1.15 Manrope,sans-serif;text-transform:none;letter-spacing:-.03em}
+#report-modal.report-field-compact #field-notes-label{gap:0;font-size:0;margin:0}
+#report-modal.report-field-compact #field-notes{min-height:46vh;padding:16px;border-radius:16px;font-size:17px;line-height:1.45;background:var(--panel)}
+#report-modal.report-field-compact #voice-notes{min-height:44px;margin-top:12px;padding:0 16px;border-radius:12px;font-size:15px}
+#report-modal.report-field-compact [data-report-step="1"] .modal-actions{display:block;margin-top:18px}
+#report-modal.report-field-compact #report-next-step,
+#report-modal.report-field-compact #save-report,
+#report-modal.report-field-compact #report-back{min-height:52px;font-size:17px}
+#report-modal.report-field-compact #report-next-step,
+#report-modal.report-field-compact #save-report{width:100%}
+#report-modal.report-field-compact [data-report-step="2"] .modal-actions{display:grid;grid-template-columns:auto 1fr;gap:10px}
+#report-modal.report-field-compact .field-review-cards,
+#report-modal.report-field-compact .field-scope-flags{display:grid;gap:12px;margin:0 0 18px}
+#report-modal.report-field-compact .field-review-card,
+#report-modal.report-field-compact .field-flag{display:grid;gap:4px;width:100%;padding:16px 18px;border:1px solid var(--line);border-radius:16px;background:var(--panel);text-align:left;box-shadow:var(--shadow)}
+#report-modal.report-field-compact .field-review-card small,
+#report-modal.report-field-compact .field-flag small{color:var(--green);font-size:12px;font-weight:700;letter-spacing:.04em;text-transform:uppercase}
+#report-modal.report-field-compact .field-review-card strong,
+#report-modal.report-field-compact .field-flag strong{font:700 18px/1.3 Manrope,sans-serif}
+#report-modal.report-field-compact .field-review-card em,
+#report-modal.report-field-compact .field-flag p{color:var(--muted);font-style:normal;font-size:15px;line-height:1.4}
+#report-modal.report-field-compact .field-flag button{min-height:48px;margin-top:8px;border-radius:12px;border:1px solid var(--line);background:#fff;font-weight:700}
+#report-modal.report-field-compact .field-flag button[data-flag-choice="extra"]{background:var(--green);color:#fff;border-color:transparent}
+#report-modal.report-field-compact .field-flag.is-answered b{font-size:15px}
+#report-modal.report-field-compact .field-review-empty{margin:0;color:var(--muted)}
+#report-modal.report-field-compact .production-entry{display:none}
+#report-modal.report-field-compact .production-entry.is-editing,
+#report-modal.report-field-compact.field-manual-entry .production-entry{display:grid;margin-bottom:12px}
+#report-modal.report-field-compact .labor-fieldset,
+#report-modal.report-field-compact #report-issue-label,
+#report-modal.report-field-compact #report-more{display:none}
+#report-modal.report-field-compact.field-manual-entry .labor-fieldset,
+#report-modal.report-field-compact.field-manual-entry #report-issue-label,
+#report-modal.report-field-compact.field-manual-entry #report-more,
+#report-modal.report-field-compact #report-signature-field{display:block}
+#report-modal.report-field-compact #report-signature{min-height:48px;font-size:16px}
+:root[data-theme="dark"] #report-modal.report-field-compact .field-review-card,
+:root[data-theme="dark"] #report-modal.report-field-compact .field-flag,
+:root[data-theme="dark"] #report-modal.report-field-compact #field-notes{background:var(--panel)}
