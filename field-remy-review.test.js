@@ -194,6 +194,9 @@ const scopeSource = fs.readFileSync(__dirname + '/field-daily-scope.js', 'utf8')
 assert.match(instant, /decision:null,createsChange:false/);
 assert.match(instant, /Yes, extra/);
 assert.match(instant, /No, normal scope/);
+assert.match(instant, /aria-pressed="\$\{flag\.decision==='extra'\?'true':'false'\}"/);
+assert.match(instant, /aria-pressed="\$\{flag\.decision==='not'\?'true':'false'\}"/);
+assert.match(instant, /function clearStaleClockOutPrompt/);
 assert.match(instant, /Who asked\?/);
 assert.doesNotMatch(instant, />Bill it</);
 assert.match(app, /id="office-decision"/);
