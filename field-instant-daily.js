@@ -239,13 +239,20 @@ var fieldScopeFlags=[];
       return {...flag,decision:held.decision,extra_work:held.decision==='extra',createsChange:false,who_asked:flag.who_asked||held.who_asked};
     });
   }
+  function extraChoiceOpen(){return fieldScopeFlags.some(flag=>flag&&flag.reason==='stated_extra'&&!flag.decision)}
+  function syncExtraSendGate(){
+    const send=$('#save-report');
+    if(!send||!fieldCompact())return;
+    if(extraChoiceOpen()){send.disabled=true;send.dataset.extraGate='1';return}
+    if(send.dataset.extraGate==='1'){send.disabled=false;delete send.dataset.extraGate}
+  }
   function renderFlags(){
     absorbMaterialFlags();
     restoreHeldChoices();
     const host=$('#field-scope-flags');if(!host)return;
     fieldScopeFlags=stampFlags(fieldScopeFlags);
     const openFlags=fieldScopeFlags.filter(flag=>!(flag.kind==='pick'&&flag.decision));
-    if(!fieldCompact()||!openFlags.length){host.hidden=true;host.innerHTML='';return}
+    if(!fieldCompact()||!openFlags.length){host.hidden=true;host.innerHTML='';syncExtraSendGate();return}
     host.hidden=false;
     host.innerHTML=fieldScopeFlags.map((flag,index)=>{
       if(flag.kind==='pick'&&flag.decision)return '';
@@ -258,7 +265,7 @@ var fieldScopeFlags=[];
         ?`<button type="button" data-flag-id="${escapeText(flag.id)}" data-flag-index="${index}" data-flag-choice="noted">Noted</button>`
         :flag.kind==='pick'?picker
         :flag.reason==='stated_extra'
-          ?`<div class="field-extra-ask"><span>Extra work?</span><button type="button" class="${flag.decision==='extra'?'is-selected':''}" data-flag-id="${escapeText(flag.id)}" data-flag-index="${index}" data-flag-choice="yes">Yes, extra</button><button type="button" class="${flag.decision==='not'?'is-selected':''}" data-flag-id="${escapeText(flag.id)}" data-flag-index="${index}" data-flag-choice="no">No, normal scope</button></div><label class="field-who-asked">Who asked?<input data-flag-asker="${escapeText(flag.id)}" maxlength="80" value="${escapeText(who)}" aria-label="Who asked?"></label>`
+          ?`<div class="field-extra-ask"><span>Extra work?</span><button type="button" class="${flag.decision==='extra'?'is-selected':''}" data-flag-id="${escapeText(flag.id)}" data-flag-index="${index}" data-flag-choice="yes">Yes, extra</button><button type="button" class="${flag.decision==='not'?'is-selected':''}" data-flag-id="${escapeText(flag.id)}" data-flag-index="${index}" data-flag-choice="no">No, normal scope</button></div>${flag.decision?'':`<p class="field-flag-prompt" data-extra-prompt>Answer Extra work? to send</p>`}<label class="field-who-asked">Who asked?<input data-flag-asker="${escapeText(flag.id)}" maxlength="80" value="${escapeText(who)}" aria-label="Who asked?"></label>`
           :`<button type="button" class="${flag.decision==='extra'?'is-selected':''}" data-flag-id="${escapeText(flag.id)}" data-flag-index="${index}" data-flag-choice="extra">Extra work</button><button type="button" class="${flag.decision==='estimate'?'is-selected':''}" data-flag-id="${escapeText(flag.id)}" data-flag-index="${index}" data-flag-choice="estimate">Part of estimate</button>`;
       return `<article class="field-flag ${answered?'is-answered':''}" data-flag-kind="${escapeText(flag.kind)}"><small>${escapeText(label)}</small><strong>${escapeText(flag.description||'Field note')}</strong><p>${escapeText(flag.message||'')}</p>${actions}</article>`;
     }).join('');
@@ -293,6 +300,7 @@ var fieldScopeFlags=[];
       renderFieldReview();
     });
     host.querySelectorAll('[data-flag-asker]').forEach(input=>input.oninput=()=>{const at=fieldScopeFlags.findIndex(row=>String(row.id)===String(input.dataset.flagAsker));if(at>=0)fieldScopeFlags[at]={...fieldScopeFlags[at],who_asked:input.value}});
+    syncExtraSendGate();
     host.querySelectorAll('[data-pick-line]').forEach(select=>select.onchange=()=>{
       const at=fieldScopeFlags.findIndex(row=>String(row.id)===String(select.dataset.flagId));
       const flag=at>=0?fieldScopeFlags[at]:fieldScopeFlags[Number(select.dataset.flagIndex)];
@@ -350,7 +358,7 @@ var fieldScopeFlags=[];
       cards.push(`<button type="button" class="field-review-card" data-edit-field="${id.slice(1)}"><small>${field.dataset.aiAccepted==='true'?'AI filled':'Tap to edit'}</small><strong>${escapeText(label)}</strong><em>${escapeText(field.value.trim())}</em></button>`);
     }
     const nextValue=$('#report-next')?.value?.trim()||'';
-    if(nextValue)cards.push(`<label class="field-next-line"><small>Next</small><textarea id="field-review-next" maxlength="500" rows="2" aria-label="Next step">${escapeText(nextValue)}</textarea></label>`);
+    cards.push(`<label class="field-next-line"><small>Next</small><textarea id="field-review-next" maxlength="500" rows="2" aria-label="Next step" placeholder="What should happen next?">${escapeText(nextValue)}</textarea></label>`);
     const notes=$('#field-notes')?.value||'';
     const crewName=$('#report-crew')?.value;
     const crew=(typeof team==='undefined'?[]:team).filter(member=>!crewName||member.crew===crewName);
@@ -510,6 +518,8 @@ var fieldScopeFlags=[];
         const lines=[...$$('.production-entry')].filter(row=>row.dataset.aiFilled==='true').map(row=>({quantity:row.querySelector('.production-quantity')?.value,needsQuantity:!(Number(row.querySelector('.production-quantity')?.value)>0)}));
         const gate=typeof FieldDailyScope!=='undefined'&&FieldDailyScope.sendGate?FieldDailyScope.sendGate({flags:fieldScopeFlags,laborHours:enteredLaborHours(),openClock:crewStillClockedIn(),lines}):{block:fieldScopeFlags.some(flag=>!flag.decision)?['Answer each flag before sending this daily to the office.']:[],warn:[]};
         const message=[...gate.block,...(gate.block.length?[]:gate.warn)].join(' ');
+        const extraOpen=fieldScopeFlags.some(flag=>flag&&flag.reason==='stated_extra'&&!flag.decision);
+        if(extraOpen){event?.preventDefault();syncExtraSendGate();document.querySelector('[data-extra-prompt]')?.scrollIntoView({block:'center'});const status=$('#report-submit-status');if(status&&/Answer each flag before sending/i.test(status.textContent||'')){status.textContent='';status.className='report-submit-status'}return}
         if(gate.block.length){event?.preventDefault();if(typeof showReportMessage==='function')showReportMessage(message);($('#field-hours-each')||$('#field-scope-flags'))?.scrollIntoView({block:'center'});return}
         if(gate.warn.length&&typeof showReportMessage==='function')showReportMessage(gate.warn.join(' '),'warning');
       }
