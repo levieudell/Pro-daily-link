@@ -73,5 +73,8 @@ assert.match(server,/get\('source'\)==='clock'/);
 assert.match(app,/source=clock/);
 assert.match(app,/const fieldHours=typeof currentRole!=='undefined'&&currentRole==='field',scheduled=fieldHours\|\|total\?\[\]:scheduledReportLabor/);
 assert.match(fs.readFileSync(__dirname+'/index.html','utf8'),/Notes are processed by AI to fill your report\./);
+const policy=require('./public-file-policy');
+assert.equal(policy.isPublicFile(__dirname, __dirname+'/field-daily-scope.js'), true);
+assert.equal(policy.isPublicFile(__dirname, __dirname+'/field-instant-daily.js'), true);
 
 console.log('Field daily scope checks passed.');

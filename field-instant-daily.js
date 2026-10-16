@@ -8,7 +8,7 @@ var fieldScopeFlags=[];
     const compact=fieldCompact(),next=$('#report-next-step'),send=$('#save-report'),modal=$('#report-modal');
     if(next&&compact)next.textContent=preferredLanguage==='es'?'Listo':'Done';
     if(send&&compact&&!editingReportId)send.textContent=preferredLanguage==='es'?'Enviar a la oficina':'Send to office';
-    modal?.classList.toggle('field-manual-entry',compact&&!$$('.production-entry').some(row=>row.dataset.aiFilled==='true'));
+    modal?.classList.toggle('field-manual-entry',compact&&![...$$('.production-entry')].some(row=>row.dataset.aiFilled==='true'));
     if(!compact){const flags=$('#field-scope-flags'),cards=$('#field-review-cards');if(flags)flags.hidden=true;if(cards)cards.hidden=true}
   }
   function groundedText(value){const text=String(value||'').trim();return text&&!/^needs confirmation[.!\s]*$/i.test(text)?text:''}
@@ -87,7 +87,7 @@ var fieldScopeFlags=[];
     host.hidden=false;
     host.innerHTML=cards.length?cards.join(''):'<p class="field-review-empty">AI did not fill any lines. Add the work on the cards below.</p>';
     const modal=$('#report-modal');
-    modal?.classList.toggle('field-manual-entry',!$$('.production-entry').some(row=>row.dataset.aiFilled==='true'));
+    modal?.classList.toggle('field-manual-entry',![...$$('.production-entry')].some(row=>row.dataset.aiFilled==='true'));
     host.querySelectorAll('[data-edit-line]').forEach(button=>button.onclick=()=>{
       $$('.production-entry').forEach(row=>row.classList.remove('is-editing'));
       const row=$$('.production-entry')[Number(button.dataset.editLine)];
@@ -129,7 +129,7 @@ var fieldScopeFlags=[];
       if(typeof showReportStep==='function')showReportStep(2);
       if(failed&&!$$('.production-entry').length&&typeof addProductionRow==='function')addProductionRow();
       if(typeof suggestReportHourSplit==='function'&&typeof reportLaborTotals==='function'&&reportLaborTotals().crew>0&&$$('.production-entry').length)suggestReportHourSplit({silent:true,source:clockHoursPresent()?'timecards':'notes'});
-      $('#report-modal')?.classList.toggle('field-manual-entry',failed||!$$('.production-entry').some(row=>row.dataset.aiFilled==='true'));
+      $('#report-modal')?.classList.toggle('field-manual-entry',failed||![...$$('.production-entry')].some(row=>row.dataset.aiFilled==='true'));
       renderFlags();
       renderFieldReview();
       polishFieldDaily();
