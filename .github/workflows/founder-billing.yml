@@ -18,6 +18,10 @@ jobs:
           node-version: '22'
           cache: npm
       - run: npm ci
+      - name: Install the field browser driver
+        run: npm install --no-save --no-package-lock puppeteer-core@25.14.0
+      - name: Prepare field browser screenshots
+        run: sudo mkdir -p /opt/cursor/artifacts/screenshots && sudo chmod -R a+rwx /opt/cursor
       - run: npm run check
       - run: node --check signup.js
       - run: node founder-billing.test.js
