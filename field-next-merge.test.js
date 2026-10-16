@@ -1,7 +1,8 @@
 'use strict';
-// Same-day clock-out must keep a longer, newer, non-empty next step.
+// The latest explicit non-empty next step wins. Empty text never overwrites.
 // A first send keeps the clock-out next. A second punch on the same job
-// merges into that daily. Empty or shorter text must not replace it.
+// merges into that daily and keeps B's next step when B entered one.
+// A shorter review edit replaces the stored text. An empty save keeps it.
 // Sending the daily submits the closed punch so the time card is not left draft.
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
@@ -83,18 +84,21 @@ function sendPayload(report, next) {
     assert.equal(endB.status, 200, JSON.stringify(endB.data));
     assert.equal(endB.data.attached, true);
     assert.equal(endB.data.report.id, endA.data.report.id);
-    assert.equal(endB.data.report.next, NEXT_B, 'the longer newer next step wins when the second punch merges');
+    assert.equal(endB.data.report.next, NEXT_B, 'the newest explicit next step wins when the second punch merges');
     assert.equal((endB.data.report.laborEntries || []).reduce((sum, row) => sum + (Number(row.minutes) || 0), 0), 7);
     const state = await call('GET', '/api/state');
     const clinic = state.data.reports.filter(report => report.projectId === 101 || state.data.projects[report.project]?.id === 101);
     assert.equal(clinic.length, 1);
     const shorter = await call('PATCH', '/api/reports/' + endB.data.report.id, sendPayload(endB.data.report, 'Call the office.'));
     assert.equal(shorter.status, 200, JSON.stringify(shorter.data));
-    assert.equal(shorter.data.next, NEXT_B, 'a shorter next step must not replace a longer one');
+    assert.equal(shorter.data.next, 'Call the office.', 'a shorter review edit replaces the stored next step');
+    const emptied = await call('PATCH', '/api/reports/' + endB.data.report.id, sendPayload(endB.data.report, '   '));
+    assert.equal(emptied.status, 200, JSON.stringify(emptied.data));
+    assert.equal(emptied.data.next, 'Call the office.', 'an empty save keeps the stored next step');
     const newer = 'N' + NEXT_B.slice(1);
     const replaced = await call('PATCH', '/api/reports/' + endB.data.report.id, sendPayload(endB.data.report, newer));
     assert.equal(replaced.status, 200, JSON.stringify(replaced.data));
-    assert.equal(replaced.data.next, newer, 'an equal-length newer next step wins');
+    assert.equal(replaced.data.next, newer, 'a later explicit next step wins');
     const cards = (await call('GET', '/api/time-cards')).data.filter(card => Number(card.reportId) === Number(endA.data.report.id));
     assert.equal(cards.length, 2);
     assert.ok(cards.every(card => card.status === 'submitted' && card.outAt), JSON.stringify(cards.map(card => card.status)));
@@ -110,6 +114,14 @@ function sendPayload(report, next) {
     assert.equal(gutterSent.data.next, NEXT_A, 'a first send with an empty next step keeps the clock-out text');
     const gutterCards = (await call('GET', '/api/time-cards')).data.filter(card => Number(card.reportId) === Number(gutterEnd.data.report.id));
     assert.equal(gutterCards[0].status, 'submitted');
+    const gutterAgain = await call('POST', '/api/workdays/start', { projectId: 102, memberIds: [12] });
+    assert.equal(gutterAgain.status, 201, JSON.stringify(gutterAgain.data));
+    pinPunch(gutterAgain.data.id, 5);
+    const gutterMerge = await call('POST', '/api/workdays/' + gutterAgain.data.id + '/end', { notes: 'Finished the remaining gutter.', next: '' });
+    assert.equal(gutterMerge.status, 200, JSON.stringify(gutterMerge.data));
+    assert.equal(gutterMerge.data.attached, true);
+    assert.equal(gutterMerge.data.report.id, gutterEnd.data.report.id);
+    assert.equal(gutterMerge.data.report.next, NEXT_A, 'a second punch with no next step keeps the earlier text');
     console.log('Next-step merge checks passed.');
   } finally {
     server.closeAllConnections();

@@ -85,10 +85,7 @@
   function mergedNext(prior, incoming){
     const kept=String(prior||'').trim().slice(0,500);
     const next=String(incoming||'').trim().slice(0,500);
-    if(!next)return kept;
-    if(!kept||next.length>kept.length)return next;
-    if(next.length<kept.length)return kept;
-    return next;
+    return next||kept;
   }
 
   function materialPhrase(text){

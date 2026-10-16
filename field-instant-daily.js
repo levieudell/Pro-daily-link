@@ -118,6 +118,7 @@ var fieldScopeFlags=[];
     };
     for(const [id,value] of Object.entries(values)){
       const field=$(id);if(!field||!value)continue;
+      if(id==='#report-next'&&String(field.value||'').trim())continue;
       field.value=value;field.dataset.aiAccepted='true';field.classList.add('ai-filled-input');
     }
   }
@@ -405,7 +406,7 @@ var fieldScopeFlags=[];
     });
     const nextInput=$('#field-review-next');
     const growNext=()=>{if(!nextInput)return;nextInput.style.height='auto';const border=Math.max(0,nextInput.offsetHeight-nextInput.clientHeight);nextInput.style.height=`${Math.max(48,nextInput.scrollHeight+border)}px`};
-    if(nextInput)nextInput.oninput=()=>{const field=$('#report-next');if(field){field.value=nextInput.value;if(nextInput.value.trim())field.dataset.aiAccepted='true'}growNext()};
+    if(nextInput)nextInput.oninput=()=>{const field=$('#report-next');if(field&&nextInput.value.trim()){field.value=nextInput.value;field.dataset.aiAccepted='true'}growNext()};
     growNext();
     requestAnimationFrame(growNext);
     const modal=$('#report-modal');
@@ -480,7 +481,7 @@ var fieldScopeFlags=[];
         applyScopeLines(draft?.scopeReview||{lines:[]});
         applyNarrative(draft||{});
         const scopeFacts=draft?.scopeReview;
-        if(scopeFacts&&Object.hasOwn(scopeFacts,'next')){const next=$('#report-next');if(next){const incoming=nextStepText(scopeFacts.next);next.value=typeof FieldDailyScope!=='undefined'&&FieldDailyScope.mergedNext?FieldDailyScope.mergedNext(next.value,incoming):incoming;if(next.value)next.dataset.aiAccepted='true';else delete next.dataset.aiAccepted}}
+        if(scopeFacts&&Object.hasOwn(scopeFacts,'next')){const next=$('#report-next');if(next&&!String(next.value||'').trim()){next.value=nextStepText(scopeFacts.next);if(next.value)next.dataset.aiAccepted='true';else delete next.dataset.aiAccepted}}
         if(scopeFacts&&Object.hasOwn(scopeFacts,'delays')){const delays=$('#report-delays');if(delays){const stated=String(scopeFacts.delays||'').trim();if(stated)delays.value=stated;else if(/^needs confirmation/i.test(delays.value||''))delays.value=''}}
         if(scopeFacts?.materials){const materials=$('#report-materials');if(materials&&typeof FieldDailyScope!=='undefined'&&FieldDailyScope.uniqueMaterials)materials.value=FieldDailyScope.uniqueMaterials([materials.value,scopeFacts.materials])}
         fieldHoursReview=draft?.scopeReview?.hours||null;

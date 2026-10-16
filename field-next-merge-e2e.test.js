@@ -1,7 +1,8 @@
 'use strict';
 // 390px repro: send daily A after a 2-minute punch, clock in again, clock out
-// at 5 minutes, and send B. The punches merge. The longer next step stays,
-// and the sent punches are not left as draft on the time card.
+// at 5 minutes, and send B. The punches merge. B's next step wins when B
+// entered one. A shorter review edit replaces it. Empty text does not.
+// Sent punches are not left as draft on the time card.
 const assert = require('node:assert/strict');
 const { spawn } = require('node:child_process');
 const fs = require('node:fs');
@@ -11,6 +12,7 @@ const path = require('node:path');
 
 const NEXT_A = `${'Form the east curb and stage the pump before the inspector walks it. '.repeat(8)}`.slice(0, 332);
 const NEXT_B = `${'Finish the east curb, confirm the pump, and leave the forms up for the inspector. '.repeat(8)}`.slice(0, 400);
+const NEXT_SHORT = 'Call the office.';
 const FIELD_EMAIL = 'levi+field@prodailylink.com';
 const OWNER_EMAIL = 'levi+owner@prodailylink.com';
 const FIELD_PASSWORD = 'staging-field-pass';
@@ -147,15 +149,15 @@ async function dailyState(page) {
       const button = document.querySelector('#report-next-step');
       return button && !button.disabled && document.querySelector('#report-form')?.getAttribute('data-current-step') === '2' && document.querySelector('#field-review-next');
     }, { timeout: 20000 });
-    await page.$eval('#field-review-next', (el, value) => {
-      el.value = value;
+    await page.$eval('#field-review-next', el => {
+      el.value = '';
       el.dispatchEvent(new Event('input', { bubbles: true }));
-    }, NEXT_A);
+    });
     await page.evaluate(() => document.querySelector('#save-report')?.click());
     await page.waitForSelector('#report-sent-modal[open]', { timeout: 20000 });
     const sentA = await dailyState(page);
     assert.equal(sentA.count, 1);
-    assert.equal(sentA.next, NEXT_A, 'a first send keeps the next step');
+    assert.equal(sentA.next, NEXT_A, 'an empty review save keeps the clock-out next step');
     assert.equal(sentA.status, 'Needs review');
     await page.click('#report-sent-modal button.primary');
     await page.evaluate(() => document.querySelector('#report-modal .close-button')?.click());
@@ -165,7 +167,7 @@ async function dailyState(page) {
     await page.waitForFunction(() => !document.querySelector('#end-day-modal')?.open, { timeout: 20000 });
     const merged = await dailyState(page);
     assert.equal(merged.count, 1, 'the second punch merges into the same daily');
-    assert.equal(merged.next, NEXT_B, 'the longer newer next step survives the merge');
+    assert.equal(merged.next, NEXT_B, 'the second punch keeps its next step');
     assert.equal(merged.minutes, 7, JSON.stringify(merged));
     await page.evaluate(() => document.querySelector('[data-open-report]')?.click());
     await page.waitForSelector('#report-modal[open] #field-notes', { timeout: 20000 });
@@ -179,12 +181,12 @@ async function dailyState(page) {
     await page.$eval('#field-review-next', (el, value) => {
       el.value = value;
       el.dispatchEvent(new Event('input', { bubbles: true }));
-    }, NEXT_B);
+    }, NEXT_SHORT);
     await page.evaluate(() => document.querySelector('#save-report')?.click());
     await page.waitForSelector('#report-sent-modal[open]', { timeout: 20000 });
     const sentB = await dailyState(page);
     assert.equal(sentB.count, 1);
-    assert.equal(sentB.next, NEXT_B);
+    assert.equal(sentB.next, NEXT_SHORT, 'a shorter review edit replaces the clock-out next step');
     assert.equal(sentB.minutes, 7, JSON.stringify(sentB));
     assert.equal(sentB.cards.length, 2, JSON.stringify(sentB.cards));
     assert.ok(sentB.cards.every(card => card.status === 'submitted'), JSON.stringify(sentB.cards));
@@ -202,12 +204,12 @@ async function dailyState(page) {
     await owner.waitForFunction(expected => {
       const box = [...document.querySelectorAll('#report-detail .data-box')].find(node => /NEXT STEP/i.test(node.innerText || ''));
       return (box?.innerText || '').includes(expected);
-    }, { timeout: 20000 }, NEXT_B.slice(0, 40));
+    }, { timeout: 20000 }, NEXT_SHORT);
     const officeNext = await owner.evaluate(() => {
       const box = [...document.querySelectorAll('#report-detail .data-box')].find(node => /NEXT STEP/i.test(node.innerText || ''));
       return box?.querySelector('strong')?.textContent || '';
     });
-    assert.equal(officeNext, NEXT_B);
+    assert.equal(officeNext, NEXT_SHORT);
     console.log('Next-step merge browser flow passed.');
   } finally {
     if (browser) await browser.close();
