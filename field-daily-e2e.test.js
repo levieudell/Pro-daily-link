@@ -282,6 +282,9 @@ async function openNav(page, name) {
     assert.ok(curb && curb.value === '1' && curb.qty === '40' && curb.unit === 'LF', JSON.stringify(parsed));
     assert.ok(gutter && gutter.value === '5' && gutter.qty === '20' && gutter.unit === 'LF', JSON.stringify(parsed));
     assert.equal(parsed.some(row => (Number(row.qty) > 0 || Number(row.hours) > 0) && !row.id), false);
+    assert.equal(parsed.some(row => row.unit === 'CY' || row.id === '3'), false, JSON.stringify(parsed));
+    const concreteCard = await page.evaluate(() => [...document.querySelectorAll('.field-flag strong')].map(el => el.textContent || '').join(' | '));
+    assert.equal(/concrete|yards/i.test(concreteCard), false, concreteCard);
     const materialsAndNext = await page.evaluate(() => {
       const materials = document.querySelector('#report-materials')?.value || '';
       const next = document.querySelector('#field-review-next');
@@ -297,6 +300,8 @@ async function openNav(page, name) {
       };
     });
     assert.equal(materialsAndNext.count, 1, materialsAndNext.materials);
+    const materialsCard = await page.evaluate(() => [...document.querySelectorAll('.field-review-card')].map(el => el.innerText || '').find(text => /materials/i.test(text)) || '');
+    assert.match(materialsCard, /6 yards of concrete/);
     assert.equal(materialsAndNext.tag, 'TEXTAREA', JSON.stringify(materialsAndNext));
     assert.equal(materialsAndNext.nextValue, 'Tomorrow we form the east side, need pump truck Monday.');
     assert.equal(/^next(?:\s+step)?:/i.test(materialsAndNext.nextValue), false);
@@ -442,6 +447,27 @@ async function openNav(page, name) {
     assert.equal(cleared.minutes, cleared.total);
     await page.waitForSelector('[data-flag-choice="yes"]');
     await page.click('[data-flag-choice="yes"]');
+    const yesStuck = await page.evaluate(() => {
+      const yes = document.querySelector('[data-flag-choice="yes"]');
+      const send = document.querySelector('#save-report');
+      const flags = typeof fieldScopeFlags === 'undefined' ? [] : fieldScopeFlags;
+      const lines = [...document.querySelectorAll('.production-entry')].filter(row => row.dataset.aiFilled === 'true').map(row => ({
+        quantity: row.querySelector('.production-quantity')?.value,
+        needsQuantity: !(Number(row.querySelector('.production-quantity')?.value) > 0)
+      }));
+      const labor = [...document.querySelectorAll('[data-labor-member]')].reduce((sum, input) => sum + (Number(input.value) || 0), 0);
+      const gate = window.FieldDailyScope.sendGate({ flags, laborHours: labor, openClock: false, lines });
+      return {
+        selected: Boolean(yes?.classList.contains('is-selected')),
+        disabled: Boolean(send?.disabled),
+        decision: flags.find(flag => flag.reason === 'stated_extra')?.decision || '',
+        block: gate.block
+      };
+    });
+    assert.equal(yesStuck.selected, true, JSON.stringify(yesStuck));
+    assert.equal(yesStuck.disabled, false, JSON.stringify(yesStuck));
+    assert.equal(yesStuck.decision, 'extra');
+    assert.equal(yesStuck.block.length, 0, JSON.stringify(yesStuck));
     await page.$eval('[data-flag-asker]', el => {
       el.value = 'site owner';
       el.dispatchEvent(new Event('input', { bubbles: true }));
@@ -651,7 +677,7 @@ async function openNav(page, name) {
     await openNav(owner, 'reports');
     await owner.waitForFunction(() => {
       const text = document.querySelector('#report-detail')?.innerText || '';
-      return /Curb/.test(text) && /Gutter/.test(text) && /40/.test(text) && /20/.test(text) && /site owner/.test(text) && /hours not entered/i.test(text) && /\d+ min · \d+\.\d{2} h/.test(text);
+      return /Curb/.test(text) && /Gutter/.test(text) && /40/.test(text) && /20/.test(text) && /site owner/.test(text) && /hours not entered/i.test(text) && /\d+ min · \d+\.\d{2} h/.test(text) && /6 yards of concrete/.test(text);
     }, { timeout: 20000 });
     await owner.evaluate(() => document.querySelector('#report-detail')?.scrollIntoView());
     await shot(owner, 'owner-same-numbers.png');
@@ -661,12 +687,19 @@ async function openNav(page, name) {
       return {
         quantities: (report?.productionEntries || []).map(row => ({ id: Number(row.estimateItemId), qty: Number(row.quantity), hours: Number(row.laborHours), minutes: Number(row.laborMinutes) || 0 })).sort((a, b) => a.id - b.id),
         labor: (report?.laborEntries || []).map(row => ({ id: Number(row.memberId), hours: Math.round((Number(row.hours) || 0) * 100) / 100 })).sort((a, b) => a.id - b.id),
-        who: report?.extraWork?.[0]?.who_asked || ''
+        who: report?.extraWork?.[0]?.who_asked || '',
+        materials: report?.materials || ''
       };
     });
     assert.deepEqual(office.quantities, saved.quantities);
     assert.deepEqual(office.labor, saved.labor);
     assert.equal(office.who, saved.who);
+    assert.match(office.materials, /6 yards of concrete/);
+    const officeMaterials = await owner.evaluate(() => {
+      const box = [...document.querySelectorAll('#report-detail .report-extra-grid div')].find(node => /MATERIALS/i.test(node.querySelector('small')?.textContent || ''));
+      return box?.querySelector('strong')?.textContent || '';
+    });
+    assert.match(officeMaterials, /6 yards of concrete/);
     const curbAfterOut = await page.$('[data-review-labor][data-line-id="1"]');
     await curbAfterOut.click();
     await page.evaluate(el => { el.focus(); el.setSelectionRange(0, el.value.length); }, curbAfterOut);

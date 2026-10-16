@@ -102,6 +102,28 @@
     return phrases.join('; ');
   }
 
+  function materialLabel(text){
+    return materialPhrase(String(text||'').replace(/^(?:(?:we|i)\s+)?(?:used|using|usage)\s+/i,'').replace(/^(?:and|plus)\s+/i,''));
+  }
+
+  // Materials used are not installed production. A pour or place of an estimate
+  // item stays a production line. Used yards, bags, and tons do not.
+  function isMaterialPhrase(text){
+    const value=String(text||'').trim();
+    if(!value)return false;
+    if(/\b\d+(?:\.\d+)?\s+bags?\b/i.test(value))return true;
+    if(/\b\d+(?:\.\d+)?\s+tons?\b/i.test(value))return true;
+    if(/\b(?:used|using|usage)\b/i.test(value)&&/\b\d+(?:\.\d+)?\s*(?:bags?|tons?|cubic\s+yards?|yards?|yds?|yd|cy)\b/i.test(value)&&!WORK_LANGUAGE.test(value))return true;
+    return !WORK_LANGUAGE.test(value)&&/\b\d+(?:\.\d+)?\s*(?:cubic\s+yards?|yards?|yds?|yd|cy)\b/i.test(value)&&/\b(?:concrete|cement|grout|mortar|rebar|aggregate|gravel|sand|asphalt)\b/i.test(value);
+  }
+
+  function pullMaterialSpans(clause){
+    const phrases=[];
+    const span=/\b(?:(?:we|i)\s+)?(?:used|using|usage)\s+\d+(?:\.\d+)?\s*(?:bags?|tons?|cubic\s+yards?|yards?|yds?|yd|cy)\b(?:\s+of\s+[a-z][a-z0-9-]{2,}(?:\s+[a-z][a-z0-9-]{2,}){0,2})?|\b\d+(?:\.\d+)?\s+bags?\b(?:\s+of\s+[a-z][a-z0-9-]{2,}(?:\s+[a-z][a-z0-9-]{2,}){0,2})?|\b\d+(?:\.\d+)?\s+tons?\b(?:\s+of\s+[a-z][a-z0-9-]{2,}(?:\s+[a-z][a-z0-9-]{2,}){0,2})?/gi;
+    const rest=String(clause||'').replace(span,match=>{const label=materialLabel(match);if(label)phrases.push(label);return ' '});
+    return {phrases,rest};
+  }
+
   function isLookahead(text){
     const value=String(text||'').trim();
     if(/^(?:tomorrow|mañana|manana|next)\b/i.test(value))return true;
@@ -201,15 +223,20 @@
       }
     }
     for(const clause of workClauses){
-      if(HEADCOUNT_LANGUAGE.test(clause)&&!QUANTITY_LANGUAGE.test(clause)&&!WORK_LANGUAGE.test(clause))continue;
-      if(EXTRA_LANGUAGE.test(clause)){
-        const description=clause.replace(/^\s*extra work:\s*/i,'').trim().slice(0,300);
-        flags.push({kind:'extra',reason:'stated_extra',description,quantity:quantityFact(clause).quantity,unit:quantityFact(clause).unit,estimateItemId:null,createsChange:false,decision:null,extra_work:false,who_asked:whoAsked(clause)||whoAsked(notes),message:'The notes call this extra work. Confirm it is extra, or mark it as normal scope. The office decides whether it is billable.'});
+      const pulled=pullMaterialSpans(clause);
+      for(const phrase of pulled.phrases)materials.push(phrase);
+      const work=pulled.rest.replace(/\s+/g,' ').replace(/^[, ]+|[, ]+$/g,'').trim();
+      if(!work)continue;
+      if(HEADCOUNT_LANGUAGE.test(work)&&!QUANTITY_LANGUAGE.test(work)&&!WORK_LANGUAGE.test(work))continue;
+      if(EXTRA_LANGUAGE.test(work)){
+        const description=work.replace(/^\s*extra work:\s*/i,'').trim().slice(0,300);
+        flags.push({kind:'extra',reason:'stated_extra',description,quantity:quantityFact(work).quantity,unit:quantityFact(work).unit,estimateItemId:null,createsChange:false,decision:null,extra_work:false,who_asked:whoAsked(clause)||whoAsked(notes),message:'The notes call this extra work. Confirm it is extra, or mark it as normal scope. The office decides whether it is billable.'});
         continue;
       }
-      if(MATERIAL_LANGUAGE.test(clause)){materials.push(clause.replace(/^\s*(?:used|using|usage)\s+/i,'').trim());continue}
-      if(!WORK_LANGUAGE.test(clause)&&!QUANTITY_LANGUAGE.test(clause))continue;
-      for(const piece of quantityPieces(clause)){
+      if(isMaterialPhrase(work)||MATERIAL_LANGUAGE.test(work)){materials.push(materialLabel(work));continue}
+      if(!WORK_LANGUAGE.test(work)&&!QUANTITY_LANGUAGE.test(work))continue;
+      for(const piece of quantityPieces(work)){
+      if(isMaterialPhrase(piece.text)){materials.push(materialLabel(piece.text));continue}
       const fact={quantity:piece.quantity,unit:piece.unit};
       const match=namedEstimateLine(piece.text,fact.unit,items);
       if(!match){
@@ -585,5 +612,5 @@
     return Math.round(crew*100)/100;
   }
 
-  return {normalizeUnit,matchEstimateLine,reviewScope,reviewNotes,uniqueMaterials,tidyNext,decideFlag,confirmedExtraChanges,fieldExtraItems,whoAsked,approvedQuantityMap,hoursFromClock,statedCrew,sendGate,clockOutMessage,submissionStatus,namedCrewGaps,crewGapReason,noPunchLabel,punchLengthLabel,formatMinutes,formatHours,formatWorkTime,hoursFromMinutes,displayHoursForMinutes,minutesFromHours,elapsedMinutes,laborTotal,dedupeLaborEntries,rawNoteLine,emptyProductionLine,dedupeProductionLines,keepProductionLines,flagIdentity,normalizeLaborGaps,mergeScopeFlags,splitLargestRemainder,allocateLaborHours,sameDayDaily,clientProjectIndex,singleLineLaborHours,QUANTITY_TOLERANCE,PRODUCTIVITY_LIMIT};
+  return {normalizeUnit,matchEstimateLine,reviewScope,reviewNotes,uniqueMaterials,isMaterialPhrase,tidyNext,decideFlag,confirmedExtraChanges,fieldExtraItems,whoAsked,approvedQuantityMap,hoursFromClock,statedCrew,sendGate,clockOutMessage,submissionStatus,namedCrewGaps,crewGapReason,noPunchLabel,punchLengthLabel,formatMinutes,formatHours,formatWorkTime,hoursFromMinutes,displayHoursForMinutes,minutesFromHours,elapsedMinutes,laborTotal,dedupeLaborEntries,rawNoteLine,emptyProductionLine,dedupeProductionLines,keepProductionLines,flagIdentity,normalizeLaborGaps,mergeScopeFlags,splitLargestRemainder,allocateLaborHours,sameDayDaily,clientProjectIndex,singleLineLaborHours,QUANTITY_TOLERANCE,PRODUCTIVITY_LIMIT};
 });

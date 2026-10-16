@@ -140,7 +140,22 @@ var fieldScopeFlags=[];
       return Boolean(text&&desc&&(text===desc||text.includes(desc)||desc.includes(text)));
     })||null;
   }
+  function absorbMaterialFlags(){
+    if(typeof FieldDailyScope==='undefined'||!FieldDailyScope.isMaterialPhrase)return;
+    const phrases=[];
+    fieldScopeFlags=fieldScopeFlags.filter(flag=>{
+      if(!FieldDailyScope.isMaterialPhrase(flag?.description))return true;
+      phrases.push(flag.description);
+      return false;
+    });
+    if(!phrases.length)return;
+    const materials=$('#report-materials');
+    if(!materials)return;
+    materials.value=FieldDailyScope.uniqueMaterials([materials.value,...phrases]);
+    if(materials.value)materials.dataset.aiAccepted='true';
+  }
   function placeUnmatchedLines(){
+    absorbMaterialFlags();
     if(typeof addProductionRow!=='function')return;
     for(const flag of fieldScopeFlags){
       if(flag?.kind!=='pick'||flag.reason!=='no_match'||flag.decision)continue;
@@ -157,6 +172,12 @@ var fieldScopeFlags=[];
     }
   }
   function bindPickedLine(flag,item){
+    const materials=$('#report-materials');
+    const kept=materials?.value||'';
+    const restore=()=>{if(materials&&String(kept).trim()&&!String(materials.value||'').trim())materials.value=kept};
+    try{return bindPickedLineNow(flag,item)}finally{restore()}
+  }
+  function bindPickedLineNow(flag,item){
     placeUnmatchedLines();
     const source=findUnmatchedRow(flag);
     const add=source?Number(source.querySelector('.production-quantity')?.value)||Number(flag.quantity)||0:Number(flag.quantity)||0;
@@ -203,7 +224,24 @@ var fieldScopeFlags=[];
     return source;
   }
   function harvestFlagAnswers(){const host=$('#field-scope-flags');if(!host)return;host.querySelectorAll('[data-flag-asker]').forEach(input=>{const flag=flagById(input.dataset.flagAsker);if(flag)flag.who_asked=input.value})}
+  const flagChoiceStamp=new Map();
+  const flagChoiceHeld=new Map();
+  function holdFlagChoice(flag){
+    if(!flag?.id)return;
+    if(!flag.decision){flagChoiceHeld.delete(String(flag.id));return}
+    flagChoiceHeld.set(String(flag.id),{decision:flag.decision,extra_work:flag.extra_work===true,who_asked:String(flag.who_asked||''),at:Date.now()});
+  }
+  function restoreHeldChoices(){
+    const now=Date.now();
+    fieldScopeFlags=fieldScopeFlags.map(flag=>{
+      const held=flagChoiceHeld.get(String(flag?.id||''));
+      if(!held||now-held.at>=400||flag.decision)return flag;
+      return {...flag,decision:held.decision,extra_work:held.decision==='extra',createsChange:false,who_asked:flag.who_asked||held.who_asked};
+    });
+  }
   function renderFlags(){
+    absorbMaterialFlags();
+    restoreHeldChoices();
     const host=$('#field-scope-flags');if(!host)return;
     fieldScopeFlags=stampFlags(fieldScopeFlags);
     const openFlags=fieldScopeFlags.filter(flag=>!(flag.kind==='pick'&&flag.decision));
@@ -228,11 +266,17 @@ var fieldScopeFlags=[];
       const at=fieldScopeFlags.findIndex(row=>String(row.id)===String(button.dataset.flagId));
       const flag=at>=0?fieldScopeFlags[at]:fieldScopeFlags[Number(button.dataset.flagIndex)];
       if(!flag||typeof FieldDailyScope==='undefined')return;
+      const stampKey=String(flag.id||button.dataset.flagIndex||'');
+      const now=Date.now();
+      if(now-(flagChoiceStamp.get(stampKey)||0)<400)return;
+      flagChoiceStamp.set(stampKey,now);
       const choice=button.dataset.flagChoice;
       if(flag.kind==='pick'&&choice==='extra'){
         const next=FieldDailyScope.decideFlag(flag,'extra');
         fieldScopeFlags[at>=0?at:Number(button.dataset.flagIndex)]={...next,id:flag.id};
+        holdFlagChoice(fieldScopeFlags[at>=0?at:Number(button.dataset.flagIndex)]);
         markLineExtra(flag);
+        const send=$('#save-report');if(send)send.disabled=false;
         renderFlags();
         renderFieldReview();
         return;
@@ -243,6 +287,8 @@ var fieldScopeFlags=[];
       const same=flag.decision===mapped;
       const next=same?{...flag,decision:null,createsChange:false,extra_work:false,who_asked:whoAsked}:FieldDailyScope.decideFlag({...flag,who_asked:whoAsked},choice);
       fieldScopeFlags[at>=0?at:Number(button.dataset.flagIndex)]={...next,id:flag.id};
+      holdFlagChoice(fieldScopeFlags[at>=0?at:Number(button.dataset.flagIndex)]);
+      const send=$('#save-report');if(send&&next.decision)send.disabled=false;
       renderFlags();
       renderFieldReview();
     });
@@ -427,6 +473,7 @@ var fieldScopeFlags=[];
         else if(!clockHoursPresent()&&draft?.laborEvidence&&typeof applyNoteLaborEvidence==='function'&&!fieldHoursReview?.ask)applyNoteLaborEvidence(draft.laborEvidence);
         harvestFlagAnswers();
         fieldScopeFlags=stampFlags(typeof FieldDailyScope!=='undefined'&&FieldDailyScope.mergeScopeFlags?FieldDailyScope.mergeScopeFlags(fieldScopeFlags,draft?.scopeReview?.flags||[]):(draft?.scopeReview?.flags||[]).map(flag=>({...flag,decision:null,createsChange:false,who_asked:String(flag.who_asked||'')})));
+        restoreHeldChoices();
         if(draft?.changesCreated)fieldScopeFlags=[];
       }
     }catch{
@@ -457,6 +504,7 @@ var fieldScopeFlags=[];
     const officeSend=sendButton.onclick;
     sendButton.onclick=event=>{
       if(fieldCompact()){
+        restoreHeldChoices();
         applyPunchHours();
         applyLaborAllocation();
         const lines=[...$$('.production-entry')].filter(row=>row.dataset.aiFilled==='true').map(row=>({quantity:row.querySelector('.production-quantity')?.value,needsQuantity:!(Number(row.querySelector('.production-quantity')?.value)>0)}));
