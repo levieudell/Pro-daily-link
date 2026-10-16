@@ -306,6 +306,18 @@ async function openNav(page, name) {
     assert.equal(materialsAndNext.nextValue, 'Tomorrow we form the east side, need pump truck Monday.');
     assert.equal(/^next(?:\s+step)?:/i.test(materialsAndNext.nextValue), false);
     assert.equal(materialsAndNext.fits, true, JSON.stringify(materialsAndNext));
+    const nextShown = await page.evaluate(() => {
+      const next = document.querySelector('#field-review-next');
+      const rect = next?.getBoundingClientRect();
+      return {
+        visible: Boolean(next && rect && rect.height > 0 && next.closest('#field-review-cards')),
+        moreOpen: Boolean(document.querySelector('#report-more')?.open),
+        value: next?.value || ''
+      };
+    });
+    assert.equal(nextShown.visible, true, JSON.stringify(nextShown));
+    assert.equal(nextShown.moreOpen, false, JSON.stringify(nextShown));
+    assert.equal(nextShown.value, 'Tomorrow we form the east side, need pump truck Monday.');
     await page.evaluate(() => document.querySelector('#field-review-next')?.scrollIntoView({ block: 'center' }));
     await shot(page, 'field-next-materials.png');
     await shot(page, 'field-review-bound.png');
@@ -446,6 +458,18 @@ async function openNav(page, name) {
     assert.equal(cleared.curb, 3);
     assert.equal(cleared.minutes, cleared.total);
     await page.waitForSelector('[data-flag-choice="yes"]');
+    const extraGate = await page.evaluate(() => {
+      const card = document.querySelector('[data-flag-choice="yes"]')?.closest('.field-flag');
+      const send = document.querySelector('#save-report');
+      return {
+        prompt: card?.querySelector('[data-extra-prompt]')?.textContent || '',
+        disabled: Boolean(send?.disabled),
+        status: document.querySelector('#report-submit-status')?.textContent || ''
+      };
+    });
+    assert.match(extraGate.prompt, /Choose Yes or No before sending/);
+    assert.equal(extraGate.disabled, true, JSON.stringify(extraGate));
+    assert.equal(/Answer each flag before sending/i.test(extraGate.status), false, extraGate.status);
     await page.click('[data-flag-choice="yes"]');
     const yesStuck = await page.evaluate(() => {
       const yes = document.querySelector('[data-flag-choice="yes"]');
