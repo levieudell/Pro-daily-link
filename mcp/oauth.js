@@ -86,7 +86,14 @@ function normalizeRole(role) {
 }
 
 function allowedRole(role) {
-  return ['owner', 'admin', 'field'].includes(normalizeRole(role));
+  return ['owner', 'admin', 'project_manager', 'field'].includes(normalizeRole(role));
+}
+
+function roleLabel(role) {
+  if (role === 'field') return 'Field user';
+  if (role === 'owner') return 'Account owner';
+  if (role === 'project_manager') return 'Project manager';
+  return 'Office admin';
 }
 
 function parseScopes(value) {
@@ -156,12 +163,21 @@ function loginPage({ clientName, query, error }) {
   return page('Connect Pro Daily Link', `<p class="muted">AI connector</p><h1>Sign in to connect</h1><p>${escapeHtml(clientName || 'This assistant')} is asking to connect to Pro Daily Link. Use the email and password you already use in the app.</p><form method="post" action="/oauth/authorize">${fields}<label>Email<input name="email" type="email" autocomplete="username" required></label><label>Password<input name="password" type="password" autocomplete="current-password" required></label>${error ? `<p class="error">${escapeHtml(error)}</p>` : ''}<button type="submit">Continue</button></form>`);
 }
 
+function accessNotes(accounts) {
+  const roles = new Set(accounts.map(account => account.role));
+  const notes = [];
+  if (roles.has('field')) notes.push('A field connection only sees your own assignments, crew, and dailies.');
+  if (roles.has('project_manager')) notes.push('A project manager connection only sees assigned projects. It can save drafts and update drafts or needs-review reports. It cannot approve.');
+  if (roles.has('owner') || roles.has('admin')) notes.push('An owner or office connection can read the company and save drafts. It still cannot approve.');
+  return notes.map(note => `<p class="muted">${escapeHtml(note)}</p>`).join('');
+}
+
 function consentPage({ clientName, ticket, accounts, scopes, selected }) {
   const choices = accounts.length > 1
-    ? `<label>Company<select name="companyId">${accounts.map(account => `<option value="${escapeHtml(account.companyId)}"${account.companyId === selected ? ' selected' : ''}>${escapeHtml(account.companyName)} · ${escapeHtml(account.role === 'field' ? 'Field' : account.role === 'owner' ? 'Owner' : 'Office')}</option>`).join('')}</select></label>`
-    : `${hidden('companyId', accounts[0].companyId)}<p><strong>${escapeHtml(accounts[0].companyName)}</strong><br><span class="muted">${escapeHtml(accounts[0].name)} · ${escapeHtml(accounts[0].role === 'field' ? 'Field user' : accounts[0].role === 'owner' ? 'Account owner' : 'Office admin')}</span></p>`;
+    ? `<label>Company<select name="companyId">${accounts.map(account => `<option value="${escapeHtml(account.companyId)}"${account.companyId === selected ? ' selected' : ''}>${escapeHtml(account.companyName)} · ${escapeHtml(roleLabel(account.role))}</option>`).join('')}</select></label>`
+    : `${hidden('companyId', accounts[0].companyId)}<p><strong>${escapeHtml(accounts[0].companyName)}</strong><br><span class="muted">${escapeHtml(accounts[0].name)} · ${escapeHtml(roleLabel(accounts[0].role))}</span></p>`;
   const scopeText = scopes.map(scope => scope === 'daily:read' ? 'Read projects, estimates, and dailies you are allowed to see' : 'Clock in and out, save draft dailies, and submit a daily for office review').join('</li><li>');
-  return page('Allow connector', `<p class="muted">AI connector</p><h1>Allow ${escapeHtml(clientName || 'this assistant')}?</h1><section><p>The assistant cannot approve a daily. Approved reports stay locked.</p><ul><li>${scopeText}</li></ul>${accounts.some(account => account.role === 'field') ? '<p class="muted">A field connection only sees your own assignments, crew, and dailies.</p>' : '<p class="muted">An owner or office connection can read the company and save drafts. It still cannot approve.</p>'}</section><form method="post" action="/oauth/authorize">${hidden('ticket', ticket)}${choices}<button name="decision" value="allow" type="submit">Allow</button><button class="secondary" name="decision" value="deny" type="submit">Deny</button></form>`);
+  return page('Allow connector', `<p class="muted">AI connector</p><h1>Allow ${escapeHtml(clientName || 'this assistant')}?</h1><section><p>The assistant cannot approve a daily. Approved reports stay locked.</p><ul><li>${scopeText}</li></ul>${accessNotes(accounts)}</section><form method="post" action="/oauth/authorize">${hidden('ticket', ticket)}${choices}<button name="decision" value="allow" type="submit">Allow</button><button class="secondary" name="decision" value="deny" type="submit">Deny</button></form>`);
 }
 
 function refusalPage(message) {
@@ -314,7 +330,7 @@ function createOAuth(options) {
     }
     if (!eligible.length) {
       res.writeHead(403, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' });
-      return res.end(refusalPage('The AI connector is available to the account owner, office admins, and field users.'));
+      return res.end(refusalPage('The AI connector is available to the account owner, office admins, project managers, and field users.'));
     }
     const ticket = randomToken();
     await store.update(data => {
@@ -353,7 +369,7 @@ function createOAuth(options) {
     const account = ticket.accounts.find(row => String(row.companyId) === String(body.companyId)) || (ticket.accounts.length === 1 ? ticket.accounts[0] : null);
     if (!account || !allowedRole(account.role)) {
       res.writeHead(403, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' });
-      return res.end(refusalPage('Choose an owner, office admin, or field user company.'));
+      return res.end(refusalPage('Choose an owner, office admin, project manager, or field user company.'));
     }
     const code = randomToken();
     await store.update(storeData => {

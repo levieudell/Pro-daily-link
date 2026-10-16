@@ -1,8 +1,8 @@
 # Pro Daily Link AI connector
 
-A remote MCP connector for daily reports. An owner or office admin can read the company and save drafts. A field user can clock in, tell the assistant what they did, and send that daily to the office. The connector never approves a daily.
+A remote MCP connector for daily reports. An owner or office admin can read the company and save drafts. A project manager can read and draft dailies on assigned projects. A field user can clock in, tell the assistant what they did, and send that daily to the office. The connector never approves a daily.
 
-After this branch is merged, the production connector URL is `https://app.prodailylink.com/mcp`. Until then, run the app locally and use `http://127.0.0.1:$PORT/mcp`.
+The production connector URL is `https://app.prodailylink.com/mcp`. Office and field connections are already live. This change adds project manager access; until it is deployed, try that connection on a local app at `http://127.0.0.1:$PORT/mcp`.
 
 ## Connect Claude, ChatGPT, or Grok
 
@@ -14,7 +14,7 @@ Add a custom remote MCP server / connector and paste the connector URL. The assi
 - PKCE S256 is required. Public clients use `token_endpoint_auth_method: none`.
 - Scopes: `daily:read` and `daily:write`. Omit the scope to request both.
 
-Sign in with the same email and password you use in Pro Daily Link, then pick the company. Project managers cannot connect. An owner, office admin, or field user can.
+Sign in with the same email and password you use in Pro Daily Link, then pick the company. An owner, office admin, project manager, or field user can connect. A project manager only sees the projects assigned to them in the app.
 
 The demo tenant is `7176abe8-07e4-4336-a372-1163d2f21ff9`. DEMO Jordan Reed is a field user on the Concrete crew. A field connection only sees that person’s assignments, crew, and dailies.
 
@@ -22,9 +22,11 @@ The demo tenant is `7176abe8-07e4-4336-a372-1163d2f21ff9`. DEMO Jordan Reed is a
 
 Office tools: `list_projects`, `get_estimate`, `list_dailies`, `get_daily`, `create_daily`, `update_daily`. New dailies are saved as Draft. Approved reports stay locked.
 
+Project manager tools: `list_projects`, `get_estimate`, `list_dailies`, `get_daily`, `create_daily`, `update_daily`. Every tool is limited to the projects that manager can open in the app. `create_daily` always saves a Draft. `update_daily` changes a Draft or a Needs review report on those projects. Crew hours can be recorded only for people on the manager’s assigned crews. The connector does not approve or delete, even when that manager can approve in the app, and it does not include clock tools.
+
 Field tools: `clock_in`, `clock_out`, `get_my_day`, `log_work`, `submit_daily`, plus the read tools limited to that person’s own work. `log_work` writes today’s draft. Pass estimate-line quantities when the line is known. Free text is mapped only onto an existing line; anything else stays in the notes. `submit_daily` is an explicit confirm after the assistant reads the summary back. It moves the draft to Needs review and does not approve it.
 
-There is no delete tool.
+There is no delete tool and no approve tool.
 
 ## Try it locally with MCP Inspector
 
@@ -45,4 +47,4 @@ No new secret is required for public PKCE clients. Keep these existing settings:
 
 Optional: `PDL_MCP_RATE_LIMIT` (requests per minute per signed-in user, default 60).
 
-Merging this connector to `main` deploys it. Do that only when you intend to publish the connector.
+Merging this change to `main` deploys project manager access. Do that only when you intend to publish it.

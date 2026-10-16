@@ -86,10 +86,23 @@ function ownsReport(db, report, actor) {
 }
 
 function allowedProjectIds(db, actor) {
-  if (actor.role !== 'field') return null;
-  const person = member(db, actor);
-  if (!person) return new Set();
-  return actor.fieldProjectIds(db, person).allowedIds;
+  if (actor.role === 'field') {
+    const person = member(db, actor);
+    if (!person) return new Set();
+    return new Set([...actor.fieldProjectIds(db, person).allowedIds].map(Number));
+  }
+  if (actor.role === 'project_manager') return new Set((actor.projectIds || []).map(Number));
+  return null;
+}
+
+function inScope(allowed, projectId) {
+  return !allowed || allowed.has(Number(projectId));
+}
+
+function crewTeam(db, actor) {
+  if (actor.role !== 'project_manager') return db.team || [];
+  const crews = new Set((actor.assignedCrews || []).map(name => String(name).trim().toLowerCase()).filter(Boolean));
+  return (db.team || []).filter(person => crews.has(String(person.crew || '').trim().toLowerCase()));
 }
 
 function todayAssignments(db, actor, date) {
@@ -194,6 +207,7 @@ function registerTools(server, ctx) {
   const { auth, host, oauth, deps } = ctx;
   const field = auth.role === 'field';
   const office = auth.role === 'owner' || auth.role === 'admin';
+  const manager = auth.role === 'project_manager';
   const ToolError = host.ToolError;
 
   function fail(message, statusCode) {
@@ -234,13 +248,13 @@ function registerTools(server, ctx) {
 
   function scopeProjects(db, actor) {
     const allowed = allowedProjectIds(db, actor);
-    return (db.projects || []).filter(project => !project.archived && (!allowed || allowed.has(project.id)));
+    return (db.projects || []).filter(project => !project.archived && inScope(allowed, project.id));
   }
 
-  if (office || field) {
+  if (office || field || manager) {
     server.registerTool('list_projects', {
       title: 'List projects',
-      description: 'List projects this connection may see. A field user only sees their own assignments.',
+      description: 'List projects this connection may see. A field user only sees their own assignments. A project manager only sees assigned projects.',
       inputSchema: {},
       annotations: READ
     }, async () => run('daily:read', () => open(({ db, actor }) => ({ projects: scopeProjects(db, actor).map(publicProject) }))));
@@ -252,7 +266,7 @@ function registerTools(server, ctx) {
       annotations: READ
     }, async args => run('daily:read', () => open(({ db, actor, fail: reject }) => {
       const allowed = allowedProjectIds(db, actor);
-      if (allowed && !allowed.has(Number(args.projectId))) reject('Project not found.');
+      if (!inScope(allowed, args.projectId)) reject('Project not found.');
       const view = estimateView(db, args.projectId);
       if (!view || db.projects.find(project => Number(project.id) === Number(args.projectId))?.archived) reject('Project not found.');
       return view;
@@ -260,7 +274,7 @@ function registerTools(server, ctx) {
 
     server.registerTool('list_dailies', {
       title: 'List dailies',
-      description: 'List daily reports. Optional projectId, from, to, and status. A field user only sees their own dailies.',
+      description: 'List daily reports. Optional projectId, from, to, and status. A field user only sees their own dailies. A project manager only sees dailies on assigned projects.',
       inputSchema: {
         projectId: z.number().int().optional(),
         from: z.string().optional().describe('YYYY-MM-DD inclusive.'),
@@ -270,12 +284,12 @@ function registerTools(server, ctx) {
       annotations: READ
     }, async args => run('daily:read', () => open(({ db, actor, fail: reject }) => {
       const allowed = allowedProjectIds(db, actor);
-      if (args.projectId != null && allowed && !allowed.has(Number(args.projectId))) reject('Project not found.');
+      if (args.projectId != null && !inScope(allowed, args.projectId)) reject('Project not found.');
       const status = args.status ? normalizeStatus(args.status) : '';
       const rows = (db.reports || []).filter(report => {
         const project = db.projects?.[report.project];
-        if (!project) return false;
-        if (allowed && !ownsReport(db, report, actor)) return false;
+        if (!project || !inScope(allowed, project.id)) return false;
+        if (actor.role === 'field' && !ownsReport(db, report, actor)) return false;
         if (args.projectId != null && Number(project.id) !== Number(args.projectId)) return false;
         const date = report.dateIso || '';
         if (args.from && date && date < args.from) return false;
@@ -291,21 +305,23 @@ function registerTools(server, ctx) {
 
     server.registerTool('get_daily', {
       title: 'Get daily',
-      description: 'One daily report by id, without cost or rates. A field user can only open their own daily.',
+      description: 'One daily report by id, without cost or rates. A field user can only open their own daily. A project manager can only open a daily on an assigned project.',
       inputSchema: { id: z.number().int() },
       annotations: READ
     }, async args => run('daily:read', () => open(({ db, actor, fail: reject }) => {
       const report = (db.reports || []).find(row => Number(row.id) === Number(args.id));
       if (!report) reject('Daily not found.');
+      const project = db.projects?.[report.project];
+      if (!inScope(allowedProjectIds(db, actor), project?.id)) reject('Daily not found.');
       if (actor.role === 'field' && !ownsReport(db, report, actor)) reject('Daily not found.');
       return publicReport(db, report);
     })));
   }
 
-  if (office) {
+  if (office || manager) {
     server.registerTool('create_daily', {
       title: 'Create daily',
-      description: 'Save a new daily as Draft for office review later. This never approves. Unknown estimate lines are rejected.',
+      description: 'Save a new daily as Draft. This never approves. A project manager can only save a draft on an assigned project. Unknown estimate lines are rejected.',
       inputSchema: {
         idempotencyKey: keySchema,
         projectId: z.number().int(),
@@ -318,11 +334,12 @@ function registerTools(server, ctx) {
       annotations: WRITE
     }, async args => run('daily:write', () => write('create_daily', args, () => open(async ({ db, actor, call, fail: reject }) => {
       const project = projectById(db, args.projectId);
-      if (!project || project.archived) reject('Project not found.');
-      const mapped = fieldWork.mapFieldWork({ lines: args.quantities || [], crewHours: args.crewHours || [], estimateItems: project.estimateItems || [], team: db.team || [], anyCrew: true });
+      if (!project || project.archived || !inScope(allowedProjectIds(db, actor), project.id)) reject('Project not found.');
+      const team = crewTeam(db, actor);
+      const mapped = fieldWork.mapFieldWork({ lines: args.quantities || [], crewHours: args.crewHours || [], estimateItems: project.estimateItems || [], team, anyCrew: true });
       if ((args.quantities || []).length && mapped.recorded.length !== args.quantities.length) reject('Every quantity must match one existing estimate line. Nothing was saved.');
-      if ((args.crewHours || []).length && mapped.labor.length !== args.crewHours.length) reject('Every crew hour entry must match one person on this company. Nothing was saved.');
-      const balanced = fieldWork.balanceHours(fieldWork.mergeProduction([], mapped.recorded), fieldWork.mergeLabor([], mapped.labor, db.team));
+      if ((args.crewHours || []).length && mapped.labor.length !== args.crewHours.length) reject(actor.role === 'project_manager' ? 'Every crew hour entry must match one person on your assigned crews. Nothing was saved.' : 'Every crew hour entry must match one person on this company. Nothing was saved.');
+      const balanced = fieldWork.balanceHours(fieldWork.mergeProduction([], mapped.recorded), fieldWork.mergeLabor([], mapped.labor, team));
       const result = await call('POST', '/api/reports', {
         projectId: project.id,
         dateIso: args.date,
@@ -331,7 +348,7 @@ function registerTools(server, ctx) {
         clientTag: String(args.idempotencyKey).slice(0, 64),
         foreman: actor.name,
         productionEntries: balanced.entries.map(entry => ({ estimateItemId: entry.estimateItemId, description: entry.description, quantity: entry.quantity, unit: entry.unit || '', laborHours: entry.laborHours || 0 })),
-        laborEntries: (balanced.entries && mapped.labor.length ? fieldWork.mergeLabor([], mapped.labor, db.team) : []).map(entry => ({ memberId: entry.memberId, hours: entry.hours, crew: entry.crew }))
+        laborEntries: (balanced.entries && mapped.labor.length ? fieldWork.mergeLabor([], mapped.labor, team) : []).map(entry => ({ memberId: entry.memberId, hours: entry.hours, crew: entry.crew }))
       });
       if (result.status >= 400) reject(result.data?.error || 'The daily could not be saved.', result.status);
       const report = (db.reports || []).find(row => Number(row.id) === Number(result.data?.id));
@@ -343,7 +360,7 @@ function registerTools(server, ctx) {
 
     server.registerTool('update_daily', {
       title: 'Update daily',
-      description: 'Update a Draft or Needs review daily. Approved reports stay locked. This never approves.',
+      description: 'Update a Draft or Needs review daily on a project this connection may edit. Approved reports stay locked. This never approves or deletes.',
       inputSchema: {
         idempotencyKey: keySchema,
         id: z.number().int(),
@@ -358,21 +375,22 @@ function registerTools(server, ctx) {
       if (normalizeStatus(args.status) === 'Approved') reject('This connector never approves a daily.', 409);
       const report = (db.reports || []).find(row => Number(row.id) === Number(args.id));
       if (!report) reject('Daily not found.');
+      const project = db.projects?.[report.project];
+      if (!project || !inScope(allowedProjectIds(db, actor), project.id)) reject('Daily not found.');
       if (!['Draft', 'Needs review'].includes(report.status)) reject('Approved reports are locked. This connector cannot change them.', 409);
       if (seenRequest(report, args.idempotencyKey)) return publicReport(db, report);
-      const project = db.projects?.[report.project];
-      if (!project) reject('Project not found.');
+      const team = crewTeam(db, actor);
       let production = (report.productionEntries || []).map(entry => ({ ...entry }));
       let labor = (report.laborEntries || []).map(entry => ({ ...entry }));
       if (args.quantities) {
-        const mapped = fieldWork.mapFieldWork({ lines: args.quantities, estimateItems: project.estimateItems || [], team: db.team || [], anyCrew: true });
+        const mapped = fieldWork.mapFieldWork({ lines: args.quantities, estimateItems: project.estimateItems || [], team, anyCrew: true });
         if (mapped.recorded.length !== args.quantities.length) reject('Every quantity must match one existing estimate line. Nothing was saved.');
         production = mapped.recorded.map(row => ({ estimateItemId: row.item.id, description: row.item.name, quantity: row.quantity, unit: row.item.unit || '', laborHours: row.laborHours || 0 }));
       }
       if (args.crewHours) {
-        const mapped = fieldWork.mapFieldWork({ crewHours: args.crewHours, estimateItems: project.estimateItems || [], team: db.team || [], anyCrew: true });
-        if (mapped.labor.length !== args.crewHours.length) reject('Every crew hour entry must match one person on this company. Nothing was saved.');
-        labor = fieldWork.mergeLabor([], mapped.labor, db.team);
+        const mapped = fieldWork.mapFieldWork({ crewHours: args.crewHours, estimateItems: project.estimateItems || [], team, anyCrew: true });
+        if (mapped.labor.length !== args.crewHours.length) reject(actor.role === 'project_manager' ? 'Every crew hour entry must match one person on your assigned crews. Nothing was saved.' : 'Every crew hour entry must match one person on this company. Nothing was saved.');
+        labor = fieldWork.mergeLabor([], mapped.labor, team);
       }
       const balanced = fieldWork.balanceHours(production, labor);
       const result = await call('PATCH', `/api/reports/${report.id}`, {
