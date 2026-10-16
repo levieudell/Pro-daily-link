@@ -26,7 +26,7 @@ const $=id=>{if(id==='[data-approve-report]'){const match=node('#report-detail')
 const c={$,$$:selector=>selector==='dialog'?[node('#report-modal')]:[],document:{getElementById:id=>node('#'+id),addEventListener:(kind,handler,capture)=>node('#document').addEventListener(kind,handler,capture)},window:{confirm(){confirmations++;return allowDiscard}},
  projects:[{id:101,name:'Synthetic job',code:'SYN'}],reports:[],photos:[],team:[],preferredLanguage:'en',
  currentUser:{id:1,name:'Synthetic author'},company:{id:'synthetic'},signedInCompanyId:()=> 'synthetic',
- editingReportId:null,reportSourceAssignmentId:null,reportAnalyzeSequence:0,extractedDraft:null,activeNoteLaborEvidence:null,reportSavedNotes:'',suppressReportOpenUntil:0,
+ editingReportId:null,editingReportUpdatedAt:'',reportSourceAssignmentId:null,reportAnalyzeSequence:0,extractedDraft:null,activeNoteLaborEvidence:null,reportSavedNotes:'',suppressReportOpenUntil:0,
  localDateIso:()=> '2026-10-01',updateReportReviewDateBanner(){},applyReportLanguage(){},populateReportLabor(){},
  renderReportCustomFields(){},showReportStep(){},offerOfflineReportDraft(){},unmeasuredWorkSuggestions:()=>[],
  addProductionRow(){},DailyWorkExtraction:{groundReviewSuggestions:rows=>rows},statusClass:()=>'',reportWorkDate:()=> 'Oct 1',
