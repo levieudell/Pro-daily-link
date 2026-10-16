@@ -36,6 +36,18 @@ let activityReportForm=null;
 let workdays=[];
 let currentRole='office';
 let currentUser=null;
+if(typeof window!=='undefined'&&typeof window.fetch==='function'&&typeof AbortController==='function'){
+  const nativeFetch=window.fetch.bind(window),liveFetches=new Set();
+  window.fetch=function(input,init){
+    const controller=new AbortController(),requestInit={...(init||{})};
+    if(requestInit.signal)requestInit.signal.addEventListener('abort',()=>controller.abort(),{once:true});
+    requestInit.signal=controller.signal;liveFetches.add(controller);
+    const pending=nativeFetch(input,requestInit);
+    pending.finally(()=>liveFetches.delete(controller)).catch(()=>{});
+    return pending;
+  };
+  window.addEventListener('pagehide',()=>{for(const controller of liveFetches)controller.abort()});
+}
 let laborReviewReports=[];
 let preferredLanguage='en';
 let productionData={projects:[],approvedReports:0};

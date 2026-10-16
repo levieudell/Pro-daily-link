@@ -139,7 +139,8 @@ async function dump(page, label) {
     userId: typeof currentUser === 'undefined' ? 'missing' : currentUser?.id ?? null,
     projectCount: typeof projects === 'undefined' ? 'missing' : projects.length,
     body: (document.body?.innerText || '').replace(/\s+/g, ' ').slice(0, 240),
-    errors: window.__pageErrors || []
+    errors: window.__pageErrors || [],
+    fetches: (window.__fetches || []).slice(-12)
   })).catch(error => ({ error: error.message }));
   console.error(label, JSON.stringify(info, null, 2));
   await shot(page, 'field-daily-e2e-failure.png').catch(() => {});
@@ -217,8 +218,16 @@ async function openNav(page, name) {
       document.addEventListener('DOMContentLoaded', watch);
       setInterval(watch, 100);
       window.__pageErrors = [];
+      window.__fetches = [];
       window.addEventListener('unhandledrejection', event => window.__pageErrors.push(String(event.reason?.stack || event.reason)));
       window.addEventListener('error', event => window.__pageErrors.push(String(event.message || event.error)));
+      const nativeFetch = window.fetch.bind(window);
+      window.fetch = function(input, init) {
+        const url = String(input?.url || input || '');
+        const item = { url: url.replace(location.origin, ''), state: 'pending' };
+        window.__fetches.push(item);
+        return nativeFetch(input, init).then(response => { item.state = String(response.status); return response; }, error => { item.state = String(error.name || error); throw error; });
+      };
     });
     await page.goto(`http://127.0.0.1:${port}/login.html`, { waitUntil: 'domcontentloaded' });
     await page.waitForSelector('#email');
