@@ -321,12 +321,35 @@ async function openNav(page, name) {
     if (live.total === 8) assert.match(live.totalText, /8 min · 0\.13 h/);
     assert.equal(live.send, 'Send to office');
     await shot(page, 'field-time-pair.png');
+    const clockAtRest = await page.evaluate(() => {
+      const card = [...document.querySelectorAll('[data-edit-labor]')].find(el => /from clock/i.test(el.querySelector('small')?.textContent || ''));
+      return { text: card?.querySelector('em')?.textContent || '', total: window.fieldLaborContext().total.totalMinutes };
+    });
+    assert.match(clockAtRest.text, new RegExp(`^${clockAtRest.total} min ·`), JSON.stringify(clockAtRest));
     const curbInput = await page.$('[data-review-labor][data-line-id="1"]');
     await curbInput.click();
     await page.evaluate(el => {
       el.focus();
       el.setSelectionRange(0, el.value.length);
     }, curbInput);
+    const keptEdit = await page.$eval('[data-review-labor][data-line-id="1"]', el => el.value);
+    const advanced = await settleOpenPunch(page, path.join(root, 'db.json'), clockAtRest.total + 2);
+    assert.ok(advanced.some(card => card.minutes >= clockAtRest.total + 2), JSON.stringify(advanced));
+    const clockWhileEditing = await page.evaluate(() => {
+      window.applyLiveLabor();
+      const card = [...document.querySelectorAll('[data-edit-labor]')].find(el => /from clock/i.test(el.querySelector('small')?.textContent || ''));
+      const input = document.querySelector('[data-review-labor][data-line-id="1"]');
+      return {
+        text: card?.querySelector('em')?.textContent || '',
+        total: window.fieldLaborContext().total.totalMinutes,
+        focused: document.activeElement === input,
+        value: input?.value || ''
+      };
+    });
+    assert.equal(clockWhileEditing.focused, true, JSON.stringify(clockWhileEditing));
+    assert.equal(clockWhileEditing.value, keptEdit, JSON.stringify(clockWhileEditing));
+    assert.ok(clockWhileEditing.total >= clockAtRest.total + 2, JSON.stringify({ clockAtRest, clockWhileEditing }));
+    assert.match(clockWhileEditing.text, new RegExp(`^${clockWhileEditing.total} min ·`), JSON.stringify(clockWhileEditing));
     await page.keyboard.type('3');
     await page.evaluate(() => document.activeElement?.blur?.());
     const locked = await page.evaluate(() => {
@@ -645,6 +668,13 @@ async function openNav(page, name) {
     assert.deepEqual(office.quantities, saved.quantities);
     assert.deepEqual(office.labor, saved.labor);
     assert.equal(office.who, saved.who);
+    const glance = await owner.evaluate(() => [...document.querySelectorAll('#report-list .report-list-item')].map(el => el.innerText));
+    const officeCard = glance.find(text => /Left the site/.test(text));
+    assert.ok(officeCard, glance.join('\n---\n'));
+    assert.match(officeCard, /Extra work/);
+    assert.match(officeCard, /Left the site\. Gate is locked\./);
+    await owner.evaluate(() => document.querySelector('#report-list')?.scrollIntoView());
+    await shot(owner, 'office-list-glance.png');
     const curbAfterOut = await page.$('[data-review-labor][data-line-id="1"]');
     await curbAfterOut.click();
     await page.evaluate(el => { el.focus(); el.setSelectionRange(0, el.value.length); }, curbAfterOut);

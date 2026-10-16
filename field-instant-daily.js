@@ -209,7 +209,7 @@ var fieldScopeFlags=[];
       if(!(Number(input.value)>0))return;
       const name=input.closest('.labor-line')?.querySelector('strong')?.textContent||'Crew';
       const source=input.dataset.timecardDerived==='true'?'From clock':input.dataset.noteDerived==='true'?'AI filled':'Entered';
-      const crewMinutes=typeof FieldDailyScope!=='undefined'&&FieldDailyScope.minutesFromHours?FieldDailyScope.minutesFromHours(Number(input.value)||0):Math.round((Number(input.value)||0)*60);
+      const crewMinutes=memberShownMinutes(input);
       const shown=workTimeLabel(crewMinutes);
       cards.push(`<button type="button" class="field-review-card" data-edit-labor="${input.dataset.laborMember}"><small>${escapeText(source)}</small><strong>${escapeText(name)}</strong><em>${escapeText(shown)}</em></button>`);
     });
@@ -289,6 +289,7 @@ var fieldScopeFlags=[];
       });
       const totalLine=host.querySelector('.field-labor-total');
       if(totalLine)totalLine.textContent=`Total ${workTimeLabel(Number(fieldLaborContext().total?.totalMinutes)||0)}`;
+      paintClockCards(host);
       scheduleLaborLockSave();
     });
     host.querySelectorAll('[data-edit-line]').forEach(card=>card.onclick=event=>{
@@ -385,6 +386,21 @@ var fieldScopeFlags=[];
   let laborTickAt=0;
   function beginFieldLaborTick(){if(!(laborTickAt&&Date.now()-laborTickAt<250))laborTickAt=Date.now();return laborTickAt}
   function laborNow(){return laborTickAt&&Date.now()-laborTickAt<1000?laborTickAt:Date.now()}
+  function memberShownMinutes(input){
+    if(input?.dataset.timecardDerived==='true'){
+      const punch=punchRows().find(row=>Number(row.memberId)===Number(input.dataset.laborMember));
+      if(punch)return punch.minutes;
+    }
+    return typeof FieldDailyScope!=='undefined'&&FieldDailyScope.minutesFromHours?FieldDailyScope.minutesFromHours(Number(input.value)||0):Math.round((Number(input.value)||0)*60);
+  }
+  function paintClockCards(host){
+    (host||$('#field-review-cards'))?.querySelectorAll('[data-edit-labor]').forEach(card=>{
+      const input=$(`[data-labor-member="${card.dataset.editLabor}"]`);
+      if(!input||input.dataset.timecardDerived!=='true')return;
+      const em=card.querySelector('em');
+      if(em)em.textContent=workTimeLabel(memberShownMinutes(input));
+    });
+  }
   window.beginFieldLaborTick=beginFieldLaborTick;
   window.fieldLaborNow=laborNow;
   function workTimeLabel(minutes){if(typeof FieldDailyScope!=='undefined'&&FieldDailyScope.formatWorkTime)return FieldDailyScope.formatWorkTime(minutes);const whole=Math.max(0,Math.round(Number(minutes)||0));const hours=(Math.round(whole/60*100)/100).toFixed(2);return whole<60?`${whole} min · ${hours} h`:`${hours} h`}
@@ -504,7 +520,16 @@ var fieldScopeFlags=[];
   function applyLiveLabor(){
     if(liveLaborDepth)return null;
     const activeEl=document.activeElement;
-    if(activeEl&&$('#report-modal')?.contains(activeEl)&&activeEl.matches?.('input,textarea,select'))return null;
+    const editing=Boolean(activeEl&&$('#report-modal')?.contains(activeEl)&&activeEl.matches?.('input,textarea,select'));
+    if(editing){
+      beginFieldLaborTick();
+      paintClockCards($('#field-review-cards'));
+      const totalLine=document.querySelector('#field-review-cards .field-labor-total');
+      const totalMinutes=Number(fieldLaborContext().total?.totalMinutes)||0;
+      if(totalLine&&totalMinutes>0)totalLine.textContent=`Total ${workTimeLabel(totalMinutes)}`;
+      ensureFieldClockOut();
+      return null;
+    }
     beginFieldLaborTick();
     if(typeof renderFieldClock==='function')renderFieldClock();
     liveLaborDepth++;
