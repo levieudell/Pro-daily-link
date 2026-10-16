@@ -33,6 +33,18 @@
     window.pdlWorkspaceGate=(async()=>{
       try{
         const config=await fetch('/api/config',{credentials:'include',cache:'no-store'}).then(response=>response.json());
+        if(config.staging){
+          window.pdlStaging=true;
+          const paintStagingBanner=()=>{
+            if(document.querySelector('.staging-banner'))return;
+            const bar=document.createElement('div');
+            bar.className='staging-banner';
+            bar.setAttribute('role','status');
+            bar.textContent='STAGING';
+            (document.body||document.documentElement).prepend(bar);
+          };
+          if(document.body)paintStagingBanner();else document.addEventListener('DOMContentLoaded',paintStagingBanner);
+        }
         if(config.authRequired){
           const response=await fetch('/api/auth/me',{credentials:'include',cache:'no-store'});
           if(!response.ok){location.replace('/');return false}
@@ -519,11 +531,12 @@
   </dialog>
 
   <dialog id="end-day-modal">
-    <form method="dialog">
+    <form method="dialog" novalidate>
       <div class="modal-header"><div><p class="eyebrow">CLOCK OUT</p><h2>Clock out</h2></div><button class="close-button" value="cancel">×</button></div>
       <input type="hidden" id="end-day-id" />
       <div id="end-day-summary" class="weather-row"></div>
-      <label>What was completed?<textarea id="end-day-notes" rows="6" placeholder="Speak or type what the crew accomplished, quantities, delays, and tomorrow's plan." required></textarea></label>
+      <label>What was completed?<textarea id="end-day-notes" rows="6" placeholder="Speak or type what the crew accomplished, quantities, delays, and tomorrow's plan."></textarea></label>
+      <p class="form-message" id="end-day-message" role="alert" hidden></p>
       <button type="button" class="secondary" id="end-day-voice">🎙 Speak completed work</button>
       <p class="voice-status" id="end-day-voice-status" role="status" aria-live="polite" hidden></p>
       <label>What happens next?<textarea id="end-day-next" rows="2" placeholder="Optional: tomorrow’s plan, follow-up work, or what the office needs to arrange."></textarea></label>
@@ -572,8 +585,8 @@
   <script src="company-timezone.js?v=20261014-review3"></script>
   <script src="schedule-approved-labor.js?v=20261008-approved-evidence"></script>
   <script src="app.js?v=20261014-review3"></script>
-  <script src="field-daily-scope.js?v=20261016-field-ai"></script>
-  <script src="field-instant-daily.js?v=20261016-field-ai"></script>
+  <script src="field-daily-scope.js?v=20261016-note-ground"></script>
+  <script src="field-instant-daily.js?v=20261016-note-ground"></script>
   <script src="estimate-mobile.js"></script>
   <script src="time-approval-controls.js?v=20261007-pay-presets-person-total"></script>
   <script src="company-settings-tabs.js?v=20261004-pay-periods"></script>

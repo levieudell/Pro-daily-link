@@ -8,7 +8,7 @@ var fieldScopeFlags=[];
     const compact=fieldCompact(),next=$('#report-next-step'),send=$('#save-report'),modal=$('#report-modal');
     if(next&&compact)next.textContent=preferredLanguage==='es'?'Listo':'Done';
     if(send&&compact&&!editingReportId)send.textContent=preferredLanguage==='es'?'Enviar a la oficina':'Send to office';
-    modal?.classList.toggle('field-manual-entry',compact&&![...$$('.production-entry')].some(row=>row.dataset.aiFilled==='true'));
+    modal?.classList.toggle('field-manual-entry',compact&&!fieldScopeFlags.length&&![...$$('.production-entry')].some(row=>row.dataset.aiFilled==='true'));
     if(!compact){const flags=$('#field-scope-flags'),cards=$('#field-review-cards');if(flags)flags.hidden=true;if(cards)cards.hidden=true}
   }
   function groundedText(value){const text=String(value||'').trim();return text&&!/^needs confirmation[.!\s]*$/i.test(text)?text:''}
@@ -24,7 +24,8 @@ var fieldScopeFlags=[];
       const quantity=row.querySelector('.production-quantity');
       if(quantity&&line.quantity!=null)quantity.value=line.quantity;
       const unit=row.querySelector('.production-unit');
-      if(unit&&line.unit)unit.value=line.unit;
+      const safeUnit=line.unit&&String(line.unit).toLowerCase()!=='x'?line.unit:'';
+      if(unit&&safeUnit)unit.value=safeUnit;
     }
   }
   function applyNarrative(draft){
@@ -42,18 +43,27 @@ var fieldScopeFlags=[];
       field.value=value;field.dataset.aiAccepted='true';field.classList.add('ai-filled-input');
     }
   }
+  var fieldHoursReview=null;
   function clockHoursPresent(){return [...$$('[data-labor-member]')].some(input=>input.dataset.timecardDerived==='true'&&Number(input.value)>0)}
+  function enteredLaborHours(){return [...$$('[data-labor-member]')].reduce((sum,input)=>sum+(Number(input.value)||0),0)}
+  function crewStillClockedIn(){const projectId=projects?.[+$('#report-project')?.value]?.id,date=$('#report-date')?.value,cards=typeof timeCards==='undefined'?[]:timeCards,days=typeof workdays==='undefined'?[]:workdays;return cards.some(card=>card&&!card.deletedAt&&Number(card.projectId)===Number(projectId)&&String(card.date||'')===String(date||'')&&card.inAt&&!card.outAt)||days.some(day=>day&&Number(day.projectId)===Number(projectId)&&day.status==='active'&&!day.endedAt)}
+  function applyAskedHours(value,headcount){const each=Number(value),inputs=[...$$('[data-labor-member]')];if(!(each>0)){inputs.forEach(input=>{if(input.dataset.noteDerived==='true')input.value=''});return}const count=Math.max(1,Math.min(inputs.length,Math.floor(Number(headcount)||1)));inputs.forEach(input=>{if(input.dataset.noteDerived==='true')input.value=''});inputs.slice(0,count).forEach(input=>{input.value=Math.min(24,each);input.dataset.noteDerived='true'})}
   function renderFlags(){
     const host=$('#field-scope-flags');if(!host)return;
     if(!fieldCompact()||!fieldScopeFlags.length){host.hidden=true;host.innerHTML='';return}
     host.hidden=false;
     host.innerHTML=fieldScopeFlags.map((flag,index)=>{
       const answered=Boolean(flag.decision);
-      const label=flag.kind==='productivity'?'Productivity':'Possible extra work';
-      const answer=flag.decision==='extra'?'Extra work':flag.decision==='estimate'?'Part of the estimate':flag.decision==='noted'?'Noted':'';
+      const label=flag.kind==='productivity'?'Productivity':flag.kind==='pick'?'Needs your pick':'Possible extra work';
+      const answer=flag.decision==='extra'?'Bill it':flag.decision==='not'?'Not extra':flag.decision==='estimate'?'Part of the estimate':flag.decision==='noted'?'Noted':'';
+      const items=projects?.[+$('#report-project')?.value]?.estimateItems||[];
+      const picker=flag.kind==='pick'?`<label class="field-pick">Pick an estimate line<select data-flag-index="${index}" data-pick-line><option value="">Choose a line</option>${items.map(item=>`<option value="${escapeText(item.id)}">${escapeText(item.name)} · ${escapeText(item.unit||'')}</option>`).join('')}</select></label><button type="button" data-flag-index="${index}" data-flag-choice="extra">Extra work</button>`:'';
       const actions=flag.kind==='productivity'
         ?`<button type="button" data-flag-index="${index}" data-flag-choice="noted">Noted</button>`
-        :`<button type="button" data-flag-index="${index}" data-flag-choice="extra">Extra work</button><button type="button" data-flag-index="${index}" data-flag-choice="estimate">Part of estimate</button>`;
+        :flag.kind==='pick'?picker
+        :flag.reason==='stated_extra'
+          ?`<button type="button" data-flag-index="${index}" data-flag-choice="bill">Bill it</button><button type="button" data-flag-index="${index}" data-flag-choice="not">Not extra</button>`
+          :`<button type="button" data-flag-index="${index}" data-flag-choice="extra">Extra work</button><button type="button" data-flag-index="${index}" data-flag-choice="estimate">Part of estimate</button>`;
       return `<article class="field-flag ${answered?'is-answered':''}" data-flag-kind="${escapeText(flag.kind)}"><small>${escapeText(label)}</small><strong>${escapeText(flag.description||'Field note')}</strong><p>${escapeText(flag.message||'')}</p>${answered?`<b>${escapeText(answer)}</b>`:actions}</article>`;
     }).join('');
     host.querySelectorAll('[data-flag-choice]').forEach(button=>button.onclick=()=>{
@@ -61,6 +71,19 @@ var fieldScopeFlags=[];
       if(!flag||typeof FieldDailyScope==='undefined')return;
       fieldScopeFlags[Number(button.dataset.flagIndex)]=FieldDailyScope.decideFlag(flag,button.dataset.flagChoice);
       renderFlags();
+      renderFieldReview();
+    });
+    host.querySelectorAll('[data-pick-line]').forEach(select=>select.onchange=()=>{
+      const flag=fieldScopeFlags[Number(select.dataset.flagIndex)];
+      const item=(projects?.[+$('#report-project')?.value]?.estimateItems||[]).find(entry=>String(entry.id)===String(select.value));
+      if(!flag||!item||typeof FieldDailyScope==='undefined'||typeof addProductionRow!=='function')return;
+      const chosen=FieldDailyScope.decideFlag({...flag,estimateItemId:item.id},'estimate');
+      chosen.estimateItemId=item.id;
+      fieldScopeFlags[Number(select.dataset.flagIndex)]=chosen;
+      const row=addProductionRow({description:item.name,estimateItemId:item.id,quantity:flag.quantity,unit:item.unit,needsScopeConfirmation:false});
+      if(row){row.dataset.aiFilled='true';const quantity=row.querySelector('.production-quantity');if(quantity&&flag.quantity!=null)quantity.value=flag.quantity;const unit=row.querySelector('.production-unit');if(unit)unit.value=item.unit||''}
+      renderFlags();
+      renderFieldReview();
     });
   }
   function renderFieldReview(){
@@ -70,9 +93,10 @@ var fieldScopeFlags=[];
       const select=row.querySelector('.production-item'),custom=row.querySelector('.custom-description');
       const name=(select?.selectedOptions?.[0]?.textContent||custom?.value||'Work line').trim();
       if(!name||name==='Select estimate line')return;
-      const qty=row.querySelector('.production-quantity')?.value,unit=row.querySelector('.production-unit')?.value||'';
+      const qty=row.querySelector('.production-quantity')?.value,rawUnit=row.querySelector('.production-unit')?.value||'',unit=String(rawUnit).toLowerCase()==='x'?'':rawUnit;
       const ai=row.dataset.aiFilled==='true';
-      cards.push(`<button type="button" class="field-review-card" data-edit-line="${index}"><small>${ai?'AI filled':'Tap to edit'}</small><strong>${escapeText(name)}</strong><em>${escapeText(qty?`${qty} ${unit}`.trim():'Quantity')}</em></button>`);
+      if(!qty&&!ai)return;
+      cards.push(`<button type="button" class="field-review-card" data-edit-line="${index}"><small>${ai?'AI filled':'Tap to edit'}</small><strong>${escapeText(name)}</strong><em>${escapeText(qty?`${qty} ${unit}`.trim():'Quantity needed')}</em></button>`);
     });
     $$('[data-labor-member]').forEach(input=>{
       if(!(Number(input.value)>0))return;
@@ -84,10 +108,20 @@ var fieldScopeFlags=[];
       const field=$(id);if(!field?.value?.trim())continue;
       cards.push(`<button type="button" class="field-review-card" data-edit-field="${id.slice(1)}"><small>${field.dataset.aiAccepted==='true'?'AI filled':'Tap to edit'}</small><strong>${escapeText(label)}</strong><em>${escapeText(field.value.trim())}</em></button>`);
     }
+    const hours=fieldHoursReview;
+    const clocked=clockHoursPresent();
+    if(hours?.ask&&!clocked){
+      const kept=$('#field-hours-each')?.value||'';
+      const who=hours.headcount?`${hours.headcount} people are in the notes. Enter the hours.`:'Enter the crew hours. Scheduled time is not used.';
+      cards.unshift(`<article class="field-hours-card"><small>Hours</small><strong>Hours needed</strong><p>${escapeText(who)}</p><label>Hours each<input id="field-hours-each" type="number" min="0" max="24" step="0.5" inputmode="decimal" value="${escapeText(kept)}"></label></article>`);
+    }
+    if(crewStillClockedIn())cards.unshift('<p class="field-clock-warning">The crew is still clocked in. Clock out before you send so the hours match the punch.</p>');
     host.hidden=false;
     host.innerHTML=cards.length?cards.join(''):'<p class="field-review-empty">AI did not fill any lines. Add the work on the cards below.</p>';
+    const hourInput=$('#field-hours-each');
+    if(hourInput)hourInput.oninput=()=>applyAskedHours(hourInput.value,hours?.headcount);
     const modal=$('#report-modal');
-    modal?.classList.toggle('field-manual-entry',![...$$('.production-entry')].some(row=>row.dataset.aiFilled==='true'));
+    modal?.classList.toggle('field-manual-entry',!fieldScopeFlags.length&&![...$$('.production-entry')].some(row=>row.dataset.aiFilled==='true'));
     host.querySelectorAll('[data-edit-line]').forEach(button=>button.onclick=()=>{
       $$('.production-entry').forEach(row=>row.classList.remove('is-editing'));
       const row=$$('.production-entry')[Number(button.dataset.editLine)];
@@ -117,7 +151,10 @@ var fieldScopeFlags=[];
         const draft=await api('/api/ai/extract',{method:'POST',body:JSON.stringify({notes:note,language,projectId:project?.id})});
         applyScopeLines(draft?.scopeReview||{lines:[]});
         applyNarrative(draft||{});
-        if(!clockHoursPresent()&&draft?.laborEvidence&&typeof applyNoteLaborEvidence==='function')applyNoteLaborEvidence(draft.laborEvidence);
+        if(draft?.scopeReview?.materials){const materials=$('#report-materials');if(materials&&!String(materials.value||'').includes(draft.scopeReview.materials))materials.value=[materials.value,draft.scopeReview.materials].filter(Boolean).join('\n')}
+        fieldHoursReview=draft?.scopeReview?.hours||null;
+        if(!clockHoursPresent()&&fieldHoursReview?.total>0&&typeof applyNoteLaborEvidence==='function')applyNoteLaborEvidence(draft.laborEvidence?.total>0?draft.laborEvidence:{total:fieldHoursReview.total,headcount:fieldHoursReview.headcount,perPerson:fieldHoursReview.perPerson});
+        else if(!clockHoursPresent()&&draft?.laborEvidence&&typeof applyNoteLaborEvidence==='function'&&!fieldHoursReview?.ask)applyNoteLaborEvidence(draft.laborEvidence);
         fieldScopeFlags=(draft?.scopeReview?.flags||[]).map(flag=>({...flag,decision:null,createsChange:false}));
         if(draft?.changesCreated)fieldScopeFlags=[];
       }
@@ -129,7 +166,7 @@ var fieldScopeFlags=[];
       if(typeof showReportStep==='function')showReportStep(2);
       if(failed&&!$$('.production-entry').length&&typeof addProductionRow==='function')addProductionRow();
       if(typeof suggestReportHourSplit==='function'&&typeof reportLaborTotals==='function'&&reportLaborTotals().crew>0&&$$('.production-entry').length)suggestReportHourSplit({silent:true,source:clockHoursPresent()?'timecards':'notes'});
-      $('#report-modal')?.classList.toggle('field-manual-entry',failed||![...$$('.production-entry')].some(row=>row.dataset.aiFilled==='true'));
+      $('#report-modal')?.classList.toggle('field-manual-entry',failed&&!fieldScopeFlags.length&&![...$$('.production-entry')].some(row=>row.dataset.aiFilled==='true'));
       renderFlags();
       renderFieldReview();
       polishFieldDaily();
@@ -145,19 +182,32 @@ var fieldScopeFlags=[];
     const officeSend=sendButton.onclick;
     sendButton.onclick=event=>{
       if(fieldCompact()){
-        const pending=fieldScopeFlags.filter(flag=>!flag.decision);
-        if(pending.length){event?.preventDefault();if(typeof showReportMessage==='function')showReportMessage('Answer each flag before sending this daily to the office.');$('#field-scope-flags')?.scrollIntoView({block:'center'});return}
+        const lines=[...$$('.production-entry')].filter(row=>row.dataset.aiFilled==='true').map(row=>({quantity:row.querySelector('.production-quantity')?.value,needsQuantity:!(Number(row.querySelector('.production-quantity')?.value)>0)}));
+        const gate=typeof FieldDailyScope!=='undefined'&&FieldDailyScope.sendGate?FieldDailyScope.sendGate({flags:fieldScopeFlags,laborHours:enteredLaborHours(),openClock:crewStillClockedIn(),lines}):{block:fieldScopeFlags.some(flag=>!flag.decision)?['Answer each flag before sending this daily to the office.']:[],warn:[]};
+        const message=[...gate.block,...(gate.block.length?[]:gate.warn)].join(' ');
+        if(gate.block.length){event?.preventDefault();if(typeof showReportMessage==='function')showReportMessage(message);($('#field-hours-each')||$('#field-scope-flags'))?.scrollIntoView({block:'center'});return}
+        if(gate.warn.length&&typeof showReportMessage==='function')showReportMessage(gate.warn.join(' '),'warning');
       }
       return officeSend?.call(sendButton,event);
     };
   }
   if(typeof openReport==='function'){
     const openBefore=openReport;
-    openReport=function(report=null,context={}){fieldScopeFlags=[];const result=openBefore(report,context);polishFieldDaily();renderFlags();if(fieldCompact()&&$('#report-form')?.getAttribute('data-current-step')==='2')renderFieldReview();return result};
+    openReport=function(report=null,context={}){fieldScopeFlags=[];fieldHoursReview=null;const result=openBefore(report,context);polishFieldDaily();renderFlags();if(fieldCompact()&&$('#report-form')?.getAttribute('data-current-step')==='2')renderFieldReview();return result};
   }
   if(typeof showReportStep==='function'){
     const stepBefore=showReportStep;
     showReportStep=function(step){const result=stepBefore(step);if(Number(step)===2&&fieldCompact()){renderFlags();renderFieldReview()}polishFieldDaily();return result};
   }
+  function presentReportSent({totalHours,unplanned,productionEntries}={}){
+    const hours=Number(totalHours)||0,produced=(productionEntries||[]).some(row=>Number(row.quantity)>0),confirmed=(typeof fieldScopeFlags==='undefined'?[]:fieldScopeFlags).filter(flag=>flag&&flag.decision==='extra'&&flag.createsChange).length,changes=(Number(unplanned)||0)+confirmed,missing=[];
+    if(!produced)missing.push('production quantities');
+    if(!(hours>0))missing.push('labor hours');
+    const title=$('#report-sent-modal h2'),summary=$('#report-sent-summary');
+    const changeText=changes?`${changes} potential change${changes===1?'':'s'} flagged`:'No potential changes were confirmed';
+    if(missing.length){if(title)title.textContent='Sent to the office with gaps';if(summary)summary.textContent=`Missing: ${missing.join(' and ')}. ${changeText}.`}
+    else{if(title)title.textContent='The office has it.';if(summary)summary.textContent=`${hours.toFixed(hours%1?1:0)} labor hour${hours===1?'':'s'} logged · ${changeText}.`}
+  }
+  window.presentReportSent=presentReportSent;
   polishFieldDaily();
 })();
