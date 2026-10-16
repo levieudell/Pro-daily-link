@@ -64,6 +64,8 @@ To enable genuine AI report extraction, copy `.env.example` to `.env`, provide a
 
 The repository includes `render.yaml` for a Render web service. Secrets are entered in Render's environment settings and must never be committed. Set `PDL_SUPABASE_ENABLED=1` to use Supabase private storage and health checks. The included Blueprint runs with authentication enforcement disabled for a controlled product demo; do not use that setting for a public customer launch.
 
+Search indexing, host-specific `robots.txt` / `sitemap.xml`, IndexNow, and the Google/Bing verification tags are documented in [docs/SEARCH-INDEXING.md](docs/SEARCH-INDEXING.md). The simplest ownership check is a DNS TXT record for a Google Search Console Domain property; Bing can then import the property from Google Search Console.
+
 This is a connected MVP. Public production launch still requires completing the PostgreSQL repository cutover, backup/restore validation, billing, and monitoring.
 
 ## Project Notes & To-dos

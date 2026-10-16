@@ -1,7 +1,22 @@
+# Application host. Public marketing pages stay indexable. Workspace, auth, API, OAuth, and MCP do not.
 User-agent: *
 Allow: /
 Disallow: /app
-Disallow: /api/
-Disallow: /guest/
+Disallow: /index.html
+Disallow: /api
+Disallow: /mcp$
+Disallow: /mcp/
+Disallow: /oauth
+Disallow: /.well-known/
+Disallow: /guest
+Disallow: /login.html
+Disallow: /signup.html
+Disallow: /forgot-password.html
+Disallow: /reset-password.html
+Disallow: /verify-email.html
+Disallow: /platform
+Disallow: /support.html
+Disallow: /change-order.html
+Disallow: /uploads/
 
 Sitemap: https://app.prodailylink.com/sitemap.xml
