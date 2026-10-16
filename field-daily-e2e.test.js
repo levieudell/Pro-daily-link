@@ -282,6 +282,26 @@ async function openNav(page, name) {
     assert.ok(curb && curb.value === '1' && curb.qty === '40' && curb.unit === 'LF', JSON.stringify(parsed));
     assert.ok(gutter && gutter.value === '5' && gutter.qty === '20' && gutter.unit === 'LF', JSON.stringify(parsed));
     assert.equal(parsed.some(row => (Number(row.qty) > 0 || Number(row.hours) > 0) && !row.id), false);
+    const materialsAndNext = await page.evaluate(() => {
+      const materials = document.querySelector('#report-materials')?.value || '';
+      const next = document.querySelector('#field-review-next');
+      const phrase = '6 yards of concrete';
+      return {
+        materials,
+        count: materials.toLowerCase().split(phrase).length - 1,
+        tag: next?.tagName || '',
+        nextValue: next?.value || '',
+        scroll: next?.scrollHeight || 0,
+        client: next?.clientHeight || 0,
+        fits: Boolean(next) && next.scrollHeight <= next.clientHeight + 1
+      };
+    });
+    assert.equal(materialsAndNext.count, 1, materialsAndNext.materials);
+    assert.equal(materialsAndNext.tag, 'TEXTAREA', JSON.stringify(materialsAndNext));
+    assert.match(materialsAndNext.nextValue, /Tomorrow we form the east side, need pump truck Monday/);
+    assert.equal(materialsAndNext.fits, true, JSON.stringify(materialsAndNext));
+    await page.evaluate(() => document.querySelector('#field-review-next')?.scrollIntoView({ block: 'center' }));
+    await shot(page, 'field-next-materials.png');
     await shot(page, 'field-review-bound.png');
     await assertClockOutClear(page, 'clock out vs extra work');
     await shot(page, 'field-clock-out-clear.png');

@@ -64,6 +64,11 @@ const multi = scope.reviewNotes({ notes: 'Poured 40 LF of curb on north side, se
 assert.deepEqual(multi.lines.map(line => [line.description, line.quantity, line.estimateItemId]), [['Curb', 40, 1], ['Gutter', 20, 5]]);
 const oneClause = scope.reviewNotes({ notes: 'poured 40 LF of curb and set 20 LF of gutter', estimateItems: clinicItems });
 assert.deepEqual(oneClause.lines.map(line => line.estimateItemId), [1, 5]);
+const concreteNote = 'Poured 40 LF of curb on north side, set 20 LF of gutter, 3 guys, extra work: owner asked us to patch 2 potholes by the gate, used 6 yards of concrete. Tomorrow we form the east side, need pump truck Monday.';
+const concrete = scope.reviewNotes({ notes: concreteNote, estimateItems: clinicItems });
+assert.equal(concrete.materials, '6 yards of concrete');
+assert.equal(scope.uniqueMaterials(['6 yards of concrete', '6 yards of concrete.']), '6 yards of concrete');
+assert.match(concrete.next, /Tomorrow we form the east side, need pump truck Monday/);
 const emptyKept = scope.keepProductionLines([
   { description: 'Clock out text', quantity: 0, laborHours: 0.12 },
   { description: 'Curb', estimateItemId: 1, quantity: 40, laborHours: 0.12 }
@@ -168,7 +173,8 @@ assert.match(app, /30000/);
 assert.match(app, /laborManual/);
 assert.match(serverSource, /\/extra-work\$/);
 assert.match(serverSource, /Choose billable or not billable/);
-assert.match(instant, /id="field-review-next"/);
+assert.match(instant, /<textarea id="field-review-next"/);
+assert.match(serverSource, /fieldScope\.uniqueMaterials/);
 assert.match(instant, /noPunchLabel\(\)/);
 assert.match(instant, /No punch, enter hours/);
 assert.match(instant, /every\(row=>Number\(row\.value\)>0\)/);
