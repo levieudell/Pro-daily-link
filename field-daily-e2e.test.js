@@ -656,7 +656,10 @@ async function openNav(page, name) {
     assert.equal(savedLock.minutes, 2, JSON.stringify(savedLock));
     await page.evaluate(() => document.querySelector('#report-modal .close-button')?.click());
     await page.waitForFunction(() => !document.querySelector('#report-modal')?.open);
-    await page.click('[data-edit-report]');
+    await page.evaluate(() => {
+      document.querySelector('#sidebar')?.classList.remove('open');
+      (document.querySelector('[data-open-report]') || document.querySelector('[data-assignment-daily]'))?.click();
+    });
     await page.waitForFunction(() => document.querySelector('#report-modal')?.open && document.querySelector('#report-modal-title')?.textContent === 'Verify daily report', { timeout: 20000 });
     for (let pass = 0; pass < 3; pass += 1) {
       if (pass) {
