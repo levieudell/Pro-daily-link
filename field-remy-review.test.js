@@ -24,6 +24,7 @@ assert.deepEqual(named.map(person => person.id), [2, 3]);
 assert.equal(scope.crewGapReason(named), 'Casey and Alex have no clock-in. Enter their hours.');
 assert.equal(scope.crewGapReason([{ name: 'Casey Nguyen' }]), 'Casey has no clock-in. Enter their hours.');
 assert.deepEqual(scope.namedCrewGaps('3 guys on the curb.', crew, [1]).map(person => person.id), [2, 3]);
+assert.deepEqual(scope.namedCrewGaps('3 guys on the curb.', crew, new Set([1])).map(person => person.id), [2, 3]);
 assert.deepEqual(scope.namedCrewGaps('3 guys on the curb.', crew, [1, 2, 3]), []);
 assert.equal(scope.noPunchLabel(), 'No punch, enter hours');
 assert.deepEqual(scope.namedCrewGaps('Casey and Alex stayed to patch the gate.', crew, [1, 2, 3]), []);

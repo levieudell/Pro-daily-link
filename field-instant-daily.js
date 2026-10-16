@@ -128,12 +128,12 @@ var fieldScopeFlags=[];
     const crewName=$('#report-crew')?.value;
     const crew=(typeof team==='undefined'?[]:team).filter(member=>!crewName||member.crew===crewName);
     const punched=punchMemberIds();
-    const gaps=typeof FieldDailyScope!=='undefined'&&FieldDailyScope.namedCrewGaps?FieldDailyScope.namedCrewGaps(notes,crew,punched):[];
+    const gaps=(typeof FieldDailyScope!=='undefined'&&FieldDailyScope.namedCrewGaps?FieldDailyScope.namedCrewGaps(notes,crew,punched):[]).filter(person=>!(Number($(`[data-labor-member="${person.id}"]`)?.value)>0));
     const hours=fieldHoursReview;
     const clocked=clockHoursPresent()||punched.length>0;
     if(gaps.length){
       const label=FieldDailyScope.noPunchLabel?FieldDailyScope.noPunchLabel():'No punch, enter hours';
-      const fields=gaps.map(person=>{const current=$(`[data-labor-member="${person.id}"]`)?.value||'';return `<label>${escapeText(String(person.name||'').split(/\s+/)[0])}<span>${escapeText(label)}</span><input data-gap-member="${person.id}" type="number" min="0" max="24" step="0.01" inputmode="decimal" value="${escapeText(current)}" placeholder="" aria-label="${escapeText(label)} for ${escapeText(person.name)}"></label>`}).join('');
+      const fields=gaps.map(person=>{const current=$(`[data-labor-member="${person.id}"]`)?.value||'';const short=String(person.name||'').replace(/^DEMO\s+/i,'').trim().split(/\s+/)[0]||person.name||'Crew';return `<label>${escapeText(short)}<span>${escapeText(label)}</span><input data-gap-member="${person.id}" type="number" min="0" max="24" step="0.01" inputmode="decimal" value="${escapeText(current)}" placeholder="" aria-label="${escapeText(label)} for ${escapeText(person.name)}"></label>`}).join('');
       cards.unshift(`<article class="field-hours-card"><small>Hours</small><strong>${escapeText(label)}</strong>${fields}</article>`);
     }else if(hours?.ask&&!clocked){
       const kept=$('#field-hours-each')?.value||'';

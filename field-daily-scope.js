@@ -191,7 +191,8 @@
   }
 
   function namedCrewGaps(notes,crew,punchedMemberIds){
-    const punched=new Set((punchedMemberIds||[]).map(Number));
+    const list=punchedMemberIds instanceof Set?[...punchedMemberIds]:Array.isArray(punchedMemberIds)?punchedMemberIds:[];
+    const punched=new Set(list.map(Number));
     const people=(crew||[]).filter(person=>person&&!punched.has(Number(person.id)));
     const source=String(notes||'');
     const named=people.filter(person=>{
@@ -279,12 +280,11 @@
   }
 
   function rawNoteLine(entry,notes){
+    const matched=entry?.estimateItemId!=null&&String(entry.estimateItemId)!==''&&Number(entry.quantity)>0;
+    if(matched)return false;
     const desc=String(entry?.description||'').trim();
     const note=String(notes||'').trim().toLowerCase();
-    if(!desc)return true;
-    const matched=entry?.estimateItemId!=null&&entry.estimateItemId!==''&&Number(entry.quantity)>0;
-    if(matched)return false;
-    if(!note)return false;
+    if(!desc||!note)return false;
     const text=desc.toLowerCase();
     if(text===note)return true;
     return text.length>=24&&note.includes(text);
