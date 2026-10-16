@@ -19,6 +19,12 @@ services:
         sync: false
       - key: PDL_PUBLIC_URL
         value: https://app.prodailylink.com
+      - key: INDEXNOW_KEY
+        sync: false
+      - key: GOOGLE_SITE_VERIFICATION
+        sync: false
+      - key: BING_SITE_VERIFICATION
+        sync: false
       - key: RESEND_API_KEY
         sync: false
       - key: RESEND_FROM
