@@ -411,6 +411,22 @@ function todayIso() {
     assert.equal(billed.data.report.extraWork[0].billable, true);
     const notBilled = await call('PATCH', '/api/reports/' + review.data.id + '/extra-work', { index: 0, billable: false });
     assert.equal(notBilled.data.report.extraWork[0].billable, false);
+    const tm = await call('PATCH', '/api/reports/' + review.data.id + '/extra-work', { index: 0, decision: 'tm' });
+    assert.equal(tm.status, 200, JSON.stringify(tm.data));
+    assert.equal(tm.data.report.extraWork[0].billable, true);
+    assert.equal(tm.data.report.extraWork[0].officeDecision, 'tm');
+    assert.equal((tm.data.report.history || []).some(row => row.action === 'Extra work marked Billable · T&M' && row.by === 'Synthetic owner'), true, JSON.stringify(tm.data.report.history));
+    const repeat = await call('PATCH', '/api/reports/' + review.data.id + '/extra-work', { index: 0, decision: 'tm' });
+    assert.equal((repeat.data.report.history || []).filter(row => row.action === 'Extra work marked Billable · T&M').length, 1, JSON.stringify(repeat.data.report.history));
+    if ((tm.data.report.flags || []).some(flag => !flag.resolution)) {
+      const settled = await call('PATCH', '/api/reports/' + review.data.id + '/disposition', { resolution: 'tm', note: '' });
+      assert.equal(settled.status, 200, JSON.stringify(settled.data));
+    }
+    const approvedExtra = await call('PATCH', '/api/reports/' + review.data.id + '/approve', {});
+    assert.equal(approvedExtra.status, 200, JSON.stringify(approvedExtra.data));
+    assert.equal(approvedExtra.data.status, 'Approved');
+    assert.equal(approvedExtra.data.extraWork[0].officeDecision, 'tm');
+    assert.equal(approvedExtra.data.extraWork[0].billable, true);
     const midnightDb = JSON.parse(fs.readFileSync(file, 'utf8'));
     midnightDb.company.timezone = 'America/Los_Angeles';
     fs.writeFileSync(file, JSON.stringify(midnightDb));
@@ -441,6 +457,23 @@ function todayIso() {
       assert.equal((crossed.data.report.history || []).some(row => /Labor corrected/i.test(String(row.action || ''))), false);
       assert.equal(crossed.data.report.next || '', '');
       assert.equal(crossed.data.report.productionEntries.length, 0);
+      const rounded = await call('POST', '/api/workdays/start', { projectId: 102, memberIds: [12] });
+      assert.equal(rounded.status, 201, JSON.stringify(rounded.data));
+      const roundedDb = JSON.parse(fs.readFileSync(file, 'utf8'));
+      const roundedIn = new Date(frozen.getTime() - 170000).toISOString();
+      for (const day of roundedDb.workdays) if (day.id === rounded.data.id) day.startedAt = roundedIn;
+      for (const card of roundedDb.timeCards) if (card.workdayId === rounded.data.id) card.inAt = roundedIn;
+      fs.writeFileSync(file, JSON.stringify(roundedDb));
+      const roundedEnd = await call('POST', '/api/workdays/' + rounded.data.id + '/end', { notes: 'Short punch on the curb.' });
+      assert.equal(roundedEnd.status, 200, JSON.stringify(roundedEnd.data));
+      const roundedMinutes = scope.elapsedMinutes(roundedEnd.data.workday.startedAt, roundedEnd.data.workday.endedAt);
+      const rawHours = Math.round(((new Date(roundedEnd.data.workday.endedAt) - new Date(roundedEnd.data.workday.startedAt)) / 3600000) * 100) / 100;
+      assert.equal(roundedMinutes, 2, JSON.stringify(roundedEnd.data.workday));
+      assert.notEqual(rawHours, scope.hoursFromMinutes(roundedMinutes));
+      assert.equal(roundedEnd.data.report.laborEntries[0].minutes, roundedMinutes);
+      assert.equal(roundedEnd.data.report.laborEntries[0].hours, scope.hoursFromMinutes(roundedMinutes));
+      assert.notEqual(roundedEnd.data.report.laborEntries[0].hours, rawHours);
+      assert.equal(roundedEnd.data.timeCards[0].hours, scope.hoursFromMinutes(scope.elapsedMinutes(roundedEnd.data.timeCards[0].inAt, roundedEnd.data.timeCards[0].outAt)));
     } finally {
       global.Date = RealDate;
     }

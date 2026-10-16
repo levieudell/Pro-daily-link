@@ -365,8 +365,9 @@ var fieldScopeFlags=[];
       if(!(Number(input.value)>0))return;
       const name=input.closest('.labor-line')?.querySelector('strong')?.textContent||'Crew';
       const source=input.dataset.timecardDerived==='true'?'From clock':input.dataset.noteDerived==='true'?'AI filled':'Entered';
-      const crewMinutes=typeof FieldDailyScope!=='undefined'&&FieldDailyScope.minutesFromHours?FieldDailyScope.minutesFromHours(Number(input.value)||0):Math.round((Number(input.value)||0)*60);
-      const shown=clockLabel(crewMinutes);
+      const punchMinutes=typeof punchRows==='function'?punchRows().find(row=>Number(row.memberId)===Number(input.dataset.laborMember))?.minutes:undefined;
+      const crewMinutes=punchMinutes!=null?punchMinutes:(typeof FieldDailyScope!=='undefined'&&FieldDailyScope.minutesFromHours?FieldDailyScope.minutesFromHours(Number(input.value)||0):Math.round((Number(input.value)||0)*60));
+      const shown=punchMinutes!=null?punchTotalLabel(crewMinutes):clockLabel(crewMinutes);
       cards.push(`<button type="button" class="field-review-card" data-edit-labor="${input.dataset.laborMember}"><small>${escapeText(source)}</small><strong>${escapeText(name)}</strong><em>${escapeText(shown)}</em></button>`);
     });
     for(const [id,label] of textFields){

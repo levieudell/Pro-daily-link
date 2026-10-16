@@ -27,7 +27,8 @@ function quarterHours(startedAt, endedAt) {
 }
 
 function dailyHours(startedAt, endedAt) {
-  return Math.max(0, Math.round(((new Date(endedAt) - new Date(startedAt)) / 3600000) * 100) / 100);
+  const scope = require('./field-daily-scope');
+  return scope.hoursFromMinutes(scope.elapsedMinutes(startedAt, endedAt));
 }
 
 async function request(route, options = {}) {
