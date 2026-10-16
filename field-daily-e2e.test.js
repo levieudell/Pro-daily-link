@@ -169,14 +169,15 @@ async function openNav(page, name) {
   let log = '';
   child.stdout.on('data', chunk => { log += chunk; });
   child.stderr.on('data', chunk => { log += chunk; });
-  const browser = await puppeteer().launch({
-    executablePath: '/usr/bin/google-chrome-stable',
-    headless: true,
-    args: ['--no-sandbox', '--disable-dev-shm-usage', '--disable-gpu']
-  });
+  let browser;
   const dialogs = [];
   let page;
   try {
+    browser = await puppeteer().launch({
+      executablePath: '/usr/bin/google-chrome-stable',
+      headless: true,
+      args: ['--no-sandbox', '--disable-dev-shm-usage', '--disable-gpu']
+    });
     await new Promise((resolve, reject) => {
       const timer = setTimeout(() => reject(new Error('staging server did not start\n' + log)), 20000);
       const poll = () => {
@@ -726,9 +727,9 @@ async function openNav(page, name) {
     console.error(log.slice(-4000));
     throw error;
   } finally {
-    await browser.close().catch(() => {});
+    if (browser) await browser.close().catch(() => {});
     child.kill('SIGTERM');
     await new Promise(resolve => child.once('exit', resolve));
     fs.rmSync(root, { recursive: true, force: true });
   }
-})().catch(error => { console.error(error); process.exitCode = 1; });
+})().catch(error => { console.error(error); process.exit(1); });
