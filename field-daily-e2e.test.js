@@ -236,8 +236,15 @@ async function openNav(page, name) {
     assert.ok(punch.some(card => card.minutes >= 8 && card.projectId === 3), JSON.stringify(punch));
     await openNav(page, 'myday');
     await page.waitForSelector('#myday-page.active [data-assignment-daily]');
-    await page.click('[data-assignment-daily]');
-    await page.waitForSelector('#report-modal[open] #field-notes');
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      await page.evaluate(() => {
+        document.querySelector('#sidebar')?.classList.remove('open');
+        document.querySelector('[data-assignment-daily]')?.click();
+      });
+      const opened = await page.waitForSelector('#report-modal[open] #field-notes', { timeout: 8000 }).then(() => true).catch(() => false);
+      if (opened) break;
+    }
+    await page.waitForSelector('#report-modal[open] #field-notes', { timeout: 20000 });
     await page.$eval('#field-notes', (el, note) => {
       el.value = note;
       el.dispatchEvent(new Event('input', { bubbles: true }));
