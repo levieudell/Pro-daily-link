@@ -759,7 +759,9 @@ async function openNav(page, name) {
     assert.deepEqual(saved.quantities.map(row => [row.id, row.qty]), [[1, 40], [5, 20]]);
     assert.equal(saved.who, 'site owner');
     assert.equal(saved.decision, 'extra');
-    assert.equal(/Left the site/.test(saved.notes + saved.next), false);
+    assert.match(saved.notes, /set 20 LF of gutter/i);
+    assert.match(saved.notes, /Left the site\. Gate is locked\./);
+    assert.equal(/Left the site/.test(saved.next), false);
     assert.equal(saved.history.some(action => /Labor corrected/i.test(action)), false, saved.history.join(' | '));
     assert.equal(saved.quantities.reduce((sum, row) => sum + row.minutes, 0), saved.form.reduce((sum, row) => sum + row.minutes, 0));
     assert.equal(saved.quantities.find(row => row.id === 1)?.minutes, 3);
