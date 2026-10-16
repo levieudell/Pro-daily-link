@@ -467,7 +467,7 @@ async function openNav(page, name) {
         status: document.querySelector('#report-submit-status')?.textContent || ''
       };
     });
-    assert.match(extraGate.prompt, /Choose Yes or No before sending/);
+    assert.equal(extraGate.prompt, 'Answer Extra work? to send');
     assert.equal(extraGate.disabled, true, JSON.stringify(extraGate));
     assert.equal(/Answer each flag before sending/i.test(extraGate.status), false, extraGate.status);
     await page.click('[data-flag-choice="yes"]');
@@ -485,11 +485,15 @@ async function openNav(page, name) {
         selected: Boolean(yes?.classList.contains('is-selected')),
         disabled: Boolean(send?.disabled),
         decision: flags.find(flag => flag.reason === 'stated_extra')?.decision || '',
-        block: gate.block
+        block: gate.block,
+        prompt: document.querySelector('[data-extra-prompt]')?.textContent || '',
+        status: document.querySelector('#report-submit-status')?.textContent || ''
       };
     });
     assert.equal(yesStuck.selected, true, JSON.stringify(yesStuck));
     assert.equal(yesStuck.disabled, false, JSON.stringify(yesStuck));
+    assert.equal(yesStuck.prompt, '');
+    assert.equal(/Answer each flag before sending/i.test(yesStuck.status), false, yesStuck.status);
     assert.equal(yesStuck.decision, 'extra');
     assert.equal(yesStuck.block.length, 0, JSON.stringify(yesStuck));
     await page.$eval('[data-flag-asker]', el => {
