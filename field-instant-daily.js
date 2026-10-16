@@ -265,7 +265,7 @@ var fieldScopeFlags=[];
         ?`<button type="button" data-flag-id="${escapeText(flag.id)}" data-flag-index="${index}" data-flag-choice="noted">Noted</button>`
         :flag.kind==='pick'?picker
         :flag.reason==='stated_extra'
-          ?`<div class="field-extra-ask"><span>Extra work?</span><button type="button" class="${flag.decision==='extra'?'is-selected':''}" data-flag-id="${escapeText(flag.id)}" data-flag-index="${index}" data-flag-choice="yes">Yes, extra</button><button type="button" class="${flag.decision==='not'?'is-selected':''}" data-flag-id="${escapeText(flag.id)}" data-flag-index="${index}" data-flag-choice="no">No, normal scope</button></div>${flag.decision?'':`<p class="field-flag-prompt" data-extra-prompt>Answer Extra work? to send</p>`}<label class="field-who-asked">Who asked?<input data-flag-asker="${escapeText(flag.id)}" maxlength="80" value="${escapeText(who)}" aria-label="Who asked?"></label>`
+          ?`<div class="field-extra-ask"><span>Extra work?</span><button type="button" class="${flag.decision==='extra'?'is-selected':''}" aria-pressed="${flag.decision==='extra'?'true':'false'}" data-flag-id="${escapeText(flag.id)}" data-flag-index="${index}" data-flag-choice="yes">Yes, extra</button><button type="button" class="${flag.decision==='not'?'is-selected':''}" aria-pressed="${flag.decision==='not'?'true':'false'}" data-flag-id="${escapeText(flag.id)}" data-flag-index="${index}" data-flag-choice="no">No, normal scope</button></div>${flag.decision?'':`<p class="field-flag-prompt" data-extra-prompt>Answer Extra work? to send</p>`}<label class="field-who-asked">Who asked?<input data-flag-asker="${escapeText(flag.id)}" maxlength="80" value="${escapeText(who)}" aria-label="Who asked?"></label>`
           :`<button type="button" class="${flag.decision==='extra'?'is-selected':''}" data-flag-id="${escapeText(flag.id)}" data-flag-index="${index}" data-flag-choice="extra">Extra work</button><button type="button" class="${flag.decision==='estimate'?'is-selected':''}" data-flag-id="${escapeText(flag.id)}" data-flag-index="${index}" data-flag-choice="estimate">Part of estimate</button>`;
       return `<article class="field-flag ${answered?'is-answered':''}" data-flag-kind="${escapeText(flag.kind)}"><small>${escapeText(label)}</small><strong>${escapeText(flag.description||'Field note')}</strong><p>${escapeText(flag.message||'')}</p>${actions}</article>`;
     }).join('');
@@ -314,6 +314,24 @@ var fieldScopeFlags=[];
       renderFlags();
       renderFieldReview();
     });
+  }
+  const CLOCK_OUT_PROMPT=/Add what was completed before clocking out\.|Agregue una nota breve sobre el trabajo terminado/;
+  function reviewHasContent(){
+    if($('#field-notes')?.value?.trim()||$('#report-next')?.value?.trim()||$('#report-summary')?.value?.trim())return true;
+    return [...$$('.production-entry')].some(row=>lineEstimateId(row)||Number(row.querySelector('.production-quantity')?.value)>0||Number(row.querySelector('.production-hours')?.value)>0||row.dataset.extraWork==='true');
+  }
+  function userHasClockedOut(){
+    const memberId=Number(currentUser?.memberId);
+    if(!memberId)return false;
+    const mine=(typeof workdays==='undefined'?[]:workdays).filter(row=>row&&(row.memberIds||[]).map(Number).includes(memberId));
+    return mine.length>0&&!mine.some(row=>row.status==='active'&&!row.endedAt);
+  }
+  function clearStaleClockOutPrompt(){
+    const status=$('#report-submit-status');
+    if(!status||!fieldCompact()||!CLOCK_OUT_PROMPT.test(status.textContent||''))return;
+    if(!reviewHasContent()&&!userHasClockedOut())return;
+    status.textContent='';
+    status.className='report-submit-status';
   }
   function renderFieldReview(){
     const host=$('#field-review-cards');if(!host||!fieldCompact()){if(host)host.hidden=true;return}
@@ -457,6 +475,7 @@ var fieldScopeFlags=[];
       field.focus();
     });
     bindLaborAllocation();
+    clearStaleClockOutPrompt();
   }
   async function fillFieldReportFromNotes(){
     const keptLocks=lockedLaborMap();
@@ -721,6 +740,14 @@ var fieldScopeFlags=[];
     openDailyForAssignment=function(assignment){
       if(!$('#report-modal')?.open){const existing=fieldSameDayReport(assignment?.projectId,assignment?.date);if(existing){openReport(existing);return}}
       return previousOpenDaily(assignment);
+    };
+  }
+  if(typeof notify==='function'){
+    const notifyBefore=notify;
+    notify=function(message){
+      const result=notifyBefore.apply(this,arguments);
+      if(fieldCompact()&&CLOCK_OUT_PROMPT.test(String(message||'')))clearStaleClockOutPrompt();
+      return result;
     };
   }
   polishFieldDaily();

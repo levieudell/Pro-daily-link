@@ -464,12 +464,16 @@ async function openNav(page, name) {
       return {
         prompt: card?.querySelector('[data-extra-prompt]')?.textContent || '',
         disabled: Boolean(send?.disabled),
-        status: document.querySelector('#report-submit-status')?.textContent || ''
+        status: document.querySelector('#report-submit-status')?.textContent || '',
+        yesPressed: document.querySelector('[data-flag-choice="yes"]')?.getAttribute('aria-pressed') || '',
+        noPressed: document.querySelector('[data-flag-choice="no"]')?.getAttribute('aria-pressed') || ''
       };
     });
     assert.equal(extraGate.prompt, 'Answer Extra work? to send');
     assert.equal(extraGate.disabled, true, JSON.stringify(extraGate));
     assert.equal(/Answer each flag before sending/i.test(extraGate.status), false, extraGate.status);
+    assert.equal(extraGate.yesPressed, 'false', JSON.stringify(extraGate));
+    assert.equal(extraGate.noPressed, 'false', JSON.stringify(extraGate));
     await page.click('[data-flag-choice="yes"]');
     const yesStuck = await page.evaluate(() => {
       const yes = document.querySelector('[data-flag-choice="yes"]');
@@ -487,10 +491,14 @@ async function openNav(page, name) {
         decision: flags.find(flag => flag.reason === 'stated_extra')?.decision || '',
         block: gate.block,
         prompt: document.querySelector('[data-extra-prompt]')?.textContent || '',
-        status: document.querySelector('#report-submit-status')?.textContent || ''
+        status: document.querySelector('#report-submit-status')?.textContent || '',
+        yesPressed: document.querySelector('[data-flag-choice="yes"]')?.getAttribute('aria-pressed') || '',
+        noPressed: document.querySelector('[data-flag-choice="no"]')?.getAttribute('aria-pressed') || ''
       };
     });
     assert.equal(yesStuck.selected, true, JSON.stringify(yesStuck));
+    assert.equal(yesStuck.yesPressed, 'true', JSON.stringify(yesStuck));
+    assert.equal(yesStuck.noPressed, 'false', JSON.stringify(yesStuck));
     assert.equal(yesStuck.disabled, false, JSON.stringify(yesStuck));
     assert.equal(yesStuck.prompt, '');
     assert.equal(/Answer each flag before sending/i.test(yesStuck.status), false, yesStuck.status);
@@ -621,6 +629,17 @@ async function openNav(page, name) {
     assert.equal(clockOut.reportOpen, true);
     assert.equal(clockOut.endNotes, '');
     assert.match(clockOut.dailyNotes, /gutter/i);
+    await page.click('#confirm-end-day');
+    const emptyOut = await page.evaluate(() => ({
+      review: document.querySelector('#report-submit-status')?.textContent || '',
+      dialog: document.querySelector('#end-day-message')?.textContent || '',
+      reviewOpen: Boolean(document.querySelector('#report-modal')?.open),
+      endOpen: Boolean(document.querySelector('#end-day-modal')?.open)
+    }));
+    assert.equal(/Add what was completed before clocking out\./.test(emptyOut.review), false, emptyOut.review);
+    assert.match(emptyOut.dialog, /Add what was completed before clocking out\./);
+    assert.equal(emptyOut.reviewOpen, true);
+    assert.equal(emptyOut.endOpen, true);
     await page.type('#end-day-notes', 'Left the site. Gate is locked.');
     await shot(page, 'field-clock-out-open.png');
     await page.click('#confirm-end-day');
@@ -645,7 +664,10 @@ async function openNav(page, name) {
       cards: document.querySelector('#field-review-cards')?.innerText || '',
       flags: document.querySelector('#field-scope-flags')?.innerText || '',
       who: document.querySelector('[data-flag-asker]')?.value || '',
-      extra: document.querySelector('[data-flag-choice="yes"]')?.classList.contains('is-selected') || false
+      extra: document.querySelector('[data-flag-choice="yes"]')?.classList.contains('is-selected') || false,
+      status: document.querySelector('#report-submit-status')?.textContent || '',
+      yesPressed: document.querySelector('[data-flag-choice="yes"]')?.getAttribute('aria-pressed') || '',
+      noPressed: document.querySelector('[data-flag-choice="no"]')?.getAttribute('aria-pressed') || ''
     }));
     assert.match(afterOut.notes, /set 20 LF of gutter/);
     assert.match(afterOut.notes, /potholes/);
@@ -657,6 +679,9 @@ async function openNav(page, name) {
     assert.match(afterOut.flags, /Extra work|pothole/i);
     assert.equal(afterOut.extra, true, afterOut.flags);
     assert.equal(afterOut.who, 'site owner', afterOut.flags);
+    assert.equal(/Add what was completed before clocking out\./.test(afterOut.status), false, afterOut.status);
+    assert.equal(afterOut.yesPressed, 'true', JSON.stringify(afterOut));
+    assert.equal(afterOut.noPressed, 'false', JSON.stringify(afterOut));
     assert.equal(dialogs.some(message => /Discard this daily report/i.test(message)), false, dialogs.join(' | '));
     await page.click('#report-next-step');
     await page.waitForFunction(() => {
