@@ -212,11 +212,12 @@ server.listen(4199, async () => {
     const edited = await request('/api/reports/1', {method: 'PATCH', headers: auth, body: JSON.stringify({weather: 'Overcast snapshot'})});
     assert.equal(edited.response.status, 200);
     const afterEdit = (await request('/api/state', {headers: auth})).data.reports.find(report => report.id === 1);
-    assert.deepEqual(Object.keys(afterEdit).sort(), Object.keys(beforeEdit).sort());
+    assert.deepEqual(Object.keys(afterEdit).sort(), [...new Set([...Object.keys(beforeEdit), 'updatedAt'])].sort());
     for (const key of Object.keys(beforeEdit)) {
-      if (key === 'weather' || key === 'history') continue;
+      if (key === 'weather' || key === 'history' || key === 'updatedAt') continue;
       assert.deepEqual(afterEdit[key], beforeEdit[key], key);
     }
+    assert.ok(afterEdit.updatedAt);
     assert.equal(afterEdit.weather, 'Overcast snapshot');
     assert.equal(afterEdit.history.length, beforeEdit.history.length + 1);
     assert.match(afterEdit.history.at(-1).action, /Corrected/);
