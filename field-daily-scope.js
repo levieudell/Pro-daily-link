@@ -630,5 +630,9 @@
     return Math.round(crew*100)/100;
   }
 
-  return {normalizeUnit,matchEstimateLine,reviewScope,reviewNotes,uniqueMaterials,isMaterialPhrase,tidyNext,mergedNext,decideFlag,confirmedExtraChanges,fieldExtraItems,whoAsked,approvedQuantityMap,hoursFromClock,statedCrew,sendGate,clockOutMessage,submissionStatus,namedCrewGaps,crewGapReason,noPunchLabel,punchLengthLabel,formatMinutes,formatHours,formatClock,formatPunchTotal,formatWorkTime,hoursFromMinutes,displayHoursForMinutes,minutesFromHours,elapsedMinutes,laborTotal,dedupeLaborEntries,rawNoteLine,emptyProductionLine,dedupeProductionLines,keepProductionLines,flagIdentity,normalizeLaborGaps,mergeScopeFlags,splitLargestRemainder,allocateLaborHours,sameDayDaily,clientProjectIndex,singleLineLaborHours,QUANTITY_TOLERANCE,PRODUCTIVITY_LIMIT};
+  function extraDecisionLabel(decision){
+    return {potential_change:'Billable · potential change',tm:'Billable · T&M',mapped:'Mapped to estimate',non_billable:'Not billable'}[decision]||'';
+  }
+
+  return {normalizeUnit,matchEstimateLine,reviewScope,reviewNotes,uniqueMaterials,isMaterialPhrase,tidyNext,mergedNext,decideFlag,confirmedExtraChanges,fieldExtraItems,whoAsked,approvedQuantityMap,hoursFromClock,statedCrew,sendGate,clockOutMessage,submissionStatus,namedCrewGaps,crewGapReason,noPunchLabel,punchLengthLabel,formatMinutes,formatHours,formatClock,formatPunchTotal,formatWorkTime,hoursFromMinutes,displayHoursForMinutes,minutesFromHours,elapsedMinutes,laborTotal,dedupeLaborEntries,rawNoteLine,emptyProductionLine,dedupeProductionLines,keepProductionLines,flagIdentity,normalizeLaborGaps,mergeScopeFlags,splitLargestRemainder,allocateLaborHours,sameDayDaily,clientProjectIndex,singleLineLaborHours,extraDecisionLabel,QUANTITY_TOLERANCE,PRODUCTIVITY_LIMIT};
 });

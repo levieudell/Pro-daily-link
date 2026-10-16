@@ -2,6 +2,7 @@
 const crypto = require('node:crypto');
 const csvCell = require('./csv-cell');
 const rates = require('./report-rate-policy');
+const fieldScope = require('./field-daily-scope');
 
 function fail(message, statusCode = 400) { throw Object.assign(new Error(message), { statusCode }); }
 function validDate(value) {
@@ -68,6 +69,11 @@ function reportingExportCsv(record) {
     const known = rates.validSnapshot(report.rateSnapshot), rate = tm && known ? report.rateSnapshot.laborRate : null;
     const status = !tm ? 'Not applicable' : known ? 'Captured' : 'Review required';
     for (const entry of report.productionEntries || []) rows.push([record.id, record.version || 1, 'Production', report.id, report.dateIso, entry.description || '', entry.quantity, entry.unit || '', entry.laborHours || 0, '', '', '']);
+    for (const item of report.extraWork || []) {
+      if (!item || item.extra_work !== true) continue;
+      const decision = fieldScope.extraDecisionLabel(item.officeDecision) || (item.billable === true ? 'Billable' : item.billable === false ? 'Not billable' : '');
+      rows.push([record.id, record.version || 1, 'Extra work', report.id, report.dateIso, [item.description || 'Extra work', decision].filter(Boolean).join(' · '), item.quantity ?? '', item.unit || '', '', '', '', '']);
+    }
     for (const entry of report.laborEntries || []) {
       const member = (record.snapshot.team || []).find(row => Number(row.id) === Number(entry.memberId));
       const excluded = (report.laborExclusions || []).find(row => Number(row.memberId) === Number(entry.memberId));

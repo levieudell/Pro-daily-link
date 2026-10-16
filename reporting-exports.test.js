@@ -4,7 +4,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const crypto = require('node:crypto');
-const { createReportingExport } = require('./reporting-exports');
+const { createReportingExport, reportingExportCsv } = require('./reporting-exports');
 const { splitSnapshot, assembleSnapshot } = require('./database/transactional-repository');
 const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'pdl-export-record-'));
 process.env.PDL_DB_FILE = path.join(temp, 'db.json');
@@ -23,6 +23,7 @@ db.reports = [
   { id: 2, project: 0, status: 'Draft', dateIso: '2026-10-01', laborEntries: [{hours:99}], productionEntries:[] },
   { id: 3, project: 0, status: 'Approved', dateIso: '2026-09-30', laborEntries: [{hours:4}], productionEntries:[] }
 ];
+db.reports[0].extraWork = [{ extra_work: true, description: 'patch the gate', who_asked: 'owner', billable: true, officeDecision: 'tm' }];
 const filters = {projectId:db.projects[0].id, from:'2026-10-01', to:'2026-10-31'};
 assert.throws(() => createReportingExport(db, null, actor), /must be an object/);
 assert.throws(() => createReportingExport(db, {...filters,from:'2026-02-30'}, actor), /valid inclusive/);
@@ -30,6 +31,9 @@ assert.throws(() => createReportingExport(db, {...filters,status:'Draft'}, actor
 assert.throws(() => createReportingExport({...db,reports:[{...db.reports[0],dateIso:null}]},filters,actor), /explicit ISO/);
 const initial = createReportingExport(db, filters, actor);
 assert.equal(initial.snapshot.totals.laborHours,8);
+assert.equal(initial.snapshot.reports.find(row => row.id === 1).extraWork[0].officeDecision, 'tm');
+assert.match(reportingExportCsv(initial), /Extra work/);
+assert.match(reportingExportCsv(initial), /patch the gate · Billable · T&M/);
 assert.deepEqual(initial.includedApprovals.map(row=>row.reportId),[1]);
 const legacy=structuredClone(initial);delete legacy.version;delete legacy.seriesId;delete legacy.supersedesId;legacy.schemaVersion=1;
 const legacyBefore=JSON.stringify(legacy),compatible=createReportingExport({...db,reportingExports:[legacy]}, {...filters,supersedesId:legacy.id,reason:'Reviewed legacy replacement'},actor);
