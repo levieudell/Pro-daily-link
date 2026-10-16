@@ -40,16 +40,6 @@ function pinOpenPunch(file, minutes) {
   fs.writeFileSync(file, JSON.stringify(db));
 }
 
-function inflateDraftLabor(file, hours) {
-  const db = JSON.parse(fs.readFileSync(file, 'utf8'));
-  const report = (db.reports || []).find(row => row.status === 'Draft');
-  if (!report) throw new Error('draft daily missing before send');
-  const rows = report.laborEntries || [];
-  if (!rows.length) throw new Error('draft daily has no labor');
-  for (const row of rows) row.hours = hours;
-  fs.writeFileSync(file, JSON.stringify(db));
-}
-
 async function login(page, email, password) {
   await page.goto(`http://127.0.0.1:${page.__port}/login.html`, { waitUntil: 'domcontentloaded' });
   await page.waitForSelector('#email');
@@ -68,6 +58,24 @@ async function openNav(page, name) {
     sidebar?.classList.remove('open');
   }, name);
   await page.waitForFunction(target => document.getElementById(target + '-page')?.classList.contains('active'), { timeout: 10000 }, name);
+}
+
+async function gutterReport(page) {
+  return page.evaluate(async () => {
+    const state = await (await fetch('/api/state', { credentials: 'include' })).json();
+    return (state.reports || []).find(row => /gutter/i.test(row.notes || row.originalNotes || '')) || null;
+  });
+}
+
+async function waitUntil(page, predicate, label) {
+  const started = Date.now();
+  let last = null;
+  while (Date.now() - started < 20000) {
+    last = await page.evaluate(predicate);
+    if (last === true) return;
+    await new Promise(resolve => setTimeout(resolve, 200));
+  }
+  throw new Error(`${label}: ${JSON.stringify(last)}`);
 }
 
 async function startJordan(page) {
@@ -136,26 +144,27 @@ async function startJordan(page) {
       const minutes = [...document.querySelectorAll('[data-review-labor]')].reduce((sum, input) => sum + (Number(input.value) || 0), 0);
       return curb && gutter && minutes === 2;
     }, { timeout: 20000 });
-    inflateDraftLabor(dbFile, 0.05);
     await page.evaluate(() => document.querySelector('[data-flag-choice="yes"]')?.click());
     await page.evaluate(() => document.querySelector('#save-report')?.click());
     await page.waitForSelector('#report-sent-modal[open]', { timeout: 20000 });
-    const sent = await page.evaluate(async () => {
-      const state = await (await fetch('/api/state', { credentials: 'include' })).json();
-      const report = (state.reports || []).find(row => /gutter/i.test(row.notes || row.originalNotes || ''));
-      return {
-        status: report?.status || '',
-        labor: (report?.laborEntries || []).map(row => ({ hours: Number(row.hours) || 0, source: row.source || '' })),
-        history: report?.history || [],
-        flag: report?.updatedAfterSend || null
-      };
-    });
-    assert.equal(sent.flag, null, JSON.stringify(sent));
-    assert.equal(sent.status, 'Needs review', JSON.stringify(sent));
-    assert.equal(sent.history.some(row => /Labor corrected/i.test(String(row.action || ''))), false, JSON.stringify(sent.history));
-    assert.equal(sent.history.some(row => row.action === 'Labor recalculated from punches' && row.by === 'Time cards'), true, JSON.stringify(sent.history));
-    assert.equal(sent.labor.some(row => row.source === 'punch' && Math.abs(row.hours - 0.03) < 0.001), true, JSON.stringify(sent.labor));
     await page.click('#report-sent-modal button.primary');
+    await openNav(page, 'reports');
+    await page.waitForFunction(() => /Labor recalculated from punches by Time cards/.test(document.querySelector('.approval-history')?.innerText || ''), { timeout: 20000 });
+    const sentLog = await page.evaluate(() => document.querySelector('.approval-history')?.innerText || '');
+    const sentLines = sentLog.split('\n').map(line => line.trim()).filter(Boolean);
+    assert.deepEqual(sentLines.map(line => line.replace(/ · .*$/, '')), [
+      'Draft created from workday by Field team',
+      'Labor recalculated from punches by Time cards'
+    ], sentLog);
+    assert.equal(/Corrected/i.test(sentLog), false, sentLog);
+    const sent = await gutterReport(page);
+    assert.equal(sent?.updatedAfterSend || null, null, JSON.stringify(sent?.updatedAfterSend));
+    assert.equal(sent?.status, 'Needs review', sent?.status);
+    assert.deepEqual((sent?.history || []).map(row => `${row.action} by ${row.by}`), [
+      'Draft created from workday by Field team',
+      'Labor recalculated from punches by Time cards'
+    ], JSON.stringify(sent?.history));
+    assert.equal((sent?.laborEntries || []).some(row => row.source === 'punch' && Math.abs(Number(row.hours) - 0.03) < 0.001), true, JSON.stringify(sent?.laborEntries));
     await startJordan(page);
     pinOpenPunch(dbFile, 3);
     await page.click('#start-day-button');
@@ -183,6 +192,25 @@ async function startJordan(page) {
     assert.match(`${flagged.action} by ${flagged.lineBy}`, /Labor 0\.03h → 0\.08h, next step changed, by DEMO Jordan Reed's clock-out/);
     assert.equal(flagged.labor.some(hours => Math.abs(hours - 0.08) < 0.001), true, JSON.stringify(flagged.labor));
     assert.equal(flagged.next, SECOND_NEXT, flagged.next);
+    const fieldClear = await page.evaluate(async () => {
+      const state = await (await fetch('/api/state', { credentials: 'include' })).json();
+      const report = (state.reports || []).find(row => /gutter/i.test(row.notes || row.originalNotes || ''));
+      const response = await fetch(`/api/reports/${report.id}/reviewed`, { method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' } });
+      const after = await (await fetch('/api/state', { credentials: 'include' })).json();
+      const saved = (after.reports || []).find(row => row.id === report.id);
+      return { status: response.status, summary: saved?.updatedAfterSend?.summary || '', reviewed: saved?.updatedAfterSendReviewed || null };
+    });
+    assert.equal(fieldClear.status, 403, JSON.stringify(fieldClear));
+    assert.match(fieldClear.summary, /Labor 0\.03h → 0\.08h/);
+    assert.equal(fieldClear.reviewed, null, JSON.stringify(fieldClear));
+    await openNav(page, 'reports');
+    await page.waitForFunction(() => /Updated after send/i.test(document.querySelector('.approval-history')?.innerText || ''), { timeout: 20000 });
+    await page.reload({ waitUntil: 'domcontentloaded' });
+    await page.waitForSelector('#menu-button', { timeout: 20000 });
+    await openNav(page, 'reports');
+    const fieldStill = await gutterReport(page);
+    assert.match(fieldStill?.updatedAfterSend?.summary || '', /Labor 0\.03h → 0\.08h/);
+    assert.equal(fieldStill?.updatedAfterSendReviewed || null, null, JSON.stringify(fieldStill?.updatedAfterSendReviewed));
     const ownerContext = await browser.createBrowserContext();
     const owner = await ownerContext.newPage();
     owner.__port = port;
@@ -205,19 +233,40 @@ async function startJordan(page) {
     });
     await login(owner, OWNER_EMAIL, OWNER_PASSWORD);
     await openNav(owner, 'reports');
-    await owner.waitForFunction(() => {
-      const banner = document.querySelector('[data-updated-after-send-banner]')?.innerText || '';
-      const log = document.querySelector('.approval-history')?.innerText || '';
-      return /Updated after send/i.test(banner) && /0\.03h → 0\.08h/.test(banner) && /DEMO Jordan Reed's clock-out/.test(banner) && /Labor 0\.03h → 0\.08h, next step changed, by DEMO Jordan Reed's clock-out/.test(log) && (window.__updatedBadges || []).includes('Updated after send');
-    }, { timeout: 20000 });
-    await owner.waitForFunction(async () => {
+    await owner.waitForSelector('[data-report]', { timeout: 20000 });
+    await owner.click('[data-report]');
+    await waitUntil(owner, () => (window.__updatedBadges || []).includes('Updated after send'), 'owner list badge appeared');
+    await waitUntil(owner, async () => {
       const state = await (await fetch('/api/state', { credentials: 'include' })).json();
       const report = (state.reports || []).find(row => /gutter/i.test(row.notes || row.originalNotes || ''));
-      const badge = document.querySelector('[data-updated-after-send]');
-      return report && !report.updatedAfterSend && !badge;
-    }, { timeout: 20000 });
+      const reviewed = report?.updatedAfterSendReviewed;
+      return Boolean(report && !report.updatedAfterSend && reviewed?.by === 'DEMO Avery Lang' && reviewed?.role === 'owner');
+    }, 'owner open persisted the clear');
     const reviewedLog = await owner.evaluate(() => document.querySelector('.approval-history')?.innerText || '');
     assert.match(reviewedLog, /Labor 0\.03h → 0\.08h, next step changed, by DEMO Jordan Reed's clock-out/);
+    assert.equal(/Corrected/i.test(reviewedLog), false, reviewedLog);
+    await openNav(owner, 'dashboard');
+    await openNav(owner, 'reports');
+    const returned = await owner.evaluate(() => ({
+      badge: document.querySelector('[data-updated-after-send]')?.textContent || '',
+      banner: document.querySelector('[data-updated-after-send-banner]')?.innerText || ''
+    }));
+    assert.equal(returned.badge, '', JSON.stringify(returned));
+    assert.equal(returned.banner, '', JSON.stringify(returned));
+    await owner.reload({ waitUntil: 'domcontentloaded' });
+    await owner.waitForSelector('#menu-button', { timeout: 20000 });
+    await openNav(owner, 'reports');
+    await owner.waitForFunction(() => /Labor 0\.03h → 0\.08h, next step changed, by DEMO Jordan Reed's clock-out/.test(document.querySelector('.approval-history')?.innerText || ''), { timeout: 20000 });
+    const cleared = await owner.evaluate(() => ({
+      badge: document.querySelector('[data-updated-after-send]')?.textContent || '',
+      banner: document.querySelector('[data-updated-after-send-banner]')?.innerText || ''
+    }));
+    assert.equal(cleared.badge, '', JSON.stringify(cleared));
+    assert.equal(cleared.banner, '', JSON.stringify(cleared));
+    const clearedReport = await gutterReport(owner);
+    assert.equal(clearedReport?.updatedAfterSend || null, null, JSON.stringify(clearedReport?.updatedAfterSend));
+    assert.equal(clearedReport?.updatedAfterSendReviewed?.by, 'DEMO Avery Lang', JSON.stringify(clearedReport?.updatedAfterSendReviewed));
+    assert.equal(clearedReport?.updatedAfterSendReviewed?.role, 'owner');
     const corrected = await owner.evaluate(async () => {
       const state = await (await fetch('/api/state', { credentials: 'include' })).json();
       const report = (state.reports || []).find(row => /gutter/i.test(row.notes || row.originalNotes || ''));
@@ -247,12 +296,12 @@ async function startJordan(page) {
     await owner.waitForSelector('#menu-button', { timeout: 20000 });
     await openNav(owner, 'reports');
     await owner.waitForFunction(() => /Labor 0\.03h → 0\.08h, next step changed, by DEMO Jordan Reed's clock-out/.test(document.querySelector('.approval-history')?.innerText || ''), { timeout: 20000 });
-    const cleared = await owner.evaluate(() => ({
+    const stillClear = await owner.evaluate(() => ({
       badge: document.querySelector('[data-updated-after-send]')?.textContent || '',
       banner: document.querySelector('[data-updated-after-send-banner]')?.innerText || ''
     }));
-    assert.equal(cleared.badge, '', JSON.stringify(cleared));
-    assert.equal(cleared.banner, '', JSON.stringify(cleared));
+    assert.equal(stillClear.badge, '', JSON.stringify(stillClear));
+    assert.equal(stillClear.banner, '', JSON.stringify(stillClear));
     console.log('Updated-after-send browser flow passed.');
   } finally {
     if (browser) await browser.close();
