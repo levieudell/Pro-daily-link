@@ -260,7 +260,7 @@
   function elapsedMinutes(start,end){
     const ms=new Date(end)-new Date(start);
     if(!Number.isFinite(ms)||ms<=0)return 0;
-    return Math.round(ms/60000);
+    return Math.floor(ms/60000);
   }
 
   function formatMinutes(minutes){
@@ -271,6 +271,13 @@
   }
 
   function formatHours(hours){return formatMinutes(Math.round((Number(hours)||0)*60))}
+
+  function formatWorkTime(minutes){
+    const whole=Math.max(0,Math.round(Number(minutes)||0));
+    const hours=hoursFromMinutes(whole);
+    if(whole<60)return `${whole} min · ${hours.toFixed(2)} h`;
+    return `${hours.toFixed(2)} h`;
+  }
 
   function hoursFromMinutes(minutes){return round2(Math.max(0,Number(minutes)||0)/60)}
 
@@ -359,7 +366,7 @@
   }
 
   function normalizeLaborGaps(rows){
-    return (Array.isArray(rows)?rows:[]).filter(row=>row&&(row.memberId!=null||row.name)).slice(0,20).map(row=>({memberId:Number(row.memberId)||null,name:String(row.name||'').trim().slice(0,80)}));
+    return (Array.isArray(rows)?rows:[]).filter(row=>row&&(row.memberId!=null||row.name)).slice(0,20).map(row=>({memberId:Number(row.memberId)||null,name:String(row.name||'').trim().slice(0,80),hours:null,hoursStatus:'hours not entered'}));
   }
 
   function mergeScopeFlags(previous,incoming){
@@ -541,5 +548,5 @@
     return Math.round(crew*100)/100;
   }
 
-  return {normalizeUnit,matchEstimateLine,reviewScope,reviewNotes,decideFlag,confirmedExtraChanges,fieldExtraItems,whoAsked,approvedQuantityMap,hoursFromClock,statedCrew,sendGate,clockOutMessage,submissionStatus,namedCrewGaps,crewGapReason,noPunchLabel,punchLengthLabel,formatMinutes,formatHours,hoursFromMinutes,minutesFromHours,elapsedMinutes,laborTotal,dedupeLaborEntries,rawNoteLine,emptyProductionLine,dedupeProductionLines,keepProductionLines,flagIdentity,normalizeLaborGaps,mergeScopeFlags,splitLargestRemainder,allocateLaborHours,sameDayDaily,clientProjectIndex,singleLineLaborHours,QUANTITY_TOLERANCE,PRODUCTIVITY_LIMIT};
+  return {normalizeUnit,matchEstimateLine,reviewScope,reviewNotes,decideFlag,confirmedExtraChanges,fieldExtraItems,whoAsked,approvedQuantityMap,hoursFromClock,statedCrew,sendGate,clockOutMessage,submissionStatus,namedCrewGaps,crewGapReason,noPunchLabel,punchLengthLabel,formatMinutes,formatHours,formatWorkTime,hoursFromMinutes,minutesFromHours,elapsedMinutes,laborTotal,dedupeLaborEntries,rawNoteLine,emptyProductionLine,dedupeProductionLines,keepProductionLines,flagIdentity,normalizeLaborGaps,mergeScopeFlags,splitLargestRemainder,allocateLaborHours,sameDayDaily,clientProjectIndex,singleLineLaborHours,QUANTITY_TOLERANCE,PRODUCTIVITY_LIMIT};
 });

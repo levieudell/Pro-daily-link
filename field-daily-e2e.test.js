@@ -51,7 +51,7 @@ async function assertFits(page, label) {
 
 function backdateOpenPunch(file, minutes) {
   const db = JSON.parse(fs.readFileSync(file, 'utf8'));
-  const start = new Date(Date.now() - minutes * 60000).toISOString();
+  const start = new Date(Date.now() - minutes * 60000 - 1500).toISOString();
   for (const card of db.timeCards || []) if (card.inAt && !card.outAt) card.inAt = start;
   for (const day of db.workdays || []) if (day.status === 'active') day.startedAt = start;
   fs.writeFileSync(file, JSON.stringify(db));
@@ -71,7 +71,7 @@ async function settleOpenPunch(page, file, minutes) {
         projectId: Number(card.projectId),
         date: card.date || '',
         memberId: Number(card.memberId),
-        minutes: Math.round((Date.now() - new Date(card.inAt).getTime()) / 60000)
+        minutes: Math.floor((Date.now() - new Date(card.inAt).getTime()) / 60000)
       }));
     });
     if (detail.some(card => card.minutes >= minutes)) return detail;
@@ -166,6 +166,17 @@ async function openNav(page, name) {
     await page.evaluateOnNewDocument(() => {
       localStorage.setItem('pdl-analytics-consent', 'declined');
       localStorage.setItem('pdl-field-tip', 'dismissed');
+      window.__autosaveLog = [];
+      const watch = () => {
+        const status = document.querySelector('#autosave-status');
+        if (!status || status.dataset.watched === '1') return;
+        status.dataset.watched = '1';
+        const log = () => window.__autosaveLog.push(status.textContent || '');
+        log();
+        new MutationObserver(log).observe(status, { childList: true, characterData: true, subtree: true });
+      };
+      document.addEventListener('DOMContentLoaded', watch);
+      setInterval(watch, 100);
     });
     await page.goto(`http://127.0.0.1:${port}/login.html`, { waitUntil: 'domcontentloaded' });
     await page.waitForSelector('#email');
@@ -206,6 +217,13 @@ async function openNav(page, name) {
     }, NOTE);
     const drafted = await page.evaluate(() => Object.values(localStorage).some(value => String(value).includes('set 20 LF of gutter')));
     assert.equal(drafted, true, 'the note is saved on the device while the daily is open');
+    await page.reload({ waitUntil: 'domcontentloaded' });
+    await page.waitForFunction(() => /gutter/i.test(document.querySelector('#field-notes')?.value || ''), { timeout: 20000 });
+    const restoreLog = await page.evaluate(() => window.__autosaveLog || []);
+    assert.ok(restoreLog.some(text => /recovered after refresh|restored after refresh/i.test(text)), JSON.stringify(restoreLog));
+    await shot(page, 'field-restored-banner.png');
+    await page.waitForFunction(() => !/recovered after refresh|restored after refresh|unsaved notes restored/i.test(document.querySelector('#autosave-status')?.textContent || ''), { timeout: 8000 });
+    await settleOpenPunch(page, path.join(root, 'db.json'), 8);
     await page.click('#report-next-step');
     await page.waitForFunction(() => {
       const button = document.querySelector('#report-next-step');
@@ -238,6 +256,28 @@ async function openNav(page, name) {
     assert.equal(punchSplit.inputs.every(row => row.unit === 'min'), true, JSON.stringify(punchSplit));
     assert.ok(punchSplit.totalMinutes >= 8 && punchSplit.totalMinutes < 60, JSON.stringify(punchSplit));
     assert.equal(punchSplit.inputs.reduce((sum, row) => sum + row.value, 0), punchSplit.totalMinutes, JSON.stringify(punchSplit));
+    const live = await page.evaluate(() => {
+      window.beginFieldLaborTick();
+      window.applyLiveLabor();
+      const total = window.fieldLaborContext().total.totalMinutes;
+      const inputs = [...document.querySelectorAll('[data-review-labor]')];
+      const sum = inputs.reduce((totalMinutes, input) => totalMinutes + (Number(input.value) || 0), 0);
+      return {
+        total,
+        sum,
+        clock: document.querySelector('#field-clock-detail')?.textContent || document.querySelector('#field-start-detail')?.textContent || '',
+        pair: document.querySelector('.field-time-pair')?.textContent || '',
+        totalText: document.querySelector('.field-labor-total')?.textContent || '',
+        send: document.querySelector('#save-report')?.textContent?.trim() || ''
+      };
+    });
+    assert.equal(live.sum, live.total, JSON.stringify(live));
+    assert.match(live.clock, new RegExp(`${live.total} min`));
+    assert.match(live.pair, /\d+ min · \d+\.\d{2} h/);
+    assert.match(live.totalText, new RegExp(`${live.total} min · \\d+\\.\\d{2} h`));
+    if (live.total === 8) assert.match(live.totalText, /8 min · 0\.13 h/);
+    assert.equal(live.send, 'Send to office');
+    await shot(page, 'field-time-pair.png');
     const curbInput = await page.$('[data-review-labor][data-line-id="1"]');
     await curbInput.click();
     await page.evaluate(el => {
@@ -264,6 +304,30 @@ async function openNav(page, name) {
     assert.equal(lockedCurb.minutes + lockedGutter.minutes, locked.totalMinutes);
     assert.equal(locked.shown.find(row => row.id === '1')?.value, 3);
     await shot(page, 'field-line-minutes.png');
+    const gutterInput = await page.$('[data-review-labor][data-line-id="5"]');
+    await gutterInput.click();
+    await page.evaluate(el => { el.focus(); el.setSelectionRange(0, el.value.length); }, gutterInput);
+    await page.keyboard.type('99');
+    await page.evaluate(() => document.activeElement?.blur?.());
+    const clamped = await page.evaluate(() => {
+      const gutter = document.querySelector('[data-review-labor][data-line-id="5"]');
+      const curb = document.querySelector('[data-review-labor][data-line-id="1"]');
+      return {
+        gutter: Number(gutter?.value) || 0,
+        curb: Number(curb?.value) || 0,
+        total: window.fieldLaborContext().total.totalMinutes,
+        note: gutter?.parentElement?.querySelector('.field-clamp-note')?.textContent || ''
+      };
+    });
+    assert.equal(clamped.curb, 3, JSON.stringify(clamped));
+    assert.equal(clamped.gutter, clamped.total - 3, JSON.stringify(clamped));
+    assert.match(clamped.note, /Kept at/);
+    await shot(page, 'field-clamp-note.png');
+    await page.evaluate(() => {
+      const gutter = [...document.querySelectorAll('.production-entry')].find(row => row.dataset.estimateItemId === '5');
+      if (gutter) delete gutter.dataset.laborManual;
+      window.applyLiveLabor?.();
+    });
     await page.waitForSelector('[data-gap-member]');
     await page.evaluate(() => {
       for (const input of document.querySelectorAll('[data-gap-member]')) {
@@ -289,6 +353,27 @@ async function openNav(page, name) {
     assert.equal(spread.lines.reduce((sum, row) => sum + row.minutes, 0), spread.totalMinutes);
     assert.equal(gutterHours.minutes, spread.totalMinutes - 3);
     await shot(page, 'field-hours-respread.png');
+    await page.evaluate(() => {
+      const punched = new Set((window.fieldLaborContext()?.punches || []).map(row => Number(row.memberId)));
+      for (const input of document.querySelectorAll('[data-labor-member]')) {
+        if (punched.has(Number(input.dataset.laborMember))) continue;
+        input.value = '';
+        delete input.dataset.manualHours;
+        delete input.dataset.noteDerived;
+        input.dispatchEvent(new Event('input', { bubbles: true }));
+      }
+      document.activeElement?.blur?.();
+      window.applyLiveLabor?.();
+    });
+    const cleared = await page.evaluate(() => ({
+      gaps: [...document.querySelectorAll('[data-gap-member]')].map(input => input.value),
+      curb: Number([...document.querySelectorAll('.production-entry')].find(row => row.dataset.estimateItemId === '1')?.dataset.laborMinutes) || 0,
+      minutes: [...document.querySelectorAll('.production-entry')].reduce((sum, row) => sum + (Number(row.dataset.laborMinutes) || 0), 0),
+      total: window.fieldLaborContext().total.totalMinutes
+    }));
+    assert.ok(cleared.gaps.length >= 2 && cleared.gaps.every(value => value === ''), JSON.stringify(cleared));
+    assert.equal(cleared.curb, 3);
+    assert.equal(cleared.minutes, cleared.total);
     await page.waitForSelector('[data-flag-choice="yes"]');
     await page.click('[data-flag-choice="yes"]');
     await page.$eval('[data-flag-asker]', el => {
@@ -316,6 +401,7 @@ async function openNav(page, name) {
     assert.equal(kept.who, 'site owner');
     assert.equal(kept.yes, true);
     assert.ok(kept.ids.includes('1') && kept.ids.includes('5'));
+    assert.equal(await page.$eval('#save-report', el => el.textContent.trim()), 'Send to office');
     await page.click('#save-report');
     try {
       await page.waitForSelector('#report-sent-modal[open]', { timeout: 20000 });
@@ -330,7 +416,75 @@ async function openNav(page, name) {
     await shot(page, 'field-send-success.png');
     await page.click('#report-sent-modal button.primary');
     await page.waitForSelector('[data-edit-report]');
+    await page.evaluate(() => {
+      const status = document.querySelector('#autosave-status');
+      if (status) status.textContent = 'Recovered after refresh · saved on this device';
+    });
     await page.click('[data-edit-report]');
+    await page.waitForFunction(() => document.querySelector('#report-modal')?.open);
+    const reopenedBanner = await page.$eval('#autosave-status', el => el.textContent || '');
+    assert.equal(/restored after refresh|recovered after refresh/i.test(reopenedBanner), false, reopenedBanner);
+    let stableLines = null;
+    for (let pass = 0; pass < 3; pass += 1) {
+      if (pass) {
+        await page.click('#report-back');
+        await page.waitForFunction(() => document.querySelector('#report-form')?.getAttribute('data-current-step') === '1');
+      }
+      await page.click('#report-next-step');
+      await page.waitForFunction(() => {
+        const button = document.querySelector('#report-next-step');
+        const rows = [...document.querySelectorAll('.production-entry')];
+        return button && !button.disabled && document.querySelector('#report-form')?.getAttribute('data-current-step') === '2' && rows.filter(row => row.dataset.estimateItemId === '1' || row.dataset.estimateItemId === '5').length >= 2;
+      }, { timeout: 20000 });
+      const snap = await page.evaluate(() => {
+        const lines = [...document.querySelectorAll('.production-entry')].map(row => ({
+          id: row.dataset.estimateItemId || '',
+          qty: Number(row.querySelector('.production-quantity')?.value) || 0,
+          minutes: Number(row.dataset.laborMinutes) || 0
+        }));
+        return {
+          count: lines.length,
+          qty: lines.reduce((sum, row) => sum + row.qty, 0),
+          minutes: lines.reduce((sum, row) => sum + row.minutes, 0),
+          ids: lines.map(row => row.id)
+        };
+      });
+      if (!stableLines) stableLines = snap;
+      assert.equal(snap.count, 2, JSON.stringify(snap));
+      assert.equal(snap.qty, 60, JSON.stringify(snap));
+      assert.equal(snap.minutes, stableLines.minutes, JSON.stringify({ snap, stableLines }));
+      assert.equal(snap.ids.filter(id => id === '1').length, 1, JSON.stringify(snap));
+      assert.equal(snap.ids.filter(id => id === '5').length, 1, JSON.stringify(snap));
+    }
+    assert.equal(await page.$eval('#save-report', el => el.textContent.trim()), 'Send to office');
+    await shot(page, 'field-reopen-stable.png');
+    await page.evaluate(() => document.querySelector('#report-modal .close-button')?.click());
+    await page.waitForFunction(() => !document.querySelector('#report-modal')?.open);
+    await page.click('[data-open-report]');
+    await page.waitForFunction(() => {
+      const notes = document.querySelector('#field-notes')?.value || '';
+      const ids = [...document.querySelectorAll('.production-entry')].map(row => row.dataset.estimateItemId);
+      return document.querySelector('#report-modal')?.open && document.querySelector('#report-modal-title')?.textContent === 'Verify daily report' && /gutter/i.test(notes) && ids.length === 2 && ids.includes('1') && ids.includes('5');
+    }, { timeout: 20000 });
+    await page.evaluate(() => document.querySelector('#report-modal .close-button')?.click());
+    await page.waitForFunction(() => !document.querySelector('#report-modal')?.open);
+    await openNav(page, 'myday');
+    await page.evaluate(() => {
+      document.querySelector('#sidebar')?.classList.remove('open');
+      document.querySelector('[data-assignment-daily]')?.click();
+    });
+    await page.waitForFunction(() => {
+      const notes = document.querySelector('#field-notes')?.value || '';
+      const ids = [...document.querySelectorAll('.production-entry')].map(row => row.dataset.estimateItemId);
+      const banner = document.querySelector('#autosave-status')?.textContent || '';
+      return document.querySelector('#report-modal')?.open && document.querySelector('#report-modal-title')?.textContent === 'Verify daily report' && /gutter/i.test(notes) && ids.length === 2 && !/restored after refresh|recovered after refresh/i.test(banner);
+    }, { timeout: 20000 });
+    const oneDaily = await page.evaluate(async () => {
+      const state = await (await fetch('/api/state', { credentials: 'include' })).json();
+      return (state.reports || []).filter(row => /gutter/i.test(row.notes || row.originalNotes || '')).length;
+    });
+    assert.equal(oneDaily, 1);
+    await shot(page, 'field-plus-daily.png');
     await page.waitForFunction(() => {
       const button = document.querySelector('#field-clock-out');
       return document.querySelector('#report-modal')?.open && button && !button.hidden;
@@ -392,6 +546,7 @@ async function openNav(page, name) {
         notes: report?.notes || '',
         next: report?.next || '',
         history: (report?.history || []).map(row => row.action || ''),
+        gaps: report?.laborGaps || [],
         form
       };
       function roundHours(rows) { return rows.map(row => ({ id: Number(row.memberId), hours: Math.round((Number(row.hours) || 0) * 100) / 100 })).sort((a, b) => a.id - b.id); }
@@ -403,6 +558,9 @@ async function openNav(page, name) {
     assert.equal(saved.history.some(action => /Labor corrected/i.test(action)), false, saved.history.join(' | '));
     assert.equal(saved.quantities.reduce((sum, row) => sum + row.minutes, 0), saved.form.reduce((sum, row) => sum + row.minutes, 0));
     assert.equal(saved.quantities.find(row => row.id === 1)?.minutes, 3);
+    assert.ok(saved.gaps.length >= 2, JSON.stringify(saved.gaps));
+    assert.ok(saved.gaps.every(row => row.hours == null && row.hoursStatus === 'hours not entered' && row.hours !== 0), JSON.stringify(saved.gaps));
+    assert.equal(saved.labor.some(row => row.hours === 0), false, JSON.stringify(saved.labor));
     const ownerContext = await browser.createBrowserContext();
     const owner = await ownerContext.newPage();
     owner.__port = port;
@@ -412,7 +570,7 @@ async function openNav(page, name) {
     await openNav(owner, 'reports');
     await owner.waitForFunction(() => {
       const text = document.querySelector('#report-detail')?.innerText || '';
-      return /Curb/.test(text) && /Gutter/.test(text) && /40/.test(text) && /20/.test(text) && /site owner/.test(text);
+      return /Curb/.test(text) && /Gutter/.test(text) && /40/.test(text) && /20/.test(text) && /site owner/.test(text) && /hours not entered/i.test(text) && /\d+ min · \d+\.\d{2} h/.test(text);
     }, { timeout: 20000 });
     await owner.evaluate(() => document.querySelector('#report-detail')?.scrollIntoView());
     await shot(owner, 'owner-same-numbers.png');

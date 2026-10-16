@@ -978,7 +978,10 @@ small{font-size:12px}
 #report-modal.report-field-compact .field-flag strong{font:700 18px/1.3 Manrope,sans-serif}
 #report-modal.report-field-compact .field-review-card em,
 #report-modal.report-field-compact .field-flag p{color:var(--muted);font-style:normal;font-size:15px;line-height:1.4}
-#report-modal.report-field-compact .field-line-labor{display:flex;align-items:center;gap:8px;min-width:0;margin-top:8px;color:var(--ink);font-size:14px;font-weight:700}
+#report-modal.report-field-compact .field-line-labor{display:flex;align-items:center;gap:8px;min-width:0;margin-top:8px;color:var(--ink);font-size:14px;font-weight:700;flex-wrap:wrap}
+#report-modal.report-field-compact .field-time-pair{font-weight:700}
+#report-modal.report-field-compact .field-clamp-note{flex:1 0 100%;color:#6d4a2e;font-size:13px;font-weight:600}
+#report-modal.report-field-compact .field-labor-total{margin:0;font-weight:700}
 #report-modal.report-field-compact .field-line-labor input{width:5.5rem;max-width:42%;min-width:0;min-height:48px;font-size:18px}
 #report-modal.report-field-compact .field-review-card,
 #report-modal.report-field-compact .field-flag,

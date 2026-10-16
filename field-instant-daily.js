@@ -7,29 +7,41 @@ var fieldScopeFlags=[];
   function polishFieldDaily(){
     const compact=fieldCompact(),next=$('#report-next-step'),send=$('#save-report'),modal=$('#report-modal');
     if(next&&compact)next.textContent=preferredLanguage==='es'?'Listo':'Done';
-    if(send&&compact&&!editingReportId)send.textContent=preferredLanguage==='es'?'Enviar a la oficina':'Send to office';
+    if(send&&compact){const approved=Boolean(editingReportId)&&(typeof reports==='undefined'?[]:reports).some(row=>Number(row.id)===Number(editingReportId)&&row.status==='Approved');send.textContent=approved?(preferredLanguage==='es'?'Guardar corrección para revisión':'Save correction for office review'):(preferredLanguage==='es'?'Enviar a la oficina':'Send to office')}
     ensureFieldClockOut();
     modal?.classList.toggle('field-manual-entry',compact&&!fieldScopeFlags.length&&![...$$('.production-entry')].some(row=>row.dataset.aiFilled==='true'));
     if(!compact){const flags=$('#field-scope-flags'),cards=$('#field-review-cards');if(flags)flags.hidden=true;if(cards)cards.hidden=true}
   }
   function groundedText(value){const text=String(value||'').trim();return text&&!/^needs confirmation[.!\s]*$/i.test(text)?text:''}
-  function clearAiRows(){$$('.production-entry').forEach(row=>{if(row.dataset.aiFilled==='true')row.remove()})}
   function applyScopeLines(review){
-    const keptManual=new Map();
-    $$('.production-entry').forEach(row=>{
-      if(row.dataset.laborManual!=='true')return;
-      const id=row.dataset.estimateItemId||row.querySelector('.production-item')?.value||'';
-      if(id)keptManual.set(String(id),{minutes:row.dataset.laborMinutes||'',hours:row.querySelector('.production-hours')?.value||''});
-    });
-    clearAiRows();
     const lines=review?.lines||[];
+    const byId=new Map();
+    for(const row of [...$$('.production-entry')]){
+      const id=String((typeof rowEstimateItemId==='function'?rowEstimateItemId(row):'')||row.dataset.estimateItemId||row.querySelector('.production-item')?.value||'');
+      if(!id)continue;
+      if(byId.has(id)){row.remove();continue}
+      byId.set(id,row);
+    }
+    const seen=new Set();
     for(const line of lines){
-      const kept=keptManual.get(String(line.estimateItemId||''));
-      const row=addProductionRow({description:line.description,estimateItemId:line.estimateItemId,quantity:line.quantity,unit:line.unit,laborHours:kept?.hours||line.laborHours||'',laborMinutes:kept?.minutes,laborManual:Boolean(kept),needsScopeConfirmation:false});
+      const id=String(line.estimateItemId||'');
+      if(id&&seen.has(id))continue;
+      if(id)seen.add(id);
+      const existing=id&&byId.get(id);
+      if(existing){
+        const quantity=existing.querySelector('.production-quantity');
+        if(quantity&&line.quantity!=null)quantity.value=line.quantity;
+        const unit=existing.querySelector('.production-unit');
+        const safeUnit=line.unit&&String(line.unit).toLowerCase()!=='x'?line.unit:'';
+        if(unit&&safeUnit)unit.value=safeUnit;
+        existing.dataset.aiFilled='true';
+        existing.classList.add('ai-filled-line');
+        continue;
+      }
+      const row=addProductionRow({description:line.description,estimateItemId:line.estimateItemId,quantity:line.quantity,unit:line.unit,laborHours:line.laborHours||'',needsScopeConfirmation:false});
       if(!row)continue;
       row.dataset.aiFilled='true';
       row.classList.add('ai-filled-line');
-      if(kept){row.dataset.laborManual='true';if(kept.minutes!=='')row.dataset.laborMinutes=kept.minutes}
       const quantity=row.querySelector('.production-quantity');
       if(quantity&&line.quantity!=null)quantity.value=line.quantity;
       const unit=row.querySelector('.production-unit');
@@ -134,13 +146,15 @@ var fieldScopeFlags=[];
       const laborValue=showMinutes?String(lineMinutes):String(lineHours||'');
       const laborUnit=showMinutes?'min':'h';
       const lineId=row.dataset.estimateItemId||select?.value||'';
-      cards.push(`<article class="field-review-card" data-edit-line="${index}"><small>${ai?'AI filled':'Tap to edit'}${row.dataset.laborManual==='true'?' · manual':''}</small><strong>${escapeText(name)}</strong><em>${escapeText(qty?`${qty} ${unit}`.trim():'Quantity needed')}</em><label class="field-line-labor">${showMinutes?'Minutes':'Hours'}<input data-review-labor="${index}" data-line-id="${escapeText(lineId)}" data-unit="${laborUnit}" inputmode="decimal" value="${escapeText(laborValue)}" aria-label="${showMinutes?'Minutes':'Hours'} for ${escapeText(name)}"><span>${laborUnit}</span></label></article>`);
+      const pairMinutes=showMinutes?lineMinutes:(typeof FieldDailyScope!=='undefined'&&FieldDailyScope.minutesFromHours?FieldDailyScope.minutesFromHours(lineHours):Math.round(lineHours*60));
+      cards.push(`<article class="field-review-card" data-edit-line="${index}"><small>${ai?'AI filled':'Tap to edit'}${row.dataset.laborManual==='true'?' · manual':''}</small><strong>${escapeText(name)}</strong><em>${escapeText(qty?`${qty} ${unit}`.trim():'Quantity needed')}</em><label class="field-line-labor">${showMinutes?'Minutes':'Hours'}<input data-review-labor="${index}" data-line-id="${escapeText(lineId)}" data-unit="${laborUnit}" inputmode="decimal" value="${escapeText(laborValue)}" aria-label="${showMinutes?'Minutes':'Hours'} for ${escapeText(name)}"><span class="field-time-pair">${escapeText(workTimeLabel(pairMinutes))}</span></label></article>`);
     });
     $$('[data-labor-member]').forEach(input=>{
       if(!(Number(input.value)>0))return;
       const name=input.closest('.labor-line')?.querySelector('strong')?.textContent||'Crew';
       const source=input.dataset.timecardDerived==='true'?'From clock':input.dataset.noteDerived==='true'?'AI filled':'Entered';
-      const shown=typeof FieldDailyScope!=='undefined'&&FieldDailyScope.formatHours?FieldDailyScope.formatHours(Number(input.value)||0):`${input.value} hours`;
+      const crewMinutes=typeof FieldDailyScope!=='undefined'&&FieldDailyScope.minutesFromHours?FieldDailyScope.minutesFromHours(Number(input.value)||0):Math.round((Number(input.value)||0)*60);
+      const shown=workTimeLabel(crewMinutes);
       cards.push(`<button type="button" class="field-review-card" data-edit-labor="${input.dataset.laborMember}"><small>${escapeText(source)}</small><strong>${escapeText(name)}</strong><em>${escapeText(shown)}</em></button>`);
     });
     for(const [id,label] of textFields){
@@ -165,6 +179,8 @@ var fieldScopeFlags=[];
       const who=hours.headcount?`${hours.headcount} people are in the notes. Enter the hours.`:'Enter the crew hours. Scheduled time is not used.';
       cards.unshift(`<article class="field-hours-card"><small>Hours</small><strong>Hours needed</strong><p>${escapeText(who)}</p><label>Hours each<input id="field-hours-each" type="number" min="0" max="24" step="0.5" inputmode="decimal" value="${escapeText(kept)}"></label></article>`);
     }
+    const reviewTotal=Number(fieldLaborContext().total?.totalMinutes)||0;
+    if(reviewTotal>0)cards.push(`<p class="field-labor-total">Total ${escapeText(workTimeLabel(reviewTotal))}</p>`);
     if(crewStillClockedIn())cards.unshift('<p class="field-clock-warning">The crew is still clocked in. Clock out before you send so the hours match the punch.</p>');
     host.hidden=false;
     host.innerHTML=cards.length?cards.join(''):'<p class="field-review-empty">AI did not fill any lines. Add the work on the cards below.</p>';
@@ -184,11 +200,23 @@ var fieldScopeFlags=[];
       const row=$$('.production-entry')[Number(input.dataset.reviewLabor)];
       if(!row)return;
       const raw=Number(input.value);
-      const minutes=input.dataset.unit==='min'?Math.max(0,Math.round(Number.isFinite(raw)?raw:0)):(typeof FieldDailyScope!=='undefined'&&FieldDailyScope.minutesFromHours?FieldDailyScope.minutesFromHours(raw):Math.max(0,Math.round((Number.isFinite(raw)?raw:0)*60)));
+      const requested=input.dataset.unit==='min'?Math.max(0,Math.round(Number.isFinite(raw)?raw:0)):(typeof FieldDailyScope!=='undefined'&&FieldDailyScope.minutesFromHours?FieldDailyScope.minutesFromHours(raw):Math.max(0,Math.round((Number.isFinite(raw)?raw:0)*60)));
+      const total=Math.max(0,Math.round(Number(fieldLaborContext().total?.totalMinutes)||0));
+      let otherLocked=0;
+      $$('.production-entry').forEach(otherRow=>{if(otherRow===row||otherRow.dataset.laborManual!=='true')return;otherLocked+=Math.max(0,Math.round(Number(otherRow.dataset.laborMinutes)||0))});
+      const cap=Math.max(0,total-otherLocked);
+      const minutes=Math.min(cap,requested);
       row.dataset.laborManual='true';
       row.dataset.laborMinutes=String(minutes);
       const hours=row.querySelector('.production-hours');
       if(hours)hours.value=typeof FieldDailyScope!=='undefined'&&FieldDailyScope.hoursFromMinutes?FieldDailyScope.hoursFromMinutes(minutes):minutes/60;
+      const shown=input.dataset.unit==='min'?String(minutes):String(hours?.value||'');
+      if(String(input.value)!==shown)input.value=shown;
+      let note=input.parentElement?.querySelector('.field-clamp-note');
+      if(minutes!==requested){if(!note&&input.parentElement){note=document.createElement('small');note.className='field-clamp-note';input.parentElement.append(note)}if(note)note.textContent=`Kept at ${minutes} min so the lines still equal the punch.`}
+      else note?.remove();
+      const pair=input.parentElement?.querySelector('.field-time-pair');
+      if(pair)pair.textContent=workTimeLabel(minutes);
       applyLaborAllocation();
       host.querySelectorAll('[data-review-labor]').forEach(other=>{
         if(other===document.activeElement)return;
@@ -199,9 +227,11 @@ var fieldScopeFlags=[];
         const otherMinutesMode=otherTotal>0&&otherTotal<60;
         other.dataset.unit=otherMinutesMode?'min':'h';
         other.value=otherMinutesMode?String(otherMinutes):String(otherRow.querySelector('.production-hours')?.value||'');
-        const unit=other.parentElement?.querySelector('span');
-        if(unit)unit.textContent=other.dataset.unit;
+        const otherPair=other.parentElement?.querySelector('.field-time-pair');
+        if(otherPair)otherPair.textContent=workTimeLabel(otherMinutes);
       });
+      const totalLine=host.querySelector('.field-labor-total');
+      if(totalLine)totalLine.textContent=`Total ${workTimeLabel(Number(fieldLaborContext().total?.totalMinutes)||0)}`;
     });
     host.querySelectorAll('[data-edit-line]').forEach(card=>card.onclick=event=>{
       if(event.target.closest('input,label'))return;
@@ -286,19 +316,26 @@ var fieldScopeFlags=[];
   }
   if(typeof openReport==='function'){
     const openBefore=openReport;
-    openReport=function(report=null,context={}){fieldScopeFlags=[];fieldHoursReview=null;const result=openBefore(report,context);if(fieldCompact()){const saved=(report?.productionEntries||[]).some(row=>row&&((row.estimateItemId!=null&&String(row.estimateItemId)!=='')||Number(row.quantity)>0));if(report?.workSuggestions?.length&&!saved&&$('#production-rows'))$('#production-rows').innerHTML='';const draft=typeof readOfflineDraft==='function'&&typeof offlineReportDraftKey==='function'?readOfflineDraft(offlineReportDraftKey()):null;if(Array.isArray(report?.scopeFlags)&&report.scopeFlags.length)fieldScopeFlags=stampFlags(report.scopeFlags);else if(Array.isArray(draft?.scopeFlags)&&String(draft.notes||'').trim()&&String(draft.notes||'').trim()===String($('#field-notes')?.value||'').trim())fieldScopeFlags=stampFlags(draft.scopeFlags)}dropEmptyLines();dropRawProductionRows();bindLaborAllocation();polishFieldDaily();renderFlags();if(fieldCompact()&&$('#report-form')?.getAttribute('data-current-step')==='2')renderFieldReview();return result};
+    openReport=function(report=null,context={}){fieldScopeFlags=[];fieldHoursReview=null;const result=openBefore(report,context);if(fieldCompact()){const saved=(report?.productionEntries||[]).some(row=>row&&((row.estimateItemId!=null&&String(row.estimateItemId)!=='')||Number(row.quantity)>0));if(report?.workSuggestions?.length&&!saved&&$('#production-rows'))$('#production-rows').innerHTML='';const draft=typeof readOfflineDraft==='function'&&typeof offlineReportDraftKey==='function'?readOfflineDraft(offlineReportDraftKey()):null;if(Array.isArray(report?.scopeFlags)&&report.scopeFlags.length)fieldScopeFlags=stampFlags(report.scopeFlags);else if(Array.isArray(draft?.scopeFlags)&&String(draft.notes||'').trim()&&String(draft.notes||'').trim()===String($('#field-notes')?.value||'').trim())fieldScopeFlags=stampFlags(draft.scopeFlags)}dropEmptyLines();dropRawProductionRows();bindLaborAllocation();polishFieldDaily();renderFlags();if(report?.id&&!(typeof restoringActiveReport!=='undefined'&&restoringActiveReport)&&typeof clearRestoreBanner==='function')clearRestoreBanner();if(fieldCompact()&&$('#report-form')?.getAttribute('data-current-step')==='2')renderFieldReview();return result};
   }
   if(typeof showReportStep==='function'){
     const stepBefore=showReportStep;
     showReportStep=function(step){const result=stepBefore(step);if(Number(step)===2&&fieldCompact()){renderFlags();renderFieldReview()}polishFieldDaily();return result};
   }
+  let laborTickAt=0;
+  function beginFieldLaborTick(){if(!(laborTickAt&&Date.now()-laborTickAt<250))laborTickAt=Date.now();return laborTickAt}
+  function laborNow(){return laborTickAt&&Date.now()-laborTickAt<1000?laborTickAt:Date.now()}
+  window.beginFieldLaborTick=beginFieldLaborTick;
+  window.fieldLaborNow=laborNow;
+  function workTimeLabel(minutes){if(typeof FieldDailyScope!=='undefined'&&FieldDailyScope.formatWorkTime)return FieldDailyScope.formatWorkTime(minutes);const whole=Math.max(0,Math.round(Number(minutes)||0));const hours=(Math.round(whole/60*100)/100).toFixed(2);return whole<60?`${whole} min · ${hours} h`:`${hours} h`}
   function punchRows(){
     const projectId=projects?.[+$('#report-project')?.value]?.id,date=$('#report-date')?.value;
     const cards=(typeof timeCards==='undefined'?[]:timeCards).filter(card=>card&&!card.deletedAt&&card.inAt&&Number(card.projectId)===Number(projectId)&&String(card.date||'')===String(date||''));
     const totals=new Map();
+    const now=laborNow();
     for(const card of cards){
-      const end=card.outAt?new Date(card.outAt):new Date();
-      const minutes=typeof FieldDailyScope!=='undefined'&&FieldDailyScope.elapsedMinutes?FieldDailyScope.elapsedMinutes(card.inAt,end):Math.max(0,Math.round((end-new Date(card.inAt))/60000));
+      const end=card.outAt?new Date(card.outAt):new Date(now);
+      const minutes=typeof FieldDailyScope!=='undefined'&&FieldDailyScope.elapsedMinutes?FieldDailyScope.elapsedMinutes(card.inAt,end):Math.max(0,Math.floor((end-new Date(card.inAt))/60000));
       totals.set(Number(card.memberId),(totals.get(Number(card.memberId))||0)+minutes);
     }
     return [...totals].filter(([,minutes])=>minutes>0).map(([memberId,minutes])=>({memberId,minutes}));
@@ -408,6 +445,8 @@ var fieldScopeFlags=[];
     if(liveLaborDepth)return null;
     const activeEl=document.activeElement;
     if(activeEl&&$('#report-modal')?.contains(activeEl)&&activeEl.matches?.('input,textarea,select'))return null;
+    beginFieldLaborTick();
+    if(typeof renderFieldClock==='function')renderFieldClock();
     liveLaborDepth++;
     try{
       syncEstimateBindings();
@@ -440,5 +479,32 @@ var fieldScopeFlags=[];
   if(typeof suggestReportHourSplit==='function'){const officeSplit=suggestReportHourSplit;suggestReportHourSplit=function(options){if(fieldCompact()){applyLiveLabor();if(typeof updateReportGaps==='function')updateReportGaps();return true}return officeSplit(options)}}
   if(typeof saveDailyReport==='function'){const saveBefore=saveDailyReport;saveDailyReport=async function(status,saveOptions){harvestFlagAnswers();syncEstimateBindings();dropEmptyLines();if(fieldCompact())applyLaborAllocation();return saveBefore(status,saveOptions)}}
   if(typeof confirmReportDiscard==='function'){const officeConfirm=confirmReportDiscard;confirmReportDiscard=function(){if(typeof currentRole!=='undefined'&&currentRole==='field')return true;return officeConfirm()}}
+  function fieldSameDayReport(projectId,dateIso){
+    if(typeof currentRole==='undefined'||currentRole!=='field'||typeof FieldDailyScope==='undefined'||!FieldDailyScope.sameDayDaily)return null;
+    const projectIndex=(typeof projects==='undefined'?[]:projects).findIndex(project=>Number(project.id)===Number(projectId));
+    if(projectIndex<0)return null;
+    const memberId=Number(currentUser?.memberId);
+    return FieldDailyScope.sameDayDaily(typeof reports==='undefined'?[]:reports,{projectIndex,dateIso:dateIso||(typeof companyTodayIso==='function'?companyTodayIso():''),memberIds:[memberId],foreman:currentUser?.name||''});
+  }
+  $$('[data-open-report]').forEach(button=>{
+    const previous=button.onclick;
+    button.onclick=event=>{
+      if(typeof currentRole!=='undefined'&&currentRole==='field'){
+        const memberId=Number(currentUser?.memberId),today=typeof companyTodayIso==='function'?companyTodayIso():'';
+        const active=(typeof workdays==='undefined'?[]:workdays).find(row=>row&&row.status==='active'&&(row.memberIds||[]).map(Number).includes(memberId));
+        const assignment=(typeof assignments==='undefined'?[]:assignments).find(row=>row&&row.date===today&&(row.memberIds||[]).map(Number).includes(memberId));
+        const existing=fieldSameDayReport(active?.projectId||assignment?.projectId,today);
+        if(existing){event?.preventDefault();event?.stopPropagation();openReport(existing);return}
+      }
+      return previous?.call(button,event);
+    };
+  });
+  if(typeof openDailyForAssignment==='function'){
+    const previousOpenDaily=openDailyForAssignment;
+    openDailyForAssignment=function(assignment){
+      if(!$('#report-modal')?.open){const existing=fieldSameDayReport(assignment?.projectId,assignment?.date);if(existing){openReport(existing);return}}
+      return previousOpenDaily(assignment);
+    };
+  }
   polishFieldDaily();
 })();
