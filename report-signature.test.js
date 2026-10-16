@@ -90,7 +90,7 @@ function all(n,p){return [...(p(n)?[n]:[]),...(n.childNodes||[]).flatMap(child=>
 const form=all(document,n=>attr(n,'id')==='report-form')[0],buttons=all(form,n=>n.nodeName==='button');
 assert.equal(buttons.filter(n=>!attr(n,'type')||attr(n,'type')==='submit').length,0,'form has no implicit default submit/cancel button');
 assert.equal(attr(all(form,n=>attr(n,'id')==='close-report')[0],'type'),'button');
-assert.ok(html.includes('Choose Save draft or Submit to office to save this signature.'));
+assert.ok(html.includes('Choose Save draft or Send to office to save this signature.'));
 
 (async()=>{
  c.openReport(report);node('#report-signature').value='  Saved synthetic signer  ';await c.saveDailyReport('Draft');

@@ -926,10 +926,12 @@ small{font-size:12px}
 /* Field daily: one notes screen, then one review. Office keeps the full form. */
 .field-ai-disclosure{display:none;margin:8px 0 0;color:var(--muted);font-size:13px;font-weight:500;line-height:1.4}
 #report-modal.report-field-compact{width:min(440px,100%);background:var(--bg)}
-#report-modal.report-field-compact form{padding:20px 20px 28px}
+#report-modal.report-field-compact[open]{display:flex;flex-direction:column;overflow:hidden}
+#report-modal.report-field-compact form{flex:1 1 auto;min-height:0;overflow:auto;padding:20px 20px calc(28px + env(safe-area-inset-bottom, 0px))}
 #report-modal.report-field-compact .modal-header{position:relative;min-height:44px;margin:0 0 8px}
 #report-modal.report-field-compact .modal-header>div{display:none}
 #report-modal.report-field-compact .close-button{position:absolute;top:0;right:0;width:44px;height:44px}
+#report-modal.report-field-compact #field-clock-out{position:static;top:auto;left:auto;z-index:6;flex:0 0 auto;align-self:flex-start;min-height:40px;margin:0 12px calc(8px + env(safe-area-inset-bottom, 0px));padding:8px 12px}
 #report-modal.report-field-compact .report-steps,
 #report-modal.report-field-compact label:has(#report-type),
 #report-modal.report-field-compact #report-project-picker,
@@ -977,6 +979,14 @@ small{font-size:12px}
 #report-modal.report-field-compact .field-flag strong{font:700 18px/1.3 Manrope,sans-serif}
 #report-modal.report-field-compact .field-review-card em,
 #report-modal.report-field-compact .field-flag p{color:var(--muted);font-style:normal;font-size:15px;line-height:1.4}
+#report-modal.report-field-compact .field-line-labor{display:flex;align-items:center;gap:8px;min-width:0;margin-top:8px;color:var(--ink);font-size:14px;font-weight:700;flex-wrap:wrap}
+#report-modal.report-field-compact .field-time-pair{font-weight:700}
+#report-modal.report-field-compact .field-clamp-note{flex:1 0 100%;color:#6d4a2e;font-size:13px;font-weight:600}
+#report-modal.report-field-compact .field-labor-total{margin:0;font-weight:700}
+#report-modal.report-field-compact .field-line-labor input{width:5.5rem;max-width:42%;min-width:0;min-height:48px;font-size:18px}
+#report-modal.report-field-compact .field-review-card,
+#report-modal.report-field-compact .field-flag,
+#report-modal.report-field-compact .field-hours-card{min-width:0;max-width:100%;overflow-wrap:anywhere}
 #report-modal.report-field-compact .field-flag button{min-height:48px;margin-top:8px;border-radius:12px;border:1px solid var(--line);background:#fff;font-weight:700}
 #report-modal.report-field-compact .field-flag button[data-flag-choice="extra"]{background:var(--green);color:#fff;border-color:transparent}
 #report-modal.report-field-compact .field-flag.is-answered b{font-size:15px}
@@ -995,3 +1005,52 @@ small{font-size:12px}
 :root[data-theme="dark"] #report-modal.report-field-compact .field-review-card,
 :root[data-theme="dark"] #report-modal.report-field-compact .field-flag,
 :root[data-theme="dark"] #report-modal.report-field-compact #field-notes{background:var(--panel)}
+.staging-banner{position:sticky;top:0;z-index:2000;width:100%;box-sizing:border-box;flex:0 0 auto;background:#ef6c19;color:#111416;text-align:center;font:800 13px/1.2 "DM Sans",sans-serif;letter-spacing:.12em;padding:8px 12px}
+@media(max-width:420px){html,body{overflow-x:clip;max-width:100%}.app-shell,main,.page,.topbar,.page-heading,.panel,dialog,dialog form,.auth-shell,.login-card{max-width:100%;min-width:0}.field-mode .start-day-hero,.field-assignment-actions,.modal-actions,.top-actions{flex-wrap:wrap;min-width:0}.field-mode .hero-start-button{width:72px;height:72px;flex-basis:72px}.field-mode .note-tools{grid-template-columns:1fr}.page-heading h1,dialog h2,.field-review-card strong{overflow-wrap:anywhere}}
+#report-modal.report-field-compact .modal-header{min-height:0;height:0;margin:0;padding:0;border:0;background:transparent;overflow:visible}
+#report-modal.report-field-compact .close-button{top:8px;right:8px;z-index:5}
+#report-modal.report-field-compact .field-hours-card,
+#report-modal.report-field-compact .field-clock-warning{display:grid;gap:6px;padding:16px 18px;border:1px solid #ffc69f;border-radius:16px;background:#fff3e9}
+#report-modal.report-field-compact .field-hours-card small{color:#a9470e;font-size:12px;font-weight:700;letter-spacing:.04em;text-transform:uppercase}
+#report-modal.report-field-compact .field-hours-card strong{font:700 18px/1.3 Manrope,sans-serif}
+#report-modal.report-field-compact .field-hours-card p,
+#report-modal.report-field-compact .field-clock-warning{margin:0;color:#6d4a2e;font-size:15px;line-height:1.4}
+#report-modal.report-field-compact .field-hours-card input{min-height:48px;font-size:18px}
+#report-modal.report-field-compact .field-pick{display:grid;gap:6px;margin-top:8px}
+#report-modal.report-field-compact .field-pick select,
+#report-modal.report-field-compact .production-item{min-height:48px;height:auto;white-space:normal;line-height:1.35}
+#report-modal.report-field-compact .field-flag button[data-flag-choice="bill"]{background:var(--green);color:#fff;border-color:transparent}
+#report-modal.report-field-compact .production-remove{font-size:0}
+#report-modal.report-field-compact .production-remove::after{content:"Remove";font-size:14px;font-weight:700}
+@media(max-width:760px){
+  #report-modal.report-field-compact .modal-header{position:absolute;top:0;right:0;left:auto;min-height:0;height:0;margin:0;padding:0;border:0;background:transparent}
+  #report-modal.report-field-compact .production-entry.is-editing,
+  #report-modal.report-field-compact.field-manual-entry .production-entry{grid-template-columns:minmax(0,1fr)}
+  #report-modal.report-field-compact .production-scope,
+  #report-modal.report-field-compact .production-qty-field,
+  #report-modal.report-field-compact .production-unit-field,
+  #report-modal.report-field-compact .production-hours-field,
+  #report-modal.report-field-compact .production-remove{grid-column:1/-1}
+  #report-modal.report-field-compact .touch-stepper{grid-template-columns:52px minmax(0,1fr) 52px}
+}
+.report-job-heading .project-badge{width:auto;min-width:32px;max-width:8em;height:32px;padding:0 8px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:0 0 auto}
+#field-clock-hours{padding:0 22px 16px}
+#field-clock-hours .schedule-empty{margin:0;padding:4px 0 8px;font-size:13px}
+#report-modal.report-field-compact .field-next-line{display:grid;gap:6px;padding:12px 14px;border:1px solid #d7d7d1;border-radius:12px;background:#fff}
+#report-modal.report-field-compact .field-next-line small{color:#1769e0;font-size:12px;font-weight:700;letter-spacing:.04em;text-transform:uppercase}
+#report-modal.report-field-compact .field-next-line input{min-height:48px;width:100%;font-size:16px}
+#report-modal.report-field-compact .field-flag button.is-selected{outline:2px solid #1769e0}
+#report-modal.report-field-compact .field-extra-ask{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+#report-modal.report-field-compact .field-extra-ask span{flex:1 0 100%;font-size:15px;font-weight:700}
+#report-modal.report-field-compact .field-extra-ask button{flex:1 1 140px}
+#report-modal.report-field-compact .field-who-asked{display:grid;gap:4px;margin-top:8px;font-size:13px;font-weight:700}
+#report-modal.report-field-compact .field-who-asked input{min-height:48px;width:100%;font-size:16px;font-weight:500}
+.extra-work-office{display:grid;gap:10px;margin:0 0 16px;padding:12px;border:1px solid #d7d7d1;border-radius:12px;background:#fff}
+.extra-work-office>small{color:#1769e0;font-size:12px;font-weight:700;letter-spacing:.04em}
+.extra-work-item{display:grid;gap:6px}
+.field-allocation-warning{margin:0 0 12px;padding:10px 12px;border-radius:10px;background:#fff4e5;color:#8a4b08;font-weight:700}
+.extra-work-office select{min-height:44px;width:100%;font:inherit}
+.extra-work-billable{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.extra-work-billable button{min-height:44px;padding:0 12px;border-radius:10px;border:1px solid var(--line);background:#fff;font-weight:700}
+.extra-work-billable button.is-selected{outline:2px solid #1769e0}
+#report-modal.report-field-compact .field-hours-card label{display:grid;gap:4px}

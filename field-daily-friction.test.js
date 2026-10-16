@@ -11,7 +11,7 @@ assert.match(html,/id="field-clock-hours"/);
 assert.match(html,/<h1>Time cards<\/h1>/);
 assert.match(html,/id="timecard-bulk-approve"/);
 assert.match(html,/CSV export/);
-assert.match(html,/Choose Save draft or Submit to office to save this signature\./);
+assert.match(html,/Choose Save draft or Send to office to save this signature\./);
 assert.match(html,/id="start-day-button"/);
 assert.match(html,/id="company-clock"/);
 assert.doesNotMatch(source,/Currently allocated:/);
