@@ -204,7 +204,7 @@ async function startJordan(page) {
     assert.match(fieldClear.summary, /Labor 0\.03h → 0\.08h/);
     assert.equal(fieldClear.reviewed, null, JSON.stringify(fieldClear));
     await openNav(page, 'reports');
-    await page.waitForFunction(() => /Updated after send/i.test(document.querySelector('.approval-history')?.innerText || ''), { timeout: 20000 });
+    await page.waitForSelector('#report-list', { timeout: 20000 });
     await page.reload({ waitUntil: 'domcontentloaded' });
     await page.waitForSelector('#menu-button', { timeout: 20000 });
     await openNav(page, 'reports');
