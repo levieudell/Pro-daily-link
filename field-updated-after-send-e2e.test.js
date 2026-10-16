@@ -214,59 +214,110 @@ async function startJordan(page) {
     const ownerContext = await browser.createBrowserContext();
     const owner = await ownerContext.newPage();
     owner.__port = port;
+    const reviewedPosts = [];
+    owner.on('request', request => {
+      if (request.method() === 'POST' && /\/api\/reports\/\d+\/reviewed$/.test(request.url())) reviewedPosts.push(request.url());
+    });
     await owner.setViewport({ width: 390, height: 844, deviceScaleFactor: 2, isMobile: true, hasTouch: true });
     owner.on('dialog', async dialog => { await dialog.accept(); });
     await owner.evaluateOnNewDocument(() => {
       localStorage.setItem('pdl-analytics-consent', 'declined');
-      window.__updatedBadges = [];
-      const watch = () => {
-        const note = () => {
-          for (const badge of document.querySelectorAll('[data-updated-after-send]')) {
-            const text = badge.textContent || '';
-            if (text && !window.__updatedBadges.includes(text)) window.__updatedBadges.push(text);
-          }
-        };
-        new MutationObserver(note).observe(document.documentElement, { childList: true, subtree: true });
-      };
-      if (document.documentElement) watch();
-      else addEventListener('DOMContentLoaded', watch);
     });
+    const badgeView = () => owner.evaluate(() => {
+      const shown = el => {
+        if (!el) return '';
+        for (let node = el; node; node = node.parentElement) {
+          if (getComputedStyle(node).display === 'none') return '';
+        }
+        return (el.innerText || '').replace(/\s+/g, ' ').trim();
+      };
+      return {
+        list: shown(document.querySelector('[data-report] [data-updated-after-send]')),
+        header: shown(document.querySelector('[data-updated-after-send-header]')),
+        collapsed: document.querySelector('#report-detail')?.classList.contains('is-collapsed') === true
+      };
+    });
+    const flagStillSet = async () => gutterReport(owner).then(report => /Labor 0\.03h → 0\.08h/.test(report?.updatedAfterSend?.summary || ''));
     await login(owner, OWNER_EMAIL, OWNER_PASSWORD);
     await openNav(owner, 'reports');
     await owner.waitForSelector('[data-report]', { timeout: 20000 });
+    await waitUntil(owner, () => {
+      const shown = el => {
+        if (!el) return '';
+        for (let node = el; node; node = node.parentElement) if (getComputedStyle(node).display === 'none') return '';
+        return el.innerText || '';
+      };
+      return /Updated after send/.test(shown(document.querySelector('[data-report] [data-updated-after-send]'))) && /Updated after send/.test(shown(document.querySelector('[data-updated-after-send-header]')));
+    }, 'badge visible on load');
+    let view = await badgeView();
+    assert.match(view.list, /Updated after send/, JSON.stringify(view));
+    assert.match(view.header, /Updated after send/, JSON.stringify(view));
+    assert.equal(view.collapsed, false, JSON.stringify(view));
+    assert.equal(await flagStillSet(), true, 'opening Daily reports cleared the flag');
+    assert.equal(reviewedPosts.length, 0, JSON.stringify(reviewedPosts));
+    const openLog = await owner.evaluate(() => document.querySelector('.approval-history')?.innerText || '');
+    assert.match(openLog, /Labor 0\.03h → 0\.08h, next step changed, by DEMO Jordan Reed's clock-out/);
+    assert.equal(/Corrected/i.test(openLog), false, openLog);
+    await owner.click('[data-report].active');
+    await waitUntil(owner, () => document.querySelector('#report-detail')?.classList.contains('is-collapsed') === true, 'report collapsed');
+    view = await badgeView();
+    assert.match(view.list, /Updated after send/, JSON.stringify(view));
+    assert.equal(view.header, '', JSON.stringify(view));
+    assert.equal(view.collapsed, true, JSON.stringify(view));
+    assert.equal(await flagStillSet(), true, 'collapse cleared the flag');
     await owner.click('[data-report]');
-    await waitUntil(owner, () => (window.__updatedBadges || []).includes('Updated after send'), 'owner list badge appeared');
-    await waitUntil(owner, async () => {
-      const state = await (await fetch('/api/state', { credentials: 'include' })).json();
-      const report = (state.reports || []).find(row => /gutter/i.test(row.notes || row.originalNotes || ''));
-      const reviewed = report?.updatedAfterSendReviewed;
-      return Boolean(report && !report.updatedAfterSend && reviewed?.by === 'DEMO Avery Lang' && reviewed?.role === 'owner');
-    }, 'owner open persisted the clear');
-    const reviewedLog = await owner.evaluate(() => document.querySelector('.approval-history')?.innerText || '');
-    assert.match(reviewedLog, /Labor 0\.03h → 0\.08h, next step changed, by DEMO Jordan Reed's clock-out/);
-    assert.equal(/Corrected/i.test(reviewedLog), false, reviewedLog);
-    await openNav(owner, 'dashboard');
-    await openNav(owner, 'reports');
-    const returned = await owner.evaluate(() => ({
-      badge: document.querySelector('[data-updated-after-send]')?.textContent || '',
-      banner: document.querySelector('[data-updated-after-send-banner]')?.innerText || ''
-    }));
-    assert.equal(returned.badge, '', JSON.stringify(returned));
-    assert.equal(returned.banner, '', JSON.stringify(returned));
+    await waitUntil(owner, () => {
+      const header = document.querySelector('[data-updated-after-send-header]');
+      return header && !document.querySelector('#report-detail')?.classList.contains('is-collapsed') && /Updated after send/.test(header.innerText || '');
+    }, 'report expanded');
+    view = await badgeView();
+    assert.match(view.list, /Updated after send/, JSON.stringify(view));
+    assert.match(view.header, /Updated after send/, JSON.stringify(view));
+    assert.equal(await flagStillSet(), true, 'expand cleared the flag');
+    assert.equal(reviewedPosts.length, 0, JSON.stringify(reviewedPosts));
     await owner.reload({ waitUntil: 'domcontentloaded' });
     await owner.waitForSelector('#menu-button', { timeout: 20000 });
     await openNav(owner, 'reports');
-    await owner.waitForFunction(() => /Labor 0\.03h → 0\.08h, next step changed, by DEMO Jordan Reed's clock-out/.test(document.querySelector('.approval-history')?.innerText || ''), { timeout: 20000 });
-    const cleared = await owner.evaluate(() => ({
-      badge: document.querySelector('[data-updated-after-send]')?.textContent || '',
-      banner: document.querySelector('[data-updated-after-send-banner]')?.innerText || ''
-    }));
-    assert.equal(cleared.badge, '', JSON.stringify(cleared));
-    assert.equal(cleared.banner, '', JSON.stringify(cleared));
+    await waitUntil(owner, () => /Updated after send/.test(document.querySelector('[data-report] [data-updated-after-send]')?.innerText || '') && /Updated after send/.test(document.querySelector('[data-updated-after-send-header]')?.innerText || ''), 'badge survived reload');
+    assert.equal(await flagStillSet(), true, 'reload cleared the flag');
+    assert.equal(reviewedPosts.length, 0, JSON.stringify(reviewedPosts));
+    if (await owner.$('#office-decision')) {
+      await owner.select('#office-decision', 'non_billable');
+      await waitUntil(owner, () => /Updated after send/.test(document.querySelector('[data-updated-after-send-header]')?.innerText || ''), 'badge stayed through the office decision');
+      assert.equal(await flagStillSet(), true, 'office decision cleared the flag');
+    }
+    if (await owner.$('#resolve-exception')) {
+      await owner.click('#resolve-exception');
+      await waitUntil(owner, () => /Updated after send/.test(document.querySelector('[data-updated-after-send-header]')?.innerText || ''), 'badge stayed through exception resolution');
+      assert.equal(await flagStillSet(), true, 'exception resolution cleared the flag');
+    }
+    const approve = await owner.$('[data-approve-report]');
+    assert.ok(approve, 'Needs review daily is missing its approve action');
+    const approveDisabled = await owner.$eval('[data-approve-report]', button => button.disabled);
+    assert.equal(approveDisabled, false, await owner.evaluate(() => document.querySelector('[data-approve-report]')?.parentElement?.innerText || ''));
+    await owner.click('[data-approve-report]');
+    await waitUntil(owner, async () => {
+      const state = await (await fetch('/api/state', { credentials: 'include' })).json();
+      const report = (state.reports || []).find(row => /gutter/i.test(row.notes || row.originalNotes || ''));
+      const line = (report?.history || []).find(row => row.action === 'Update reviewed' && row.by === 'DEMO Avery Lang');
+      return Boolean(report && !report.updatedAfterSend && line);
+    }, 'approve recorded the reviewer');
+    const reviewedLog = await owner.evaluate(() => document.querySelector('.approval-history')?.innerText || '');
+    assert.match(reviewedLog, /Update reviewed by DEMO Avery Lang/);
+    view = await badgeView();
+    assert.equal(view.list, '', JSON.stringify(view));
+    assert.equal(view.header, '', JSON.stringify(view));
+    assert.equal(reviewedPosts.length, 0, JSON.stringify(reviewedPosts));
+    await owner.reload({ waitUntil: 'domcontentloaded' });
+    await owner.waitForSelector('#menu-button', { timeout: 20000 });
+    await openNav(owner, 'reports');
+    await owner.waitForFunction(() => /Update reviewed by DEMO Avery Lang/.test(document.querySelector('.approval-history')?.innerText || ''), { timeout: 20000 });
+    view = await badgeView();
+    assert.equal(view.list, '', JSON.stringify(view));
+    assert.equal(view.header, '', JSON.stringify(view));
     const clearedReport = await gutterReport(owner);
     assert.equal(clearedReport?.updatedAfterSend || null, null, JSON.stringify(clearedReport?.updatedAfterSend));
-    assert.equal(clearedReport?.updatedAfterSendReviewed?.by, 'DEMO Avery Lang', JSON.stringify(clearedReport?.updatedAfterSendReviewed));
-    assert.equal(clearedReport?.updatedAfterSendReviewed?.role, 'owner');
+    assert.equal((clearedReport?.history || []).some(row => row.action === 'Update reviewed' && row.by === 'DEMO Avery Lang'), true, JSON.stringify(clearedReport?.history));
     const corrected = await owner.evaluate(async () => {
       const state = await (await fetch('/api/state', { credentials: 'include' })).json();
       const report = (state.reports || []).find(row => /gutter/i.test(row.notes || row.originalNotes || ''));

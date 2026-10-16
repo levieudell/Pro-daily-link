@@ -1055,3 +1055,5 @@ small{font-size:12px}
 .extra-work-billable button{min-height:44px;padding:0 12px;border-radius:10px;border:1px solid var(--line);background:#fff;font-weight:700}
 .extra-work-billable button.is-selected{outline:2px solid #1769e0}
 #report-modal.report-field-compact .field-hours-card label{display:grid;gap:4px}
+#report-detail.is-collapsed{display:none}
+[data-updated-after-send] [data-mark-reviewed],[data-updated-after-send-header] [data-mark-reviewed]{margin-left:6px;border:1px solid currentColor;border-radius:12px;background:#fff;color:#10251e;font:700 11px/1.2 "DM Sans",sans-serif;padding:4px 8px;cursor:pointer}
