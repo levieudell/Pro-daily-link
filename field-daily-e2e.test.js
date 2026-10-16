@@ -130,7 +130,17 @@ async function dump(page, label) {
     sent: document.querySelector('#report-sent-summary')?.textContent || '',
     end: document.querySelector('#end-day-message')?.textContent || '',
     reportOpen: Boolean(document.querySelector('#report-modal')?.open),
-    endOpen: Boolean(document.querySelector('#end-day-modal')?.open)
+    endOpen: Boolean(document.querySelector('#end-day-modal')?.open),
+    recovery: sessionStorage.getItem('pdl-active-report-recovery-v1'),
+    drafted: Object.values(localStorage).some(value => String(value).includes('set 20 LF of gutter')),
+    readyState: document.readyState,
+    hasOpenReport: typeof openReport,
+    role: typeof currentRole === 'undefined' ? 'missing' : currentRole,
+    userId: typeof currentUser === 'undefined' ? 'missing' : currentUser?.id ?? null,
+    projectCount: typeof projects === 'undefined' ? 'missing' : projects.length,
+    body: (document.body?.innerText || '').replace(/\s+/g, ' ').slice(0, 240),
+    errors: window.__pageErrors || [],
+    fetches: (window.__fetches || []).slice(-12)
   })).catch(error => ({ error: error.message }));
   console.error(label, JSON.stringify(info, null, 2));
   await shot(page, 'field-daily-e2e-failure.png').catch(() => {});
@@ -171,6 +181,7 @@ async function openNav(page, name) {
   child.stderr.on('data', chunk => { log += chunk; });
   let browser;
   const dialogs = [];
+  const pageErrors = [];
   let page;
   try {
     browser = await puppeteer().launch({
@@ -191,6 +202,7 @@ async function openNav(page, name) {
     page.__port = port;
     await page.setViewport({ width: 390, height: 844, deviceScaleFactor: 2, isMobile: true, hasTouch: true });
     page.on('dialog', async dialog => { dialogs.push(dialog.message()); await dialog.dismiss(); });
+    page.on('pageerror', error => pageErrors.push(error.message));
     await page.evaluateOnNewDocument(() => {
       localStorage.setItem('pdl-analytics-consent', 'declined');
       localStorage.setItem('pdl-field-tip', 'dismissed');
@@ -205,6 +217,17 @@ async function openNav(page, name) {
       };
       document.addEventListener('DOMContentLoaded', watch);
       setInterval(watch, 100);
+      window.__pageErrors = [];
+      window.__fetches = [];
+      window.addEventListener('unhandledrejection', event => window.__pageErrors.push(String(event.reason?.stack || event.reason)));
+      window.addEventListener('error', event => window.__pageErrors.push(String(event.message || event.error)));
+      const nativeFetch = window.fetch.bind(window);
+      window.fetch = function(input, init) {
+        const url = String(input?.url || input || '');
+        const item = { url: url.replace(location.origin, ''), state: 'pending' };
+        window.__fetches.push(item);
+        return nativeFetch(input, init).then(response => { item.state = String(response.status); return response; }, error => { item.state = String(error.name || error); throw error; });
+      };
     });
     await page.goto(`http://127.0.0.1:${port}/login.html`, { waitUntil: 'domcontentloaded' });
     await page.waitForSelector('#email');
@@ -1006,6 +1029,7 @@ async function openNav(page, name) {
     console.log('Field daily browser flow passed.');
   } catch (error) {
     if (page) await dump(page, 'field daily e2e failed');
+    if (pageErrors.length) console.error('page errors', pageErrors);
     console.error(log.slice(-4000));
     throw error;
   } finally {

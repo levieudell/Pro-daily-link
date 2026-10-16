@@ -68,6 +68,13 @@ assert.equal(none.scheduledIgnored,true);
 
 for(const requested of ['Approved','Needs review','Submitted','',null])assert.equal(scope.submissionStatus(requested),'Needs review',String(requested));
 assert.equal(scope.submissionStatus('Draft'),'Draft');
+assert.equal(scope.mergedNext('Form the east side.', ''), 'Form the east side.');
+assert.equal(scope.mergedNext('Form the east side.', '   '), 'Form the east side.');
+assert.equal(scope.mergedNext('', '  Stage the pump truck Monday.  '), 'Stage the pump truck Monday.');
+assert.equal(scope.mergedNext('Short next.', 'Finish the east curb and leave the forms up.'), 'Finish the east curb and leave the forms up.');
+assert.equal(scope.mergedNext('Finish the east curb and leave the forms up.', 'Short next.'), 'Short next.');
+assert.equal(scope.mergedNext('Same length.', 'Same length!'), 'Same length!');
+assert.equal(scope.mergedNext('kept', 'x'.repeat(600)).length, 500);
 
 const server=fs.readFileSync(__dirname+'/server.js','utf8'),app=fs.readFileSync(__dirname+'/app.js','utf8');
 assert.match(server,/status:fieldScope\.submissionStatus\(input\.status\)/);

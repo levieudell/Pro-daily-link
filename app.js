@@ -36,6 +36,18 @@ let activityReportForm=null;
 let workdays=[];
 let currentRole='office';
 let currentUser=null;
+if(typeof window!=='undefined'&&typeof window.fetch==='function'&&typeof AbortController==='function'){
+  const nativeFetch=window.fetch.bind(window),liveFetches=new Set();
+  window.fetch=function(input,init){
+    const controller=new AbortController(),requestInit={...(init||{})};
+    if(requestInit.signal)requestInit.signal.addEventListener('abort',()=>controller.abort(),{once:true});
+    requestInit.signal=controller.signal;liveFetches.add(controller);
+    const pending=nativeFetch(input,requestInit);
+    pending.finally(()=>liveFetches.delete(controller)).catch(()=>{});
+    return pending;
+  };
+  window.addEventListener('pagehide',()=>{for(const controller of liveFetches)controller.abort()});
+}
 let laborReviewReports=[];
 let preferredLanguage='en';
 let productionData={projects:[],approvedReports:0};
@@ -1220,9 +1232,12 @@ $('#field-notes').addEventListener('input',rememberActiveReport);
 $('#report-custom-fields')?.addEventListener('input',rememberActiveReport);
 $('#report-modal').addEventListener('input',event=>{if(event.target.matches('input,textarea,select'))rememberActiveReport()});
 $('#report-modal').addEventListener('change',event=>{if(event.target.matches('input,textarea,select'))rememberActiveReport()});
+globalThis.reportRecoveryCloseToken=0;
+window.addEventListener('pagehide',()=>{globalThis.reportRecoveryLeaving=true;globalThis.reportRecoveryCloseToken+=1});
+window.addEventListener('beforeunload',()=>{globalThis.reportRecoveryLeaving=true;globalThis.reportRecoveryCloseToken+=1});
 $('#report-modal').addEventListener('close',()=>{
   if($('#report-modal').open)return;
-  reportSourceAssignmentId=null;const recovery=activeReportRecovery();if(!recovery)return;if(typeof currentRole!=='undefined'&&currentRole==='field'){if(typeof sessionStorage!=='undefined')sessionStorage.removeItem(ACTIVE_REPORT_RECOVERY_KEY);return}clearActiveReportRecovery(recovery.key);
+  reportSourceAssignmentId=null;const recovery=activeReportRecovery();if(!recovery)return;const token=(globalThis.reportRecoveryCloseToken=(globalThis.reportRecoveryCloseToken||0)+1);const dropRecovery=()=>{if(globalThis.reportRecoveryLeaving||token!==globalThis.reportRecoveryCloseToken||$('#report-modal').open)return;const still=activeReportRecovery();if(!still||still.key!==recovery.key||still.updatedAt!==recovery.updatedAt)return;if(typeof currentRole!=='undefined'&&currentRole==='field'){if(typeof sessionStorage!=='undefined')sessionStorage.removeItem(ACTIVE_REPORT_RECOVERY_KEY);return}clearActiveReportRecovery(recovery.key)};if(typeof setTimeout==='function')setTimeout(dropRecovery,0);else dropRecovery();
 });
 const saveDailyReportBeforeRecovery=saveDailyReport;
 saveDailyReport=async function(status,saveOptions){
