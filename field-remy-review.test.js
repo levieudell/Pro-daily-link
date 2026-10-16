@@ -181,6 +181,9 @@ assert.match(instant, /laborManual/);
 assert.match(instant, /mergeScopeFlags/);
 assert.match(instant, /window\.renderFieldReview=renderFieldReview/);
 assert.match(instant, /byId\.set\(id,row\)/);
+assert.match(instant, /stampOpenReportLocks/);
+assert.match(instant, /applyLockedLabor/);
+assert.match(app, /laborManual:true,laborMinutes/);
 assert.match(instant, /Kept at /);
 assert.match(instant, /Send to office/);
 assert.match(instant, /formatWorkTime/);
@@ -194,6 +197,7 @@ assert.match(app, /Send to office/);
 assert.match(app, /fieldLaborNow/);
 assert.doesNotMatch(app.slice(app.indexOf('function durationText'), app.indexOf('function formatDurationHours')), /Math\.round/);
 const styles = fs.readFileSync(__dirname + '/styles.css', 'utf8');
+assert.match(styles, /#field-clock-out\{[^}]*position:static/);
 assert.match(styles, /\.report-job-heading \.project-badge\{[^}]*white-space:nowrap/);
 assert.match(styles, /#field-clock-hours\{padding:0 22px 16px\}/);
 

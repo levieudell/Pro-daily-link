@@ -84,6 +84,32 @@ async function shot(page, name) {
   await page.screenshot({ path: path.join(SHOTS, name), fullPage: false });
 }
 
+async function assertClockOutClear(page, label) {
+  const overlap = await page.evaluate(() => {
+    const pill = document.querySelector('#field-clock-out');
+    if (!pill || pill.hidden) return { skipped: true };
+    const pillBox = pill.getBoundingClientRect();
+    const targets = [];
+    const job = document.querySelector('#report-job-context .report-job-heading');
+    if (job) targets.push(["TODAY'S JOB", job]);
+    document.querySelectorAll('.field-flag small, .field-extra-ask span').forEach(el => {
+      if (/extra work/i.test(el.textContent || '')) targets.push([(el.textContent || '').trim(), el]);
+    });
+    const visible = targets.filter(([, el]) => {
+      const box = el.getBoundingClientRect();
+      return box.width > 0 && box.height > 0;
+    });
+    const hits = visible.filter(([, el]) => {
+      const box = el.getBoundingClientRect();
+      return pillBox.left < box.right && pillBox.right > box.left && pillBox.top < box.bottom && pillBox.bottom > box.top;
+    }).map(([name]) => name);
+    return { hits, checked: visible.map(([name]) => name), pill: { top: pillBox.top, bottom: pillBox.bottom, left: pillBox.left, right: pillBox.right } };
+  });
+  if (overlap.skipped) return;
+  assert.ok(overlap.checked.length, `${label} found no clock-out targets ${JSON.stringify(overlap)}`);
+  assert.deepEqual(overlap.hits, [], `${label} ${JSON.stringify(overlap)}`);
+}
+
 async function dump(page, label) {
   const info = await page.evaluate(() => ({
     url: location.href,
@@ -223,6 +249,12 @@ async function openNav(page, name) {
     assert.ok(restoreLog.some(text => /recovered after refresh|restored after refresh/i.test(text)), JSON.stringify(restoreLog));
     await shot(page, 'field-restored-banner.png');
     await page.waitForFunction(() => !/recovered after refresh|restored after refresh|unsaved notes restored/i.test(document.querySelector('#autosave-status')?.textContent || ''), { timeout: 8000 });
+    await page.waitForFunction(() => {
+      const button = document.querySelector('#field-clock-out');
+      const job = document.querySelector('#report-job-context .report-job-heading');
+      return button && !button.hidden && job && job.getBoundingClientRect().height > 0;
+    }, { timeout: 20000 });
+    await assertClockOutClear(page, 'clock out vs today job');
     await settleOpenPunch(page, path.join(root, 'db.json'), 8);
     await page.click('#report-next-step');
     await page.waitForFunction(() => {
@@ -242,6 +274,8 @@ async function openNav(page, name) {
     assert.ok(gutter && gutter.value === '5' && gutter.qty === '20' && gutter.unit === 'LF', JSON.stringify(parsed));
     assert.equal(parsed.some(row => (Number(row.qty) > 0 || Number(row.hours) > 0) && !row.id), false);
     await shot(page, 'field-review-bound.png');
+    await assertClockOutClear(page, 'clock out vs extra work');
+    await shot(page, 'field-clock-out-clear.png');
     await assertFits(page, 'daily sheet 390');
     await page.waitForSelector('[data-review-labor][data-line-id="1"]');
     const punchSplit = await page.evaluate(() => {
@@ -300,6 +334,8 @@ async function openNav(page, name) {
     const lockedGutter = locked.lines.find(row => row.id === '5');
     assert.equal(lockedCurb?.manual, true);
     assert.equal(lockedCurb?.minutes, 3);
+    const clockedInBadge = await page.$eval('[data-review-labor][data-line-id="1"]', el => el.closest('.field-review-card')?.querySelector('small')?.textContent || '');
+    assert.match(clockedInBadge, /manual/i, clockedInBadge);
     assert.equal(lockedGutter?.manual, false);
     assert.equal(lockedCurb.minutes + lockedGutter.minutes, locked.totalMinutes);
     assert.equal(locked.shown.find(row => row.id === '1')?.value, 3);
@@ -503,6 +539,20 @@ async function openNav(page, name) {
     await page.type('#end-day-notes', 'Left the site. Gate is locked.');
     await shot(page, 'field-clock-out-open.png');
     await page.click('#confirm-end-day');
+    await page.waitForFunction(() => {
+      const needle = "Clocked out. The punch is on today's daily.";
+      return [...document.querySelectorAll('#toast, #report-submit-status, #end-day-message, #autosave-status')].some(el => (el.textContent || '').includes(needle));
+    }, { timeout: 20000 });
+    const clockOutBanners = await page.evaluate(() => {
+      const needle = "Clocked out. The punch is on today's daily.";
+      return [...document.querySelectorAll('#toast, #report-submit-status, #end-day-message, #autosave-status')].filter(el => {
+        if (!(el.textContent || '').includes(needle)) return false;
+        const box = el.getBoundingClientRect();
+        const style = getComputedStyle(el);
+        return style.display !== 'none' && style.visibility !== 'hidden' && box.width > 0 && box.height > 0;
+      }).map(el => el.id || el.className);
+    });
+    assert.equal(clockOutBanners.length, 1, JSON.stringify(clockOutBanners));
     await page.waitForFunction(() => !document.querySelector('#end-day-modal')?.open && document.querySelector('#report-modal')?.open, { timeout: 20000 });
     const afterOut = await page.evaluate(() => ({
       notes: document.querySelector('#field-notes')?.value || '',
@@ -586,6 +636,50 @@ async function openNav(page, name) {
     assert.deepEqual(office.quantities, saved.quantities);
     assert.deepEqual(office.labor, saved.labor);
     assert.equal(office.who, saved.who);
+    const curbAfterOut = await page.$('[data-review-labor][data-line-id="1"]');
+    await curbAfterOut.click();
+    await page.evaluate(el => { el.focus(); el.setSelectionRange(0, el.value.length); }, curbAfterOut);
+    await page.keyboard.type('2');
+    await page.evaluate(() => document.activeElement?.blur?.());
+    let savedLock = null;
+    for (let attempt = 0; attempt < 40; attempt += 1) {
+      savedLock = await page.evaluate(async () => {
+        const state = await (await fetch('/api/state', { credentials: 'include' })).json();
+        const report = (state.reports || []).find(row => /gutter/i.test(row.notes || row.originalNotes || ''));
+        const curb = (report?.productionEntries || []).find(row => Number(row.estimateItemId) === 1);
+        return { manual: curb?.laborManual === true, minutes: Number(curb?.laborMinutes) || 0, status: document.querySelector('#report-submit-status')?.textContent || '' };
+      });
+      if (savedLock.manual && savedLock.minutes === 2) break;
+      await new Promise(resolve => setTimeout(resolve, 250));
+    }
+    assert.equal(savedLock.manual, true, JSON.stringify(savedLock));
+    assert.equal(savedLock.minutes, 2, JSON.stringify(savedLock));
+    await page.evaluate(() => document.querySelector('#report-modal .close-button')?.click());
+    await page.waitForFunction(() => !document.querySelector('#report-modal')?.open);
+    await page.click('[data-edit-report]');
+    await page.waitForFunction(() => document.querySelector('#report-modal')?.open && document.querySelector('#report-modal-title')?.textContent === 'Verify daily report', { timeout: 20000 });
+    for (let pass = 0; pass < 3; pass += 1) {
+      if (pass) {
+        await page.click('#report-back');
+        await page.waitForFunction(() => document.querySelector('#report-form')?.getAttribute('data-current-step') === '1');
+      }
+      await page.click('#report-next-step');
+      await page.waitForFunction(() => {
+        const button = document.querySelector('#report-next-step');
+        const row = [...document.querySelectorAll('.production-entry')].find(line => line.dataset.estimateItemId === '1');
+        const badge = document.querySelector('[data-review-labor][data-line-id="1"]')?.closest('.field-review-card')?.querySelector('small')?.textContent || '';
+        return button && !button.disabled && document.querySelector('#report-form')?.getAttribute('data-current-step') === '2' && row?.dataset.laborManual === 'true' && Number(row.dataset.laborMinutes) === 2 && /manual/i.test(badge);
+      }, { timeout: 20000 });
+      const held = await page.evaluate(() => {
+        const row = [...document.querySelectorAll('.production-entry')].find(line => line.dataset.estimateItemId === '1');
+        const badge = document.querySelector('[data-review-labor][data-line-id="1"]')?.closest('.field-review-card')?.querySelector('small')?.textContent || '';
+        return { manual: row?.dataset.laborManual === 'true', minutes: Number(row?.dataset.laborMinutes) || 0, badge };
+      });
+      assert.equal(held.manual, true, JSON.stringify(held));
+      assert.equal(held.minutes, 2, JSON.stringify(held));
+      assert.match(held.badge, /manual/i, held.badge);
+    }
+    await shot(page, 'field-lock-held.png');
     await page.setViewport({ width: 320, height: 568, deviceScaleFactor: 2, isMobile: true, hasTouch: true });
     await assertFits(page, 'daily sheet 320');
     await shot(page, 'field-daily-320.png');

@@ -13,11 +13,64 @@ var fieldScopeFlags=[];
     if(!compact){const flags=$('#field-scope-flags'),cards=$('#field-review-cards');if(flags)flags.hidden=true;if(cards)cards.hidden=true}
   }
   function groundedText(value){const text=String(value||'').trim();return text&&!/^needs confirmation[.!\s]*$/i.test(text)?text:''}
+  function lineEstimateId(row){return String((typeof rowEstimateItemId==='function'?rowEstimateItemId(row):'')||row?.dataset?.estimateItemId||row?.querySelector?.('.production-item')?.value||'')}
+  function lockedLaborMap(){
+    const map=new Map();
+    const remember=(id,minutes,hours)=>{const key=String(id||'');if(!key)return;map.set(key,{minutes:Math.max(0,Math.round(Number(minutes)||0)),hours:Number(hours)||0})};
+    for(const row of $$('.production-entry')){if(row.dataset.laborManual!=='true')continue;remember(lineEstimateId(row),row.dataset.laborMinutes,row.querySelector('.production-hours')?.value)}
+    const report=(typeof reports==='undefined'?[]:reports).find(row=>Number(row.id)===Number(typeof editingReportId==='undefined'?0:editingReportId));
+    for(const entry of report?.productionEntries||[]){if(entry?.laborManual!==true||map.has(String(entry.estimateItemId??'')))continue;remember(entry.estimateItemId,entry.laborMinutes,entry.laborHours)}
+    return map;
+  }
+  function applyLockedLabor(map){
+    if(!map?.size)return;
+    for(const row of $$('.production-entry')){
+      const lock=map.get(lineEstimateId(row));
+      if(!lock)continue;
+      row.dataset.laborManual='true';
+      row.dataset.laborMinutes=String(lock.minutes);
+      const hours=row.querySelector('.production-hours');
+      if(hours)hours.value=typeof FieldDailyScope!=='undefined'&&FieldDailyScope.hoursFromMinutes?FieldDailyScope.hoursFromMinutes(lock.minutes):lock.hours;
+    }
+  }
+  function paintManualBadge(row){
+    const index=[...$$('.production-entry')].indexOf(row);
+    const small=index>=0?document.querySelector(`[data-edit-line="${index}"] small`):null;
+    if(!small)return;
+    const base=String(small.textContent||'').replace(/\s*·\s*manual/ig,'').trim();
+    small.textContent=row?.dataset?.laborManual==='true'?`${base} · manual`:base;
+  }
+  function stampOpenReportLocks(){
+    const report=(typeof reports==='undefined'?[]:reports).find(row=>Number(row.id)===Number(typeof editingReportId==='undefined'?0:editingReportId));
+    if(!report||!Array.isArray(report.productionEntries))return;
+    const locks=lockedLaborMap();
+    if(!locks.size)return;
+    report.productionEntries=report.productionEntries.map(entry=>{
+      const lock=locks.get(String(entry?.estimateItemId??''));
+      if(!lock)return entry;
+      return {...entry,laborManual:true,laborMinutes:lock.minutes,laborHours:typeof FieldDailyScope!=='undefined'&&FieldDailyScope.hoursFromMinutes?FieldDailyScope.hoursFromMinutes(lock.minutes):lock.hours};
+    });
+  }
+  let laborLockSaveTimer=0;
+  function scheduleLaborLockSave(){
+    stampOpenReportLocks();
+    if(typeof rememberActiveReport==='function')rememberActiveReport();
+    clearTimeout(laborLockSaveTimer);
+    laborLockSaveTimer=setTimeout(()=>{persistLaborLockDraft().catch(()=>{})},250);
+  }
+  async function persistLaborLockDraft(){
+    if(!$('#report-modal')?.open||typeof saveDailyReport!=='function'||!(typeof editingReportId!=='undefined'&&editingReportId))return;
+    const current=(typeof reports==='undefined'?[]:reports).find(row=>Number(row.id)===Number(editingReportId));
+    const status=current?.status&&current.status!=='Draft'?current.status:'Draft';
+    stampOpenReportLocks();
+    await saveDailyReport(status,{keepOpen:true});
+  }
   function applyScopeLines(review){
+    const locks=lockedLaborMap();
     const lines=review?.lines||[];
     const byId=new Map();
     for(const row of [...$$('.production-entry')]){
-      const id=String((typeof rowEstimateItemId==='function'?rowEstimateItemId(row):'')||row.dataset.estimateItemId||row.querySelector('.production-item')?.value||'');
+      const id=lineEstimateId(row);
       if(!id)continue;
       if(byId.has(id)){row.remove();continue}
       byId.set(id,row);
@@ -27,6 +80,7 @@ var fieldScopeFlags=[];
       const id=String(line.estimateItemId||'');
       if(id&&seen.has(id))continue;
       if(id)seen.add(id);
+      const lock=id&&locks.get(id);
       const existing=id&&byId.get(id);
       if(existing){
         const quantity=existing.querySelector('.production-quantity');
@@ -36,9 +90,10 @@ var fieldScopeFlags=[];
         if(unit&&safeUnit)unit.value=safeUnit;
         existing.dataset.aiFilled='true';
         existing.classList.add('ai-filled-line');
+        if(lock){existing.dataset.laborManual='true';existing.dataset.laborMinutes=String(lock.minutes)}
         continue;
       }
-      const row=addProductionRow({description:line.description,estimateItemId:line.estimateItemId,quantity:line.quantity,unit:line.unit,laborHours:line.laborHours||'',needsScopeConfirmation:false});
+      const row=addProductionRow({description:line.description,estimateItemId:line.estimateItemId,quantity:line.quantity,unit:line.unit,laborHours:lock?lock.hours:(line.laborHours||''),laborManual:Boolean(lock),laborMinutes:lock?lock.minutes:undefined,needsScopeConfirmation:false});
       if(!row)continue;
       row.dataset.aiFilled='true';
       row.classList.add('ai-filled-line');
@@ -48,6 +103,7 @@ var fieldScopeFlags=[];
       const safeUnit=line.unit&&String(line.unit).toLowerCase()!=='x'?line.unit:'';
       if(unit&&safeUnit)unit.value=safeUnit;
     }
+    applyLockedLabor(locks);
   }
   function applyNarrative(draft){
     const notes=$('#field-notes')?.value||'';
@@ -208,6 +264,7 @@ var fieldScopeFlags=[];
       const minutes=Math.min(cap,requested);
       row.dataset.laborManual='true';
       row.dataset.laborMinutes=String(minutes);
+      paintManualBadge(row);
       const hours=row.querySelector('.production-hours');
       if(hours)hours.value=typeof FieldDailyScope!=='undefined'&&FieldDailyScope.hoursFromMinutes?FieldDailyScope.hoursFromMinutes(minutes):minutes/60;
       const shown=input.dataset.unit==='min'?String(minutes):String(hours?.value||'');
@@ -232,6 +289,7 @@ var fieldScopeFlags=[];
       });
       const totalLine=host.querySelector('.field-labor-total');
       if(totalLine)totalLine.textContent=`Total ${workTimeLabel(Number(fieldLaborContext().total?.totalMinutes)||0)}`;
+      scheduleLaborLockSave();
     });
     host.querySelectorAll('[data-edit-line]').forEach(card=>card.onclick=event=>{
       if(event.target.closest('input,label'))return;
@@ -253,6 +311,7 @@ var fieldScopeFlags=[];
     bindLaborAllocation();
   }
   async function fillFieldReportFromNotes(){
+    const keptLocks=lockedLaborMap();
     const button=$('#report-next-step'),note=$('#field-notes')?.value.trim()||'',language=$('#report-language')?.value||'en-US';
     if(button){button.disabled=true;button.textContent=language.startsWith('es')?'Leyendo notas…':'Reading notes…'}
     let failed=false;
@@ -284,6 +343,7 @@ var fieldScopeFlags=[];
       if(typeof showReportStep==='function')showReportStep(2);
       if(failed&&!$$('.production-entry').length&&typeof addProductionRow==='function')addProductionRow();
       dropRawProductionRows();
+      applyLockedLabor(keptLocks);
       applyPunchHours();
       applyLaborAllocation();
       bindLaborAllocation();
@@ -427,7 +487,7 @@ var fieldScopeFlags=[];
     $$('.production-hours').forEach(input=>{
       if(input.dataset.allocationBound==='true')return;
       input.dataset.allocationBound='true';
-      input.addEventListener('input',()=>{const row=input.closest('.production-entry');if(row)row.dataset.laborManual='true';applyLaborAllocation();if(fieldCompact())renderFieldReview()});
+      input.addEventListener('input',()=>{const row=input.closest('.production-entry');if(row){row.dataset.laborManual='true';paintManualBadge(row)}applyLaborAllocation();scheduleLaborLockSave();if(fieldCompact())renderFieldReview()});
     });
     $$('.production-quantity').forEach(input=>{
       if(input.dataset.allocationBound==='true')return;
