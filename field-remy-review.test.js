@@ -39,8 +39,10 @@ assert.equal(scope.formatHours(0.05), '3 min');
 assert.equal(scope.formatHours(1.5), '1.50 h');
 assert.equal(scope.hoursFromMinutes(3), 0.05);
 assert.equal(scope.hoursFromMinutes(7), 0.12);
+assert.equal(scope.hoursFromMinutes(8.14), 0.14);
 assert.equal(scope.formatHours(0.12), '7 min');
 assert.equal(scope.formatHours(scope.hoursFromMinutes(7)), '7 min');
+assert.equal(scope.formatHours(scope.hoursFromMinutes(8.14)), '8 min');
 const clinicItems = [
   { id: 1, name: 'Curb', unit: 'LF', plannedQuantity: 800, budgetHours: 80 },
   { id: 5, name: 'Gutter', unit: 'LF', plannedQuantity: 600, budgetHours: 60 }
@@ -87,8 +89,17 @@ assert.equal(merged[0].createsChange, false);
 assert.equal(merged[0].extra_work, true);
 
 const even = scope.allocateLaborHours({ total: 1, lines: [{ manual: false }, { manual: false }, { manual: false }] });
-assert.deepEqual(even.lines.map(line => line.hours), [0.34, 0.33, 0.33]);
-assert.equal(even.lines.reduce((sum, line) => sum + line.hours, 0), 1);
+assert.deepEqual(even.lines.map(line => line.minutes), [20, 20, 20]);
+assert.deepEqual(even.lines.map(line => line.hours), [0.33, 0.33, 0.33]);
+assert.equal(even.allocatedMinutes, 60);
+assert.equal(even.total, 1);
+const eightMinutes = scope.allocateLaborHours({ totalMinutes: 8, lines: [{ quantity: 40, unitRate: 0.1 }, { quantity: 20, unitRate: 0.1 }] });
+assert.deepEqual(eightMinutes.lines.map(line => line.minutes), [5, 3]);
+assert.equal(eightMinutes.lines.reduce((sum, line) => sum + line.minutes, 0), 8);
+assert.equal(scope.formatHours(eightMinutes.lines[0].hours), '5 min');
+assert.equal(scope.formatHours(eightMinutes.lines[1].hours), '3 min');
+const locked = scope.allocateLaborHours({ totalMinutes: 8, lines: [{ manual: true, minutes: 3, quantity: 40, unitRate: 0.1 }, { quantity: 20, unitRate: 0.1 }] });
+assert.deepEqual(locked.lines.map(line => line.minutes), [3, 5]);
 const proportional = scope.allocateLaborHours({ total: 10, lines: [{ quantity: 2, unitRate: 1 }, { quantity: 1, unitRate: 1 }] });
 assert.deepEqual(proportional.lines.map(line => line.hours), [6.67, 3.33]);
 const manual = scope.allocateLaborHours({ total: 10, lines: [{ manual: true, hours: 4 }, { manual: false, quantity: 1, unitRate: 1 }] });
@@ -149,6 +160,9 @@ assert.match(instant, /No punch, enter hours/);
 assert.match(instant, /every\(row=>Number\(row\.value\)>0\)/);
 assert.match(instant, /hoursFromMinutes/);
 assert.match(instant, /allocateLaborHours/);
+assert.match(instant, /data-review-labor/);
+assert.match(instant, /totalMinutes/);
+assert.doesNotMatch(instant, /end\.value=notes/);
 assert.match(instant, /laborManual/);
 assert.match(instant, /mergeScopeFlags/);
 assert.match(instant, /window\.renderFieldReview=renderFieldReview/);
@@ -277,6 +291,39 @@ function todayIso() {
     assert.equal(billed.data.report.extraWork[0].billable, true);
     const notBilled = await call('PATCH', '/api/reports/' + review.data.id + '/extra-work', { index: 0, billable: false });
     assert.equal(notBilled.data.report.extraWork[0].billable, false);
+    const midnightDb = JSON.parse(fs.readFileSync(file, 'utf8'));
+    midnightDb.company.timezone = 'America/Los_Angeles';
+    fs.writeFileSync(file, JSON.stringify(midnightDb));
+    const RealDate = Date;
+    const frozen = new RealDate('2026-10-16T07:03:00.000Z');
+    function FakeDate(...args) {
+      if (!new.target) return args.length ? RealDate(...args) : new RealDate(frozen);
+      return args.length ? new RealDate(...args) : new RealDate(frozen);
+    }
+    FakeDate.now = () => frozen.getTime();
+    FakeDate.parse = RealDate.parse;
+    FakeDate.UTC = RealDate.UTC;
+    FakeDate.prototype = RealDate.prototype;
+    global.Date = FakeDate;
+    try {
+      const late = await call('POST', '/api/workdays/start', { projectId: 102, memberIds: [12] });
+      assert.equal(late.status, 201, JSON.stringify(late.data));
+      const lateDb = JSON.parse(fs.readFileSync(file, 'utf8'));
+      const clockIn = '2026-10-16T06:56:00.000Z';
+      for (const day of lateDb.workdays) if (day.id === late.data.id) day.startedAt = clockIn;
+      for (const card of lateDb.timeCards) if (card.workdayId === late.data.id) card.inAt = clockIn;
+      fs.writeFileSync(file, JSON.stringify(lateDb));
+      const crossed = await call('POST', '/api/workdays/' + late.data.id + '/end', { notes: 'Crossed local midnight on the curb.' });
+      assert.equal(crossed.status, 200, JSON.stringify(crossed.data));
+      assert.equal(crossed.data.timeCards[0].date, '2026-10-15', '11:56 PM punch stays on the clock-in date');
+      assert.equal(crossed.data.report.dateIso, '2026-10-15');
+      assert.equal(crossed.data.timeCards[0].hours, scope.hoursFromMinutes(7));
+      assert.equal((crossed.data.report.history || []).some(row => /Labor corrected/i.test(String(row.action || ''))), false);
+      assert.equal(crossed.data.report.next || '', '');
+      assert.equal(crossed.data.report.productionEntries.length, 0);
+    } finally {
+      global.Date = RealDate;
+    }
     console.log('Remy review checks passed.');
   } finally {
     server.closeAllConnections();

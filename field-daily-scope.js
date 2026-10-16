@@ -251,6 +251,12 @@
 
   function round2(value){return Math.round((Number(value)||0)*100)/100}
 
+  function minutesFromHours(hours){
+    const value=Number(hours);
+    if(!Number.isFinite(value)||value<=0)return 0;
+    return Math.max(0,Math.round(value*60));
+  }
+
   function elapsedMinutes(start,end){
     const ms=new Date(end)-new Date(start);
     if(!Number.isFinite(ms)||ms<=0)return 0;
@@ -278,22 +284,24 @@
     for(const punch of punches||[]){
       const id=Number(punch?.memberId);
       if(!Number.isFinite(id))continue;
-      const hours=punch?.minutes!=null?hoursFromMinutes(punch.minutes):round2(punch?.hours);
-      if(!(hours>0))continue;
-      const prev=byId.get(id)||{memberId:id,hours:0,source:'punch'};
-      prev.hours=round2(prev.hours+hours);
+      const minutes=punch?.minutes!=null?Math.max(0,Math.round(Number(punch.minutes)||0)):minutesFromHours(punch?.hours);
+      if(!(minutes>0))continue;
+      const prev=byId.get(id)||{memberId:id,minutes:0,hours:0,source:'punch'};
+      prev.minutes+=minutes;
+      prev.hours=hoursFromMinutes(prev.minutes);
       prev.source='punch';
       byId.set(id,prev);
     }
     for(const row of entered||[]){
       const id=Number(row?.memberId);
       if(!Number.isFinite(id)||byId.has(id))continue;
-      const hours=round2(row?.hours);
-      if(!(hours>0))continue;
-      byId.set(id,{memberId:id,hours,source:'entered'});
+      const minutes=row?.minutes!=null?Math.max(0,Math.round(Number(row.minutes)||0)):minutesFromHours(row?.hours);
+      if(!(minutes>0))continue;
+      byId.set(id,{memberId:id,minutes,hours:hoursFromMinutes(minutes),source:'entered'});
     }
     const entries=[...byId.values()];
-    return {entries,total:round2(entries.reduce((sum,row)=>sum+row.hours,0))};
+    const totalMinutes=entries.reduce((sum,row)=>sum+row.minutes,0);
+    return {entries,total:hoursFromMinutes(totalMinutes),totalMinutes};
   }
 
   function dedupeLaborEntries(entries){
@@ -369,37 +377,41 @@
     });
   }
 
-  function splitCents(cents,weights){
+  function splitLargestRemainder(total,weights){
     const count=weights.length;
     if(!count)return [];
-    const target=Math.max(0,Math.round(Number(cents)||0));
+    const target=Math.max(0,Math.round(Number(total)||0));
     if(!target)return weights.map(()=>0);
-    const sum=weights.reduce((total,weight)=>total+(Number(weight)||0),0);
+    const sum=weights.reduce((totalWeight,weight)=>totalWeight+(Number(weight)||0),0);
     const raw=weights.map(weight=>sum>0?target*(Number(weight)||0)/sum:target/count);
     const floors=raw.map(value=>Math.floor(value+1e-9));
-    let left=target-floors.reduce((total,value)=>total+value,0);
-    const order=raw.map((value,index)=>({index,value,weight:Number(weights[index])||0})).sort((a,b)=>b.weight-a.weight||b.value-a.value||a.index-b.index);
+    let left=target-floors.reduce((totalUnits,value)=>totalUnits+value,0);
+    const order=raw.map((value,index)=>({index,fraction:value-floors[index],weight:Number(weights[index])||0})).sort((a,b)=>b.fraction-a.fraction||b.weight-a.weight||a.index-b.index);
     let cursor=0;
     while(left>0&&order.length){floors[order[cursor%order.length].index]+=1;left-=1;cursor+=1}
     return floors;
   }
 
-  function allocateLaborHours({total,lines}={}){
-    const rows=(Array.isArray(lines)?lines:[]).map(line=>({...line,manual:line?.manual===true,hours:Math.max(0,round2(line?.hours))}));
-    const crew=Math.max(0,round2(total));
+  function allocateLaborHours({total,totalMinutes,lines}={}){
+    const rows=(Array.isArray(lines)?lines:[]).map(line=>{
+      const minutes=line?.minutes!=null&&line.minutes!==''?Math.max(0,Math.round(Number(line.minutes)||0)):minutesFromHours(line?.hours);
+      return {...line,manual:line?.manual===true,minutes,hours:hoursFromMinutes(minutes)};
+    });
+    const crewMinutes=totalMinutes!=null&&totalMinutes!==''?Math.max(0,Math.round(Number(totalMinutes)||0)):minutesFromHours(total);
     const manual=rows.filter(line=>line.manual);
     const auto=rows.filter(line=>!line.manual);
-    const manualSum=round2(manual.reduce((sum,line)=>sum+line.hours,0));
-    if(manualSum-crew>0.001){
-      for(const line of auto)line.hours=0;
-      return {lines:rows,total:crew,allocated:round2(rows.reduce((sum,line)=>sum+line.hours,0)),warning:'Manual hours are over the labor total. Auto lines stay at 0.'};
+    const manualSum=manual.reduce((sum,line)=>sum+line.minutes,0);
+    if(manualSum>crewMinutes){
+      for(const line of auto){line.minutes=0;line.hours=0}
+      return {lines:rows,total:hoursFromMinutes(crewMinutes),totalMinutes:crewMinutes,allocated:round2(rows.reduce((sum,line)=>sum+line.hours,0)),allocatedMinutes:rows.reduce((sum,line)=>sum+line.minutes,0),warning:'Manual hours are over the labor total. Auto lines stay at 0.'};
     }
-    const remaining=round2(Math.max(0,crew-manualSum));
+    const remaining=Math.max(0,crewMinutes-manualSum);
     const rated=auto.every(line=>Number(line.quantity)>0&&Number(line.unitRate)>0);
     const weights=auto.map(line=>rated?Number(line.quantity)*Number(line.unitRate):1);
-    const cents=splitCents(Math.round(remaining*100),weights);
-    auto.forEach((line,index)=>{line.hours=cents[index]/100});
-    return {lines:rows,total:crew,allocated:round2(rows.reduce((sum,line)=>sum+line.hours,0)),warning:''};
+    const parts=splitLargestRemainder(remaining,weights);
+    auto.forEach((line,index)=>{line.minutes=parts[index]||0;line.hours=hoursFromMinutes(line.minutes)});
+    manual.forEach(line=>{line.hours=hoursFromMinutes(line.minutes)});
+    return {lines:rows,total:hoursFromMinutes(crewMinutes),totalMinutes:crewMinutes,allocated:round2(rows.reduce((sum,line)=>sum+line.hours,0)),allocatedMinutes:rows.reduce((sum,line)=>sum+line.minutes,0),warning:''};
   }
 
   function sameDayDaily(reports,{projectIndex,dateIso,memberIds,foreman}={}){
@@ -529,5 +541,5 @@
     return Math.round(crew*100)/100;
   }
 
-  return {normalizeUnit,matchEstimateLine,reviewScope,reviewNotes,decideFlag,confirmedExtraChanges,fieldExtraItems,whoAsked,approvedQuantityMap,hoursFromClock,statedCrew,sendGate,clockOutMessage,submissionStatus,namedCrewGaps,crewGapReason,noPunchLabel,punchLengthLabel,formatMinutes,formatHours,hoursFromMinutes,elapsedMinutes,laborTotal,dedupeLaborEntries,rawNoteLine,emptyProductionLine,dedupeProductionLines,keepProductionLines,flagIdentity,normalizeLaborGaps,mergeScopeFlags,allocateLaborHours,sameDayDaily,clientProjectIndex,singleLineLaborHours,QUANTITY_TOLERANCE,PRODUCTIVITY_LIMIT};
+  return {normalizeUnit,matchEstimateLine,reviewScope,reviewNotes,decideFlag,confirmedExtraChanges,fieldExtraItems,whoAsked,approvedQuantityMap,hoursFromClock,statedCrew,sendGate,clockOutMessage,submissionStatus,namedCrewGaps,crewGapReason,noPunchLabel,punchLengthLabel,formatMinutes,formatHours,hoursFromMinutes,minutesFromHours,elapsedMinutes,laborTotal,dedupeLaborEntries,rawNoteLine,emptyProductionLine,dedupeProductionLines,keepProductionLines,flagIdentity,normalizeLaborGaps,mergeScopeFlags,splitLargestRemainder,allocateLaborHours,sameDayDaily,clientProjectIndex,singleLineLaborHours,QUANTITY_TOLERANCE,PRODUCTIVITY_LIMIT};
 });
