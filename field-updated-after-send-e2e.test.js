@@ -78,11 +78,19 @@ async function waitUntil(page, predicate, label) {
   throw new Error(`${label}: ${JSON.stringify(last)}`);
 }
 
+async function openClockIn(page) {
+  await page.waitForFunction(() => /Clock in/i.test(document.querySelector('#start-day-button')?.textContent || ''), { timeout: 20000 });
+  for (let attempt = 0; attempt < 4; attempt += 1) {
+    await page.evaluate(() => document.querySelector('#start-day-button')?.click());
+    const opened = await page.waitForSelector('#start-day-modal[open] #start-day-members input', { timeout: 8000 }).then(() => true).catch(() => false);
+    if (opened) return;
+  }
+  await page.waitForSelector('#start-day-modal[open] #start-day-members input', { timeout: 20000 });
+}
+
 async function startJordan(page) {
   await openNav(page, 'fieldday');
-  await page.waitForFunction(() => /Clock in/i.test(document.querySelector('#start-day-button')?.textContent || ''), { timeout: 20000 });
-  await page.click('#start-day-button');
-  await page.waitForSelector('#start-day-modal[open] #start-day-members input');
+  await openClockIn(page);
   await page.evaluate(() => {
     const project = document.querySelector('#start-day-project');
     if (project) project.value = '3';

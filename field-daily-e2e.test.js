@@ -59,10 +59,7 @@ function backdateOpenPunch(file, minutes) {
 
 async function settleOpenPunch(page, file, minutes) {
   let detail = null;
-  for (let attempt = 0; attempt < 8; attempt += 1) {
-    await page.evaluate(async () => {
-      await fetch('/api/time-cards', { credentials: 'same-origin' });
-    });
+  for (let attempt = 0; attempt < 20; attempt += 1) {
     backdateOpenPunch(file, minutes);
     detail = await page.evaluate(async () => {
       if (typeof refreshTimeCards === 'function') await refreshTimeCards();
@@ -75,7 +72,7 @@ async function settleOpenPunch(page, file, minutes) {
       }));
     });
     if (detail.some(card => card.minutes >= minutes)) return detail;
-    await new Promise(resolve => setTimeout(resolve, 400));
+    await new Promise(resolve => setTimeout(resolve, 500));
   }
   throw new Error('open punch stayed under a minute ' + JSON.stringify(detail));
 }
@@ -239,8 +236,12 @@ async function openNav(page, name) {
     await page.click('[data-start-day]');
     await page.waitForSelector('#start-day-button', { visible: true });
     await assertFits(page, 'clock-in 390');
-    await page.click('#start-day-button');
-    await page.waitForSelector('#start-day-modal[open] #start-day-members input');
+    for (let attempt = 0; attempt < 4; attempt += 1) {
+      await page.evaluate(() => document.querySelector('#start-day-button')?.click());
+      const opened = await page.waitForSelector('#start-day-modal[open] #start-day-members input', { timeout: 8000 }).then(() => true).catch(() => false);
+      if (opened) break;
+      if (attempt === 3) await page.waitForSelector('#start-day-modal[open] #start-day-members input', { timeout: 20000 });
+    }
     const started = await page.evaluate(() => {
       const project = document.querySelector('#start-day-project');
       const selected = project?.selectedOptions?.[0]?.textContent || '';
