@@ -166,7 +166,7 @@ async function startJordan(page) {
     ], JSON.stringify(sent?.history));
     assert.equal((sent?.laborEntries || []).some(row => row.source === 'punch' && Math.abs(Number(row.hours) - 0.03) < 0.001), true, JSON.stringify(sent?.laborEntries));
     await startJordan(page);
-    pinOpenPunch(dbFile, 3);
+    pinOpenPunch(dbFile, 2);
     await page.click('#start-day-button');
     await page.waitForSelector('#end-day-modal[open] #end-day-notes', { timeout: 20000 });
     await page.$eval('#end-day-notes', (el, value) => { el.value = value; }, SECOND_NOTES);
@@ -186,11 +186,13 @@ async function startJordan(page) {
         next: report?.next || ''
       };
     });
-    assert.match(flagged.summary, /Labor 0\.03h → 0\.08h/);
+    assert.match(flagged.summary, /Labor 0\.03h → 0\.07h/);
+    assert.match(flagged.summary, /Curb 1→3 min/);
+    assert.equal(/Gutter/.test(flagged.action), false, flagged.action);
     assert.match(flagged.summary, /next step changed/);
     assert.equal(flagged.by, "DEMO Jordan Reed's clock-out", JSON.stringify(flagged));
-    assert.match(`${flagged.action} by ${flagged.lineBy}`, /Labor 0\.03h → 0\.08h, next step changed, by DEMO Jordan Reed's clock-out/);
-    assert.equal(flagged.labor.some(hours => Math.abs(hours - 0.08) < 0.001), true, JSON.stringify(flagged.labor));
+    assert.equal(`${flagged.action} by ${flagged.lineBy}`, "Updated after send · Labor 0.03h → 0.07h; Curb 1→3 min; next step changed, by DEMO Jordan Reed's clock-out");
+    assert.equal(flagged.labor.some(hours => Math.abs(hours - 0.07) < 0.001), true, JSON.stringify(flagged.labor));
     assert.equal(flagged.next, SECOND_NEXT, flagged.next);
     const fieldClear = await page.evaluate(async () => {
       const state = await (await fetch('/api/state', { credentials: 'include' })).json();
@@ -201,7 +203,7 @@ async function startJordan(page) {
       return { status: response.status, summary: saved?.updatedAfterSend?.summary || '', reviewed: saved?.updatedAfterSendReviewed || null };
     });
     assert.equal(fieldClear.status, 403, JSON.stringify(fieldClear));
-    assert.match(fieldClear.summary, /Labor 0\.03h → 0\.08h/);
+    assert.match(fieldClear.summary, /Labor 0\.03h → 0\.07h/);
     assert.equal(fieldClear.reviewed, null, JSON.stringify(fieldClear));
     await openNav(page, 'reports');
     await page.waitForSelector('#report-list', { timeout: 20000 });
@@ -209,7 +211,7 @@ async function startJordan(page) {
     await page.waitForSelector('#menu-button', { timeout: 20000 });
     await openNav(page, 'reports');
     const fieldStill = await gutterReport(page);
-    assert.match(fieldStill?.updatedAfterSend?.summary || '', /Labor 0\.03h → 0\.08h/);
+    assert.match(fieldStill?.updatedAfterSend?.summary || '', /Labor 0\.03h → 0\.07h/);
     assert.equal(fieldStill?.updatedAfterSendReviewed || null, null, JSON.stringify(fieldStill?.updatedAfterSendReviewed));
     const ownerContext = await browser.createBrowserContext();
     const owner = await ownerContext.newPage();
@@ -237,8 +239,19 @@ async function startJordan(page) {
         collapsed: document.querySelector('#report-detail')?.classList.contains('is-collapsed') === true
       };
     });
-    const flagStillSet = async () => gutterReport(owner).then(report => /Labor 0\.03h → 0\.08h/.test(report?.updatedAfterSend?.summary || ''));
+    const flagStillSet = async () => gutterReport(owner).then(report => /Labor 0\.03h → 0\.07h/.test(report?.updatedAfterSend?.summary || '') && /Curb 1→3 min/.test(report?.updatedAfterSend?.summary || ''));
     await login(owner, OWNER_EMAIL, OWNER_PASSWORD);
+    await owner.waitForFunction(() => document.body.classList.contains('time-cards-on') && document.querySelector('.nav-item[data-page="timeoverview"]')?.hidden === false, { timeout: 20000 });
+    await openNav(owner, 'timeoverview');
+    await owner.click('#timeoverview-page [data-time-workspace="approvals"]');
+    await owner.waitForSelector('#timecards-page.active .time-person-summary', { timeout: 20000 });
+    const personHours = await owner.evaluate(() => document.querySelector('.time-person-summary')?.innerText || '');
+    assert.match(personHours, /0\.07 hours/, personHours);
+    await owner.click('.time-person-summary');
+    await owner.waitForSelector('#timecard-rows .timecard-record', { timeout: 20000 });
+    const approvalHours = await owner.evaluate(() => [...document.querySelectorAll('#timecard-rows .timecard-record')].map(row => Number(row.querySelector('[data-label="Hours"]')?.textContent)).sort((a, b) => a - b));
+    assert.deepEqual(approvalHours, [0.03, 0.04], JSON.stringify(approvalHours));
+    assert.equal(Math.round(approvalHours.reduce((sum, hours) => sum + hours, 0) * 100) / 100, 0.07);
     await openNav(owner, 'reports');
     await owner.waitForSelector('[data-report]', { timeout: 20000 });
     await waitUntil(owner, () => {
@@ -256,7 +269,7 @@ async function startJordan(page) {
     assert.equal(await flagStillSet(), true, 'opening Daily reports cleared the flag');
     assert.equal(reviewedPosts.length, 0, JSON.stringify(reviewedPosts));
     const openLog = await owner.evaluate(() => document.querySelector('.approval-history')?.innerText || '');
-    assert.match(openLog, /Labor 0\.03h → 0\.08h, next step changed, by DEMO Jordan Reed's clock-out/);
+    assert.match(openLog, /Labor 0\.03h → 0\.07h; Curb 1→3 min; next step changed, by DEMO Jordan Reed's clock-out/);
     assert.equal(/Corrected/i.test(openLog), false, openLog);
     await owner.click('[data-report].active');
     await waitUntil(owner, () => document.querySelector('#report-detail')?.classList.contains('is-collapsed') === true, 'report collapsed');
@@ -340,13 +353,13 @@ async function startJordan(page) {
     assert.equal(corrected.status, 200, JSON.stringify(corrected));
     const manual = (corrected.history || []).filter(row => /Labor corrected/i.test(String(row.action || '')));
     assert.equal(manual.length, 1, JSON.stringify(corrected.history));
-    assert.match(manual[0].action, /DEMO Jordan Reed: 0\.08h → 0\.58h/);
+    assert.match(manual[0].action, /DEMO Jordan Reed: 0\.07h → 0\.57h/);
     assert.equal(manual[0].by, 'DEMO Avery Lang', JSON.stringify(manual));
     assert.equal((corrected.history || []).some(row => row.action === 'Labor recalculated from punches' && /Jordan Reed/.test(String(row.by || ''))), false, JSON.stringify(corrected.history));
     await owner.reload({ waitUntil: 'domcontentloaded' });
     await owner.waitForSelector('#menu-button', { timeout: 20000 });
     await openNav(owner, 'reports');
-    await owner.waitForFunction(() => /Labor 0\.03h → 0\.08h, next step changed, by DEMO Jordan Reed's clock-out/.test(document.querySelector('.approval-history')?.innerText || ''), { timeout: 20000 });
+    await owner.waitForFunction(() => /Labor 0\.03h → 0\.07h; Curb 1→3 min; next step changed, by DEMO Jordan Reed's clock-out/.test(document.querySelector('.approval-history')?.innerText || ''), { timeout: 20000 });
     const stillClear = await owner.evaluate(() => ({
       badge: document.querySelector('[data-updated-after-send]')?.textContent || '',
       banner: document.querySelector('[data-updated-after-send-banner]')?.innerText || ''

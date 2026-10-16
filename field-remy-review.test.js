@@ -146,6 +146,13 @@ const pennies = scope.allocateLaborHours({ totalMinutes: 2, lines: [{ quantity: 
 assert.deepEqual(pennies.lines.map(line => line.minutes), [1, 1]);
 assert.deepEqual(pennies.lines.map(line => line.hours), [0.02, 0.01]);
 assert.equal(pennies.lines.reduce((sum, line) => sum + Math.round(line.hours * 100), 0), Math.round(scope.hoursFromMinutes(2) * 100));
+const fourMinuteCards = scope.displayHoursForMinutes([2, 2]);
+assert.deepEqual(fourMinuteCards, [0.04, 0.03]);
+assert.equal(scope.hoursFromMinutes(4), 0.07);
+assert.equal(scope.hoursFromMinutes(2) + scope.hoursFromMinutes(2), 0.06);
+assert.equal(Math.round(fourMinuteCards.reduce((sum, hours) => sum + hours, 0) * 100) / 100, 0.07);
+const fourMinuteLines = scope.allocateLaborHours({ totalMinutes: 4, lines: [{ description: 'Curb', quantity: 40, unitRate: 0.1 }, { description: 'Gutter', quantity: 20, unitRate: 0.1 }] });
+assert.deepEqual(fourMinuteLines.lines.map(line => line.minutes), [3, 1]);
 assert.equal(scope.formatPunchTotal(pennies.totalMinutes), '2 min · 0.03 h');
 function assertApportionedPunch(label, totalMinutes, lineCount) {
   const result = scope.allocateLaborHours({ totalMinutes, lines: Array.from({ length: lineCount }, () => ({ manual: false })) });
