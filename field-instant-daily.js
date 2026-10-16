@@ -355,20 +355,17 @@ var fieldScopeFlags=[];
       if(!qty&&!ai)return;
       const lineMinutes=Number(row.dataset.laborMinutes);
       const lineHours=Number(row.querySelector('.production-hours')?.value)||0;
-      const totalMinutes=Number(fieldLaborContext().total?.totalMinutes)||0;
-      const showMinutes=Number.isFinite(lineMinutes)&&totalMinutes>0&&totalMinutes<60;
-      const laborValue=showMinutes?String(lineMinutes):String(lineHours||'');
-      const laborUnit=showMinutes?'min':'h';
+      const shownMinutes=Number.isFinite(lineMinutes)?lineMinutes:(typeof FieldDailyScope!=='undefined'&&FieldDailyScope.minutesFromHours?FieldDailyScope.minutesFromHours(lineHours):Math.round(lineHours*60));
       const lineId=row.dataset.estimateItemId||select?.value||'';
-      const pairText=showMinutes?`${Number.isFinite(lineMinutes)?lineMinutes:0} min · ${lineHours.toFixed(2)} h`:`${lineHours.toFixed(2)} h`;
-      cards.push(`<article class="field-review-card" data-edit-line="${index}"><small>${ai?'AI filled':'Tap to edit'}${row.dataset.laborManual==='true'?' · manual':''}</small><strong>${escapeText(name)}</strong><em>${escapeText(qty?`${qty} ${unit}`.trim():'Quantity needed')}</em><label class="field-line-labor">${showMinutes?'Minutes':'Hours'}<input data-review-labor="${index}" data-line-id="${escapeText(lineId)}" data-unit="${laborUnit}" inputmode="decimal" value="${escapeText(laborValue)}" aria-label="${showMinutes?'Minutes':'Hours'} for ${escapeText(name)}"><span class="field-time-pair">${escapeText(pairText)}</span></label></article>`);
+      const pairText=clockLabel(shownMinutes);
+      cards.push(`<article class="field-review-card" data-edit-line="${index}"><small>${ai?'AI filled':'Tap to edit'}${row.dataset.laborManual==='true'?' · manual':''}</small><strong>${escapeText(name)}</strong><em>${escapeText(qty?`${qty} ${unit}`.trim():'Quantity needed')}</em><label class="field-line-labor">Minutes<input data-review-labor="${index}" data-line-id="${escapeText(lineId)}" data-unit="min" inputmode="numeric" value="${escapeText(String(shownMinutes))}" aria-label="Minutes for ${escapeText(name)}"><span class="field-time-pair">${escapeText(pairText)}</span></label></article>`);
     });
     $$('[data-labor-member]').forEach(input=>{
       if(!(Number(input.value)>0))return;
       const name=input.closest('.labor-line')?.querySelector('strong')?.textContent||'Crew';
       const source=input.dataset.timecardDerived==='true'?'From clock':input.dataset.noteDerived==='true'?'AI filled':'Entered';
       const crewMinutes=typeof FieldDailyScope!=='undefined'&&FieldDailyScope.minutesFromHours?FieldDailyScope.minutesFromHours(Number(input.value)||0):Math.round((Number(input.value)||0)*60);
-      const shown=workTimeLabel(crewMinutes);
+      const shown=clockLabel(crewMinutes);
       cards.push(`<button type="button" class="field-review-card" data-edit-labor="${input.dataset.laborMember}"><small>${escapeText(source)}</small><strong>${escapeText(name)}</strong><em>${escapeText(shown)}</em></button>`);
     });
     for(const [id,label] of textFields){
@@ -394,7 +391,7 @@ var fieldScopeFlags=[];
       cards.unshift(`<article class="field-hours-card"><small>Hours</small><strong>Hours needed</strong><p>${escapeText(who)}</p><label>Hours each<input id="field-hours-each" type="number" min="0" max="24" step="0.5" inputmode="decimal" value="${escapeText(kept)}"></label></article>`);
     }
     const reviewTotal=Number(fieldLaborContext().total?.totalMinutes)||0;
-    if(reviewTotal>0)cards.push(`<p class="field-labor-total">Total ${escapeText(workTimeLabel(reviewTotal))}</p>`);
+    if(reviewTotal>0)cards.push(`<p class="field-labor-total">Total ${escapeText(punchTotalLabel(reviewTotal))}</p>`);
     if(crewStillClockedIn())cards.unshift('<p class="field-clock-warning">The crew is still clocked in. Clock out before you send so the hours match the punch.</p>');
     host.hidden=false;
     host.innerHTML=cards.length?cards.join(''):'<p class="field-review-empty">AI did not fill any lines. Add the work on the cards below.</p>';
@@ -428,33 +425,25 @@ var fieldScopeFlags=[];
       paintManualBadge(row);
       const hours=row.querySelector('.production-hours');
       if(hours)hours.value=typeof FieldDailyScope!=='undefined'&&FieldDailyScope.hoursFromMinutes?FieldDailyScope.hoursFromMinutes(minutes):minutes/60;
-      const shown=input.dataset.unit==='min'?String(minutes):String(hours?.value||'');
-      if(String(input.value)!==shown)input.value=shown;
+      if(String(input.value)!==String(minutes))input.value=String(minutes);
       let note=input.parentElement?.querySelector('.field-clamp-note');
       if(minutes!==requested){if(!note&&input.parentElement){note=document.createElement('small');note.className='field-clamp-note';input.parentElement.append(note)}if(note)note.textContent=`Kept at ${minutes} min so the lines still equal the punch.`}
       else note?.remove();
       applyLaborAllocation();
-      const pairLabel=(row,minutes)=>{
-        const hours=Number(row?.querySelector('.production-hours')?.value)||0;
-        const total=Number(fieldLaborContext().total?.totalMinutes)||0;
-        return total>0&&total<60?`${minutes} min · ${hours.toFixed(2)} h`:`${hours.toFixed(2)} h`;
-      };
       const pair=input.parentElement?.querySelector('.field-time-pair');
-      if(pair)pair.textContent=pairLabel(row,minutes);
+      if(pair)pair.textContent=clockLabel(minutes);
       host.querySelectorAll('[data-review-labor]').forEach(other=>{
         if(other===document.activeElement)return;
         const otherRow=$$('.production-entry')[Number(other.dataset.reviewLabor)];
         if(!otherRow)return;
         const otherMinutes=Number(otherRow.dataset.laborMinutes)||0;
-        const otherTotal=Number(fieldLaborContext().total?.totalMinutes)||0;
-        const otherMinutesMode=otherTotal>0&&otherTotal<60;
-        other.dataset.unit=otherMinutesMode?'min':'h';
-        other.value=otherMinutesMode?String(otherMinutes):String(otherRow.querySelector('.production-hours')?.value||'');
+        other.dataset.unit='min';
+        other.value=String(otherMinutes);
         const otherPair=other.parentElement?.querySelector('.field-time-pair');
-        if(otherPair)otherPair.textContent=pairLabel(otherRow,otherMinutes);
+        if(otherPair)otherPair.textContent=clockLabel(otherMinutes);
       });
       const totalLine=host.querySelector('.field-labor-total');
-      if(totalLine)totalLine.textContent=`Total ${workTimeLabel(Number(fieldLaborContext().total?.totalMinutes)||0)}`;
+      if(totalLine)totalLine.textContent=`Total ${punchTotalLabel(Number(fieldLaborContext().total?.totalMinutes)||0)}`;
       scheduleLaborLockSave();
     });
     host.querySelectorAll('[data-edit-line]').forEach(card=>card.onclick=event=>{
@@ -558,7 +547,9 @@ var fieldScopeFlags=[];
   function laborNow(){return laborTickAt&&Date.now()-laborTickAt<1000?laborTickAt:Date.now()}
   window.beginFieldLaborTick=beginFieldLaborTick;
   window.fieldLaborNow=laborNow;
-  function workTimeLabel(minutes){if(typeof FieldDailyScope!=='undefined'&&FieldDailyScope.formatWorkTime)return FieldDailyScope.formatWorkTime(minutes);const whole=Math.max(0,Math.round(Number(minutes)||0));const hours=(Math.round(whole/60*100)/100).toFixed(2);return whole<60?`${whole} min · ${hours} h`:`${hours} h`}
+  function clockLabel(minutes){if(typeof FieldDailyScope!=='undefined'&&FieldDailyScope.formatClock)return FieldDailyScope.formatClock(minutes);const whole=Math.max(0,Math.round(Number(minutes)||0));if(whole<60)return `${whole} min`;const hours=Math.floor(whole/60),rest=whole%60;return rest?`${hours} h ${rest} min`:`${hours} h`}
+  function punchTotalLabel(minutes){if(typeof FieldDailyScope!=='undefined'&&FieldDailyScope.formatPunchTotal)return FieldDailyScope.formatPunchTotal(minutes);const whole=Math.max(0,Math.round(Number(minutes)||0));const hours=(Math.round(whole/60*100)/100).toFixed(2);return `${clockLabel(whole)} · ${hours} h`}
+  function workTimeLabel(minutes){if(typeof FieldDailyScope!=='undefined'&&FieldDailyScope.formatWorkTime)return FieldDailyScope.formatWorkTime(minutes);return punchTotalLabel(minutes)}
   function punchRows(){
     const projectId=projects?.[+$('#report-project')?.value]?.id,date=$('#report-date')?.value;
     const cards=(typeof timeCards==='undefined'?[]:timeCards).filter(card=>card&&!card.deletedAt&&card.inAt&&Number(card.projectId)===Number(projectId)&&String(card.date||'')===String(date||''));
