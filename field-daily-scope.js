@@ -328,6 +328,18 @@
 
   function formatHours(hours){return formatMinutes(Math.round((Number(hours)||0)*60))}
 
+  function formatClock(minutes){
+    const value=Math.max(0,Math.round(Number(minutes)||0));
+    if(value<60)return `${value} min`;
+    const hours=Math.floor(value/60),rest=value%60;
+    return rest?`${hours} h ${rest} min`:`${hours} h`;
+  }
+
+  function formatPunchTotal(minutes){
+    const whole=Math.max(0,Math.round(Number(minutes)||0));
+    return `${formatClock(whole)} · ${hoursFromMinutes(whole).toFixed(2)} h`;
+  }
+
   function formatWorkTime(minutes){
     const whole=Math.max(0,Math.round(Number(minutes)||0));
     const hours=hoursFromMinutes(whole);
@@ -480,11 +492,8 @@
     const weights=auto.map(line=>rated?Number(line.quantity)*Number(line.unitRate):1);
     const parts=splitLargestRemainder(remaining,weights);
     auto.forEach((line,index)=>{line.minutes=parts[index]||0});
-    rows.forEach(line=>{line.hours=hoursFromMinutes(line.minutes)});
-    const targetHundredths=Math.round(hoursFromMinutes(crewMinutes)*100);
-    const usedHundredths=rows.reduce((sum,line)=>sum+Math.round((Number(line.hours)||0)*100),0);
-    const gap=targetHundredths-usedHundredths;
-    if(gap>0&&auto.length)auto[auto.length-1].hours=round2(auto[auto.length-1].hours+gap/100);
+    const hours=displayHoursForMinutes(rows.map(line=>line.minutes));
+    rows.forEach((line,index)=>{line.hours=hours[index]||0});
     return {lines:rows,total:hoursFromMinutes(crewMinutes),totalMinutes:crewMinutes,allocated:round2(rows.reduce((sum,line)=>sum+line.hours,0)),allocatedMinutes:rows.reduce((sum,line)=>sum+line.minutes,0),warning:''};
   }
 
@@ -615,5 +624,5 @@
     return Math.round(crew*100)/100;
   }
 
-  return {normalizeUnit,matchEstimateLine,reviewScope,reviewNotes,uniqueMaterials,isMaterialPhrase,tidyNext,decideFlag,confirmedExtraChanges,fieldExtraItems,whoAsked,approvedQuantityMap,hoursFromClock,statedCrew,sendGate,clockOutMessage,submissionStatus,namedCrewGaps,crewGapReason,noPunchLabel,punchLengthLabel,formatMinutes,formatHours,formatWorkTime,hoursFromMinutes,displayHoursForMinutes,minutesFromHours,elapsedMinutes,laborTotal,dedupeLaborEntries,rawNoteLine,emptyProductionLine,dedupeProductionLines,keepProductionLines,flagIdentity,normalizeLaborGaps,mergeScopeFlags,splitLargestRemainder,allocateLaborHours,sameDayDaily,clientProjectIndex,singleLineLaborHours,QUANTITY_TOLERANCE,PRODUCTIVITY_LIMIT};
+  return {normalizeUnit,matchEstimateLine,reviewScope,reviewNotes,uniqueMaterials,isMaterialPhrase,tidyNext,decideFlag,confirmedExtraChanges,fieldExtraItems,whoAsked,approvedQuantityMap,hoursFromClock,statedCrew,sendGate,clockOutMessage,submissionStatus,namedCrewGaps,crewGapReason,noPunchLabel,punchLengthLabel,formatMinutes,formatHours,formatClock,formatPunchTotal,formatWorkTime,hoursFromMinutes,displayHoursForMinutes,minutesFromHours,elapsedMinutes,laborTotal,dedupeLaborEntries,rawNoteLine,emptyProductionLine,dedupeProductionLines,keepProductionLines,flagIdentity,normalizeLaborGaps,mergeScopeFlags,splitLargestRemainder,allocateLaborHours,sameDayDaily,clientProjectIndex,singleLineLaborHours,QUANTITY_TOLERANCE,PRODUCTIVITY_LIMIT};
 });

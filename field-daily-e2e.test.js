@@ -354,7 +354,8 @@ async function openNav(page, name) {
     });
     assert.equal(live.sum, live.total, JSON.stringify(live));
     assert.match(live.clock, new RegExp(`${live.total} min`));
-    assert.match(live.pair, /\d+ min · \d+\.\d{2} h/);
+    assert.match(live.pair, /^\d+ min$/);
+    assert.doesNotMatch(live.pair, /\d+\.\d{2}/);
     assert.match(live.totalText, new RegExp(`${live.total} min · \\d+\\.\\d{2} h`));
     if (live.total === 8) assert.match(live.totalText, /8 min · 0\.13 h/);
     assert.equal(live.send, 'Send to office');
@@ -841,22 +842,20 @@ async function openNav(page, name) {
       window.applyLiveLabor?.();
       const hours = [...document.querySelectorAll('.production-entry')].map(row => Number(row.querySelector('.production-hours')?.value) || 0);
       const minutes = [...document.querySelectorAll('.production-entry')].map(row => Number(row.dataset.laborMinutes) || 0);
-      const pairHours = [...document.querySelectorAll('.field-time-pair')].map(el => {
-        const match = (el.textContent || '').match(/(\d+\.\d{2})\s*h/);
-        return match ? Number(match[1]) : null;
-      });
+      const pairs = [...document.querySelectorAll('.field-time-pair')].map(el => el.textContent || '');
       return {
         hours,
         minutes,
-        pairHours,
+        pairs,
         totalText: document.querySelector('.field-labor-total')?.textContent || '',
         totalMinutes: window.fieldLaborContext().total.totalMinutes
       };
     });
     assert.equal(decimals.totalMinutes, 2, JSON.stringify(decimals));
     assert.deepEqual(decimals.minutes, [1, 1], JSON.stringify(decimals));
-    assert.deepEqual(decimals.hours, [0.02, 0.02], JSON.stringify(decimals));
-    assert.deepEqual(decimals.pairHours, [0.02, 0.02], JSON.stringify(decimals));
+    assert.deepEqual(decimals.hours, [0.02, 0.01], JSON.stringify(decimals));
+    assert.deepEqual(decimals.pairs, ['1 min', '1 min'], JSON.stringify(decimals));
+    assert.equal(decimals.pairs.some(text => /\d+\.\d{2}/.test(text)), false, JSON.stringify(decimals));
     assert.match(decimals.totalText, /2 min · 0\.03 h/, decimals.totalText);
     const fiveEnd = new Date();
     const fiveStart = new Date(fiveEnd.getTime() - 5 * 60000);
@@ -876,13 +875,10 @@ async function openNav(page, name) {
         minutes: Number(row.dataset.laborMinutes) || 0,
         hours: Number(row.querySelector('.production-hours')?.value) || 0
       }));
-      const pairHours = [...document.querySelectorAll('.field-time-pair')].map(el => {
-        const match = (el.textContent || '').match(/(\d+\.\d{2})\s*h/);
-        return match ? Number(match[1]) : null;
-      });
+      const pairs = [...document.querySelectorAll('.field-time-pair')].map(el => el.textContent || '');
       return {
         lines,
-        pairHours,
+        pairs,
         totalText: document.querySelector('.field-labor-total')?.textContent || '',
         totalMinutes: window.fieldLaborContext().total.totalMinutes
       };
@@ -892,7 +888,8 @@ async function openNav(page, name) {
     assert.equal(five.lines.reduce((sum, row) => sum + row.minutes, 0), 5, JSON.stringify(five));
     assert.deepEqual(five.lines.map(row => row.minutes), [3, 2], JSON.stringify(five));
     assert.deepEqual(five.lines.map(row => row.hours), [0.05, 0.03], JSON.stringify(five));
-    assert.deepEqual(five.pairHours, [0.05, 0.03], JSON.stringify(five));
+    assert.deepEqual(five.pairs, ['3 min', '2 min'], JSON.stringify(five));
+    assert.equal(five.pairs.some(text => /\d+\.\d{2}/.test(text)), false, JSON.stringify(five));
     assert.match(five.totalText, /5 min · 0\.08 h/, five.totalText);
     fs.writeFileSync(punchFile, JSON.stringify(closedDb));
     await page.evaluate(async () => {
@@ -972,7 +969,7 @@ async function openNav(page, name) {
     assert.equal(extra.apron?.id, '', JSON.stringify(extra));
     assert.equal(extra.apron?.qty, '4', JSON.stringify(extra));
     assert.equal(extra.minutes, extra.totalMinutes, JSON.stringify(extra));
-    assert.ok(extra.rows.every(row => row.hours === Math.round(row.minutes / 60 * 100) / 100), JSON.stringify(extra));
+    assert.equal(extra.rows.reduce((sum, row) => sum + Math.round(row.hours * 100), 0), Math.round(Math.round(extra.totalMinutes / 60 * 100) / 100 * 100), JSON.stringify(extra));
     await page.click('#save-report');
     await page.waitForSelector('#report-sent-modal[open]', { timeout: 20000 });
     const extraSent = await page.$eval('#report-sent-summary', el => el.textContent || '');

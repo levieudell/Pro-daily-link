@@ -2,6 +2,7 @@
 
 const crypto = require('node:crypto');
 const payPeriods = require('./pay-periods');
+const fieldScope = require('./field-daily-scope');
 const status = card => String(card?.status ?? card?.Status ?? card?.state ?? card?.approvalStatus ?? '').trim().toLowerCase();
 const revision = card => crypto.createHash('sha256').update(JSON.stringify(card)).digest('hex');
 
@@ -73,9 +74,17 @@ function syncDraftReport(db, card) {
   const existing=report.laborEntries.find(row=>Number(row.memberId)===Number(card.memberId));
   if(existing)existing.hours=Math.round(hours*100)/100;
   else if(hours>0)report.laborEntries.push({memberId:card.memberId,hours:Math.round(hours*100)/100,crew:(db.team||[]).find(row=>Number(row.id)===Number(card.memberId))?.crew||'Unassigned'});
-  const total=report.laborEntries.reduce((sum,row)=>sum+(Number(row.hours)||0),0),production=report.productionEntries||[],allocated=production.reduce((sum,row)=>sum+(Number(row.laborHours)||0),0);
+  const total=report.laborEntries.reduce((sum,row)=>sum+(Number(row.hours)||0),0),production=report.productionEntries||[];
   if(production.length===1)production[0].laborHours=Math.round(total*100)/100;
-  else if(allocated>0)production.forEach(row=>{row.laborHours=Math.round(total*(Number(row.laborHours)||0)/allocated*100)/100});
+  else if(production.length>1){
+    const minuteWeights=production.map(row=>row.laborMinutes!=null&&row.laborMinutes!==''?Math.max(0,Math.round(Number(row.laborMinutes)||0)):null);
+    const useMinutes=minuteWeights.every(value=>value!=null)&&minuteWeights.some(value=>value>0);
+    const weights=useMinutes?minuteWeights:production.map(row=>Math.max(0,Number(row.laborHours)||0));
+    if(weights.some(value=>value>0)){
+      const parts=fieldScope.splitLargestRemainder(Math.round(total*100),weights);
+      production.forEach((row,index)=>{row.laborHours=(parts[index]||0)/100});
+    }
+  }
   report.history ||= [];report.history.push({action:'Labor synced from time-card correction',by:'Time cards',at:new Date().toISOString()});
   return true;
 }
