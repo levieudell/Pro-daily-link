@@ -296,7 +296,11 @@ async function startJordan(page) {
     assert.equal(reviewedPosts.length, 0, JSON.stringify(reviewedPosts));
     if (await owner.$('#office-decision')) {
       await owner.select('#office-decision', 'non_billable');
-      await waitUntil(owner, () => /Updated after send/.test(document.querySelector('[data-updated-after-send-header]')?.innerText || ''), 'badge stayed through the office decision');
+      await waitUntil(owner, () => {
+        const button = document.querySelector('[data-approve-report]');
+        const badge = document.querySelector('[data-updated-after-send-header]');
+        return Boolean(button && !button.disabled && /Updated after send/.test(badge?.innerText || ''));
+      }, 'approve enabled after the office decision');
       assert.equal(await flagStillSet(), true, 'office decision cleared the flag');
     }
     if (await owner.$('#resolve-exception')) {
