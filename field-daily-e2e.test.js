@@ -9,7 +9,7 @@ const net = require('node:net');
 const os = require('node:os');
 const path = require('node:path');
 
-const NOTE = 'Poured 40 LF of curb on north side, set 20 LF of gutter, 3 guys, extra work: owner asked us to patch 2 potholes by the gate, used 6 yards of concrete. Tomorrow we form the east side, need pump truck Monday.';
+const NOTE = 'Poured 40 LF of curb on north side, set 20 LF of gutter, 3 guys, extra work: owner asked us to patch 2 potholes by the gate and keep the patch open for the inspector through the full cure, used 6 yards of concrete. Tomorrow we form the east side, need pump truck Monday.';
 const SHOTS = '/opt/cursor/artifacts/screenshots';
 const FIELD_EMAIL = 'levi+field@prodailylink.com';
 const OWNER_EMAIL = 'levi+owner@prodailylink.com';
@@ -753,6 +753,23 @@ async function openNav(page, name) {
       return box?.querySelector('strong')?.textContent || '';
     });
     assert.match(officeMaterials, /6 yards of concrete/);
+    const officeExtra = await owner.evaluate(() => {
+      const banner = document.querySelector('#report-detail .ai-banner p');
+      const card = document.querySelector('#report-detail .extra-work-item');
+      const phrase = 'keep the patch open for the inspector through the full cure';
+      const bannerStyle = banner ? getComputedStyle(banner) : null;
+      return {
+        banner: banner?.textContent || '',
+        card: card?.innerText || '',
+        wraps: bannerStyle ? bannerStyle.whiteSpace !== 'nowrap' && bannerStyle.textOverflow !== 'ellipsis' : false,
+        phrase
+      };
+    });
+    assert.match(officeExtra.banner, /keep the patch open for the inspector through the full cure/);
+    assert.equal(officeExtra.banner.includes('…'), false, officeExtra.banner);
+    assert.match(officeExtra.card, /keep the patch open for the inspector through the full cure/);
+    assert.equal(officeExtra.card.includes('…'), false, officeExtra.card);
+    assert.equal(officeExtra.wraps, true, JSON.stringify(officeExtra));
     const curbAfterOut = await page.$('[data-review-labor][data-line-id="1"]');
     await curbAfterOut.click();
     await page.evaluate(el => { el.focus(); el.setSelectionRange(0, el.value.length); }, curbAfterOut);
@@ -837,12 +854,53 @@ async function openNav(page, name) {
       };
     });
     assert.equal(decimals.totalMinutes, 2, JSON.stringify(decimals));
-    assert.equal(decimals.minutes.reduce((sum, value) => sum + value, 0), 2, JSON.stringify(decimals));
-    assert.equal(decimals.hours.filter(value => value === 0.02).length, 1, JSON.stringify(decimals));
-    assert.equal(decimals.hours.filter(value => value === 0.01).length, 1, JSON.stringify(decimals));
-    assert.equal(Math.round(decimals.hours.reduce((sum, value) => sum + value, 0) * 100), 3, JSON.stringify(decimals));
-    assert.deepEqual(decimals.pairHours, decimals.hours, JSON.stringify(decimals));
+    assert.deepEqual(decimals.minutes, [1, 1], JSON.stringify(decimals));
+    assert.deepEqual(decimals.hours, [0.02, 0.02], JSON.stringify(decimals));
+    assert.deepEqual(decimals.pairHours, [0.02, 0.02], JSON.stringify(decimals));
     assert.match(decimals.totalText, /2 min · 0\.03 h/, decimals.totalText);
+    const fiveEnd = new Date();
+    const fiveStart = new Date(fiveEnd.getTime() - 5 * 60000);
+    const fiveDb = JSON.parse(fs.readFileSync(punchFile, 'utf8'));
+    for (const card of fiveDb.timeCards || []) {
+      if (!card || card.deletedAt || !card.inAt || !card.outAt) continue;
+      card.inAt = fiveStart.toISOString();
+      card.outAt = fiveEnd.toISOString();
+    }
+    fs.writeFileSync(punchFile, JSON.stringify(fiveDb));
+    const five = await page.evaluate(async () => {
+      if (typeof refreshTimeCards === 'function') await refreshTimeCards();
+      for (const row of document.querySelectorAll('.production-entry')) delete row.dataset.laborManual;
+      document.activeElement?.blur?.();
+      window.applyLiveLabor?.();
+      const lines = [...document.querySelectorAll('.production-entry')].map(row => ({
+        minutes: Number(row.dataset.laborMinutes) || 0,
+        hours: Number(row.querySelector('.production-hours')?.value) || 0
+      }));
+      const pairHours = [...document.querySelectorAll('.field-time-pair')].map(el => {
+        const match = (el.textContent || '').match(/(\d+\.\d{2})\s*h/);
+        return match ? Number(match[1]) : null;
+      });
+      return {
+        lines,
+        pairHours,
+        totalText: document.querySelector('.field-labor-total')?.textContent || '',
+        totalMinutes: window.fieldLaborContext().total.totalMinutes
+      };
+    });
+    assert.equal(five.totalMinutes, 5, JSON.stringify(five));
+    assert.equal(five.lines.length, 2, JSON.stringify(five));
+    assert.equal(five.lines.reduce((sum, row) => sum + row.minutes, 0), 5, JSON.stringify(five));
+    assert.deepEqual(five.lines.map(row => row.minutes), [3, 2], JSON.stringify(five));
+    assert.deepEqual(five.lines.map(row => row.hours), [0.05, 0.03], JSON.stringify(five));
+    assert.deepEqual(five.pairHours, [0.05, 0.03], JSON.stringify(five));
+    assert.match(five.totalText, /5 min · 0\.08 h/, five.totalText);
+    fs.writeFileSync(punchFile, JSON.stringify(closedDb));
+    await page.evaluate(async () => {
+      if (typeof refreshTimeCards === 'function') await refreshTimeCards();
+      for (const row of document.querySelectorAll('.production-entry')) delete row.dataset.laborManual;
+      document.activeElement?.blur?.();
+      window.applyLiveLabor?.();
+    });
     await page.click('#report-back');
     await page.waitForFunction(() => document.querySelector('#report-form')?.getAttribute('data-current-step') === '1');
     await page.$eval('#field-notes', el => {
@@ -902,8 +960,10 @@ async function openNav(page, name) {
         } : null,
         minutes: rows.reduce((sum, row) => sum + (Number(row.dataset.laborMinutes) || 0), 0),
         totalMinutes: window.fieldLaborContext().total.totalMinutes,
-        hourHundredths: rows.reduce((sum, row) => sum + Math.round((Number(row.querySelector('.production-hours')?.value) || 0) * 100), 0),
-        totalHundredths: Math.round((Number(window.fieldLaborContext().total.total) || 0) * 100)
+        rows: rows.map(row => ({
+          minutes: Number(row.dataset.laborMinutes) || 0,
+          hours: Number(row.querySelector('.production-hours')?.value) || 0
+        }))
       };
     });
     assert.equal(extra.count, beforeExtra, JSON.stringify(extra));
@@ -912,7 +972,7 @@ async function openNav(page, name) {
     assert.equal(extra.apron?.id, '', JSON.stringify(extra));
     assert.equal(extra.apron?.qty, '4', JSON.stringify(extra));
     assert.equal(extra.minutes, extra.totalMinutes, JSON.stringify(extra));
-    assert.equal(extra.hourHundredths, extra.totalHundredths, JSON.stringify(extra));
+    assert.ok(extra.rows.every(row => row.hours === Math.round(row.minutes / 60 * 100) / 100), JSON.stringify(extra));
     await page.click('#save-report');
     await page.waitForSelector('#report-sent-modal[open]', { timeout: 20000 });
     const extraSent = await page.$eval('#report-sent-summary', el => el.textContent || '');

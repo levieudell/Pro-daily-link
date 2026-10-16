@@ -480,8 +480,11 @@
     const weights=auto.map(line=>rated?Number(line.quantity)*Number(line.unitRate):1);
     const parts=splitLargestRemainder(remaining,weights);
     auto.forEach((line,index)=>{line.minutes=parts[index]||0});
-    const shown=displayHoursForMinutes(rows.map(line=>line.minutes));
-    rows.forEach((line,index)=>{line.hours=shown[index]||0});
+    rows.forEach(line=>{line.hours=hoursFromMinutes(line.minutes)});
+    const targetHundredths=Math.round(hoursFromMinutes(crewMinutes)*100);
+    const usedHundredths=rows.reduce((sum,line)=>sum+Math.round((Number(line.hours)||0)*100),0);
+    const gap=targetHundredths-usedHundredths;
+    if(gap>0&&auto.length)auto[auto.length-1].hours=round2(auto[auto.length-1].hours+gap/100);
     return {lines:rows,total:hoursFromMinutes(crewMinutes),totalMinutes:crewMinutes,allocated:round2(rows.reduce((sum,line)=>sum+line.hours,0)),allocatedMinutes:rows.reduce((sum,line)=>sum+line.minutes,0),warning:''};
   }
 

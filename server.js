@@ -451,7 +451,8 @@ function localExtract(notes){
   const delay=delayFromNotes(notes);
   const next=notes.match(/(?:tomorrow|next)[:\s,-]*([^.!]+)/i);
   const labor=workers||hours?[workers?`${workers[1]} people`:'',hours?`${hours[1]} hours`:''].filter(Boolean).join(' · '):'';
-  const summaryNotes=String(notes||'').length>180?`${String(notes).slice(0,181).replace(/\s+\S*$/,'').trim()}…`:String(notes||'');
+  const noteText=String(notes||'').trim();
+  const summaryNotes=/extra work\s*:/i.test(noteText)||noteText.length<=180?noteText:`${noteText.slice(0,181).replace(/\s+\S*$/,'').trim()}…`;
   return {summary:summaryNotes?`Field work recorded: ${summaryNotes}`:'',labor,quantity:productions.some(row=>row.quantity!=null)?qty&&productions.find(row=>row.quantity!=null).quantity===Number(qty[1])?`${qty[1]} ${qty[2]}`:`${productions.find(row=>row.quantity!=null).quantity} ${productions.find(row=>row.quantity!=null).unit}`:'',productions,materials:'',equipment:'',delays:delay,safety:'',issue:delay,next:next?next[1].trim():'',originalLanguage:'en',englishTranslation:notes,source:'local'};
 }
 
