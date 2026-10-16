@@ -151,6 +151,66 @@ function sendPayload(report, next) {
     assert.equal(emptyNote.data.attached, true);
     assert.equal(emptyNote.data.report.next, 'Stage the pump.');
     assert.equal(emptyNote.data.report.notes.match(/Finished the remaining gutter\./g).length, 1);
+    const latest = emptyNote.data.report;
+    const minutesOf = report => (report?.laborEntries || []).reduce((sum, row) => sum + (Number(row.minutes) || 0), 0);
+    const staleBody = {
+      status: 'Draft',
+      notes: 'Stale note from the phone.',
+      next: 'Stale next',
+      laborEntries: [{ memberId: 11, hours: 0.02, minutes: 1 }],
+      productionEntries: latest.productionEntries || [],
+      updatedAt: notedEnd.data.report.updatedAt
+    };
+    const stale = await call('PATCH', '/api/reports/' + latest.id, staleBody);
+    assert.equal(stale.status, 409, JSON.stringify(stale.data));
+    assert.equal(stale.data.error, 'This daily was updated, reloading');
+    assert.match(stale.data.report.notes, /Short check-in/);
+    assert.match(stale.data.report.notes, /Finished the remaining gutter/);
+    assert.equal(/Stale note|Stale next/.test(`${stale.data.report.notes}\n${stale.data.report.next}`), false);
+    assert.equal(stale.data.report.next, 'Stage the pump.');
+    assert.ok(minutesOf(stale.data.report) > 1, JSON.stringify(stale.data.report.laborEntries));
+    const kept = (await call('GET', '/api/state')).data.reports.find(row => row.id === latest.id);
+    assert.equal(kept.next, 'Stage the pump.');
+    assert.match(kept.notes, /Finished the remaining gutter/);
+    assert.equal(minutesOf(kept), minutesOf(stale.data.report));
+    const allowed = await call('PATCH', '/api/reports/' + latest.id, {
+      status: 'Draft',
+      notes: stale.data.report.notes,
+      next: 'Call after the conflict.',
+      laborEntries: stale.data.report.laborEntries,
+      productionEntries: stale.data.report.productionEntries,
+      updatedAt: stale.data.report.updatedAt
+    });
+    assert.equal(allowed.status, 200, JSON.stringify(allowed.data));
+    assert.equal(allowed.data.next, 'Call after the conflict.');
+    assert.match(allowed.data.notes, /Finished the remaining gutter/);
+    assert.equal(/Stale note/.test(allowed.data.notes), false);
+    const omitted = await call('PATCH', '/api/reports/' + latest.id, {
+      status: 'Draft',
+      notes: allowed.data.notes,
+      next: allowed.data.next,
+      laborEntries: allowed.data.laborEntries,
+      productionEntries: allowed.data.productionEntries
+    });
+    assert.equal(omitted.status, 200, JSON.stringify(omitted.data));
+    assert.equal(omitted.data.next, 'Call after the conflict.');
+    const beforeCount = (await call('GET', '/api/state')).data.reports.length;
+    const posted = await call('POST', '/api/reports', {
+      status: 'Draft',
+      projectId: 102,
+      dateIso: omitted.data.dateIso,
+      foreman: omitted.data.foreman,
+      notes: omitted.data.notes,
+      next: 'Posted stale next',
+      laborEntries: omitted.data.laborEntries,
+      productionEntries: omitted.data.productionEntries,
+      updatedAt: notedEnd.data.report.updatedAt
+    });
+    assert.equal(posted.status, 409, JSON.stringify(posted.data));
+    assert.equal(posted.data.error, 'This daily was updated, reloading');
+    assert.equal(posted.data.report.next, 'Call after the conflict.');
+    assert.equal(/Posted stale next|Stale note/.test(`${posted.data.report.notes}\n${posted.data.report.next}`), false);
+    assert.equal((await call('GET', '/api/state')).data.reports.length, beforeCount);
     console.log('Next-step merge checks passed.');
   } finally {
     server.closeAllConnections();

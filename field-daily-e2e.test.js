@@ -822,19 +822,48 @@ async function openNav(page, name) {
     await page.evaluate(el => { el.focus(); el.setSelectionRange(0, el.value.length); }, curbAfterOut);
     await page.keyboard.type('2');
     await page.evaluate(() => document.activeElement?.blur?.());
+    await page.waitForFunction(() => {
+      const status = document.querySelector('#report-submit-status')?.textContent || '';
+      const toast = document.querySelector('#toast')?.textContent || '';
+      const notes = document.querySelector('#field-notes')?.value || '';
+      return /This daily was updated, reloading/.test(`${status}\n${toast}`) && /Left the site\. Gate is locked\./.test(notes);
+    }, { timeout: 20000 });
+    const blockedLock = await page.evaluate(async () => {
+      const state = await (await fetch('/api/state', { credentials: 'include' })).json();
+      const report = (state.reports || []).find(row => /gutter/i.test(row.notes || row.originalNotes || ''));
+      const curb = (report?.productionEntries || []).find(row => Number(row.estimateItemId) === 1);
+      return { notes: report?.notes || '', minutes: Number(curb?.laborMinutes) || 0 };
+    });
+    assert.match(blockedLock.notes, /Left the site\. Gate is locked\./);
+    assert.equal(blockedLock.minutes, 3, JSON.stringify(blockedLock));
+    await page.click('#report-next-step');
+    await page.waitForFunction(() => {
+      const button = document.querySelector('#report-next-step');
+      const input = document.querySelector('[data-review-labor][data-line-id="1"]');
+      const notes = document.querySelector('#field-notes')?.value || '';
+      return document.querySelector('#report-form')?.getAttribute('data-current-step') === '2' && button && !button.disabled && input && /Left the site\. Gate is locked\./.test(notes);
+    }, { timeout: 20000 });
+    await page.evaluate(() => {
+      const input = document.querySelector('[data-review-labor][data-line-id="1"]');
+      input.focus();
+      input.value = '2';
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+      input.blur();
+    });
     let savedLock = null;
     for (let attempt = 0; attempt < 40; attempt += 1) {
       savedLock = await page.evaluate(async () => {
         const state = await (await fetch('/api/state', { credentials: 'include' })).json();
         const report = (state.reports || []).find(row => /gutter/i.test(row.notes || row.originalNotes || ''));
         const curb = (report?.productionEntries || []).find(row => Number(row.estimateItemId) === 1);
-        return { manual: curb?.laborManual === true, minutes: Number(curb?.laborMinutes) || 0, status: document.querySelector('#report-submit-status')?.textContent || '' };
+        return { manual: curb?.laborManual === true, minutes: Number(curb?.laborMinutes) || 0, notes: report?.notes || '', status: document.querySelector('#report-submit-status')?.textContent || '' };
       });
-      if (savedLock.manual && savedLock.minutes === 2) break;
+      if (savedLock.manual && savedLock.minutes === 2 && /Left the site\. Gate is locked\./.test(savedLock.notes)) break;
       await new Promise(resolve => setTimeout(resolve, 250));
     }
     assert.equal(savedLock.manual, true, JSON.stringify(savedLock));
     assert.equal(savedLock.minutes, 2, JSON.stringify(savedLock));
+    assert.match(savedLock.notes, /Left the site\. Gate is locked\./);
     await page.evaluate(() => document.querySelector('#report-modal .close-button')?.click());
     await page.waitForFunction(() => !document.querySelector('#report-modal')?.open);
     await page.evaluate(() => {
