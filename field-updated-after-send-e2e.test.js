@@ -183,7 +183,8 @@ async function startJordan(page) {
     assert.match(`${flagged.action} by ${flagged.lineBy}`, /Labor 0\.03h → 0\.08h, next step changed, by DEMO Jordan Reed's clock-out/);
     assert.equal(flagged.labor.some(hours => Math.abs(hours - 0.08) < 0.001), true, JSON.stringify(flagged.labor));
     assert.equal(flagged.next, SECOND_NEXT, flagged.next);
-    const owner = await browser.newPage();
+    const ownerContext = await browser.createBrowserContext();
+    const owner = await ownerContext.newPage();
     owner.__port = port;
     await owner.setViewport({ width: 390, height: 844, deviceScaleFactor: 2, isMobile: true, hasTouch: true });
     owner.on('dialog', async dialog => { await dialog.accept(); });
