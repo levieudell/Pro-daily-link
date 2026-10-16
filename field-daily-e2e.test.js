@@ -298,7 +298,8 @@ async function openNav(page, name) {
     });
     assert.equal(materialsAndNext.count, 1, materialsAndNext.materials);
     assert.equal(materialsAndNext.tag, 'TEXTAREA', JSON.stringify(materialsAndNext));
-    assert.match(materialsAndNext.nextValue, /Tomorrow we form the east side, need pump truck Monday/);
+    assert.equal(materialsAndNext.nextValue, 'Tomorrow we form the east side, need pump truck Monday.');
+    assert.equal(/^next(?:\s+step)?:/i.test(materialsAndNext.nextValue), false);
     assert.equal(materialsAndNext.fits, true, JSON.stringify(materialsAndNext));
     await page.evaluate(() => document.querySelector('#field-review-next')?.scrollIntoView({ block: 'center' }));
     await shot(page, 'field-next-materials.png');
@@ -477,7 +478,8 @@ async function openNav(page, name) {
     const sent = await page.$eval('#report-sent-summary', el => el.textContent || '');
     const blocked = await page.$eval('#report-submit-status', el => el.textContent || '').catch(() => '');
     assert.equal(/Choose an estimate item/.test(sent + blocked), false, sent + blocked);
-    assert.match(sent, /logged|office/i);
+    assert.match(sent, /1 extra work item flagged for the office/);
+    assert.equal(/No potential changes were confirmed/.test(sent), false, sent);
     await shot(page, 'field-send-success.png');
     await page.click('#report-sent-modal button.primary');
     await page.waitForSelector('[data-edit-report]');
@@ -715,8 +717,125 @@ async function openNav(page, name) {
     await page.setViewport({ width: 320, height: 568, deviceScaleFactor: 2, isMobile: true, hasTouch: true });
     await assertFits(page, 'daily sheet 320');
     await shot(page, 'field-daily-320.png');
-    await page.evaluate(() => document.querySelector('#report-modal .close-button')?.click());
-    await page.waitForFunction(() => !document.querySelector('#report-modal')?.open);
+    await page.setViewport({ width: 390, height: 844, deviceScaleFactor: 2, isMobile: true, hasTouch: true });
+    const punchFile = path.join(root, 'db.json');
+    const closedDb = JSON.parse(fs.readFileSync(punchFile, 'utf8'));
+    const closedEnd = new Date();
+    const closedStart = new Date(closedEnd.getTime() - 2 * 60000);
+    let closedPunch = false;
+    for (const card of closedDb.timeCards || []) {
+      if (!card || card.deletedAt || !card.inAt || !card.outAt) continue;
+      card.inAt = closedStart.toISOString();
+      card.outAt = closedEnd.toISOString();
+      closedPunch = true;
+    }
+    assert.equal(closedPunch, true);
+    fs.writeFileSync(punchFile, JSON.stringify(closedDb));
+    const decimals = await page.evaluate(async () => {
+      if (typeof refreshTimeCards === 'function') await refreshTimeCards();
+      for (const row of document.querySelectorAll('.production-entry')) delete row.dataset.laborManual;
+      document.activeElement?.blur?.();
+      window.applyLiveLabor?.();
+      const hours = [...document.querySelectorAll('.production-entry')].map(row => Number(row.querySelector('.production-hours')?.value) || 0);
+      const minutes = [...document.querySelectorAll('.production-entry')].map(row => Number(row.dataset.laborMinutes) || 0);
+      const pairHours = [...document.querySelectorAll('.field-time-pair')].map(el => {
+        const match = (el.textContent || '').match(/(\d+\.\d{2})\s*h/);
+        return match ? Number(match[1]) : null;
+      });
+      return {
+        hours,
+        minutes,
+        pairHours,
+        totalText: document.querySelector('.field-labor-total')?.textContent || '',
+        totalMinutes: window.fieldLaborContext().total.totalMinutes
+      };
+    });
+    assert.equal(decimals.totalMinutes, 2, JSON.stringify(decimals));
+    assert.equal(decimals.minutes.reduce((sum, value) => sum + value, 0), 2, JSON.stringify(decimals));
+    assert.equal(decimals.hours.filter(value => value === 0.02).length, 1, JSON.stringify(decimals));
+    assert.equal(decimals.hours.filter(value => value === 0.01).length, 1, JSON.stringify(decimals));
+    assert.equal(Math.round(decimals.hours.reduce((sum, value) => sum + value, 0) * 100), 3, JSON.stringify(decimals));
+    assert.deepEqual(decimals.pairHours, decimals.hours, JSON.stringify(decimals));
+    assert.match(decimals.totalText, /2 min · 0\.03 h/, decimals.totalText);
+    await page.click('#report-back');
+    await page.waitForFunction(() => document.querySelector('#report-form')?.getAttribute('data-current-step') === '1');
+    await page.$eval('#field-notes', el => {
+      el.value = 'Poured 40 LF of curb on north side, placed 10 LF of sidewalk, formed 4 LF of apron.';
+      el.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    await page.click('#report-next-step');
+    await page.waitForFunction(() => {
+      const flags = document.querySelector('#field-scope-flags')?.innerText || '';
+      const button = document.querySelector('#report-next-step');
+      return button && !button.disabled && /sidewalk/i.test(flags) && /apron/i.test(flags) && /No estimate line matches/i.test(flags);
+    }, { timeout: 20000 });
+    const beforePick = await page.evaluate(() => ({
+      count: document.querySelectorAll('.production-entry').length,
+      curb: [...document.querySelectorAll('.production-entry')].filter(row => row.dataset.estimateItemId === '1').length
+    }));
+    assert.equal(beforePick.curb, 1, JSON.stringify(beforePick));
+    await page.evaluate(() => {
+      const card = [...document.querySelectorAll('.field-flag')].find(el => /sidewalk/i.test(el.innerText || ''));
+      const select = card?.querySelector('[data-pick-line]');
+      const option = [...(select?.options || [])].find(item => /Curb\s*·\s*LF/i.test(item.textContent || ''));
+      if (!select || !option) return;
+      select.value = option.value;
+      select.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+    await page.waitForFunction(() => {
+      const titles = [...document.querySelectorAll('.field-flag strong')].map(el => el.textContent || '');
+      const curb = [...document.querySelectorAll('.production-entry')].filter(row => row.dataset.estimateItemId === '1');
+      return !titles.some(text => /sidewalk/i.test(text)) && curb.length === 1 && curb[0].querySelector('.production-quantity')?.value === '50';
+    }, { timeout: 10000 });
+    const picked = await page.evaluate(() => ({
+      count: document.querySelectorAll('.production-entry').length,
+      curb: [...document.querySelectorAll('.production-entry')].filter(row => row.dataset.estimateItemId === '1').map(row => row.querySelector('.production-quantity')?.value || ''),
+      titles: [...document.querySelectorAll('.field-flag strong')].map(el => el.textContent || '')
+    }));
+    assert.equal(picked.count, beforePick.count - 1, JSON.stringify({ beforePick, picked }));
+    assert.deepEqual(picked.curb, ['50'], JSON.stringify(picked));
+    assert.equal(picked.titles.some(text => /sidewalk/i.test(text)), false, JSON.stringify(picked));
+    assert.equal(picked.titles.some(text => /apron/i.test(text)), true, JSON.stringify(picked));
+    const beforeExtra = picked.count;
+    await page.evaluate(() => {
+      const card = [...document.querySelectorAll('.field-flag')].find(el => /apron/i.test(el.innerText || ''));
+      card?.querySelector('[data-flag-choice="extra"]')?.click();
+    });
+    await page.waitForFunction(() => ![...document.querySelectorAll('.field-flag strong')].some(el => /apron/i.test(el.textContent || '')), { timeout: 10000 });
+    const extra = await page.evaluate(() => {
+      const rows = [...document.querySelectorAll('.production-entry')];
+      const apron = rows.find(row => /apron/i.test(row.querySelector('.custom-description')?.value || row.innerText || ''));
+      return {
+        count: rows.length,
+        titles: [...document.querySelectorAll('.field-flag strong')].map(el => el.textContent || ''),
+        cards: document.querySelector('#field-review-cards')?.innerText || '',
+        apron: apron ? {
+          id: apron.dataset.estimateItemId || '',
+          extra: apron.dataset.extraWork === 'true',
+          qty: apron.querySelector('.production-quantity')?.value || ''
+        } : null,
+        minutes: rows.reduce((sum, row) => sum + (Number(row.dataset.laborMinutes) || 0), 0),
+        totalMinutes: window.fieldLaborContext().total.totalMinutes,
+        hourHundredths: rows.reduce((sum, row) => sum + Math.round((Number(row.querySelector('.production-hours')?.value) || 0) * 100), 0),
+        totalHundredths: Math.round((Number(window.fieldLaborContext().total.total) || 0) * 100)
+      };
+    });
+    assert.equal(extra.count, beforeExtra, JSON.stringify(extra));
+    assert.equal(extra.titles.some(text => /apron|sidewalk/i.test(text)), false, JSON.stringify(extra));
+    assert.equal(extra.apron?.extra, true, JSON.stringify(extra));
+    assert.equal(extra.apron?.id, '', JSON.stringify(extra));
+    assert.equal(extra.apron?.qty, '4', JSON.stringify(extra));
+    assert.equal(extra.minutes, extra.totalMinutes, JSON.stringify(extra));
+    assert.equal(extra.hourHundredths, extra.totalHundredths, JSON.stringify(extra));
+    await page.click('#save-report');
+    await page.waitForSelector('#report-sent-modal[open]', { timeout: 20000 });
+    const extraSent = await page.$eval('#report-sent-summary', el => el.textContent || '');
+    assert.match(extraSent, /1 extra work item flagged for the office/, extraSent);
+    assert.equal(/No potential changes were confirmed/.test(extraSent), false, extraSent);
+    await shot(page, 'field-extra-flagged.png');
+    await page.click('#report-sent-modal button.primary');
+    await page.waitForFunction(() => !document.querySelector('#report-sent-modal')?.open && !document.querySelector('#report-modal')?.open);
+    await page.setViewport({ width: 320, height: 568, deviceScaleFactor: 2, isMobile: true, hasTouch: true });
     await openNav(page, 'myday');
     await assertFits(page, 'dashboard 320');
     const narrowContext = await browser.createBrowserContext();

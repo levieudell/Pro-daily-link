@@ -68,7 +68,9 @@ const concreteNote = 'Poured 40 LF of curb on north side, set 20 LF of gutter, 3
 const concrete = scope.reviewNotes({ notes: concreteNote, estimateItems: clinicItems });
 assert.equal(concrete.materials, '6 yards of concrete');
 assert.equal(scope.uniqueMaterials(['6 yards of concrete', '6 yards of concrete.']), '6 yards of concrete');
-assert.match(concrete.next, /Tomorrow we form the east side, need pump truck Monday/);
+assert.equal(concrete.next, 'Tomorrow we form the east side, need pump truck Monday.');
+assert.equal(scope.tidyNext('Next step: Tomorrow we form the east side, need pump truck Monday.'), 'Tomorrow we form the east side, need pump truck Monday.');
+assert.equal(scope.tidyNext('Next: pump truck Monday'), 'pump truck Monday');
 const emptyKept = scope.keepProductionLines([
   { description: 'Clock out text', quantity: 0, laborHours: 0.12 },
   { description: 'Curb', estimateItemId: 1, quantity: 40, laborHours: 0.12 }
@@ -108,9 +110,15 @@ assert.equal(merged[0].extra_work, true);
 
 const even = scope.allocateLaborHours({ total: 1, lines: [{ manual: false }, { manual: false }, { manual: false }] });
 assert.deepEqual(even.lines.map(line => line.minutes), [20, 20, 20]);
-assert.deepEqual(even.lines.map(line => line.hours), [0.33, 0.33, 0.33]);
+assert.deepEqual(even.lines.map(line => line.hours), [0.34, 0.33, 0.33]);
+assert.equal(Math.round(even.lines.reduce((sum, line) => sum + line.hours, 0) * 100), 100);
 assert.equal(even.allocatedMinutes, 60);
 assert.equal(even.total, 1);
+const pennies = scope.allocateLaborHours({ totalMinutes: 2, lines: [{ quantity: 1, unitRate: 1 }, { quantity: 1, unitRate: 1 }] });
+assert.deepEqual(pennies.lines.map(line => line.minutes), [1, 1]);
+assert.deepEqual(pennies.lines.map(line => line.hours), [0.02, 0.01]);
+assert.equal(Math.round(pennies.lines.reduce((sum, line) => sum + line.hours, 0) * 100), Math.round(scope.hoursFromMinutes(pennies.totalMinutes) * 100));
+assert.equal(scope.formatWorkTime(pennies.totalMinutes), '2 min · 0.03 h');
 const eightMinutes = scope.allocateLaborHours({ totalMinutes: 8, lines: [{ quantity: 40, unitRate: 0.1 }, { quantity: 20, unitRate: 0.1 }] });
 assert.deepEqual(eightMinutes.lines.map(line => line.minutes), [5, 3]);
 assert.equal(eightMinutes.lines.reduce((sum, line) => sum + line.minutes, 0), 8);
