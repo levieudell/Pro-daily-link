@@ -525,7 +525,7 @@
     if((flags||[]).some(flag=>flag&&!flag.decision))block.push('Answer each flag before sending this daily to the office.');
     if(!(Number(laborHours)>0))block.push('Enter the crew hours before sending.');
     if((lines||[]).some(line=>line&&line.needsQuantity&&!(Number(line.quantity)>0)))block.push('Enter a quantity for each work line.');
-    if(openClock)warn.push('The crew is still clocked in. Clock out before you send so the hours match the punch.');
+    if(openClock)warn.push('Clock out to include today\'s time');
     return {block,warn};
   }
 

@@ -393,7 +393,7 @@ var fieldScopeFlags=[];
     }
     const reviewTotal=Number(fieldLaborContext().total?.totalMinutes)||0;
     if(reviewTotal>0)cards.push(`<p class="field-labor-total">Total ${escapeText(punchTotalLabel(reviewTotal))}</p>`);
-    if(crewStillClockedIn())cards.unshift('<p class="field-clock-warning">The crew is still clocked in. Clock out before you send so the hours match the punch.</p>');
+    if(crewStillClockedIn())cards.unshift('<p class="field-clock-warning">Clock out to include today\'s time</p>');
     host.hidden=false;
     host.innerHTML=cards.length?cards.join(''):'<p class="field-review-empty">AI did not fill any lines. Add the work on the cards below.</p>';
     const hourInput=$('#field-hours-each');
@@ -564,12 +564,10 @@ var fieldScopeFlags=[];
   function workTimeLabel(minutes){if(typeof FieldDailyScope!=='undefined'&&FieldDailyScope.formatWorkTime)return FieldDailyScope.formatWorkTime(minutes);return punchTotalLabel(minutes)}
   function punchRows(){
     const projectId=projects?.[+$('#report-project')?.value]?.id,date=$('#report-date')?.value;
-    const cards=(typeof timeCards==='undefined'?[]:timeCards).filter(card=>card&&!card.deletedAt&&card.inAt&&Number(card.projectId)===Number(projectId)&&String(card.date||'')===String(date||''));
+    const cards=(typeof timeCards==='undefined'?[]:timeCards).filter(card=>card&&!card.deletedAt&&card.inAt&&card.outAt&&Number(card.projectId)===Number(projectId)&&String(card.date||'')===String(date||''));
     const totals=new Map();
-    const now=laborNow();
     for(const card of cards){
-      const end=card.outAt?new Date(card.outAt):new Date(now);
-      const minutes=typeof FieldDailyScope!=='undefined'&&FieldDailyScope.elapsedMinutes?FieldDailyScope.elapsedMinutes(card.inAt,end):Math.max(0,Math.floor((end-new Date(card.inAt))/60000));
+      const minutes=typeof FieldDailyScope!=='undefined'&&FieldDailyScope.elapsedMinutes?FieldDailyScope.elapsedMinutes(card.inAt,card.outAt):Math.max(0,Math.floor((new Date(card.outAt)-new Date(card.inAt))/60000));
       totals.set(Number(card.memberId),(totals.get(Number(card.memberId))||0)+minutes);
     }
     return [...totals].filter(([,minutes])=>minutes>0).map(([memberId,minutes])=>({memberId,minutes}));

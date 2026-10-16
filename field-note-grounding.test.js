@@ -67,7 +67,7 @@ assert.ok(blocked.block.some(line => /flag/i.test(line)));
 const decided = grounded.flags.map(flag => scope.decideFlag(flag, flag.reason === 'stated_extra' ? 'bill' : 'noted'));
 const ready = scope.sendGate({ flags: decided, laborHours: 8, openClock: true, lines: grounded.lines });
 assert.equal(ready.block.length, 0, 'answered flags and hours let Send continue');
-assert.ok(ready.warn.some(line => /clocked in/i.test(line)));
+assert.ok(ready.warn.includes("Clock out to include today's time"));
 const blankQty = scope.sendGate({ flags: decided, laborHours: 8, openClock: false, lines: [{ quantity: '', needsQuantity: true }] });
 assert.ok(blankQty.block.some(line => /quantity/i.test(line)));
 

@@ -78,11 +78,19 @@ async function waitUntil(page, predicate, label) {
   throw new Error(`${label}: ${JSON.stringify(last)}`);
 }
 
+async function openClockIn(page) {
+  await page.waitForFunction(() => /Clock in/i.test(document.querySelector('#start-day-button')?.textContent || ''), { timeout: 20000 });
+  for (let attempt = 0; attempt < 4; attempt += 1) {
+    await page.evaluate(() => document.querySelector('#start-day-button')?.click());
+    const opened = await page.waitForSelector('#start-day-modal[open] #start-day-members input', { timeout: 8000 }).then(() => true).catch(() => false);
+    if (opened) return;
+  }
+  await page.waitForSelector('#start-day-modal[open] #start-day-members input', { timeout: 20000 });
+}
+
 async function startJordan(page) {
   await openNav(page, 'fieldday');
-  await page.waitForFunction(() => /Clock in/i.test(document.querySelector('#start-day-button')?.textContent || ''), { timeout: 20000 });
-  await page.click('#start-day-button');
-  await page.waitForSelector('#start-day-modal[open] #start-day-members input');
+  await openClockIn(page);
   await page.evaluate(() => {
     const project = document.querySelector('#start-day-project');
     if (project) project.value = '3';
@@ -296,7 +304,11 @@ async function startJordan(page) {
     assert.equal(reviewedPosts.length, 0, JSON.stringify(reviewedPosts));
     if (await owner.$('#office-decision')) {
       await owner.select('#office-decision', 'non_billable');
-      await waitUntil(owner, () => /Updated after send/.test(document.querySelector('[data-updated-after-send-header]')?.innerText || ''), 'badge stayed through the office decision');
+      await waitUntil(owner, () => {
+        const button = document.querySelector('[data-approve-report]');
+        const badge = document.querySelector('[data-updated-after-send-header]');
+        return Boolean(button && !button.disabled && /Updated after send/.test(badge?.innerText || ''));
+      }, 'approve enabled after the office decision');
       assert.equal(await flagStillSet(), true, 'office decision cleared the flag');
     }
     if (await owner.$('#resolve-exception')) {

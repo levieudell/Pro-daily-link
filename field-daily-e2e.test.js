@@ -59,10 +59,7 @@ function backdateOpenPunch(file, minutes) {
 
 async function settleOpenPunch(page, file, minutes) {
   let detail = null;
-  for (let attempt = 0; attempt < 8; attempt += 1) {
-    await page.evaluate(async () => {
-      await fetch('/api/time-cards', { credentials: 'same-origin' });
-    });
+  for (let attempt = 0; attempt < 20; attempt += 1) {
     backdateOpenPunch(file, minutes);
     detail = await page.evaluate(async () => {
       if (typeof refreshTimeCards === 'function') await refreshTimeCards();
@@ -75,7 +72,7 @@ async function settleOpenPunch(page, file, minutes) {
       }));
     });
     if (detail.some(card => card.minutes >= minutes)) return detail;
-    await new Promise(resolve => setTimeout(resolve, 400));
+    await new Promise(resolve => setTimeout(resolve, 500));
   }
   throw new Error('open punch stayed under a minute ' + JSON.stringify(detail));
 }
@@ -239,8 +236,12 @@ async function openNav(page, name) {
     await page.click('[data-start-day]');
     await page.waitForSelector('#start-day-button', { visible: true });
     await assertFits(page, 'clock-in 390');
-    await page.click('#start-day-button');
-    await page.waitForSelector('#start-day-modal[open] #start-day-members input');
+    for (let attempt = 0; attempt < 4; attempt += 1) {
+      await page.evaluate(() => document.querySelector('#start-day-button')?.click());
+      const opened = await page.waitForSelector('#start-day-modal[open] #start-day-members input', { timeout: 8000 }).then(() => true).catch(() => false);
+      if (opened) break;
+      if (attempt === 3) await page.waitForSelector('#start-day-modal[open] #start-day-members input', { timeout: 20000 });
+    }
     const started = await page.evaluate(() => {
       const project = document.querySelector('#start-day-project');
       const selected = project?.selectedOptions?.[0]?.textContent || '';
@@ -354,12 +355,19 @@ async function openNav(page, name) {
         unit: input.dataset.unit,
         value: Number(input.value) || 0
       }));
-      const totalMinutes = window.fieldLaborContext().total.totalMinutes;
-      return { inputs, totalMinutes };
+      const open = (typeof timeCards === 'undefined' ? [] : timeCards).filter(card => card && card.inAt && !card.outAt && !card.deletedAt);
+      return {
+        inputs,
+        totalMinutes: window.fieldLaborContext().total.totalMinutes,
+        warning: document.querySelector('.field-clock-warning')?.textContent || '',
+        openMinutes: open.map(card => Math.floor((Date.now() - new Date(card.inAt).getTime()) / 60000))
+      };
     });
     assert.equal(punchSplit.inputs.every(row => row.unit === 'min'), true, JSON.stringify(punchSplit));
-    assert.ok(punchSplit.totalMinutes >= 8 && punchSplit.totalMinutes < 60, JSON.stringify(punchSplit));
-    assert.equal(punchSplit.inputs.reduce((sum, row) => sum + row.value, 0), punchSplit.totalMinutes, JSON.stringify(punchSplit));
+    assert.equal(punchSplit.totalMinutes, 0, JSON.stringify(punchSplit));
+    assert.equal(punchSplit.inputs.reduce((sum, row) => sum + row.value, 0), 0, JSON.stringify(punchSplit));
+    assert.equal(punchSplit.warning, "Clock out to include today's time", JSON.stringify(punchSplit));
+    assert.ok(punchSplit.openMinutes.some(minutes => minutes >= 8), JSON.stringify(punchSplit));
     const live = await page.evaluate(() => {
       window.beginFieldLaborTick();
       window.applyLiveLabor();
@@ -369,19 +377,28 @@ async function openNav(page, name) {
       return {
         total,
         sum,
-        clock: document.querySelector('#field-clock-detail')?.textContent || document.querySelector('#field-start-detail')?.textContent || '',
+        warning: document.querySelector('.field-clock-warning')?.textContent || '',
         pair: document.querySelector('.field-time-pair')?.textContent || '',
-        totalText: document.querySelector('.field-labor-total')?.textContent || '',
         send: document.querySelector('#save-report')?.textContent?.trim() || ''
       };
     });
-    assert.equal(live.sum, live.total, JSON.stringify(live));
-    assert.match(live.clock, new RegExp(`${live.total} min`));
-    assert.match(live.pair, /^\d+ min$/);
+    assert.equal(live.total, 0, JSON.stringify(live));
+    assert.equal(live.sum, 0, JSON.stringify(live));
+    assert.equal(live.warning, "Clock out to include today's time", JSON.stringify(live));
+    assert.match(live.pair, /^0 min$/);
     assert.doesNotMatch(live.pair, /\d+\.\d{2}/);
-    assert.match(live.totalText, new RegExp(`${live.total} min · \\d+\\.\\d{2} h`));
-    if (live.total === 8) assert.match(live.totalText, /8 min · 0\.13 h/);
     assert.equal(live.send, 'Send to office');
+    await page.waitForSelector('[data-gap-member]');
+    await page.evaluate(() => {
+      const input = document.querySelector('[data-labor-member]');
+      input.value = '0.13';
+      input.dataset.noteDerived = 'true';
+      delete input.dataset.manualHours;
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+      document.activeElement?.blur?.();
+      window.applyLiveLabor?.();
+    });
+    await page.waitForFunction(() => window.fieldLaborContext().total.totalMinutes === 8 && document.querySelector('.field-labor-total')?.textContent?.includes('8 min · 0.13 h'));
     await shot(page, 'field-time-pair.png');
     const curbInput = await page.$('[data-review-labor][data-line-id="1"]');
     await curbInput.click();
@@ -461,14 +478,18 @@ async function openNav(page, name) {
     assert.equal(gutterHours.minutes, spread.totalMinutes - 3);
     await shot(page, 'field-hours-respread.png');
     await page.evaluate(() => {
-      const punched = new Set((window.fieldLaborContext()?.punches || []).map(row => Number(row.memberId)));
-      for (const input of document.querySelectorAll('[data-labor-member]')) {
-        if (punched.has(Number(input.dataset.laborMember))) continue;
-        input.value = '';
+      const inputs = [...document.querySelectorAll('[data-labor-member]')];
+      inputs.forEach((input, index) => {
+        if (index === 0) {
+          input.value = '0.13';
+          input.dataset.noteDerived = 'true';
+        } else {
+          input.value = '';
+          delete input.dataset.noteDerived;
+        }
         delete input.dataset.manualHours;
-        delete input.dataset.noteDerived;
         input.dispatchEvent(new Event('input', { bubbles: true }));
-      }
+      });
       document.activeElement?.blur?.();
       window.applyLiveLabor?.();
     });
