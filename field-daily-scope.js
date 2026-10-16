@@ -73,6 +73,26 @@
     return String(text||'').replace(/\s+/g,' ').replace(/[.!\s]+$/,'').trim();
   }
 
+  function materialPhrase(text){
+    return String(text||'').replace(/\s+/g,' ').replace(/[.;,!\s]+$/,'').trim();
+  }
+
+  function uniqueMaterials(values){
+    const seen=new Set();
+    const phrases=[];
+    const list=Array.isArray(values)?values:[values];
+    for(const value of list){
+      for(const part of String(value||'').split(/\n|;/)){
+        const phrase=materialPhrase(part);
+        const key=phrase.toLowerCase();
+        if(!phrase||seen.has(key))continue;
+        seen.add(key);
+        phrases.push(phrase);
+      }
+    }
+    return phrases.join('; ');
+  }
+
   function isLookahead(text){
     const value=String(text||'').trim();
     if(/^(?:tomorrow|mañana|manana|next)\b/i.test(value))return true;
@@ -214,7 +234,7 @@
         flags.push({kind:'productivity',reason:'hours_over_budget',description:line.description,quantity:line.quantity,unit:line.unit,estimateItemId:line.estimateItemId,laborHours:Math.round(hours*100)/100,expectedHours:Math.round(expected*100)/100,createsChange:false,decision:null,message:`${Math.round(hours*100)/100} hours is far over the estimate rate of about ${Math.round(expected*100)/100} hours. This is a productivity flag, not a change order.`});
       }
     }
-    return {lines,flags,unmatchedNotes,materials:[...new Set(materials.filter(Boolean))].join('; '),hours:crew,next:[...new Set(nextParts.filter(Boolean))].join('. '),delays:[...new Set(delayParts.filter(Boolean))].join(' ')};
+    return {lines,flags,unmatchedNotes,materials:uniqueMaterials(materials),hours:crew,next:[...new Set(nextParts.filter(Boolean))].join('. '),delays:[...new Set(delayParts.filter(Boolean))].join(' ')};
   }
 
   function namedCrewGaps(notes,crew,punchedMemberIds){
@@ -548,5 +568,5 @@
     return Math.round(crew*100)/100;
   }
 
-  return {normalizeUnit,matchEstimateLine,reviewScope,reviewNotes,decideFlag,confirmedExtraChanges,fieldExtraItems,whoAsked,approvedQuantityMap,hoursFromClock,statedCrew,sendGate,clockOutMessage,submissionStatus,namedCrewGaps,crewGapReason,noPunchLabel,punchLengthLabel,formatMinutes,formatHours,formatWorkTime,hoursFromMinutes,minutesFromHours,elapsedMinutes,laborTotal,dedupeLaborEntries,rawNoteLine,emptyProductionLine,dedupeProductionLines,keepProductionLines,flagIdentity,normalizeLaborGaps,mergeScopeFlags,splitLargestRemainder,allocateLaborHours,sameDayDaily,clientProjectIndex,singleLineLaborHours,QUANTITY_TOLERANCE,PRODUCTIVITY_LIMIT};
+  return {normalizeUnit,matchEstimateLine,reviewScope,reviewNotes,uniqueMaterials,decideFlag,confirmedExtraChanges,fieldExtraItems,whoAsked,approvedQuantityMap,hoursFromClock,statedCrew,sendGate,clockOutMessage,submissionStatus,namedCrewGaps,crewGapReason,noPunchLabel,punchLengthLabel,formatMinutes,formatHours,formatWorkTime,hoursFromMinutes,minutesFromHours,elapsedMinutes,laborTotal,dedupeLaborEntries,rawNoteLine,emptyProductionLine,dedupeProductionLines,keepProductionLines,flagIdentity,normalizeLaborGaps,mergeScopeFlags,splitLargestRemainder,allocateLaborHours,sameDayDaily,clientProjectIndex,singleLineLaborHours,QUANTITY_TOLERANCE,PRODUCTIVITY_LIMIT};
 });

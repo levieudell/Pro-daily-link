@@ -1038,7 +1038,7 @@ small{font-size:12px}
 #field-clock-hours .schedule-empty{margin:0;padding:4px 0 8px;font-size:13px}
 #report-modal.report-field-compact .field-next-line{display:grid;gap:6px;padding:12px 14px;border:1px solid #d7d7d1;border-radius:12px;background:#fff}
 #report-modal.report-field-compact .field-next-line small{color:#1769e0;font-size:12px;font-weight:700;letter-spacing:.04em;text-transform:uppercase}
-#report-modal.report-field-compact .field-next-line input{min-height:48px;width:100%;font-size:16px}
+#report-modal.report-field-compact .field-next-line textarea{min-height:48px;width:100%;font-size:16px;line-height:1.4;resize:none;overflow:hidden;white-space:pre-wrap;overflow-wrap:anywhere;field-sizing:content}
 #report-modal.report-field-compact .field-flag button.is-selected{outline:2px solid #1769e0}
 #report-modal.report-field-compact .field-extra-ask{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
 #report-modal.report-field-compact .field-extra-ask span{flex:1 0 100%;font-size:15px;font-weight:700}

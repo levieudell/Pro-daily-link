@@ -218,7 +218,7 @@ var fieldScopeFlags=[];
       cards.push(`<button type="button" class="field-review-card" data-edit-field="${id.slice(1)}"><small>${field.dataset.aiAccepted==='true'?'AI filled':'Tap to edit'}</small><strong>${escapeText(label)}</strong><em>${escapeText(field.value.trim())}</em></button>`);
     }
     const nextValue=$('#report-next')?.value?.trim()||'';
-    if(nextValue)cards.push(`<label class="field-next-line"><small>Next</small><input id="field-review-next" maxlength="500" value="${escapeText(nextValue)}" aria-label="Next step"></label>`);
+    if(nextValue)cards.push(`<label class="field-next-line"><small>Next</small><textarea id="field-review-next" maxlength="500" rows="2" aria-label="Next step">${escapeText(nextValue)}</textarea></label>`);
     const notes=$('#field-notes')?.value||'';
     const crewName=$('#report-crew')?.value;
     const crew=(typeof team==='undefined'?[]:team).filter(member=>!crewName||member.crew===crewName);
@@ -249,7 +249,10 @@ var fieldScopeFlags=[];
       if(Number(input.value)>0&&[...host.querySelectorAll('[data-gap-member]')].every(row=>Number(row.value)>0))renderFieldReview();
     });
     const nextInput=$('#field-review-next');
-    if(nextInput)nextInput.oninput=()=>{const field=$('#report-next');if(field){field.value=nextInput.value;if(nextInput.value.trim())field.dataset.aiAccepted='true'}};
+    const growNext=()=>{if(!nextInput)return;nextInput.style.height='auto';const border=Math.max(0,nextInput.offsetHeight-nextInput.clientHeight);nextInput.style.height=`${Math.max(48,nextInput.scrollHeight+border)}px`};
+    if(nextInput)nextInput.oninput=()=>{const field=$('#report-next');if(field){field.value=nextInput.value;if(nextInput.value.trim())field.dataset.aiAccepted='true'}growNext()};
+    growNext();
+    requestAnimationFrame(growNext);
     const modal=$('#report-modal');
     modal?.classList.toggle('field-manual-entry',!fieldScopeFlags.length&&![...$$('.production-entry')].some(row=>row.dataset.aiFilled==='true'));
     host.querySelectorAll('[data-review-labor]').forEach(input=>input.oninput=()=>{
@@ -326,7 +329,7 @@ var fieldScopeFlags=[];
         const scopeFacts=draft?.scopeReview;
         if(scopeFacts&&Object.hasOwn(scopeFacts,'next')){const next=$('#report-next');if(next){next.value=String(scopeFacts.next||'').trim();if(next.value)next.dataset.aiAccepted='true';else delete next.dataset.aiAccepted}}
         if(scopeFacts&&Object.hasOwn(scopeFacts,'delays')){const delays=$('#report-delays');if(delays){const stated=String(scopeFacts.delays||'').trim();if(stated)delays.value=stated;else if(/^needs confirmation/i.test(delays.value||''))delays.value=''}}
-        if(scopeFacts?.materials){const materials=$('#report-materials');if(materials&&!String(materials.value||'').includes(scopeFacts.materials))materials.value=[materials.value,scopeFacts.materials].filter(Boolean).join('\n')}
+        if(scopeFacts?.materials){const materials=$('#report-materials');if(materials&&typeof FieldDailyScope!=='undefined'&&FieldDailyScope.uniqueMaterials)materials.value=FieldDailyScope.uniqueMaterials([materials.value,scopeFacts.materials])}
         fieldHoursReview=draft?.scopeReview?.hours||null;
         applyPunchHours();
         if(!clockHoursPresent()&&fieldHoursReview?.total>0&&typeof applyNoteLaborEvidence==='function')applyNoteLaborEvidence(draft.laborEvidence?.total>0?draft.laborEvidence:{total:fieldHoursReview.total,headcount:fieldHoursReview.headcount,perPerson:fieldHoursReview.perPerson});
