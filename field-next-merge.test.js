@@ -142,6 +142,15 @@ function sendPayload(report, next) {
     const keepEnd = await call('POST', '/api/workdays/' + keepStart.data.id + '/end', { notes: 'Finished the remaining gutter.', next: '' });
     assert.equal(keepEnd.status, 200, JSON.stringify(keepEnd.data));
     assert.equal(keepEnd.data.report.next, 'Stage the pump.', 'notes without a next step keep the stored text');
+    assert.match(keepEnd.data.report.notes, /Short check-in\. Next: backfill curb\./);
+    assert.match(keepEnd.data.report.notes, /Finished the remaining gutter\./);
+    assert.match(keepEnd.data.report.summary, /Finished the remaining gutter/);
+    const again = await call('POST', '/api/workdays/start', { projectId: 102, memberIds: [11] });
+    pinPunch(again.data.id, 1);
+    const emptyNote = await call('POST', '/api/workdays/' + again.data.id + '/end', { notes: 'Finished the remaining gutter.', next: '   ' });
+    assert.equal(emptyNote.data.attached, true);
+    assert.equal(emptyNote.data.report.next, 'Stage the pump.');
+    assert.equal(emptyNote.data.report.notes.match(/Finished the remaining gutter\./g).length, 1);
     console.log('Next-step merge checks passed.');
   } finally {
     server.closeAllConnections();

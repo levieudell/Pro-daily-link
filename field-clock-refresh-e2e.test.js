@@ -9,6 +9,9 @@ const os = require('node:os');
 const path = require('node:path');
 
 const NOTES = 'Short check-in. Next: backfill curb.';
+const NOTES_2 = 'Set forms. Next: strip forms.';
+const NEXT_2 = 'Pour pad Monday';
+const NOTES_3 = 'Cleaned up site.';
 const FIELD_EMAIL = 'levi+field@prodailylink.com';
 const FIELD_PASSWORD = 'staging-field-pass';
 
@@ -66,6 +69,46 @@ async function openClockIn(page) {
   await page.waitForSelector('#start-day-modal[open] #start-day-members input', { timeout: 20000 });
 }
 
+async function chooseJob(page) {
+  await page.evaluate(() => {
+    const project = document.querySelector('#start-day-project');
+    if (project) project.value = '3';
+    for (const box of document.querySelectorAll('#start-day-members input')) {
+      const label = box.closest('label')?.textContent || '';
+      const keep = /Jordan Reed/i.test(label);
+      if (box.checked !== keep) box.click();
+    }
+  });
+}
+
+async function clockOut(page, dbFile, notes, next, minutes) {
+  pinOpenPunch(dbFile, minutes);
+  await page.evaluate(() => document.querySelector('#start-day-button')?.click());
+  await page.waitForSelector('#end-day-modal[open] #end-day-notes', { timeout: 20000 });
+  await page.$eval('#end-day-notes', (el, value) => { el.value = value; }, notes);
+  await page.$eval('#end-day-next', (el, value) => { el.value = value; }, next);
+  pinOpenPunch(dbFile, minutes);
+  await page.click('#confirm-end-day');
+  await page.waitForFunction(() => !document.querySelector('#end-day-modal')?.open, { timeout: 20000 });
+}
+
+async function draftState(page) {
+  return page.evaluate(async () => {
+    const data = await (await fetch('/api/state', { credentials: 'include' })).json();
+    const reports = data.reports || [];
+    const report = reports[0] || null;
+    return {
+      count: reports.length,
+      notes: report?.notes || '',
+      summary: report?.summary || '',
+      next: report?.next || '',
+      minutes: (report?.laborEntries || []).reduce((sum, row) => sum + (Number(row.minutes) || 0), 0),
+      cards: (data.timeCards || []).map(card => ({ inAt: card.inAt, outAt: card.outAt, reportId: card.reportId, hours: card.hours })),
+      reportId: report?.id || null
+    };
+  });
+}
+
 async function clockSurfaces(page) {
   return page.evaluate(() => ({
     label: document.querySelector('#field-clock-status-label')?.textContent || '',
@@ -116,24 +159,10 @@ async function clockSurfaces(page) {
     await login(page);
     await openNav(page, 'fieldday');
     await openClockIn(page);
-    await page.evaluate(() => {
-      const project = document.querySelector('#start-day-project');
-      if (project) project.value = '3';
-      for (const box of document.querySelectorAll('#start-day-members input')) {
-        const label = box.closest('label')?.textContent || '';
-        const keep = /Jordan Reed/i.test(label);
-        if (box.checked !== keep) box.click();
-      }
-    });
+    await chooseJob(page);
     await page.click('#confirm-start-day');
     await page.waitForFunction(() => /Clock out/i.test(document.querySelector('#start-day-button')?.textContent || ''), { timeout: 20000 });
-    pinOpenPunch(dbFile, 2);
-    await page.evaluate(() => document.querySelector('#start-day-button')?.click());
-    await page.waitForSelector('#end-day-modal[open] #end-day-notes', { timeout: 20000 });
-    await page.$eval('#end-day-notes', (el, value) => { el.value = value; }, NOTES);
-    await page.$eval('#end-day-next', el => { el.value = ''; });
-    pinOpenPunch(dbFile, 2);
-    await page.click('#confirm-end-day');
+    await clockOut(page, dbFile, NOTES, '', 2);
     try {
       await page.waitForFunction(() => {
         if (document.querySelector('#end-day-modal')?.open) return false;
@@ -164,10 +193,8 @@ async function clockSurfaces(page) {
     });
     assert.equal(stored?.next, 'backfill curb.', JSON.stringify(stored && { next: stored.next, notes: stored.notes }));
     assert.match(`${settled.next}\n${settled.reviewNext}`, /backfill curb/);
-    await page.evaluate(() => {
-      const modal = document.querySelector('#report-modal');
-      if (modal?.open) modal.close();
-    });
+    await page.click('#report-modal .close-button');
+    await page.waitForFunction(() => !document.querySelector('#report-modal')?.open, { timeout: 5000 });
     await openNav(page, 'myday');
     const myDay = await clockSurfaces(page);
     assert.match(myDay.hero, /Clock in/, JSON.stringify(myDay));
@@ -179,6 +206,50 @@ async function clockSurfaces(page) {
     assert.doesNotMatch(clock.detail, /Started/, JSON.stringify(clock));
     assert.match(clock.hours, /2 min/, JSON.stringify(clock));
     assert.doesNotMatch(clock.hours, /Clock running/, JSON.stringify(clock));
+    const scope = require('./field-daily-scope');
+    await openClockIn(page);
+    await chooseJob(page);
+    await page.click('#confirm-start-day');
+    await page.waitForFunction(() => /Clock out/i.test(document.querySelector('#start-day-button')?.textContent || ''), { timeout: 20000 });
+    await clockOut(page, dbFile, NOTES_2, NEXT_2, 2);
+    const afterSecond = await draftState(page);
+    assert.equal(afterSecond.count, 1, JSON.stringify(afterSecond));
+    assert.equal(afterSecond.next, NEXT_2, JSON.stringify(afterSecond));
+    assert.match(afterSecond.notes, /Short check-in/);
+    assert.match(afterSecond.notes, /Set forms/);
+    assert.doesNotMatch(afterSecond.notes, /Cleaned up site/);
+    const secondMinutes = afterSecond.cards.reduce((sum, card) => sum + scope.elapsedMinutes(card.inAt, card.outAt), 0);
+    assert.equal(afterSecond.minutes, secondMinutes, JSON.stringify(afterSecond));
+    assert.ok(secondMinutes >= 3, JSON.stringify(afterSecond));
+    await page.waitForFunction(() => /Set forms/i.test(document.querySelector('#field-reports')?.innerText || ''), { timeout: 10000 });
+    await openClockIn(page);
+    await chooseJob(page);
+    await page.click('#confirm-start-day');
+    await page.waitForFunction(() => /Clock out/i.test(document.querySelector('#start-day-button')?.textContent || ''), { timeout: 20000 });
+    await clockOut(page, dbFile, NOTES_3, '', 1);
+    const afterThird = await draftState(page);
+    assert.equal(afterThird.count, 1, JSON.stringify(afterThird));
+    assert.equal(afterThird.reportId, afterSecond.reportId);
+    assert.equal(afterThird.next, NEXT_2, JSON.stringify(afterThird));
+    assert.match(afterThird.notes, /Short check-in/);
+    assert.match(afterThird.notes, /Set forms/);
+    assert.match(afterThird.notes, /Cleaned up site/);
+    assert.match(afterThird.summary, /Set forms/);
+    assert.match(afterThird.summary, /Cleaned up site/);
+    const thirdMinutes = afterThird.cards.reduce((sum, card) => sum + scope.elapsedMinutes(card.inAt, card.outAt), 0);
+    assert.equal(afterThird.minutes, thirdMinutes, JSON.stringify(afterThird));
+    assert.ok(thirdMinutes > secondMinutes, JSON.stringify(afterThird));
+    assert.ok(afterThird.cards.every(card => card.reportId === afterThird.reportId), JSON.stringify(afterThird.cards));
+    await page.reload({ waitUntil: 'domcontentloaded' });
+    await page.waitForSelector('#menu-button', { timeout: 20000 });
+    await openNav(page, 'myday');
+    await page.click('[data-field-report]');
+    await page.waitForFunction(() => /NEXT STEP/.test(document.querySelector('#report-detail')?.innerText || ''), { timeout: 10000 });
+    const detail = await page.$eval('#report-detail', el => el.innerText);
+    assert.match(detail, /Set forms/);
+    assert.match(detail, /Cleaned up site/);
+    assert.match(detail, /Pour pad Monday/);
+    assert.match(detail, new RegExp(`${thirdMinutes} min`));
     console.log('Clock refresh and next-step browser flow passed.');
   } finally {
     if (browser) await browser.close();

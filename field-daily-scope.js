@@ -88,6 +88,39 @@
     return next||kept;
   }
 
+  function appendClockNotes(prior, incoming){
+    const kept=String(prior||'').trim();
+    const next=String(incoming||'').trim();
+    if(!next)return kept;
+    if(!kept)return next;
+    const lines=kept.split(/\n+/).map(line=>line.trim()).filter(Boolean);
+    if(lines[lines.length-1]===next)return kept;
+    return `${kept}\n${next}`;
+  }
+
+  function clockOutSummary(notes){
+    const noteText=String(notes||'').trim();
+    if(!noteText)return '';
+    let summaryNotes=noteText;
+    if(!/extra work\s*:/i.test(noteText)&&noteText.length>180)summaryNotes=`…${noteText.slice(-179).replace(/^\S*\s/,'').trim()}`;
+    return summaryNotes?`Field work recorded: ${summaryNotes}`:'';
+  }
+
+  function attachClockOut(existing, incoming){
+    if(!existing)return existing;
+    const previousNotes=String(existing.notes||'').trim();
+    const previousOriginal=String(existing.originalNotes||'').trim();
+    const added=String(incoming?.notes||'').trim();
+    existing.next=mergedNext(existing.next,incoming?.next);
+    existing.notes=appendClockNotes(existing.notes,added);
+    if(previousOriginal)existing.originalNotes=appendClockNotes(existing.originalNotes,added);
+    const translation=String(existing.englishTranslation||'').trim();
+    if(!translation||translation===previousNotes||translation===previousOriginal)existing.englishTranslation=existing.notes;
+    const summary=String(existing.summary||'').trim();
+    if(!summary||/^field work recorded:/i.test(summary))existing.summary=clockOutSummary(existing.notes);
+    return existing;
+  }
+
   function materialPhrase(text){
     return String(text||'').replace(/\s+/g,' ').replace(/[.;,!\s]+$/,'').trim();
   }
@@ -634,5 +667,5 @@
     return {potential_change:'Billable · potential change',tm:'Billable · T&M',mapped:'Mapped to estimate',non_billable:'Not billable'}[decision]||'';
   }
 
-  return {normalizeUnit,matchEstimateLine,reviewScope,reviewNotes,uniqueMaterials,isMaterialPhrase,tidyNext,mergedNext,decideFlag,confirmedExtraChanges,fieldExtraItems,whoAsked,approvedQuantityMap,hoursFromClock,statedCrew,sendGate,clockOutMessage,submissionStatus,namedCrewGaps,crewGapReason,noPunchLabel,punchLengthLabel,formatMinutes,formatHours,formatClock,formatPunchTotal,formatWorkTime,hoursFromMinutes,displayHoursForMinutes,minutesFromHours,elapsedMinutes,laborTotal,dedupeLaborEntries,rawNoteLine,emptyProductionLine,dedupeProductionLines,keepProductionLines,flagIdentity,normalizeLaborGaps,mergeScopeFlags,splitLargestRemainder,allocateLaborHours,sameDayDaily,clientProjectIndex,singleLineLaborHours,extraDecisionLabel,QUANTITY_TOLERANCE,PRODUCTIVITY_LIMIT};
+  return {normalizeUnit,matchEstimateLine,reviewScope,reviewNotes,uniqueMaterials,isMaterialPhrase,tidyNext,mergedNext,appendClockNotes,clockOutSummary,attachClockOut,decideFlag,confirmedExtraChanges,fieldExtraItems,whoAsked,approvedQuantityMap,hoursFromClock,statedCrew,sendGate,clockOutMessage,submissionStatus,namedCrewGaps,crewGapReason,noPunchLabel,punchLengthLabel,formatMinutes,formatHours,formatClock,formatPunchTotal,formatWorkTime,hoursFromMinutes,displayHoursForMinutes,minutesFromHours,elapsedMinutes,laborTotal,dedupeLaborEntries,rawNoteLine,emptyProductionLine,dedupeProductionLines,keepProductionLines,flagIdentity,normalizeLaborGaps,mergeScopeFlags,splitLargestRemainder,allocateLaborHours,sameDayDaily,clientProjectIndex,singleLineLaborHours,extraDecisionLabel,QUANTITY_TOLERANCE,PRODUCTIVITY_LIMIT};
 });

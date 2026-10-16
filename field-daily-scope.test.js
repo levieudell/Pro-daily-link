@@ -75,9 +75,26 @@ assert.equal(scope.mergedNext('Short next.', 'Finish the east curb and leave the
 assert.equal(scope.mergedNext('Finish the east curb and leave the forms up.', 'Short next.'), 'Short next.');
 assert.equal(scope.mergedNext('Same length.', 'Same length!'), 'Same length!');
 assert.equal(scope.mergedNext('kept', 'x'.repeat(600)).length, 500);
+const closedDraft={notes:'Short check-in. Next: backfill curb.',next:'backfill curb.',summary:'Field work recorded: Short check-in. Next: backfill curb.',productionEntries:[{description:'Curb',quantity:12}],laborEntries:[{memberId:1,minutes:1,hours:0.02}]};
+scope.attachClockOut(closedDraft,{notes:'Set forms. Next: strip forms.',next:'Pour pad Monday'});
+scope.attachClockOut(closedDraft,{notes:'Cleaned up site.',next:''});
+assert.equal(closedDraft.next,'Pour pad Monday');
+assert.match(closedDraft.notes,/Short check-in\. Next: backfill curb\./);
+assert.match(closedDraft.notes,/Set forms\. Next: strip forms\./);
+assert.match(closedDraft.notes,/Cleaned up site\./);
+assert.match(closedDraft.summary,/Set forms/);
+assert.match(closedDraft.summary,/Cleaned up site/);
+assert.equal(closedDraft.productionEntries[0].quantity,12);
+assert.equal(closedDraft.laborEntries[0].minutes,1);
+assert.equal(scope.appendClockNotes('Set forms.','Set forms.'),'Set forms.');
+assert.equal(scope.appendClockNotes('Set forms.',''),'Set forms.');
+assert.equal(scope.elapsedMinutes('2026-10-16T22:38:50.000Z','2026-10-16T22:39:10.000Z'),0);
+assert.equal(scope.hoursFromMinutes(0),0);
+assert.equal(scope.punchLengthLabel({inAt:'2026-10-16T22:38:50.000Z',outAt:'2026-10-16T22:39:10.000Z'}),'0 min');
 
 const server=fs.readFileSync(__dirname+'/server.js','utf8'),app=fs.readFileSync(__dirname+'/app.js','utf8');
 assert.match(server,/status:fieldScope\.submissionStatus\(input\.status\)/);
+assert.match(server,/fieldScope\.attachClockOut\(existingDaily,report\)/);
 assert.match(server,/recordFieldExtras\(/);
 const extractHandler=server.slice(server.indexOf("pathname==='/api/ai/extract'"),server.indexOf("pathname==='/api/reports'"));
 assert.match(extractHandler,/attachFieldScope\(/);
