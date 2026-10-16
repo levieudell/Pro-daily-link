@@ -1,7 +1,7 @@
 var fieldScopeFlags=[];
 (function(){
   if(typeof document==='undefined'||typeof $!=='function')return;
-  const textFields=[['#report-summary','Summary'],['#report-materials','Materials'],['#report-equipment','Equipment'],['#report-delays','Delays'],['#report-safety','Safety'],['#report-next','Next']];
+  const textFields=[['#report-summary','Summary'],['#report-materials','Materials'],['#report-equipment','Equipment'],['#report-delays','Delays'],['#report-safety','Safety']];
   function fieldCompact(){return typeof currentRole!=='undefined'&&currentRole==='field'&&$('#report-type')?.value!=='superintendent'}
   function escapeText(value){return typeof escapeHtml==='function'?escapeHtml(value):String(value??'')}
   function polishFieldDaily(){
@@ -55,24 +55,30 @@ var fieldScopeFlags=[];
     host.innerHTML=fieldScopeFlags.map((flag,index)=>{
       const answered=Boolean(flag.decision);
       const label=flag.kind==='productivity'?'Productivity':flag.kind==='pick'?'Needs your pick':'Possible extra work';
-      const answer=flag.decision==='extra'?'Bill it':flag.decision==='not'?'Not extra':flag.decision==='estimate'?'Part of the estimate':flag.decision==='noted'?'Noted':'';
       const items=projects?.[+$('#report-project')?.value]?.estimateItems||[];
       const picker=flag.kind==='pick'?`<label class="field-pick">Pick an estimate line<select data-flag-index="${index}" data-pick-line><option value="">Choose a line</option>${items.map(item=>`<option value="${escapeText(item.id)}">${escapeText(item.name)} · ${escapeText(item.unit||'')}</option>`).join('')}</select></label><button type="button" data-flag-index="${index}" data-flag-choice="extra">Extra work</button>`:'';
+      const who=String(flag.who_asked||'');
       const actions=flag.kind==='productivity'
         ?`<button type="button" data-flag-index="${index}" data-flag-choice="noted">Noted</button>`
         :flag.kind==='pick'?picker
         :flag.reason==='stated_extra'
-          ?`<button type="button" data-flag-index="${index}" data-flag-choice="bill">Bill it</button><button type="button" data-flag-index="${index}" data-flag-choice="not">Not extra</button>`
-          :`<button type="button" data-flag-index="${index}" data-flag-choice="extra">Extra work</button><button type="button" data-flag-index="${index}" data-flag-choice="estimate">Part of estimate</button>`;
-      return `<article class="field-flag ${answered?'is-answered':''}" data-flag-kind="${escapeText(flag.kind)}"><small>${escapeText(label)}</small><strong>${escapeText(flag.description||'Field note')}</strong><p>${escapeText(flag.message||'')}</p>${answered?`<b>${escapeText(answer)}</b>`:actions}</article>`;
+          ?`<div class="field-extra-ask"><span>Extra work?</span><button type="button" class="${flag.decision==='extra'?'is-selected':''}" data-flag-index="${index}" data-flag-choice="yes">Yes, extra</button><button type="button" class="${flag.decision==='not'?'is-selected':''}" data-flag-index="${index}" data-flag-choice="no">No, normal scope</button></div><label class="field-who-asked">Who asked?<input data-flag-asker="${index}" maxlength="80" value="${escapeText(who)}" aria-label="Who asked?"></label>`
+          :`<button type="button" class="${flag.decision==='extra'?'is-selected':''}" data-flag-index="${index}" data-flag-choice="extra">Extra work</button><button type="button" class="${flag.decision==='estimate'?'is-selected':''}" data-flag-index="${index}" data-flag-choice="estimate">Part of estimate</button>`;
+      return `<article class="field-flag ${answered?'is-answered':''}" data-flag-kind="${escapeText(flag.kind)}"><small>${escapeText(label)}</small><strong>${escapeText(flag.description||'Field note')}</strong><p>${escapeText(flag.message||'')}</p>${actions}</article>`;
     }).join('');
     host.querySelectorAll('[data-flag-choice]').forEach(button=>button.onclick=()=>{
       const flag=fieldScopeFlags[Number(button.dataset.flagIndex)];
       if(!flag||typeof FieldDailyScope==='undefined')return;
-      fieldScopeFlags[Number(button.dataset.flagIndex)]=FieldDailyScope.decideFlag(flag,button.dataset.flagChoice);
+      const choice=button.dataset.flagChoice;
+      const mapped=choice==='yes'||choice==='extra'||choice==='bill'?'extra':choice==='no'||choice==='not'?'not':choice;
+      const asker=host.querySelector(`[data-flag-asker="${button.dataset.flagIndex}"]`);
+      const whoAsked=asker?asker.value:String(flag.who_asked||'');
+      const same=flag.decision===mapped;
+      fieldScopeFlags[Number(button.dataset.flagIndex)]=same?{...flag,decision:null,createsChange:false,extra_work:false,who_asked:whoAsked}:FieldDailyScope.decideFlag({...flag,who_asked:whoAsked},choice);
       renderFlags();
       renderFieldReview();
     });
+    host.querySelectorAll('[data-flag-asker]').forEach(input=>input.oninput=()=>{const flag=fieldScopeFlags[Number(input.dataset.flagAsker)];if(flag)fieldScopeFlags[Number(input.dataset.flagAsker)]={...flag,who_asked:input.value}});
     host.querySelectorAll('[data-pick-line]').forEach(select=>select.onchange=()=>{
       const flag=fieldScopeFlags[Number(select.dataset.flagIndex)];
       const item=(projects?.[+$('#report-project')?.value]?.estimateItems||[]).find(entry=>String(entry.id)===String(select.value));
@@ -108,9 +114,20 @@ var fieldScopeFlags=[];
       const field=$(id);if(!field?.value?.trim())continue;
       cards.push(`<button type="button" class="field-review-card" data-edit-field="${id.slice(1)}"><small>${field.dataset.aiAccepted==='true'?'AI filled':'Tap to edit'}</small><strong>${escapeText(label)}</strong><em>${escapeText(field.value.trim())}</em></button>`);
     }
+    const nextValue=$('#report-next')?.value?.trim()||'';
+    if(nextValue)cards.push(`<label class="field-next-line"><small>Next</small><input id="field-review-next" maxlength="500" value="${escapeText(nextValue)}" aria-label="Next step"></label>`);
+    const notes=$('#field-notes')?.value||'';
+    const crewName=$('#report-crew')?.value;
+    const crew=(typeof team==='undefined'?[]:team).filter(member=>!crewName||member.crew===crewName);
+    const punched=[...$$('[data-labor-member]')].filter(input=>Number(input.value)>0).map(input=>Number(input.dataset.laborMember));
+    const gaps=typeof FieldDailyScope!=='undefined'&&FieldDailyScope.namedCrewGaps?FieldDailyScope.namedCrewGaps(notes,crew,punched):[];
     const hours=fieldHoursReview;
-    const clocked=clockHoursPresent();
-    if(hours?.ask&&!clocked){
+    const clocked=clockHoursPresent()||punched.length>0;
+    if(gaps.length){
+      const reason=FieldDailyScope.crewGapReason(gaps);
+      const fields=gaps.map(person=>{const current=$(`[data-labor-member="${person.id}"]`)?.value||'';return `<label>${escapeText(String(person.name||'').split(/\s+/)[0])}<input data-gap-member="${person.id}" type="number" min="0" max="24" step="0.5" inputmode="decimal" value="${escapeText(current)}" aria-label="Hours for ${escapeText(person.name)}"></label>`}).join('');
+      cards.unshift(`<article class="field-hours-card"><small>Hours</small><strong>Hours needed</strong><p>${escapeText(reason)}</p>${fields}</article>`);
+    }else if(hours?.ask&&!clocked){
       const kept=$('#field-hours-each')?.value||'';
       const who=hours.headcount?`${hours.headcount} people are in the notes. Enter the hours.`:'Enter the crew hours. Scheduled time is not used.';
       cards.unshift(`<article class="field-hours-card"><small>Hours</small><strong>Hours needed</strong><p>${escapeText(who)}</p><label>Hours each<input id="field-hours-each" type="number" min="0" max="24" step="0.5" inputmode="decimal" value="${escapeText(kept)}"></label></article>`);
@@ -119,7 +136,14 @@ var fieldScopeFlags=[];
     host.hidden=false;
     host.innerHTML=cards.length?cards.join(''):'<p class="field-review-empty">AI did not fill any lines. Add the work on the cards below.</p>';
     const hourInput=$('#field-hours-each');
-    if(hourInput)hourInput.oninput=()=>applyAskedHours(hourInput.value,hours?.headcount);
+    if(hourInput)hourInput.oninput=()=>{applyAskedHours(hourInput.value,hours?.headcount);if(Number(hourInput.value)>0)renderFieldReview()};
+    host.querySelectorAll('[data-gap-member]').forEach(input=>input.oninput=()=>{
+      const labor=$(`[data-labor-member="${input.dataset.gapMember}"]`);
+      if(labor){labor.value=input.value;labor.dataset.noteDerived='true';labor.dataset.manualHours='true'}
+      if(Number(input.value)>0&&[...host.querySelectorAll('[data-gap-member]')].every(row=>Number(row.value)>0))renderFieldReview();
+    });
+    const nextInput=$('#field-review-next');
+    if(nextInput)nextInput.oninput=()=>{const field=$('#report-next');if(field){field.value=nextInput.value;if(nextInput.value.trim())field.dataset.aiAccepted='true'}};
     const modal=$('#report-modal');
     modal?.classList.toggle('field-manual-entry',!fieldScopeFlags.length&&![...$$('.production-entry')].some(row=>row.dataset.aiFilled==='true'));
     host.querySelectorAll('[data-edit-line]').forEach(button=>button.onclick=()=>{
@@ -151,11 +175,15 @@ var fieldScopeFlags=[];
         const draft=await api('/api/ai/extract',{method:'POST',body:JSON.stringify({notes:note,language,projectId:project?.id})});
         applyScopeLines(draft?.scopeReview||{lines:[]});
         applyNarrative(draft||{});
-        if(draft?.scopeReview?.materials){const materials=$('#report-materials');if(materials&&!String(materials.value||'').includes(draft.scopeReview.materials))materials.value=[materials.value,draft.scopeReview.materials].filter(Boolean).join('\n')}
+        const scopeFacts=draft?.scopeReview;
+        if(scopeFacts&&Object.hasOwn(scopeFacts,'next')){const next=$('#report-next');if(next){next.value=String(scopeFacts.next||'').trim();if(next.value)next.dataset.aiAccepted='true';else delete next.dataset.aiAccepted}}
+        if(scopeFacts&&Object.hasOwn(scopeFacts,'delays')){const delays=$('#report-delays');if(delays){const stated=String(scopeFacts.delays||'').trim();if(stated)delays.value=stated;else if(/^needs confirmation/i.test(delays.value||''))delays.value=''}}
+        if(scopeFacts?.materials){const materials=$('#report-materials');if(materials&&!String(materials.value||'').includes(scopeFacts.materials))materials.value=[materials.value,scopeFacts.materials].filter(Boolean).join('\n')}
         fieldHoursReview=draft?.scopeReview?.hours||null;
+        applyPunchHours();
         if(!clockHoursPresent()&&fieldHoursReview?.total>0&&typeof applyNoteLaborEvidence==='function')applyNoteLaborEvidence(draft.laborEvidence?.total>0?draft.laborEvidence:{total:fieldHoursReview.total,headcount:fieldHoursReview.headcount,perPerson:fieldHoursReview.perPerson});
         else if(!clockHoursPresent()&&draft?.laborEvidence&&typeof applyNoteLaborEvidence==='function'&&!fieldHoursReview?.ask)applyNoteLaborEvidence(draft.laborEvidence);
-        fieldScopeFlags=(draft?.scopeReview?.flags||[]).map(flag=>({...flag,decision:null,createsChange:false}));
+        fieldScopeFlags=(draft?.scopeReview?.flags||[]).map(flag=>({...flag,decision:null,createsChange:false,who_asked:String(flag.who_asked||'')}));
         if(draft?.changesCreated)fieldScopeFlags=[];
       }
     }catch{
@@ -182,6 +210,9 @@ var fieldScopeFlags=[];
     const officeSend=sendButton.onclick;
     sendButton.onclick=event=>{
       if(fieldCompact()){
+        const produced=[...$$('.production-entry')].map(row=>({quantity:row.querySelector('.production-quantity')?.value,laborHours:row.querySelector('.production-hours')?.value,input:row.querySelector('.production-hours')}));
+        const lineHours=typeof FieldDailyScope!=='undefined'&&FieldDailyScope.singleLineLaborHours?FieldDailyScope.singleLineLaborHours(produced,enteredLaborHours()):null;
+        if(lineHours!=null){const target=produced.find(row=>Number(row.quantity)>0);if(target?.input)target.input.value=lineHours}
         const lines=[...$$('.production-entry')].filter(row=>row.dataset.aiFilled==='true').map(row=>({quantity:row.querySelector('.production-quantity')?.value,needsQuantity:!(Number(row.querySelector('.production-quantity')?.value)>0)}));
         const gate=typeof FieldDailyScope!=='undefined'&&FieldDailyScope.sendGate?FieldDailyScope.sendGate({flags:fieldScopeFlags,laborHours:enteredLaborHours(),openClock:crewStillClockedIn(),lines}):{block:fieldScopeFlags.some(flag=>!flag.decision)?['Answer each flag before sending this daily to the office.']:[],warn:[]};
         const message=[...gate.block,...(gate.block.length?[]:gate.warn)].join(' ');
@@ -199,6 +230,13 @@ var fieldScopeFlags=[];
     const stepBefore=showReportStep;
     showReportStep=function(step){const result=stepBefore(step);if(Number(step)===2&&fieldCompact()){renderFlags();renderFieldReview()}polishFieldDaily();return result};
   }
+  function applyPunchHours(){
+    const projectId=projects?.[+$('#report-project')?.value]?.id,date=$('#report-date')?.value;
+    const cards=(typeof timeCards==='undefined'?[]:timeCards).filter(card=>!card.deletedAt&&card.inAt&&Number(card.projectId)===Number(projectId)&&String(card.date||'')===String(date||''));
+    const totals=new Map();
+    for(const card of cards){const end=card.outAt?new Date(card.outAt):new Date(),minutes=Math.max(0,Math.round((end-new Date(card.inAt))/60000));totals.set(Number(card.memberId),(totals.get(Number(card.memberId))||0)+minutes)}
+    for(const [memberId,minutes] of totals){if(!(minutes>0))continue;const input=$(`[data-labor-member="${memberId}"]`);if(!input||input.dataset.manualHours==='true')continue;input.value=Math.round(minutes/60*100)/100;input.dataset.timecardDerived='true'}
+  }
   function presentReportSent({totalHours,unplanned,productionEntries}={}){
     const hours=Number(totalHours)||0,produced=(productionEntries||[]).some(row=>Number(row.quantity)>0),confirmed=(typeof fieldScopeFlags==='undefined'?[]:fieldScopeFlags).filter(flag=>flag&&flag.decision==='extra'&&flag.createsChange).length,changes=(Number(unplanned)||0)+confirmed,missing=[];
     if(!produced)missing.push('production quantities');
@@ -209,5 +247,6 @@ var fieldScopeFlags=[];
     else{if(title)title.textContent='The office has it.';if(summary)summary.textContent=`${hours.toFixed(hours%1?1:0)} labor hour${hours===1?'':'s'} logged · ${changeText}.`}
   }
   window.presentReportSent=presentReportSent;
+  window.renderFieldReview=renderFieldReview;
   polishFieldDaily();
 })();

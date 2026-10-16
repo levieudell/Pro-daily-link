@@ -65,6 +65,30 @@
     return String(notes||'').replace(/^field work recorded:\s*/i,'').split(/\s*,\s*|\n+/).map(text=>text.trim()).filter(Boolean);
   }
 
+  function sentencesOf(notes){
+    return String(notes||'').replace(/^field work recorded:\s*/i,'').split(/\n+|(?<=[.!?])\s+/).map(text=>text.trim()).filter(Boolean);
+  }
+
+  function tidyFact(text){
+    return String(text||'').replace(/\s+/g,' ').replace(/[.!\s]+$/,'').trim();
+  }
+
+  function isLookahead(text){
+    const value=String(text||'').trim();
+    if(/^(?:tomorrow|mañana|manana|next)\b/i.test(value))return true;
+    return /^(?:we\s+)?need(?:s)?\b/i.test(value)&&/\b(?:monday|tuesday|wednesday|thursday|friday|saturday|sunday|tomorrow|pump)\b/i.test(value);
+  }
+
+  function isDelay(text){
+    if(isLookahead(text))return false;
+    return /\b(?:delays?|delayed|late|waiting|held up|hold[- ]?up|rfi|breakdown|rained?|blocker|blocked)\b/i.test(String(text||''));
+  }
+
+  function isMissingMaterial(text){
+    if(isLookahead(text))return false;
+    return /\b(?:missing|out of|short on|ran out of|no more)\b/i.test(String(text||''));
+  }
+
   function quantityFact(text){
     const match=String(text||'').match(QUANTITY_LANGUAGE);
     if(!match)return {quantity:null,unit:''};
@@ -107,12 +131,26 @@
     const flags=[];
     const unmatchedNotes=[];
     const materials=[];
+    const nextParts=[];
+    const delayParts=[];
     const seen=new Set();
-    for(const clause of clausesOf(notes)){
+    const workClauses=[];
+    for(const sentence of sentencesOf(notes)){
+      if(isLookahead(sentence)){nextParts.push(tidyFact(sentence));continue}
+      if(isDelay(sentence)&&!WORK_LANGUAGE.test(sentence)&&!EXTRA_LANGUAGE.test(sentence)){delayParts.push(tidyFact(sentence));continue}
+      if(isMissingMaterial(sentence)&&!WORK_LANGUAGE.test(sentence)&&!EXTRA_LANGUAGE.test(sentence)){materials.push(tidyFact(sentence));continue}
+      for(const clause of clausesOf(sentence)){
+        if(isLookahead(clause)){nextParts.push(tidyFact(clause));continue}
+        if(isDelay(clause)&&!WORK_LANGUAGE.test(clause)&&!EXTRA_LANGUAGE.test(clause)){delayParts.push(tidyFact(clause));continue}
+        if(isMissingMaterial(clause)&&!WORK_LANGUAGE.test(clause)&&!EXTRA_LANGUAGE.test(clause)){materials.push(tidyFact(clause));continue}
+        workClauses.push(clause);
+      }
+    }
+    for(const clause of workClauses){
       if(HEADCOUNT_LANGUAGE.test(clause)&&!QUANTITY_LANGUAGE.test(clause)&&!WORK_LANGUAGE.test(clause))continue;
       if(EXTRA_LANGUAGE.test(clause)){
         const description=clause.replace(/^\s*extra work:\s*/i,'').trim().slice(0,300);
-        flags.push({kind:'extra',reason:'stated_extra',description,quantity:quantityFact(clause).quantity,unit:quantityFact(clause).unit,estimateItemId:null,createsChange:false,decision:null,message:'The notes call this extra work. Bill it, or mark it as not extra.'});
+        flags.push({kind:'extra',reason:'stated_extra',description,quantity:quantityFact(clause).quantity,unit:quantityFact(clause).unit,estimateItemId:null,createsChange:false,decision:null,extra_work:false,who_asked:whoAsked(clause)||whoAsked(notes),message:'The notes call this extra work. Confirm it is extra, or mark it as normal scope. The office decides whether it is billable.'});
         continue;
       }
       if(MATERIAL_LANGUAGE.test(clause)){materials.push(clause.replace(/^\s*(?:used|using|usage)\s+/i,'').trim());continue}
@@ -149,7 +187,52 @@
         flags.push({kind:'productivity',reason:'hours_over_budget',description:line.description,quantity:line.quantity,unit:line.unit,estimateItemId:line.estimateItemId,laborHours:Math.round(hours*100)/100,expectedHours:Math.round(expected*100)/100,createsChange:false,decision:null,message:`${Math.round(hours*100)/100} hours is far over the estimate rate of about ${Math.round(expected*100)/100} hours. This is a productivity flag, not a change order.`});
       }
     }
-    return {lines,flags,unmatchedNotes,materials:[...new Set(materials)].join('; '),hours:crew};
+    return {lines,flags,unmatchedNotes,materials:[...new Set(materials.filter(Boolean))].join('; '),hours:crew,next:[...new Set(nextParts.filter(Boolean))].join('. '),delays:[...new Set(delayParts.filter(Boolean))].join(' ')};
+  }
+
+  function namedCrewGaps(notes,crew,punchedMemberIds){
+    const punched=new Set((punchedMemberIds||[]).map(Number));
+    const source=String(notes||'');
+    return (crew||[]).filter(person=>{
+      const first=String(person?.name||'').trim().split(/\s+/)[0]||'';
+      if(first.length<3||punched.has(Number(person.id)))return false;
+      const token=first.replace(/[.*+?^${}()|[\]\\]/g,'\\$&');
+      return new RegExp(`\\b${token}\\b`,'i').test(source);
+    });
+  }
+
+  function crewGapReason(people){
+    const names=(people||[]).map(person=>String(person.name||'').trim().split(/\s+/)[0]).filter(Boolean);
+    if(!names.length)return '';
+    const list=names.length===1?names[0]:names.length===2?`${names[0]} and ${names[1]}`:`${names.slice(0,-1).join(', ')}, and ${names.at(-1)}`;
+    return `${list} ${names.length===1?'has':'have'} no clock-in. Enter their hours.`;
+  }
+
+  function punchLengthLabel(card){
+    if(!card?.outAt)return '';
+    const minutes=Math.max(0,Math.round((new Date(card.outAt)-new Date(card.inAt))/60000));
+    if(!Number.isFinite(minutes))return '';
+    if(minutes<60)return `${minutes} min`;
+    const stored=Number(card.hours);
+    const hours=Number.isFinite(stored)&&stored>0?stored:minutes/60;
+    return `${Number(hours).toFixed(2)} h`;
+  }
+
+  function sameDayDaily(reports,{projectIndex,dateIso,memberIds,foreman}={}){
+    const members=new Set((memberIds||[]).map(Number));
+    const name=String(foreman||'').trim().toLowerCase();
+    const rows=(reports||[]).filter(report=>report&&!report.deletedAt&&Number(report.project)===Number(projectIndex)&&String(report.dateIso||'')===String(dateIso||''));
+    const mine=rows.filter(report=>name&&String(report.foreman||'').trim().toLowerCase()===name||(report.laborEntries||[]).some(row=>members.has(Number(row.memberId))));
+    const rank=report=>String(report.status||'')==='Draft'?0:1;
+    return mine.slice().sort((a,b)=>rank(b)-rank(a)||Number(b.id)-Number(a.id))[0]||null;
+  }
+
+  function clientProjectIndex(projects,report){
+    const list=Array.isArray(projects)?projects:[];
+    const byId=list.findIndex(project=>report?.projectId!=null&&Number(project.id)===Number(report.projectId));
+    if(byId>=0)return byId;
+    const index=Number(report?.project);
+    return list[index]?index:-1;
   }
 
   function sendGate({flags,laborHours,openClock,lines}={}){
@@ -202,15 +285,29 @@
         flags.push({kind:'productivity',reason:'hours_over_budget',description:line.description,quantity:line.quantity,unit:line.unit,estimateItemId:line.estimateItemId,laborHours:Math.round(hours*100)/100,expectedHours:Math.round(expected*100)/100,createsChange:false,decision:null,message:`${Math.round(hours*100)/100} hours is far over the estimate rate of about ${Math.round(expected*100)/100} hours. This is a productivity flag, not a change order.`});
       }
     }
-    return {lines,flags,unmatchedNotes,materials:'',hours:statedCrew('')};
+    return {lines,flags,unmatchedNotes,materials:'',hours:statedCrew(''),next:'',delays:''};
+  }
+
+  function whoAsked(text){
+    const match=String(text||'').match(/\b(?:the\s+|our\s+)?([A-Za-z][A-Za-z'’.-]{1,40}(?:\s+[A-Za-z][A-Za-z'’.-]{1,40}){0,2})\s+asked\b/i);
+    return match?match[1].replace(/^(?:the|our|a|an)\s+/i,'').trim().slice(0,80):'';
   }
 
   function decideFlag(flag,choice){
     if(!flag)return null;
-    if(flag.kind==='productivity')return {...flag,decision:'noted',createsChange:false};
-    if(choice==='extra'||choice==='bill')return {...flag,decision:'extra',createsChange:true};
-    if(choice==='not')return {...flag,decision:'not',createsChange:false};
-    return {...flag,decision:'estimate',createsChange:false,estimateItemId:flag.estimateItemId??null};
+    if(flag.kind==='productivity')return {...flag,decision:'noted',createsChange:false,extra_work:false};
+    if(choice==='yes'||choice==='extra'||choice==='bill')return {...flag,decision:'extra',createsChange:false,extra_work:true};
+    if(choice==='no'||choice==='not')return {...flag,decision:'not',createsChange:false,extra_work:false};
+    return {...flag,decision:'estimate',createsChange:false,extra_work:false,estimateItemId:flag.estimateItemId??null};
+  }
+
+  function fieldExtraItems(flags){
+    return (Array.isArray(flags)?flags:[]).filter(flag=>flag&&flag.kind!=='productivity'&&flag.decision==='extra').map(flag=>{
+      const item={description:String(flag.description||'Extra work').slice(0,300),extra_work:true,who_asked:String(flag.who_asked||flag.whoAsked||'').trim().slice(0,80)};
+      if(flag.quantity!=null&&flag.quantity!=='')item.quantity=Number(flag.quantity)||0;
+      if(flag.unit)item.unit=String(flag.unit).slice(0,20);
+      return item;
+    });
   }
 
   function confirmedExtraChanges(flags){
@@ -241,5 +338,12 @@
     return String(requested||'')==='Draft'?'Draft':'Needs review';
   }
 
-  return {normalizeUnit,matchEstimateLine,reviewScope,reviewNotes,decideFlag,confirmedExtraChanges,approvedQuantityMap,hoursFromClock,statedCrew,sendGate,clockOutMessage,submissionStatus,QUANTITY_TOLERANCE,PRODUCTIVITY_LIMIT};
+  function singleLineLaborHours(rows,crewHours){
+    const produced=(Array.isArray(rows)?rows:[]).filter(row=>Number(row?.quantity)>0);
+    const crew=Number(crewHours)||0;
+    if(produced.length!==1||!(crew>0)||Number(produced[0].laborHours)>0)return null;
+    return Math.round(crew*100)/100;
+  }
+
+  return {normalizeUnit,matchEstimateLine,reviewScope,reviewNotes,decideFlag,confirmedExtraChanges,fieldExtraItems,whoAsked,approvedQuantityMap,hoursFromClock,statedCrew,sendGate,clockOutMessage,submissionStatus,namedCrewGaps,crewGapReason,punchLengthLabel,sameDayDaily,clientProjectIndex,singleLineLaborHours,QUANTITY_TOLERANCE,PRODUCTIVITY_LIMIT};
 });
