@@ -132,7 +132,14 @@ async function dump(page, label) {
     reportOpen: Boolean(document.querySelector('#report-modal')?.open),
     endOpen: Boolean(document.querySelector('#end-day-modal')?.open),
     recovery: sessionStorage.getItem('pdl-active-report-recovery-v1'),
-    drafted: Object.values(localStorage).some(value => String(value).includes('set 20 LF of gutter'))
+    drafted: Object.values(localStorage).some(value => String(value).includes('set 20 LF of gutter')),
+    readyState: document.readyState,
+    hasOpenReport: typeof openReport,
+    role: typeof currentRole === 'undefined' ? 'missing' : currentRole,
+    userId: typeof currentUser === 'undefined' ? 'missing' : currentUser?.id ?? null,
+    projectCount: typeof projects === 'undefined' ? 'missing' : projects.length,
+    body: (document.body?.innerText || '').replace(/\s+/g, ' ').slice(0, 240),
+    errors: window.__pageErrors || []
   })).catch(error => ({ error: error.message }));
   console.error(label, JSON.stringify(info, null, 2));
   await shot(page, 'field-daily-e2e-failure.png').catch(() => {});
@@ -209,6 +216,9 @@ async function openNav(page, name) {
       };
       document.addEventListener('DOMContentLoaded', watch);
       setInterval(watch, 100);
+      window.__pageErrors = [];
+      window.addEventListener('unhandledrejection', event => window.__pageErrors.push(String(event.reason?.stack || event.reason)));
+      window.addEventListener('error', event => window.__pageErrors.push(String(event.message || event.error)));
     });
     await page.goto(`http://127.0.0.1:${port}/login.html`, { waitUntil: 'domcontentloaded' });
     await page.waitForSelector('#email');
