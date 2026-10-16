@@ -122,6 +122,26 @@ function sendPayload(report, next) {
     assert.equal(gutterMerge.data.attached, true);
     assert.equal(gutterMerge.data.report.id, gutterEnd.data.report.id);
     assert.equal(gutterMerge.data.report.next, NEXT_A, 'a second punch with no next step keeps the earlier text');
+    const notedStart = await call('POST', '/api/workdays/start', { projectId: 102, memberIds: [11] });
+    assert.equal(notedStart.status, 201, JSON.stringify(notedStart.data));
+    pinPunch(notedStart.data.id, 2);
+    const notedEnd = await call('POST', '/api/workdays/' + notedStart.data.id + '/end', { notes: 'Short check-in. Next: backfill curb.', next: '' });
+    assert.equal(notedEnd.status, 200, JSON.stringify(notedEnd.data));
+    assert.equal(notedEnd.data.attached, false);
+    assert.equal(notedEnd.data.report.next, 'backfill curb.', 'a Next: clause in the clock-out notes sets the next step');
+    const typedStart = await call('POST', '/api/workdays/start', { projectId: 102, memberIds: [11] });
+    assert.equal(typedStart.status, 201, JSON.stringify(typedStart.data));
+    pinPunch(typedStart.data.id, 2);
+    const typedEnd = await call('POST', '/api/workdays/' + typedStart.data.id + '/end', { notes: 'Short check-in. Next: backfill curb.', next: 'Stage the pump.' });
+    assert.equal(typedEnd.status, 200, JSON.stringify(typedEnd.data));
+    assert.equal(typedEnd.data.attached, true);
+    assert.equal(typedEnd.data.report.next, 'Stage the pump.', 'the dedicated next field wins over a Next: clause');
+    const keepStart = await call('POST', '/api/workdays/start', { projectId: 102, memberIds: [11] });
+    assert.equal(keepStart.status, 201, JSON.stringify(keepStart.data));
+    pinPunch(keepStart.data.id, 2);
+    const keepEnd = await call('POST', '/api/workdays/' + keepStart.data.id + '/end', { notes: 'Finished the remaining gutter.', next: '' });
+    assert.equal(keepEnd.status, 200, JSON.stringify(keepEnd.data));
+    assert.equal(keepEnd.data.report.next, 'Stage the pump.', 'notes without a next step keep the stored text');
     console.log('Next-step merge checks passed.');
   } finally {
     server.closeAllConnections();
