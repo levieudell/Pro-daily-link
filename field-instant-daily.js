@@ -13,6 +13,7 @@ var fieldScopeFlags=[];
     if(!compact){const flags=$('#field-scope-flags'),cards=$('#field-review-cards');if(flags)flags.hidden=true;if(cards)cards.hidden=true}
   }
   function groundedText(value){const text=String(value||'').trim();return text&&!/^needs confirmation[.!\s]*$/i.test(text)?text:''}
+  function nextStepText(value){const text=groundedText(value);if(!text)return '';if(typeof FieldDailyScope!=='undefined'&&FieldDailyScope.tidyNext)return FieldDailyScope.tidyNext(text);return text.replace(/^(?:next\s*step|next)\s*:\s*/i,'').trim()}
   function lineEstimateId(row){return String((typeof rowEstimateItemId==='function'?rowEstimateItemId(row):'')||row?.dataset?.estimateItemId||row?.querySelector?.('.production-item')?.value||'')}
   function lockedLaborMap(){
     const map=new Map();
@@ -113,7 +114,7 @@ var fieldScopeFlags=[];
       '#report-equipment':groundedText(draft.equipment),
       '#report-delays':groundedText(draft.delays||draft.issue),
       '#report-safety':groundedText(draft.safety)||(draft.noSafetyObservations&&/no safety|no incidents/i.test(notes)?'No safety incidents.':''),
-      '#report-next':groundedText(draft.next)
+      '#report-next':nextStepText(draft.next)
     };
     for(const [id,value] of Object.entries(values)){
       const field=$(id);if(!field||!value)continue;
@@ -127,13 +128,127 @@ var fieldScopeFlags=[];
   function applyAskedHours(value,headcount){const each=Number(value),inputs=[...$$('[data-labor-member]')];if(!(each>0)){inputs.forEach(input=>{if(input.dataset.noteDerived==='true')input.value=''});return}const count=Math.max(1,Math.min(inputs.length,Math.floor(Number(headcount)||1)));inputs.forEach(input=>{if(input.dataset.noteDerived==='true')input.value=''});inputs.slice(0,count).forEach(input=>{input.value=Math.min(24,each);input.dataset.noteDerived='true'})}
   function stampFlags(flags){return (Array.isArray(flags)?flags:[]).filter(Boolean).map(flag=>({...flag,id:flag.id||(typeof FieldDailyScope!=='undefined'&&FieldDailyScope.flagIdentity?FieldDailyScope.flagIdentity(flag):`${flag.reason||'note'}:${String(flag.description||'').toLowerCase()}`)}))}
   function flagById(id){return fieldScopeFlags.find(flag=>String(flag?.id)===String(id))}
+  function findUnmatchedRow(flag){
+    const rows=[...$$('.production-entry')];
+    const id=String(flag?.id||'');
+    const tagged=rows.find(row=>id&&row.dataset.unmatchedFlag===id);
+    if(tagged)return tagged;
+    const desc=String(flag?.description||'').trim().toLowerCase();
+    return rows.find(row=>{
+      if(lineEstimateId(row))return false;
+      const text=(row.querySelector('.custom-description')?.value||row.dataset.suggestedDescription||'').trim().toLowerCase();
+      return Boolean(text&&desc&&(text===desc||text.includes(desc)||desc.includes(text)));
+    })||null;
+  }
+  function absorbMaterialFlags(){
+    if(typeof FieldDailyScope==='undefined'||!FieldDailyScope.isMaterialPhrase)return;
+    const phrases=[];
+    fieldScopeFlags=fieldScopeFlags.filter(flag=>{
+      if(!FieldDailyScope.isMaterialPhrase(flag?.description))return true;
+      phrases.push(flag.description);
+      return false;
+    });
+    if(!phrases.length)return;
+    const materials=$('#report-materials');
+    if(!materials)return;
+    materials.value=FieldDailyScope.uniqueMaterials([materials.value,...phrases]);
+    if(materials.value)materials.dataset.aiAccepted='true';
+  }
+  function placeUnmatchedLines(){
+    absorbMaterialFlags();
+    if(typeof addProductionRow!=='function')return;
+    for(const flag of fieldScopeFlags){
+      if(flag?.kind!=='pick'||flag.reason!=='no_match'||flag.decision)continue;
+      const existing=findUnmatchedRow(flag);
+      if(existing){existing.dataset.unmatchedFlag=String(flag.id||'');continue}
+      const row=addProductionRow({custom:true,description:String(flag.description||'Unmatched work'),quantity:flag.quantity,unit:flag.unit||'',needsScopeConfirmation:false});
+      if(!row)continue;
+      row.dataset.unmatchedFlag=String(flag.id||'');
+      row.dataset.aiFilled='true';
+      const qty=row.querySelector('.production-quantity');
+      if(qty&&flag.quantity!=null&&flag.quantity!=='')qty.value=String(flag.quantity);
+      const unit=row.querySelector('.production-unit');
+      if(unit&&flag.unit)unit.value=String(flag.unit).toUpperCase();
+    }
+  }
+  function bindPickedLine(flag,item){
+    const materials=$('#report-materials');
+    const kept=materials?.value||'';
+    const restore=()=>{if(materials&&String(kept).trim()&&!String(materials.value||'').trim())materials.value=kept};
+    try{return bindPickedLineNow(flag,item)}finally{restore()}
+  }
+  function bindPickedLineNow(flag,item){
+    placeUnmatchedLines();
+    const source=findUnmatchedRow(flag);
+    const add=source?Number(source.querySelector('.production-quantity')?.value)||Number(flag.quantity)||0:Number(flag.quantity)||0;
+    const existing=[...$$('.production-entry')].find(row=>row!==source&&String(lineEstimateId(row))===String(item.id));
+    if(existing){
+      const input=existing.querySelector('.production-quantity');
+      if(input)input.value=String((Number(input.value)||0)+add);
+      const unit=existing.querySelector('.production-unit');
+      if(unit&&item.unit)unit.value=item.unit;
+      existing.dataset.aiFilled='true';
+      if(source)source.remove();
+      return existing;
+    }
+    if(!source)return null;
+    const hours=source.querySelector('.production-hours')?.value||'';
+    const manual=source.dataset.laborManual==='true';
+    const minutes=source.dataset.laborMinutes;
+    const created=addProductionRow({description:item.name,estimateItemId:item.id,quantity:add,unit:item.unit,laborHours:hours,laborManual:manual,laborMinutes:minutes==null||minutes===''?undefined:Number(minutes),needsScopeConfirmation:false});
+    if(!created)return source;
+    created.dataset.aiFilled='true';
+    delete created.dataset.unmatchedFlag;
+    source.replaceWith(created);
+    return created;
+  }
+  function markLineExtra(flag){
+    placeUnmatchedLines();
+    let source=findUnmatchedRow(flag);
+    if(!source&&typeof addProductionRow==='function')source=addProductionRow({custom:true,description:String(flag.description||'Extra work'),quantity:flag.quantity,unit:flag.unit||'',needsScopeConfirmation:false});
+    if(!source)return null;
+    if(source.querySelector('.production-item')&&typeof convertProductionRow==='function'){
+      const converted=convertProductionRow(source,true);
+      if(converted)source=converted;
+    }
+    source.dataset.extraWork='true';
+    source.dataset.aiFilled='true';
+    delete source.dataset.unmatchedFlag;
+    delete source.dataset.estimateItemId;
+    const desc=source.querySelector('.custom-description');
+    if(desc&&!desc.value.trim())desc.value=String(flag.description||'Extra work');
+    const qty=source.querySelector('.production-quantity');
+    if(qty&&!(Number(qty.value)>0)&&flag.quantity!=null)qty.value=String(flag.quantity);
+    const unit=source.querySelector('.production-unit');
+    if(unit&&flag.unit&&!unit.value)unit.value=String(flag.unit).toUpperCase();
+    return source;
+  }
   function harvestFlagAnswers(){const host=$('#field-scope-flags');if(!host)return;host.querySelectorAll('[data-flag-asker]').forEach(input=>{const flag=flagById(input.dataset.flagAsker);if(flag)flag.who_asked=input.value})}
+  const flagChoiceStamp=new Map();
+  const flagChoiceHeld=new Map();
+  function holdFlagChoice(flag){
+    if(!flag?.id)return;
+    if(!flag.decision){flagChoiceHeld.delete(String(flag.id));return}
+    flagChoiceHeld.set(String(flag.id),{decision:flag.decision,extra_work:flag.extra_work===true,who_asked:String(flag.who_asked||''),at:Date.now()});
+  }
+  function restoreHeldChoices(){
+    const now=Date.now();
+    fieldScopeFlags=fieldScopeFlags.map(flag=>{
+      const held=flagChoiceHeld.get(String(flag?.id||''));
+      if(!held||now-held.at>=400||flag.decision)return flag;
+      return {...flag,decision:held.decision,extra_work:held.decision==='extra',createsChange:false,who_asked:flag.who_asked||held.who_asked};
+    });
+  }
   function renderFlags(){
+    absorbMaterialFlags();
+    restoreHeldChoices();
     const host=$('#field-scope-flags');if(!host)return;
     fieldScopeFlags=stampFlags(fieldScopeFlags);
-    if(!fieldCompact()||!fieldScopeFlags.length){host.hidden=true;host.innerHTML='';return}
+    const openFlags=fieldScopeFlags.filter(flag=>!(flag.kind==='pick'&&flag.decision));
+    if(!fieldCompact()||!openFlags.length){host.hidden=true;host.innerHTML='';return}
     host.hidden=false;
     host.innerHTML=fieldScopeFlags.map((flag,index)=>{
+      if(flag.kind==='pick'&&flag.decision)return '';
       const answered=Boolean(flag.decision);
       const label=flag.kind==='productivity'?'Productivity':flag.kind==='pick'?'Needs your pick':'Possible extra work';
       const items=projects?.[+$('#report-project')?.value]?.estimateItems||[];
@@ -151,13 +266,29 @@ var fieldScopeFlags=[];
       const at=fieldScopeFlags.findIndex(row=>String(row.id)===String(button.dataset.flagId));
       const flag=at>=0?fieldScopeFlags[at]:fieldScopeFlags[Number(button.dataset.flagIndex)];
       if(!flag||typeof FieldDailyScope==='undefined')return;
+      const stampKey=String(flag.id||button.dataset.flagIndex||'');
+      const now=Date.now();
+      if(now-(flagChoiceStamp.get(stampKey)||0)<400)return;
+      flagChoiceStamp.set(stampKey,now);
       const choice=button.dataset.flagChoice;
+      if(flag.kind==='pick'&&choice==='extra'){
+        const next=FieldDailyScope.decideFlag(flag,'extra');
+        fieldScopeFlags[at>=0?at:Number(button.dataset.flagIndex)]={...next,id:flag.id};
+        holdFlagChoice(fieldScopeFlags[at>=0?at:Number(button.dataset.flagIndex)]);
+        markLineExtra(flag);
+        const send=$('#save-report');if(send)send.disabled=false;
+        renderFlags();
+        renderFieldReview();
+        return;
+      }
       const mapped=choice==='yes'||choice==='extra'||choice==='bill'?'extra':choice==='no'||choice==='not'?'not':choice;
       const asker=host.querySelector(`[data-flag-asker="${CSS.escape(String(flag.id))}"]`);
       const whoAsked=asker?asker.value:String(flag.who_asked||'');
       const same=flag.decision===mapped;
       const next=same?{...flag,decision:null,createsChange:false,extra_work:false,who_asked:whoAsked}:FieldDailyScope.decideFlag({...flag,who_asked:whoAsked},choice);
       fieldScopeFlags[at>=0?at:Number(button.dataset.flagIndex)]={...next,id:flag.id};
+      holdFlagChoice(fieldScopeFlags[at>=0?at:Number(button.dataset.flagIndex)]);
+      const send=$('#save-report');if(send&&next.decision)send.disabled=false;
       renderFlags();
       renderFieldReview();
     });
@@ -166,13 +297,12 @@ var fieldScopeFlags=[];
       const at=fieldScopeFlags.findIndex(row=>String(row.id)===String(select.dataset.flagId));
       const flag=at>=0?fieldScopeFlags[at]:fieldScopeFlags[Number(select.dataset.flagIndex)];
       const item=(projects?.[+$('#report-project')?.value]?.estimateItems||[]).find(entry=>String(entry.id)===String(select.value));
-      if(!flag||!item||typeof FieldDailyScope==='undefined'||typeof addProductionRow!=='function')return;
+      if(!flag||!item||typeof FieldDailyScope==='undefined')return;
       const chosen=FieldDailyScope.decideFlag({...flag,estimateItemId:item.id},'estimate');
       chosen.estimateItemId=item.id;
       chosen.id=flag.id;
       fieldScopeFlags[at>=0?at:Number(select.dataset.flagIndex)]=chosen;
-      const row=addProductionRow({description:item.name,estimateItemId:item.id,quantity:flag.quantity,unit:item.unit,needsScopeConfirmation:false});
-      if(row){row.dataset.aiFilled='true';const quantity=row.querySelector('.production-quantity');if(quantity&&flag.quantity!=null)quantity.value=flag.quantity;const unit=row.querySelector('.production-unit');if(unit)unit.value=item.unit||''}
+      bindPickedLine(flag,item);
       renderFlags();
       renderFieldReview();
     });
@@ -182,6 +312,7 @@ var fieldScopeFlags=[];
     syncEstimateBindings();
     dropEmptyLines();
     dropRawProductionRows();
+    placeUnmatchedLines();
     applyPunchHours();
     applyLaborAllocation();
     const cards=[];
@@ -190,7 +321,8 @@ var fieldScopeFlags=[];
       const select=row.querySelector('.production-item'),custom=row.querySelector('.custom-description');
       const name=(select?.selectedOptions?.[0]?.textContent||custom?.value||'').trim();
       const description=custom?.value||row.dataset.suggestedDescription||name;
-      if(typeof FieldDailyScope!=='undefined'&&FieldDailyScope.rawNoteLine&&FieldDailyScope.rawNoteLine({description,quantity:row.querySelector('.production-quantity')?.value,estimateItemId:select?.value||null},notesForLines))return;
+      if(row.dataset.unmatchedFlag&&row.dataset.extraWork!=='true')return;
+      if(row.dataset.extraWork!=='true'&&typeof FieldDailyScope!=='undefined'&&FieldDailyScope.rawNoteLine&&FieldDailyScope.rawNoteLine({description,quantity:row.querySelector('.production-quantity')?.value,estimateItemId:select?.value||null,extra_work:row.dataset.extraWork==='true'},notesForLines))return;
       if(!name||name==='Select estimate line')return;
       const qty=row.querySelector('.production-quantity')?.value,rawUnit=row.querySelector('.production-unit')?.value||'',unit=String(rawUnit).toLowerCase()==='x'?'':rawUnit;
       const ai=row.dataset.aiFilled==='true';
@@ -202,8 +334,8 @@ var fieldScopeFlags=[];
       const laborValue=showMinutes?String(lineMinutes):String(lineHours||'');
       const laborUnit=showMinutes?'min':'h';
       const lineId=row.dataset.estimateItemId||select?.value||'';
-      const pairMinutes=showMinutes?lineMinutes:(typeof FieldDailyScope!=='undefined'&&FieldDailyScope.minutesFromHours?FieldDailyScope.minutesFromHours(lineHours):Math.round(lineHours*60));
-      cards.push(`<article class="field-review-card" data-edit-line="${index}"><small>${ai?'AI filled':'Tap to edit'}${row.dataset.laborManual==='true'?' · manual':''}</small><strong>${escapeText(name)}</strong><em>${escapeText(qty?`${qty} ${unit}`.trim():'Quantity needed')}</em><label class="field-line-labor">${showMinutes?'Minutes':'Hours'}<input data-review-labor="${index}" data-line-id="${escapeText(lineId)}" data-unit="${laborUnit}" inputmode="decimal" value="${escapeText(laborValue)}" aria-label="${showMinutes?'Minutes':'Hours'} for ${escapeText(name)}"><span class="field-time-pair">${escapeText(workTimeLabel(pairMinutes))}</span></label></article>`);
+      const pairText=showMinutes?`${Number.isFinite(lineMinutes)?lineMinutes:0} min · ${lineHours.toFixed(2)} h`:`${lineHours.toFixed(2)} h`;
+      cards.push(`<article class="field-review-card" data-edit-line="${index}"><small>${ai?'AI filled':'Tap to edit'}${row.dataset.laborManual==='true'?' · manual':''}</small><strong>${escapeText(name)}</strong><em>${escapeText(qty?`${qty} ${unit}`.trim():'Quantity needed')}</em><label class="field-line-labor">${showMinutes?'Minutes':'Hours'}<input data-review-labor="${index}" data-line-id="${escapeText(lineId)}" data-unit="${laborUnit}" inputmode="decimal" value="${escapeText(laborValue)}" aria-label="${showMinutes?'Minutes':'Hours'} for ${escapeText(name)}"><span class="field-time-pair">${escapeText(pairText)}</span></label></article>`);
     });
     $$('[data-labor-member]').forEach(input=>{
       if(!(Number(input.value)>0))return;
@@ -275,9 +407,14 @@ var fieldScopeFlags=[];
       let note=input.parentElement?.querySelector('.field-clamp-note');
       if(minutes!==requested){if(!note&&input.parentElement){note=document.createElement('small');note.className='field-clamp-note';input.parentElement.append(note)}if(note)note.textContent=`Kept at ${minutes} min so the lines still equal the punch.`}
       else note?.remove();
-      const pair=input.parentElement?.querySelector('.field-time-pair');
-      if(pair)pair.textContent=workTimeLabel(minutes);
       applyLaborAllocation();
+      const pairLabel=(row,minutes)=>{
+        const hours=Number(row?.querySelector('.production-hours')?.value)||0;
+        const total=Number(fieldLaborContext().total?.totalMinutes)||0;
+        return total>0&&total<60?`${minutes} min · ${hours.toFixed(2)} h`:`${hours.toFixed(2)} h`;
+      };
+      const pair=input.parentElement?.querySelector('.field-time-pair');
+      if(pair)pair.textContent=pairLabel(row,minutes);
       host.querySelectorAll('[data-review-labor]').forEach(other=>{
         if(other===document.activeElement)return;
         const otherRow=$$('.production-entry')[Number(other.dataset.reviewLabor)];
@@ -288,7 +425,7 @@ var fieldScopeFlags=[];
         other.dataset.unit=otherMinutesMode?'min':'h';
         other.value=otherMinutesMode?String(otherMinutes):String(otherRow.querySelector('.production-hours')?.value||'');
         const otherPair=other.parentElement?.querySelector('.field-time-pair');
-        if(otherPair)otherPair.textContent=workTimeLabel(otherMinutes);
+        if(otherPair)otherPair.textContent=pairLabel(otherRow,otherMinutes);
       });
       const totalLine=host.querySelector('.field-labor-total');
       if(totalLine)totalLine.textContent=`Total ${workTimeLabel(Number(fieldLaborContext().total?.totalMinutes)||0)}`;
@@ -327,7 +464,7 @@ var fieldScopeFlags=[];
         applyScopeLines(draft?.scopeReview||{lines:[]});
         applyNarrative(draft||{});
         const scopeFacts=draft?.scopeReview;
-        if(scopeFacts&&Object.hasOwn(scopeFacts,'next')){const next=$('#report-next');if(next){next.value=String(scopeFacts.next||'').trim();if(next.value)next.dataset.aiAccepted='true';else delete next.dataset.aiAccepted}}
+        if(scopeFacts&&Object.hasOwn(scopeFacts,'next')){const next=$('#report-next');if(next){next.value=nextStepText(scopeFacts.next);if(next.value)next.dataset.aiAccepted='true';else delete next.dataset.aiAccepted}}
         if(scopeFacts&&Object.hasOwn(scopeFacts,'delays')){const delays=$('#report-delays');if(delays){const stated=String(scopeFacts.delays||'').trim();if(stated)delays.value=stated;else if(/^needs confirmation/i.test(delays.value||''))delays.value=''}}
         if(scopeFacts?.materials){const materials=$('#report-materials');if(materials&&typeof FieldDailyScope!=='undefined'&&FieldDailyScope.uniqueMaterials)materials.value=FieldDailyScope.uniqueMaterials([materials.value,scopeFacts.materials])}
         fieldHoursReview=draft?.scopeReview?.hours||null;
@@ -336,6 +473,7 @@ var fieldScopeFlags=[];
         else if(!clockHoursPresent()&&draft?.laborEvidence&&typeof applyNoteLaborEvidence==='function'&&!fieldHoursReview?.ask)applyNoteLaborEvidence(draft.laborEvidence);
         harvestFlagAnswers();
         fieldScopeFlags=stampFlags(typeof FieldDailyScope!=='undefined'&&FieldDailyScope.mergeScopeFlags?FieldDailyScope.mergeScopeFlags(fieldScopeFlags,draft?.scopeReview?.flags||[]):(draft?.scopeReview?.flags||[]).map(flag=>({...flag,decision:null,createsChange:false,who_asked:String(flag.who_asked||'')})));
+        restoreHeldChoices();
         if(draft?.changesCreated)fieldScopeFlags=[];
       }
     }catch{
@@ -366,6 +504,7 @@ var fieldScopeFlags=[];
     const officeSend=sendButton.onclick;
     sendButton.onclick=event=>{
       if(fieldCompact()){
+        restoreHeldChoices();
         applyPunchHours();
         applyLaborAllocation();
         const lines=[...$$('.production-entry')].filter(row=>row.dataset.aiFilled==='true').map(row=>({quantity:row.querySelector('.production-quantity')?.value,needsQuantity:!(Number(row.querySelector('.production-quantity')?.value)>0)}));
@@ -465,7 +604,8 @@ var fieldScopeFlags=[];
       const select=row.querySelector('.production-item'),custom=row.querySelector('.custom-description');
       const description=custom?.value||row.dataset.suggestedDescription||'';
       const id=(typeof rowEstimateItemId==='function'?rowEstimateItemId(row):'')||row.dataset.estimateItemId||select?.value||'';
-      if(FieldDailyScope.rawNoteLine({description,quantity:row.querySelector('.production-quantity')?.value,estimateItemId:id||null},notes))row.remove();
+      if(row.dataset.unmatchedFlag||row.dataset.extraWork==='true')return;
+      if(FieldDailyScope.rawNoteLine({description,quantity:row.querySelector('.production-quantity')?.value,estimateItemId:id||null,extra_work:row.dataset.extraWork==='true'},notes))row.remove();
     });
   }
   function applyLaborAllocation(){
@@ -529,11 +669,15 @@ var fieldScopeFlags=[];
     for(const [memberId,minutes] of totals){if(!(minutes>0))continue;const input=$(`[data-labor-member="${memberId}"]`);if(!input||input.dataset.manualHours==='true')continue;input.value=typeof FieldDailyScope!=='undefined'&&FieldDailyScope.hoursFromMinutes?FieldDailyScope.hoursFromMinutes(minutes):Math.round(minutes/60*100)/100;input.dataset.timecardDerived='true'}
   }
   function presentReportSent({totalHours,unplanned,productionEntries}={}){
-    const hours=Number(totalHours)||0,produced=(productionEntries||[]).some(row=>Number(row.quantity)>0),confirmed=(typeof fieldScopeFlags==='undefined'?[]:fieldScopeFlags).filter(flag=>flag&&flag.decision==='extra'&&flag.createsChange).length,changes=(Number(unplanned)||0)+confirmed,missing=[];
+    const flags=typeof fieldScopeFlags==='undefined'?[]:fieldScopeFlags;
+    const hours=Number(totalHours)||0,produced=(productionEntries||[]).some(row=>Number(row.quantity)>0),confirmed=flags.filter(flag=>flag&&flag.decision==='extra'&&flag.createsChange).length,extras=flags.filter(flag=>flag&&flag.decision==='extra'&&flag.extra_work&&!flag.createsChange).length,changes=(Number(unplanned)||0)+confirmed,missing=[];
     if(!produced)missing.push('production quantities');
     if(!(hours>0))missing.push('labor hours');
     const title=$('#report-sent-modal h2'),summary=$('#report-sent-summary');
-    const changeText=changes?`${changes} potential change${changes===1?'':'s'} flagged`:'No potential changes were confirmed';
+    const parts=[];
+    if(changes)parts.push(`${changes} potential change${changes===1?'':'s'} flagged`);
+    if(extras)parts.push(`${extras} extra work item${extras===1?'':'s'} flagged for the office`);
+    const changeText=parts.length?parts.join(' · '):'No potential changes were confirmed';
     if(missing.length){if(title)title.textContent='Sent to the office with gaps';if(summary)summary.textContent=`Missing: ${missing.join(' and ')}. ${changeText}.`}
     else{const hourLabel=typeof FieldDailyScope!=='undefined'&&FieldDailyScope.formatHours?FieldDailyScope.formatHours(hours):`${hours.toFixed(2)} h`;if(title)title.textContent='The office has it.';if(summary)summary.textContent=`${hourLabel} logged · ${changeText}.`}
   }

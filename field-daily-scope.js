@@ -73,6 +73,15 @@
     return String(text||'').replace(/\s+/g,' ').replace(/[.!\s]+$/,'').trim();
   }
 
+  function tidyNext(text){
+    let value=String(text||'').replace(/\s+/g,' ').trim().replace(/^(?:next\s*step|next)\s*:\s*/i,'').trim();
+    if(!value||/^needs confirmation$/i.test(value))return '';
+    const keepPeriod=/[.]$/.test(value);
+    value=value.replace(/[.!\s]+$/,'').trim();
+    if(!value)return '';
+    return keepPeriod?`${value}.`:value;
+  }
+
   function materialPhrase(text){
     return String(text||'').replace(/\s+/g,' ').replace(/[.;,!\s]+$/,'').trim();
   }
@@ -91,6 +100,28 @@
       }
     }
     return phrases.join('; ');
+  }
+
+  function materialLabel(text){
+    return materialPhrase(String(text||'').replace(/^(?:(?:we|i)\s+)?(?:used|using|usage)\s+/i,'').replace(/^(?:and|plus)\s+/i,''));
+  }
+
+  // Materials used are not installed production. A pour or place of an estimate
+  // item stays a production line. Used yards, bags, and tons do not.
+  function isMaterialPhrase(text){
+    const value=String(text||'').trim();
+    if(!value)return false;
+    if(/\b\d+(?:\.\d+)?\s+bags?\b/i.test(value))return true;
+    if(/\b\d+(?:\.\d+)?\s+tons?\b/i.test(value))return true;
+    if(/\b(?:used|using|usage)\b/i.test(value)&&/\b\d+(?:\.\d+)?\s*(?:bags?|tons?|cubic\s+yards?|yards?|yds?|yd|cy)\b/i.test(value)&&!WORK_LANGUAGE.test(value))return true;
+    return !WORK_LANGUAGE.test(value)&&/\b\d+(?:\.\d+)?\s*(?:cubic\s+yards?|yards?|yds?|yd|cy)\b/i.test(value)&&/\b(?:concrete|cement|grout|mortar|rebar|aggregate|gravel|sand|asphalt)\b/i.test(value);
+  }
+
+  function pullMaterialSpans(clause){
+    const phrases=[];
+    const span=/\b(?:(?:we|i)\s+)?(?:used|using|usage)\s+\d+(?:\.\d+)?\s*(?:bags?|tons?|cubic\s+yards?|yards?|yds?|yd|cy)\b(?:\s+of\s+[a-z][a-z0-9-]{2,}(?:\s+[a-z][a-z0-9-]{2,}){0,2})?|\b\d+(?:\.\d+)?\s+bags?\b(?:\s+of\s+[a-z][a-z0-9-]{2,}(?:\s+[a-z][a-z0-9-]{2,}){0,2})?|\b\d+(?:\.\d+)?\s+tons?\b(?:\s+of\s+[a-z][a-z0-9-]{2,}(?:\s+[a-z][a-z0-9-]{2,}){0,2})?/gi;
+    const rest=String(clause||'').replace(span,match=>{const label=materialLabel(match);if(label)phrases.push(label);return ' '});
+    return {phrases,rest};
   }
 
   function isLookahead(text){
@@ -181,26 +212,31 @@
     const seen=new Set();
     const workClauses=[];
     for(const sentence of sentencesOf(notes)){
-      if(isLookahead(sentence)){nextParts.push(tidyFact(sentence));continue}
+      if(isLookahead(sentence)){nextParts.push(tidyNext(sentence));continue}
       if(isDelay(sentence)&&!WORK_LANGUAGE.test(sentence)&&!EXTRA_LANGUAGE.test(sentence)){delayParts.push(tidyFact(sentence));continue}
       if(isMissingMaterial(sentence)&&!WORK_LANGUAGE.test(sentence)&&!EXTRA_LANGUAGE.test(sentence)){materials.push(tidyFact(sentence));continue}
       for(const clause of clausesOf(sentence)){
-        if(isLookahead(clause)){nextParts.push(tidyFact(clause));continue}
+        if(isLookahead(clause)){nextParts.push(tidyNext(clause));continue}
         if(isDelay(clause)&&!WORK_LANGUAGE.test(clause)&&!EXTRA_LANGUAGE.test(clause)){delayParts.push(tidyFact(clause));continue}
         if(isMissingMaterial(clause)&&!WORK_LANGUAGE.test(clause)&&!EXTRA_LANGUAGE.test(clause)){materials.push(tidyFact(clause));continue}
         workClauses.push(clause);
       }
     }
     for(const clause of workClauses){
-      if(HEADCOUNT_LANGUAGE.test(clause)&&!QUANTITY_LANGUAGE.test(clause)&&!WORK_LANGUAGE.test(clause))continue;
-      if(EXTRA_LANGUAGE.test(clause)){
-        const description=clause.replace(/^\s*extra work:\s*/i,'').trim().slice(0,300);
-        flags.push({kind:'extra',reason:'stated_extra',description,quantity:quantityFact(clause).quantity,unit:quantityFact(clause).unit,estimateItemId:null,createsChange:false,decision:null,extra_work:false,who_asked:whoAsked(clause)||whoAsked(notes),message:'The notes call this extra work. Confirm it is extra, or mark it as normal scope. The office decides whether it is billable.'});
+      const pulled=pullMaterialSpans(clause);
+      for(const phrase of pulled.phrases)materials.push(phrase);
+      const work=pulled.rest.replace(/\s+/g,' ').replace(/^[, ]+|[, ]+$/g,'').trim();
+      if(!work)continue;
+      if(HEADCOUNT_LANGUAGE.test(work)&&!QUANTITY_LANGUAGE.test(work)&&!WORK_LANGUAGE.test(work))continue;
+      if(EXTRA_LANGUAGE.test(work)){
+        const description=work.replace(/^\s*extra work:\s*/i,'').trim().slice(0,300);
+        flags.push({kind:'extra',reason:'stated_extra',description,quantity:quantityFact(work).quantity,unit:quantityFact(work).unit,estimateItemId:null,createsChange:false,decision:null,extra_work:false,who_asked:whoAsked(clause)||whoAsked(notes),message:'The notes call this extra work. Confirm it is extra, or mark it as normal scope. The office decides whether it is billable.'});
         continue;
       }
-      if(MATERIAL_LANGUAGE.test(clause)){materials.push(clause.replace(/^\s*(?:used|using|usage)\s+/i,'').trim());continue}
-      if(!WORK_LANGUAGE.test(clause)&&!QUANTITY_LANGUAGE.test(clause))continue;
-      for(const piece of quantityPieces(clause)){
+      if(isMaterialPhrase(work)||MATERIAL_LANGUAGE.test(work)){materials.push(materialLabel(work));continue}
+      if(!WORK_LANGUAGE.test(work)&&!QUANTITY_LANGUAGE.test(work))continue;
+      for(const piece of quantityPieces(work)){
+      if(isMaterialPhrase(piece.text)){materials.push(materialLabel(piece.text));continue}
       const fact={quantity:piece.quantity,unit:piece.unit};
       const match=namedEstimateLine(piece.text,fact.unit,items);
       if(!match){
@@ -234,7 +270,7 @@
         flags.push({kind:'productivity',reason:'hours_over_budget',description:line.description,quantity:line.quantity,unit:line.unit,estimateItemId:line.estimateItemId,laborHours:Math.round(hours*100)/100,expectedHours:Math.round(expected*100)/100,createsChange:false,decision:null,message:`${Math.round(hours*100)/100} hours is far over the estimate rate of about ${Math.round(expected*100)/100} hours. This is a productivity flag, not a change order.`});
       }
     }
-    return {lines,flags,unmatchedNotes,materials:uniqueMaterials(materials),hours:crew,next:[...new Set(nextParts.filter(Boolean))].join('. '),delays:[...new Set(delayParts.filter(Boolean))].join(' ')};
+    return {lines,flags,unmatchedNotes,materials:uniqueMaterials(materials),hours:crew,next:[...new Set(nextParts.filter(Boolean))].join(' '),delays:[...new Set(delayParts.filter(Boolean))].join(' ')};
   }
 
   function namedCrewGaps(notes,crew,punchedMemberIds){
@@ -342,6 +378,7 @@
   }
 
   function rawNoteLine(entry,notes){
+    if(entry?.extra_work===true)return false;
     const matched=entry?.estimateItemId!=null&&String(entry.estimateItemId)!==''&&Number(entry.quantity)>0;
     if(matched)return false;
     const desc=String(entry?.description||'').trim();
@@ -404,6 +441,12 @@
     });
   }
 
+  function displayHoursForMinutes(minuteList){
+    const minutes=(Array.isArray(minuteList)?minuteList:[]).map(value=>Math.max(0,Math.round(Number(value)||0)));
+    const hundredths=Math.round(hoursFromMinutes(minutes.reduce((sum,value)=>sum+value,0))*100);
+    return splitLargestRemainder(hundredths,minutes).map(part=>part/100);
+  }
+
   function splitLargestRemainder(total,weights){
     const count=weights.length;
     if(!count)return [];
@@ -436,8 +479,9 @@
     const rated=auto.every(line=>Number(line.quantity)>0&&Number(line.unitRate)>0);
     const weights=auto.map(line=>rated?Number(line.quantity)*Number(line.unitRate):1);
     const parts=splitLargestRemainder(remaining,weights);
-    auto.forEach((line,index)=>{line.minutes=parts[index]||0;line.hours=hoursFromMinutes(line.minutes)});
-    manual.forEach(line=>{line.hours=hoursFromMinutes(line.minutes)});
+    auto.forEach((line,index)=>{line.minutes=parts[index]||0});
+    const shown=displayHoursForMinutes(rows.map(line=>line.minutes));
+    rows.forEach((line,index)=>{line.hours=shown[index]||0});
     return {lines:rows,total:hoursFromMinutes(crewMinutes),totalMinutes:crewMinutes,allocated:round2(rows.reduce((sum,line)=>sum+line.hours,0)),allocatedMinutes:rows.reduce((sum,line)=>sum+line.minutes,0),warning:''};
   }
 
@@ -568,5 +612,5 @@
     return Math.round(crew*100)/100;
   }
 
-  return {normalizeUnit,matchEstimateLine,reviewScope,reviewNotes,uniqueMaterials,decideFlag,confirmedExtraChanges,fieldExtraItems,whoAsked,approvedQuantityMap,hoursFromClock,statedCrew,sendGate,clockOutMessage,submissionStatus,namedCrewGaps,crewGapReason,noPunchLabel,punchLengthLabel,formatMinutes,formatHours,formatWorkTime,hoursFromMinutes,minutesFromHours,elapsedMinutes,laborTotal,dedupeLaborEntries,rawNoteLine,emptyProductionLine,dedupeProductionLines,keepProductionLines,flagIdentity,normalizeLaborGaps,mergeScopeFlags,splitLargestRemainder,allocateLaborHours,sameDayDaily,clientProjectIndex,singleLineLaborHours,QUANTITY_TOLERANCE,PRODUCTIVITY_LIMIT};
+  return {normalizeUnit,matchEstimateLine,reviewScope,reviewNotes,uniqueMaterials,isMaterialPhrase,tidyNext,decideFlag,confirmedExtraChanges,fieldExtraItems,whoAsked,approvedQuantityMap,hoursFromClock,statedCrew,sendGate,clockOutMessage,submissionStatus,namedCrewGaps,crewGapReason,noPunchLabel,punchLengthLabel,formatMinutes,formatHours,formatWorkTime,hoursFromMinutes,displayHoursForMinutes,minutesFromHours,elapsedMinutes,laborTotal,dedupeLaborEntries,rawNoteLine,emptyProductionLine,dedupeProductionLines,keepProductionLines,flagIdentity,normalizeLaborGaps,mergeScopeFlags,splitLargestRemainder,allocateLaborHours,sameDayDaily,clientProjectIndex,singleLineLaborHours,QUANTITY_TOLERANCE,PRODUCTIVITY_LIMIT};
 });
