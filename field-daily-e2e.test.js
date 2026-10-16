@@ -75,6 +75,7 @@ async function settleOpenPunch(page, file, minutes) {
       }));
     });
     if (detail.some(card => card.minutes >= minutes)) return detail;
+    await new Promise(resolve => setTimeout(resolve, 400));
   }
   throw new Error('open punch stayed under a minute ' + JSON.stringify(detail));
 }
