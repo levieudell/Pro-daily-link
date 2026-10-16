@@ -112,7 +112,7 @@ assert.match(instant, /Sent to the office with gaps/);
 assert.equal(scope.singleLineLaborHours([{quantity:40,laborHours:''},{quantity:'',laborHours:''}],24),24);
 assert.equal(scope.singleLineLaborHours([{quantity:40,laborHours:''},{quantity:2,laborHours:''}],24),null);
 assert.equal(scope.singleLineLaborHours([{quantity:40,laborHours:8}],24),null);
-assert.match(instant, /singleLineLaborHours/);
+assert.match(instant, /allocateLaborHours/);
 assert.match(instant, /Yes, extra/);
 assert.match(instant, /No, normal scope/);
 assert.match(instant, /Who asked\?/);

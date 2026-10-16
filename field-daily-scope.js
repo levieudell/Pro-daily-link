@@ -192,14 +192,27 @@
 
   function namedCrewGaps(notes,crew,punchedMemberIds){
     const punched=new Set((punchedMemberIds||[]).map(Number));
+    const people=(crew||[]).filter(person=>person&&!punched.has(Number(person.id)));
     const source=String(notes||'');
-    return (crew||[]).filter(person=>{
+    const named=people.filter(person=>{
       const first=String(person?.name||'').trim().split(/\s+/)[0]||'';
-      if(first.length<3||punched.has(Number(person.id)))return false;
+      if(first.length<3)return false;
       const token=first.replace(/[.*+?^${}()|[\]\\]/g,'\\$&');
       return new RegExp(`\\b${token}\\b`,'i').test(source);
     });
+    const count=Number(statedCrew(notes).headcount)||0;
+    if(!(count>0))return named;
+    const punchedOnCrew=(crew||[]).filter(person=>punched.has(Number(person.id))).length;
+    const needed=Math.max(count-punchedOnCrew,named.length);
+    const gaps=named.slice();
+    for(const person of people){
+      if(gaps.length>=needed)break;
+      if(!gaps.some(row=>Number(row.id)===Number(person.id)))gaps.push(person);
+    }
+    return gaps;
   }
+
+  function noPunchLabel(){return 'No punch, enter hours'}
 
   function crewGapReason(people){
     const names=(people||[]).map(person=>String(person.name||'').trim().split(/\s+/)[0]).filter(Boolean);
@@ -208,14 +221,142 @@
     return `${list} ${names.length===1?'has':'have'} no clock-in. Enter their hours.`;
   }
 
+  function round2(value){return Math.round((Number(value)||0)*100)/100}
+
+  function elapsedMinutes(start,end){
+    const ms=new Date(end)-new Date(start);
+    if(!Number.isFinite(ms)||ms<=0)return 0;
+    return Math.round(ms/60000);
+  }
+
+  function formatMinutes(minutes){
+    const value=Math.max(0,Math.round(Number(minutes)||0));
+    if(!Number.isFinite(value))return '';
+    if(value<60)return `${value} min`;
+    return `${(value/60).toFixed(2)} h`;
+  }
+
+  function formatHours(hours){return formatMinutes(Math.round((Number(hours)||0)*60))}
+
+  function hoursFromMinutes(minutes){return round2(Math.max(0,Number(minutes)||0)/60)}
+
   function punchLengthLabel(card){
-    if(!card?.outAt)return '';
-    const minutes=Math.max(0,Math.round((new Date(card.outAt)-new Date(card.inAt))/60000));
-    if(!Number.isFinite(minutes))return '';
-    if(minutes<60)return `${minutes} min`;
-    const stored=Number(card.hours);
-    const hours=Number.isFinite(stored)&&stored>0?stored:minutes/60;
-    return `${Number(hours).toFixed(2)} h`;
+    if(!card?.outAt||!card?.inAt)return '';
+    return formatMinutes(elapsedMinutes(card.inAt,card.outAt));
+  }
+
+  function laborTotal({punches,entered}={}){
+    const byId=new Map();
+    for(const punch of punches||[]){
+      const id=Number(punch?.memberId);
+      if(!Number.isFinite(id))continue;
+      const hours=punch?.minutes!=null?hoursFromMinutes(punch.minutes):round2(punch?.hours);
+      if(!(hours>0))continue;
+      const prev=byId.get(id)||{memberId:id,hours:0,source:'punch'};
+      prev.hours=round2(prev.hours+hours);
+      prev.source='punch';
+      byId.set(id,prev);
+    }
+    for(const row of entered||[]){
+      const id=Number(row?.memberId);
+      if(!Number.isFinite(id)||byId.has(id))continue;
+      const hours=round2(row?.hours);
+      if(!(hours>0))continue;
+      byId.set(id,{memberId:id,hours,source:'entered'});
+    }
+    const entries=[...byId.values()];
+    return {entries,total:round2(entries.reduce((sum,row)=>sum+row.hours,0))};
+  }
+
+  function dedupeLaborEntries(entries){
+    const map=new Map();
+    for(const row of entries||[]){
+      const id=Number(row?.memberId);
+      if(!Number.isFinite(id)||map.has(id))continue;
+      map.set(id,{...row,memberId:id,hours:round2(row.hours)});
+    }
+    return [...map.values()].filter(row=>Number(row.hours)>0);
+  }
+
+  function rawNoteLine(entry,notes){
+    const desc=String(entry?.description||'').trim();
+    const note=String(notes||'').trim().toLowerCase();
+    if(!desc)return true;
+    const matched=entry?.estimateItemId!=null&&entry.estimateItemId!==''&&Number(entry.quantity)>0;
+    if(matched)return false;
+    if(!note)return false;
+    const text=desc.toLowerCase();
+    if(text===note)return true;
+    return text.length>=24&&note.includes(text);
+  }
+
+  function dedupeProductionLines(lines){
+    const kept=[],seen=new Map();
+    for(const line of lines||[]){
+      if(!line)continue;
+      const key=line.estimateItemId!=null&&line.estimateItemId!==''?`id:${line.estimateItemId}`:`desc:${String(line.description||'').trim().toLowerCase()}`;
+      if(seen.has(key)){
+        const at=seen.get(key);
+        if(Number(line.quantity)>Number(kept[at].quantity))kept[at]={...kept[at],...line};
+        continue;
+      }
+      seen.set(key,kept.length);
+      kept.push({...line});
+    }
+    return kept;
+  }
+
+  function keepProductionLines(entries,notes){
+    const kept=(entries||[]).filter(entry=>entry&&String(entry.description||'').trim()&&!rawNoteLine(entry,notes));
+    return dedupeProductionLines(kept);
+  }
+
+  function normalizeLaborGaps(rows){
+    return (Array.isArray(rows)?rows:[]).filter(row=>row&&(row.memberId!=null||row.name)).slice(0,20).map(row=>({memberId:Number(row.memberId)||null,name:String(row.name||'').trim().slice(0,80)}));
+  }
+
+  function mergeScopeFlags(previous,incoming){
+    const prior=Array.isArray(previous)?previous:[];
+    return (Array.isArray(incoming)?incoming:[]).map(flag=>{
+      const exact=prior.find(row=>row&&row.reason===flag.reason&&String(row.description||'')===String(flag.description||''));
+      const stated=prior.filter(row=>row&&row.reason==='stated_extra'&&flag?.reason==='stated_extra');
+      const match=exact||(stated.length===1?stated[0]:null);
+      if(!match||!match.decision)return {...flag,decision:null,createsChange:false,who_asked:String(match?.who_asked||flag?.who_asked||'')};
+      return {...flag,decision:match.decision,createsChange:false,extra_work:match.decision==='extra',who_asked:String(match.who_asked||flag.who_asked||'')};
+    });
+  }
+
+  function splitCents(cents,weights){
+    const count=weights.length;
+    if(!count)return [];
+    const target=Math.max(0,Math.round(Number(cents)||0));
+    if(!target)return weights.map(()=>0);
+    const sum=weights.reduce((total,weight)=>total+(Number(weight)||0),0);
+    const raw=weights.map(weight=>sum>0?target*(Number(weight)||0)/sum:target/count);
+    const floors=raw.map(value=>Math.floor(value+1e-9));
+    let left=target-floors.reduce((total,value)=>total+value,0);
+    const order=raw.map((value,index)=>({index,value,weight:Number(weights[index])||0})).sort((a,b)=>b.weight-a.weight||b.value-a.value||a.index-b.index);
+    let cursor=0;
+    while(left>0&&order.length){floors[order[cursor%order.length].index]+=1;left-=1;cursor+=1}
+    return floors;
+  }
+
+  function allocateLaborHours({total,lines}={}){
+    const rows=(Array.isArray(lines)?lines:[]).map(line=>({...line,manual:line?.manual===true,hours:Math.max(0,round2(line?.hours))}));
+    const crew=Math.max(0,round2(total));
+    const manual=rows.filter(line=>line.manual);
+    const auto=rows.filter(line=>!line.manual);
+    const manualSum=round2(manual.reduce((sum,line)=>sum+line.hours,0));
+    if(manualSum-crew>0.001){
+      for(const line of auto)line.hours=0;
+      return {lines:rows,total:crew,allocated:round2(rows.reduce((sum,line)=>sum+line.hours,0)),warning:'Manual hours are over the labor total. Auto lines stay at 0.'};
+    }
+    const remaining=round2(Math.max(0,crew-manualSum));
+    const rated=auto.every(line=>Number(line.quantity)>0&&Number(line.unitRate)>0);
+    const weights=auto.map(line=>rated?Number(line.quantity)*Number(line.unitRate):1);
+    const cents=splitCents(Math.round(remaining*100),weights);
+    auto.forEach((line,index)=>{line.hours=cents[index]/100});
+    return {lines:rows,total:crew,allocated:round2(rows.reduce((sum,line)=>sum+line.hours,0)),warning:''};
   }
 
   function sameDayDaily(reports,{projectIndex,dateIso,memberIds,foreman}={}){
@@ -345,5 +486,5 @@
     return Math.round(crew*100)/100;
   }
 
-  return {normalizeUnit,matchEstimateLine,reviewScope,reviewNotes,decideFlag,confirmedExtraChanges,fieldExtraItems,whoAsked,approvedQuantityMap,hoursFromClock,statedCrew,sendGate,clockOutMessage,submissionStatus,namedCrewGaps,crewGapReason,punchLengthLabel,sameDayDaily,clientProjectIndex,singleLineLaborHours,QUANTITY_TOLERANCE,PRODUCTIVITY_LIMIT};
+  return {normalizeUnit,matchEstimateLine,reviewScope,reviewNotes,decideFlag,confirmedExtraChanges,fieldExtraItems,whoAsked,approvedQuantityMap,hoursFromClock,statedCrew,sendGate,clockOutMessage,submissionStatus,namedCrewGaps,crewGapReason,noPunchLabel,punchLengthLabel,formatMinutes,formatHours,hoursFromMinutes,elapsedMinutes,laborTotal,dedupeLaborEntries,rawNoteLine,dedupeProductionLines,keepProductionLines,normalizeLaborGaps,mergeScopeFlags,allocateLaborHours,sameDayDaily,clientProjectIndex,singleLineLaborHours,QUANTITY_TOLERANCE,PRODUCTIVITY_LIMIT};
 });

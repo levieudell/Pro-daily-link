@@ -1037,6 +1037,8 @@ small{font-size:12px}
 .extra-work-office{display:grid;gap:10px;margin:0 0 16px;padding:12px;border:1px solid #d7d7d1;border-radius:12px;background:#fff}
 .extra-work-office>small{color:#1769e0;font-size:12px;font-weight:700;letter-spacing:.04em}
 .extra-work-item{display:grid;gap:6px}
+.field-allocation-warning{margin:0 0 12px;padding:10px 12px;border-radius:10px;background:#fff4e5;color:#8a4b08;font-weight:700}
+.extra-work-office select{min-height:44px;width:100%;font:inherit}
 .extra-work-billable{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
 .extra-work-billable button{min-height:44px;padding:0 12px;border-radius:10px;border:1px solid var(--line);background:#fff;font-weight:700}
 .extra-work-billable button.is-selected{outline:2px solid #1769e0}

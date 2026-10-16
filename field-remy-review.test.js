@@ -23,7 +23,9 @@ const named = scope.namedCrewGaps('Casey and Alex stayed to patch the gate.', cr
 assert.deepEqual(named.map(person => person.id), [2, 3]);
 assert.equal(scope.crewGapReason(named), 'Casey and Alex have no clock-in. Enter their hours.');
 assert.equal(scope.crewGapReason([{ name: 'Casey Nguyen' }]), 'Casey has no clock-in. Enter their hours.');
-assert.deepEqual(scope.namedCrewGaps('3 guys on the curb.', crew, [1]), []);
+assert.deepEqual(scope.namedCrewGaps('3 guys on the curb.', crew, [1]).map(person => person.id), [2, 3]);
+assert.deepEqual(scope.namedCrewGaps('3 guys on the curb.', crew, [1, 2, 3]), []);
+assert.equal(scope.noPunchLabel(), 'No punch, enter hours');
 assert.deepEqual(scope.namedCrewGaps('Casey and Alex stayed to patch the gate.', crew, [1, 2, 3]), []);
 
 const punchStart = '2026-10-16T15:00:00.000Z';
@@ -32,6 +34,45 @@ assert.equal(scope.punchLengthLabel({ inAt: punchStart, outAt: '2026-10-16T16:30
 assert.equal(scope.punchLengthLabel({ inAt: punchStart, outAt: '2026-10-16T16:30:00.000Z', hours: 0 }), '1.50 h');
 assert.equal(scope.punchLengthLabel({ inAt: punchStart, hours: 8 }), '');
 assert.equal(/^0 h/.test(scope.punchLengthLabel({ inAt: punchStart, outAt: '2026-10-16T15:03:00.000Z', hours: 0 })), false);
+assert.equal(scope.formatHours(0.05), '3 min');
+assert.equal(scope.formatHours(1.5), '1.50 h');
+assert.equal(scope.hoursFromMinutes(3), 0.05);
+const doubled = scope.laborTotal({ punches: [{ memberId: 1, minutes: 3 }], entered: [{ memberId: 1, hours: 0.05 }, { memberId: 2, hours: 8 }] });
+assert.equal(doubled.total, 8.05);
+assert.deepEqual(doubled.entries.map(row => row.memberId), [1, 2]);
+
+const rawNotes = 'Poured 40 LF of curb on north side, 3 guys, extra work: owner asked us to patch 2 potholes by the gate.';
+const keptLines = scope.keepProductionLines([
+  { description: rawNotes, quantity: 0, laborHours: 0.05 },
+  { description: 'Clocked out after the north curb pour was finished', quantity: 0, laborHours: 0.05 },
+  { description: 'Curb', quantity: 10, unit: 'LF', estimateItemId: 7, laborHours: 1 },
+  { description: 'Curb', quantity: 40, unit: 'LF', estimateItemId: 7, laborHours: 2 }
+], rawNotes + ' Clocked out after the north curb pour was finished');
+assert.equal(keptLines.length, 1);
+assert.equal(keptLines[0].quantity, 40);
+assert.equal(scope.rawNoteLine({ description: rawNotes, quantity: 0 }, rawNotes), true);
+
+const merged = scope.mergeScopeFlags(
+  [{ reason: 'stated_extra', description: 'patch 2 potholes', decision: 'extra', who_asked: 'owner', createsChange: false }],
+  [{ reason: 'stated_extra', description: 'owner asked us to patch 2 potholes', who_asked: 'someone' }]
+);
+assert.equal(merged[0].decision, 'extra');
+assert.equal(merged[0].who_asked, 'owner');
+assert.equal(merged[0].createsChange, false);
+assert.equal(merged[0].extra_work, true);
+
+const even = scope.allocateLaborHours({ total: 1, lines: [{ manual: false }, { manual: false }, { manual: false }] });
+assert.deepEqual(even.lines.map(line => line.hours), [0.34, 0.33, 0.33]);
+assert.equal(even.lines.reduce((sum, line) => sum + line.hours, 0), 1);
+const proportional = scope.allocateLaborHours({ total: 10, lines: [{ quantity: 2, unitRate: 1 }, { quantity: 1, unitRate: 1 }] });
+assert.deepEqual(proportional.lines.map(line => line.hours), [6.67, 3.33]);
+const manual = scope.allocateLaborHours({ total: 10, lines: [{ manual: true, hours: 4 }, { manual: false, quantity: 1, unitRate: 1 }] });
+assert.deepEqual(manual.lines.map(line => line.hours), [4, 6]);
+assert.equal(manual.warning, '');
+const over = scope.allocateLaborHours({ total: 10, lines: [{ manual: true, hours: 12, quantity: 1 }, { manual: false, quantity: 4, unitRate: 2 }] });
+assert.equal(over.lines[1].hours, 0);
+assert.equal(over.lines[0].hours, 12);
+assert.equal(over.warning, 'Manual hours are over the labor total. Auto lines stay at 0.');
 
 const sameDay = [
   { id: 1, project: 2, dateIso: '2026-10-16', status: 'Draft', foreman: 'Field team', laborEntries: [{ memberId: 1, hours: 8 }] },
@@ -69,13 +110,20 @@ assert.match(instant, /Yes, extra/);
 assert.match(instant, /No, normal scope/);
 assert.match(instant, /Who asked\?/);
 assert.doesNotMatch(instant, />Bill it</);
-assert.match(app, /data-extra-billable/);
+assert.match(app, /id="office-decision"/);
+assert.match(app, /fieldClockTick=setInterval/);
+assert.match(app, /30000/);
+assert.match(app, /laborManual/);
 assert.match(serverSource, /\/extra-work\$/);
 assert.match(serverSource, /Choose billable or not billable/);
 assert.match(instant, /id="field-review-next"/);
-assert.match(instant, /crewGapReason\(gaps\)/);
+assert.match(instant, /noPunchLabel\(\)/);
+assert.match(instant, /No punch, enter hours/);
 assert.match(instant, /every\(row=>Number\(row\.value\)>0\)/);
-assert.match(instant, /input\.value=Math\.round\(minutes\/60\*100\)\/100/);
+assert.match(instant, /hoursFromMinutes/);
+assert.match(instant, /allocateLaborHours/);
+assert.match(instant, /laborManual/);
+assert.match(instant, /mergeScopeFlags/);
 assert.match(instant, /window\.renderFieldReview=renderFieldReview/);
 const styles = fs.readFileSync(__dirname + '/styles.css', 'utf8');
 assert.match(styles, /\.report-job-heading \.project-badge\{[^}]*white-space:nowrap/);
