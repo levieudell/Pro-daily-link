@@ -140,9 +140,7 @@ async function gateReport(page) {
     await startJordan(page);
     pinOpenPunch(dbFile, CLOSED_MINUTES);
     await page.click('#start-day-button');
-    await page.waitForSelector('#end-day-modal[open] #end-day-notes', { timeout: 20000 });
-    await page.$eval('#end-day-notes', (el, value) => { el.value = value; }, NOTES);
-    await page.click('#confirm-end-day');
+    await require('./scripts/field-report-test-helpers.cjs').completeClockOutDaily(page,NOTES,'');
     await page.waitForFunction(closed => {
       const modal = document.querySelector('#report-modal');
       if (!modal?.open || document.querySelector('#end-day-modal')?.open) return false;

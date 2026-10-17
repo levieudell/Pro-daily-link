@@ -88,11 +88,7 @@ async function chooseJob(page) {
 async function clockOut(page, dbFile, notes, next, minutes) {
   pinOpenPunch(dbFile, minutes);
   await page.evaluate(() => document.querySelector('#start-day-button')?.click());
-  await page.waitForSelector('#end-day-modal[open] #end-day-notes', { timeout: 20000 });
-  await page.$eval('#end-day-notes', (el, value) => { el.value = value; }, notes);
-  await page.$eval('#end-day-next', (el, value) => { el.value = value; }, next);
-  pinOpenPunch(dbFile, minutes);
-  await page.click('#confirm-end-day');
+  await require('./scripts/field-report-test-helpers.cjs').completeClockOutDaily(page,notes,next);
   await page.waitForFunction(() => !document.querySelector('#end-day-modal')?.open, { timeout: 20000 });
 }
 

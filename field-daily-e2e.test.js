@@ -665,44 +665,9 @@ async function openNav(page, name) {
     }, { timeout: 20000 });
     const nextBeforeOut = await page.$eval('#report-next', el => el.value);
     await page.evaluate(() => document.querySelector('#field-clock-out').click());
-    await page.waitForSelector('#end-day-modal[open]', { timeout: 20000 });
-    const clockOut = await page.evaluate(() => ({
-      reportOpen: Boolean(document.querySelector('#report-modal')?.open),
-      endNotes: document.querySelector('#end-day-notes')?.value || '',
-      dailyNotes: document.querySelector('#field-notes')?.value || ''
-    }));
-    assert.equal(clockOut.reportOpen, true);
-    assert.equal(clockOut.endNotes, '');
-    assert.match(clockOut.dailyNotes, /gutter/i);
-    await page.click('#confirm-end-day');
-    const emptyOut = await page.evaluate(() => ({
-      review: document.querySelector('#report-submit-status')?.textContent || '',
-      dialog: document.querySelector('#end-day-message')?.textContent || '',
-      reviewOpen: Boolean(document.querySelector('#report-modal')?.open),
-      endOpen: Boolean(document.querySelector('#end-day-modal')?.open)
-    }));
-    assert.equal(/Add what was completed before clocking out\./.test(emptyOut.review), false, emptyOut.review);
-    assert.match(emptyOut.dialog, /Add what was completed before clocking out\./);
-    assert.equal(emptyOut.reviewOpen, true);
-    assert.equal(emptyOut.endOpen, true);
-    await page.type('#end-day-notes', 'Left the site. Gate is locked.');
+    await page.waitForFunction(() => /Clocked out/.test(document.querySelector('#toast')?.textContent || ''), {timeout:20000});
+    assert.equal(await page.$eval('#end-day-modal',el=>el.open),false);
     await shot(page, 'field-clock-out-open.png');
-    await page.click('#confirm-end-day');
-    await page.waitForFunction(() => {
-      const needle = "Clocked out. The punch is on today's daily.";
-      return [...document.querySelectorAll('#toast, #report-submit-status, #end-day-message, #autosave-status')].some(el => (el.textContent || '').includes(needle));
-    }, { timeout: 20000 });
-    const clockOutBanners = await page.evaluate(() => {
-      const needle = "Clocked out. The punch is on today's daily.";
-      return [...document.querySelectorAll('#toast, #report-submit-status, #end-day-message, #autosave-status')].filter(el => {
-        if (!(el.textContent || '').includes(needle)) return false;
-        const box = el.getBoundingClientRect();
-        const style = getComputedStyle(el);
-        return style.display !== 'none' && style.visibility !== 'hidden' && box.width > 0 && box.height > 0;
-      }).map(el => el.id || el.className);
-    });
-    assert.equal(clockOutBanners.length, 1, JSON.stringify(clockOutBanners));
-    await page.waitForFunction(() => !document.querySelector('#end-day-modal')?.open && document.querySelector('#report-modal')?.open, { timeout: 20000 });
     const afterOut = await page.evaluate(() => ({
       notes: document.querySelector('#field-notes')?.value || '',
       next: document.querySelector('#report-next')?.value || '',

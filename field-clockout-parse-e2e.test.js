@@ -105,9 +105,7 @@ async function openNav(page, name) {
     await page.waitForFunction(() => /Clock out/i.test(document.querySelector('#start-day-button')?.textContent || ''), { timeout: 20000 });
     pinOpenPunch(dbFile, 2);
     await page.click('#start-day-button');
-    await page.waitForSelector('#end-day-modal[open] #end-day-notes', { timeout: 20000 });
-    await page.$eval('#end-day-notes', (el, value) => { el.value = value; }, NOTES);
-    await page.click('#confirm-end-day');
+    await require('./scripts/field-report-test-helpers.cjs').completeClockOutDaily(page,NOTES,'');
     try {
       await page.waitForFunction(() => {
         const modal = document.querySelector('#report-modal');

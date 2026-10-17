@@ -83,10 +83,7 @@ async function clockOut(page, file, minutes, notes, next) {
   await openNav(page, 'fieldday');
   pinOpenPunch(file, minutes);
   await page.click('#start-day-button');
-  await page.waitForSelector('#end-day-modal[open] #end-day-next', { timeout: 20000 });
-  await page.$eval('#end-day-notes', (el, value) => { el.value = value; }, notes);
-  await page.$eval('#end-day-next', (el, value) => { el.value = value; }, next);
-  await page.click('#confirm-end-day');
+  await require('./scripts/field-report-test-helpers.cjs').completeClockOutDaily(page,notes,next);
 }
 
 async function dailyState(page) {
