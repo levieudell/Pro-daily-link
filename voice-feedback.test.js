@@ -16,13 +16,13 @@ assert.ok(app.includes('setVoiceStatus(status'), 'listening state is surfaced th
 assert.ok(app.includes("button.setAttribute('aria-pressed'"), 'listening state is exposed to assistive tech');
 assert.ok(app.indexOf("button.textContent=spanish?'■ Dejar de escuchar':'■ Stop listening'") < app.indexOf('recognition.start()'), 'the listening label appears before the browser service starts');
 assert.ok(styles.includes('.voice-status') && styles.includes('@keyframes pdl-voice-pulse'), 'status line and pulse animation are styled');
-assert.match(index, /app\.js\?v=20261014-review3/);
+assert.match(index, /app\.js\?v=20261016-voice1/);
 assert.match(index, /styles\.css\?v=20261014-review3/);
 
 // --- Behavioral harness -----------------------------------------------------
 const aStart = app.indexOf('let endDayVoice=null');
 const aEnd = app.indexOf("$('#end-day-voice').onclick=startEndDayVoice;") + "$('#end-day-voice').onclick=startEndDayVoice;".length;
-const bStart = app.indexOf('function startVoiceNotes(){');
+const bStart = app.indexOf('let voiceNotesRestartTimer=null;');
 const bEnd = app.indexOf("$('#voice-notes').onclick=startVoiceNotes;") + "$('#voice-notes').onclick=startVoiceNotes;".length;
 assert.ok(aStart >= 0 && aEnd > aStart && bStart > aEnd && bEnd > bStart, 'voice blocks located in app.js');
 const block = app.slice(aStart, aEnd) + '\n;\n' + app.slice(bStart, bEnd);
@@ -52,6 +52,8 @@ function harness(language) {
   }
   const context = {
     window: { SpeechRecognition: FakeRecognition },
+    setTimeout: () => 0,
+    clearTimeout: () => {},
     preferredLanguage: language,
     notify: message => notifications.push(message),
     applyReportLanguage() { elements['voice-notes'].textContent = '🎙 Speak notes'; },

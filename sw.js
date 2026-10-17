@@ -3,9 +3,13 @@
  * Strategy:
  * - Navigations (opening the app): network first, cached app page as fallback
  *   so the workspace opens with no connection at all.
- * - Same-origin static assets (JS/CSS/fonts/images): network first, cache
- *   fallback + background refresh. Assets self-populate the cache as they are
- *   used, so no hardcoded version list can go stale.
+ * - Same-origin static assets (JS/CSS/fonts/images): pinned assets (`?v=...`)
+ *   are immutable, so they are cache-first — instant on repeat visits and
+ *   never stale, because a new deploy ships a new URL. Unpinned assets are
+ *   network first with cache fallback + background refresh, so an updated
+ *   file is never masked by an old cached copy on a flaky connection.
+ *   Assets self-populate the cache as they are used, so no hardcoded version
+ *   list can go stale.
  * - /api/* is never cached: data always comes live, or from the app's own
  *   last-known-state cache (offline.js) which marks itself as stale.
  */
@@ -46,11 +50,18 @@ self.addEventListener('fetch', event => {
     return;
   }
 
-  // Static assets: network first; serve the cached copy when offline and
-  // refresh the cache in the background when online.
+  // Static assets. Pinned assets (?v=...) are immutable: serve cache-first so
+  // a slow or flaky connection can never fall back to a half-old/half-new
+  // mix, and refresh the cache entry from the network in the background.
+  // Unpinned assets stay network-first so edits show up immediately.
+  const pinned = url.searchParams.has('v');
   event.respondWith(
     caches.open(SHELL_CACHE).then(async cache => {
       const cached = await cache.match(request);
+      if (pinned && cached) {
+        fetch(request).then(response => { if (response.ok) cache.put(request, response.clone()); }).catch(() => {});
+        return cached;
+      }
       const network = fetch(request).then(response => {
         if (response.ok) cache.put(request, response.clone());
         return response;
