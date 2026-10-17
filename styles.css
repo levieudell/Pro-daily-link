@@ -1091,6 +1091,7 @@ small{font-size:12px}
 #report-modal.report-office-compact .autosave-status,
 #report-modal.report-office-compact .labor-fieldset,
 #report-modal.report-office-compact #report-timecard-status,
+#report-modal.report-office-compact #report-gaps,
 #report-modal.report-office-compact #report-issue-label,
 #report-modal.report-office-compact #report-more{display:block}
 #report-modal.report-office-compact #save-report-draft,
