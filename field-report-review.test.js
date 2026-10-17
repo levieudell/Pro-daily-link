@@ -5,6 +5,8 @@ assert.equal(scope.sendGate({laborHours:0,flags:[],lines:[]}).block.length,0);
 assert.match(scope.sendGate({laborHours:0}).warn.join(' '),/office review/i);
 for(const hours of [-1,'Infinity','bad',25])assert.equal(review.invalidLabor({reportedLabor:[{memberId:11,hours}]}),true);
 assert.equal(review.invalidLabor({reportedLabor:[{memberId:11,hours:null}]}),false);
+for(const minutes of [-1,'Infinity','bad',28801])assert.equal(review.invalidLabor({laborPunches:[{memberId:11,minutes}]}),true);
+assert.equal(review.invalidLabor({laborPunches:[{memberId:11,minutes:0,seconds:59}]}),false);
 assert.equal(scope.narrativeWarnings('A volcano blew up and I jumped a dozer.','').length,1);
 assert.equal(scope.narrativeWarnings('Poured curb.','').length,0);
 const ui=fs.readFileSync(path.join(__dirname,'field-instant-daily.js'),'utf8');
@@ -34,6 +36,7 @@ async function call(method,route,input,auth=token){const response=await fetch(ba
  const patch=await call('PATCH',`/api/reports/${created.data.id}`,{...payload,updatedAt:created.data.updatedAt,reportedLabor:[{memberId:11,hours:null}],laborEntries:[],productionEntries:[]});assert.equal(patch.status,200,JSON.stringify(patch));assert.equal(patch.data.officeReview.reportedLabor[0].hours,null);assert(patch.data.officeReview.reasons.some(row=>row.code==='labor_missing'));assert.equal(patch.data.originalNotes,raw);
  for(const memberId of [12,99,999]){const other=await call('PATCH',`/api/reports/${created.data.id}`,{updatedAt:patch.data.updatedAt,status:'Needs review',reportedLabor:[{memberId,hours:2}]});assert.equal(other.status,403)}
  const before=JSON.parse(fs.readFileSync(file));const invalid=await call('PATCH',`/api/reports/${created.data.id}`,{...payload,updatedAt:patch.data.updatedAt,reportedLabor:[{memberId:11,hours:'Infinity'}]});assert.equal(invalid.status,400);assert.deepEqual(JSON.parse(fs.readFileSync(file)),before);
+ const invalidPunch=await call('PATCH',`/api/reports/${created.data.id}`,{...payload,updatedAt:patch.data.updatedAt,laborPunches:[{memberId:11,minutes:'Infinity'}]});assert.equal(invalidPunch.status,400);assert.deepEqual(JSON.parse(fs.readFileSync(file)),before);
  stored=JSON.parse(fs.readFileSync(file));assert.equal(stored.timeCards[0].hours,0);assert.equal(stored.timeCards[0].inAt,inAt);assert.equal(stored.timeCards[0].outAt,outAt);assert.equal(stored.reports[0].officeReview.measuredClock[0].seconds,59);
  console.log('Field review: subminute punch presence, stable hour entry, raw notes, non-blocking missing/mismatched hours, office alerts, numeric denial and unchanged payroll passed.');
 }finally{await new Promise(resolve=>server.close(resolve));fs.rmSync(root,{recursive:true,force:true})}})().catch(error=>{console.error(error);process.exitCode=1});

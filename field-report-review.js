@@ -2,6 +2,10 @@
 const scope=require('./field-daily-scope');
 const finite=(value,max=24)=>value==null||value===''||Number.isFinite(Number(value))&&Number(value)>=0&&Number(value)<=max;
 function invalidLabor(input){
+ if(Object.hasOwn(input||{},'laborPunches')){
+  if(!Array.isArray(input.laborPunches))return true;
+  if(input.laborPunches.some(row=>!row||!Number.isSafeInteger(Number(row.memberId))||Number(row.memberId)<=0||!finite(row.minutes,28800)||!finite(row.hours,480)||!finite(row.seconds,1728000)))return true;
+ }
  for(const key of ['laborEntries','laborEntered','reportedLabor'])if(Object.hasOwn(input||{},key)){
   if(!Array.isArray(input[key]))return true;
   const ids=new Set();for(const row of input[key]){const id=Number(row?.memberId);if(!row||!Number.isSafeInteger(id)||id<=0||ids.has(id)||!finite(row.hours))return true;ids.add(id)}
