@@ -250,6 +250,44 @@ async function clockSurfaces(page) {
     assert.match(detail, /Cleaned up site/);
     assert.match(detail, /Pour pad Monday/);
     assert.match(detail, new RegExp(`${thirdMinutes} min`));
+    await page.click('[data-edit-report]');
+    await page.waitForFunction(() => document.querySelector('#report-modal')?.open && document.querySelector('#field-notes'), { timeout: 10000 });
+    const curbNotes = 'Poured 40 LF of curb on the north side.';
+    await page.$eval('#field-notes', (el, value) => {
+      el.value = value;
+      el.dispatchEvent(new Event('input', { bubbles: true }));
+    }, curbNotes);
+    await page.click('#report-next-step');
+    await page.waitForFunction(() => {
+      const button = document.querySelector('#report-next-step');
+      const cards = document.querySelector('#field-review-cards')?.innerText || '';
+      return button && !button.disabled && document.querySelector('#report-form')?.getAttribute('data-current-step') === '2' && /Curb/.test(cards) && /40/.test(cards);
+    }, { timeout: 20000 });
+    const summaryAfterReview = await page.$eval('#report-summary', el => el.value);
+    await page.click('#report-back');
+    await page.waitForFunction(() => document.querySelector('#report-form')?.getAttribute('data-current-step') === '1');
+    await page.click('#report-next-step');
+    await page.waitForFunction(() => {
+      const button = document.querySelector('#report-next-step');
+      return button && !button.disabled && document.querySelector('#report-form')?.getAttribute('data-current-step') === '2';
+    }, { timeout: 20000 });
+    const summaryRetap = await page.$eval('#report-summary', el => el.value);
+    assert.equal(summaryRetap, summaryAfterReview);
+    await page.click('#report-modal .close-button');
+    await page.waitForFunction(() => !document.querySelector('#report-modal')?.open, { timeout: 5000 });
+    const productionCard = await page.evaluate(() => {
+      const box = [...document.querySelectorAll('#report-detail .data-box')].find(row => /PRODUCTION/i.test(row.querySelector('small')?.textContent || ''));
+      return box?.innerText || '';
+    });
+    assert.match(productionCard, /Curb/);
+    assert.match(productionCard, /40/);
+    assert.doesNotMatch(productionCard, /Not entered/);
+    const keptProduction = await page.evaluate(async () => {
+      const state = await (await fetch('/api/state', { credentials: 'include' })).json();
+      const report = (state.reports || [])[0] || null;
+      return (report?.productionEntries || []).map(row => ({ description: row.description, quantity: Number(row.quantity) || 0 }));
+    });
+    assert.ok(keptProduction.some(row => /Curb/i.test(row.description) && row.quantity === 40), JSON.stringify(keptProduction));
     console.log('Clock refresh and next-step browser flow passed.');
   } finally {
     if (browser) await browser.close();

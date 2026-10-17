@@ -66,6 +66,27 @@ var fieldScopeFlags=[];
     stampOpenReportLocks();
     await saveDailyReport(status,{keepOpen:true});
   }
+  let reviewedNotesKey='';
+  async function persistReviewDraft(){
+    if(!fieldCompact()||!$('#report-modal')?.open||typeof saveDailyReport!=='function'||!(typeof editingReportId!=='undefined'&&editingReportId))return;
+    const current=(typeof reports==='undefined'?[]:reports).find(row=>Number(row.id)===Number(editingReportId));
+    if(!current||current.status!=='Draft')return;
+    let kept=false;
+    for(const row of $$('.production-entry')){
+      const named=row.querySelector('.production-item')?.selectedOptions?.[0]?.textContent?.trim()||'';
+      const custom=row.querySelector('.custom-description')?.value.trim()||'';
+      const description=custom||(named&&named!=='Select estimate line'?named:'');
+      const quantity=Number(row.querySelector('.production-quantity')?.value)>0;
+      if(!description&&!quantity)continue;
+      kept=true;
+      if(row.dataset.aiFilled==='true'&&description&&!String(row.dataset.workDescription||'').trim())row.dataset.workDescription=description;
+    }
+    if(!kept)return;
+    const saved=await saveDailyReport('Draft',{keepOpen:true});
+    if(!saved?.id)return;
+    if(typeof renderReports==='function')renderReports(saved.id);
+    if(typeof renderMyDay==='function')renderMyDay();
+  }
   function applyScopeLines(review){
     const locks=lockedLaborMap();
     const lines=review?.lines||[];
@@ -483,7 +504,17 @@ var fieldScopeFlags=[];
   async function fillFieldReportFromNotes(){
     const keptLocks=lockedLaborMap();
     const button=$('#report-next-step'),note=$('#field-notes')?.value.trim()||'',language=$('#report-language')?.value||'en-US';
+    const doneLabel=language.startsWith('es')?'Listo':'Done';
     if(button){button.disabled=true;button.textContent=language.startsWith('es')?'Leyendo notas…':'Reading notes…'}
+    if(note&&note===reviewedNotesKey){
+      try{
+        if(typeof showReportStep==='function')showReportStep(2);
+        renderFlags();
+        renderFieldReview();
+        polishFieldDaily();
+      }finally{if(button){button.disabled=false;button.textContent=doneLabel}}
+      return;
+    }
     let failed=false;
     try{
       if(typeof refreshReportLaborFromTimeCards==='function'){try{await refreshReportLaborFromTimeCards()}catch{}}
@@ -510,7 +541,6 @@ var fieldScopeFlags=[];
       failed=true;
       if(typeof notify==='function')notify(language.startsWith('es')?'La IA no pudo leer las notas. Complete las tarjetas.':'AI could not read the notes. Fill the cards yourself.');
     }finally{
-      if(button){button.disabled=false;button.textContent=language.startsWith('es')?'Listo':'Done'}
       if(typeof showReportStep==='function')showReportStep(2);
       if(failed&&!$$('.production-entry').length&&typeof addProductionRow==='function')addProductionRow();
       dropRawProductionRows();
@@ -522,6 +552,11 @@ var fieldScopeFlags=[];
       renderFlags();
       renderFieldReview();
       polishFieldDaily();
+      if(!failed&&note){
+        reviewedNotesKey=note;
+        try{await persistReviewDraft()}catch{}
+      }
+      if(button){button.disabled=false;button.textContent=doneLabel}
     }
   }
   const nextButton=$('#report-next-step');
@@ -561,7 +596,7 @@ var fieldScopeFlags=[];
   }
   if(typeof openReport==='function'){
     const openBefore=openReport;
-    openReport=function(report=null,context={}){fieldScopeFlags=[];fieldHoursReview=null;const result=openBefore(report,context);if(fieldCompact()){const saved=(report?.productionEntries||[]).some(row=>row&&((row.estimateItemId!=null&&String(row.estimateItemId)!=='')||Number(row.quantity)>0));if(report?.workSuggestions?.length&&!saved&&$('#production-rows'))$('#production-rows').innerHTML='';const draft=typeof readOfflineDraft==='function'&&typeof offlineReportDraftKey==='function'?readOfflineDraft(offlineReportDraftKey()):null;if(Array.isArray(report?.scopeFlags)&&report.scopeFlags.length)fieldScopeFlags=stampFlags(report.scopeFlags);else if(Array.isArray(draft?.scopeFlags)&&String(draft.notes||'').trim()&&String(draft.notes||'').trim()===String($('#field-notes')?.value||'').trim())fieldScopeFlags=stampFlags(draft.scopeFlags)}dropEmptyLines();dropRawProductionRows();bindLaborAllocation();polishFieldDaily();renderFlags();if(report?.id&&!(typeof restoringActiveReport!=='undefined'&&restoringActiveReport)&&typeof clearRestoreBanner==='function')clearRestoreBanner();if(fieldCompact()&&$('#report-form')?.getAttribute('data-current-step')==='2')renderFieldReview();return result};
+    openReport=function(report=null,context={}){fieldScopeFlags=[];fieldHoursReview=null;reviewedNotesKey='';const result=openBefore(report,context);if(fieldCompact()){const loadedSummary=String($('#report-summary')?.value||'').trim(),loadedNotes=String($('#field-notes')?.value||'').trim(),hasProduction=(report?.productionEntries||[]).some(row=>row&&String(row.description||'').trim());if(loadedSummary&&loadedNotes&&(!/^field work recorded:/i.test(loadedSummary)||hasProduction))reviewedNotesKey=loadedNotes;const saved=(report?.productionEntries||[]).some(row=>row&&((row.estimateItemId!=null&&String(row.estimateItemId)!=='')||Number(row.quantity)>0));if(report?.workSuggestions?.length&&!saved&&$('#production-rows'))$('#production-rows').innerHTML='';const draft=typeof readOfflineDraft==='function'&&typeof offlineReportDraftKey==='function'?readOfflineDraft(offlineReportDraftKey()):null;if(Array.isArray(report?.scopeFlags)&&report.scopeFlags.length)fieldScopeFlags=stampFlags(report.scopeFlags);else if(Array.isArray(draft?.scopeFlags)&&String(draft.notes||'').trim()&&String(draft.notes||'').trim()===String($('#field-notes')?.value||'').trim())fieldScopeFlags=stampFlags(draft.scopeFlags)}dropEmptyLines();dropRawProductionRows();bindLaborAllocation();polishFieldDaily();renderFlags();if(report?.id&&!(typeof restoringActiveReport!=='undefined'&&restoringActiveReport)&&typeof clearRestoreBanner==='function')clearRestoreBanner();if(fieldCompact()&&$('#report-form')?.getAttribute('data-current-step')==='2')renderFieldReview();return result};
   }
   if(typeof showReportStep==='function'){
     const stepBefore=showReportStep;
