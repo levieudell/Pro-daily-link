@@ -141,6 +141,7 @@
     if (draining || !navigator.onLine) return { sent: 0, remaining: queuedCount() };
     draining = true;
     let sent = 0;
+    const clockedOut=[];
     try {
       for (;;) {
         const list = readQueue();
@@ -193,7 +194,7 @@
           });
           if (response.ok || (response.status >= 400 && response.status < 500)) {
             if (response.ok) {
-              try { rememberResolved(entry.tag, await response.json()); } catch (_) { /* non-JSON success: nothing to resolve */ }
+              try { const result=await response.json(); rememberResolved(entry.tag,result); if(entry.method==='POST'&&/^\/api\/workdays\/\d+\/end$/.test(entry.path)&&result.workday?.endedAt)clockedOut.push(result.workday.id); } catch (_) { /* non-JSON success: nothing to resolve */ }
               if (entry.kind === 'photos') {
                 try { const store = await photoCache(); if (store) await store.delete(entry.cacheKey); } catch (_) { /* orphaned cache entry is harmless */ }
               }
@@ -218,6 +219,7 @@
     if (sent > 0 && typeof loadRole === 'function' && typeof currentRole !== 'undefined') {
       try { await loadRole(currentRole); } catch (_) { /* a later action will refresh */ }
     }
+    for(const workdayId of clockedOut)window.dispatchEvent(new CustomEvent('pdl-clockout-synced',{detail:{workdayId}}));
     if (typeof updateConnectivity === 'function') updateConnectivity(Boolean(sent));
     return { sent, remaining };
   }

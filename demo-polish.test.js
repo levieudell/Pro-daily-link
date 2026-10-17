@@ -95,7 +95,7 @@ for (const source of [install, route, platformDemo, platform]) {
   assert.match(source, /DEMO \| Alder Ridge Builders/);
 }
 // Cache pins carry the new release marker.
-assert.match(index, /app\.js\?v=20261014-review3/);
+assert.match(index, /app\.js\?v=20261016-voice2/);
 assert.match(index, /styles\.css\?v=20261014-review3/);
 assert.match(index, /company-timezone\.js\?v=20261014-review3/);
 

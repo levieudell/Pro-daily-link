@@ -49,6 +49,7 @@ async function login(page, email, password) {
   await page.click('form#login button.primary');
   await page.waitForFunction(() => location.pathname.includes('/app'), { timeout: 20000 });
   await page.waitForSelector('#menu-button', { timeout: 20000 });
+  await page.waitForFunction(()=>typeof currentUser!=='undefined'&&currentUser?.memberId&&typeof team!=='undefined'&&team.some(row=>Number(row.id)===Number(currentUser.memberId)),{timeout:20000});
 }
 
 async function openNav(page, name) {
@@ -83,10 +84,7 @@ async function clockOut(page, file, minutes, notes, next) {
   await openNav(page, 'fieldday');
   pinOpenPunch(file, minutes);
   await page.click('#start-day-button');
-  await page.waitForSelector('#end-day-modal[open] #end-day-next', { timeout: 20000 });
-  await page.$eval('#end-day-notes', (el, value) => { el.value = value; }, notes);
-  await page.$eval('#end-day-next', (el, value) => { el.value = value; }, next);
-  await page.click('#confirm-end-day');
+  await require('./scripts/field-report-test-helpers.cjs').completeClockOutDaily(page,notes,next);
 }
 
 async function dailyState(page) {

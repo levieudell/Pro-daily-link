@@ -52,6 +52,7 @@ async function login(page, email, password) {
   await page.click('form#login button.primary');
   await page.waitForFunction(() => location.pathname.includes('/app'), { timeout: 20000 });
   await page.waitForSelector('#menu-button', { timeout: 20000 });
+  await page.waitForFunction(()=>typeof currentUser!=='undefined'&&currentUser?.memberId&&typeof team!=='undefined'&&team.some(row=>Number(row.id)===Number(currentUser.memberId)),{timeout:20000});
 }
 
 async function openNav(page, name) {
@@ -141,29 +142,9 @@ async function gateReport(page) {
     });
     await login(page, FIELD_EMAIL, FIELD_PASSWORD);
     await startJordan(page);
-    const modalStart = pinOpenPunch(dbFile, SPAN_SECONDS);
-    const modalCopy = await page.evaluate(start => {
-      for (const day of workdays) if (day.status === 'active') day.startedAt = start;
-      for (const card of timeCards) if (card && card.inAt && !card.outAt) card.inAt = start;
-      const end = new Date(new Date(start).getTime() + 168000).toISOString();
-      window.fieldLaborNow = () => new Date(end).getTime();
-      const day = workdays.find(row => row.status === 'active');
-      openEndDay(day.id);
-      const summary = document.querySelector('#end-day-summary')?.innerText || '';
-      const minutes = FieldDailyScope.elapsedMinutes(start, end);
-      return { summary, minutes, label: FieldDailyScope.formatWorkTime(minutes), hours: FieldDailyScope.hoursFromMinutes(minutes) };
-    }, modalStart);
-    assert.equal(modalCopy.minutes, 2, JSON.stringify(modalCopy));
-    assert.equal(modalCopy.hours, 0.03, JSON.stringify(modalCopy));
-    assert.match(modalCopy.summary, /2 min · 0\.03 h/, JSON.stringify(modalCopy));
-    await page.$eval('#end-day-notes', (el, value) => { el.value = value; }, NOTES);
-    const savedStart = pinOpenPunch(dbFile, SPAN_SECONDS);
-    await page.evaluate(start => {
-      window.fieldLaborNow = () => Date.now();
-      for (const day of workdays) if (day.status === 'active') day.startedAt = start;
-      for (const card of timeCards) if (card && card.inAt && !card.outAt) card.inAt = start;
-    }, savedStart);
-    await page.click('#confirm-end-day');
+    pinOpenPunch(dbFile, SPAN_SECONDS);
+    await page.evaluate(()=>openEndDay(workdays.find(row=>row.status==='active').id));
+    await require('./scripts/field-report-test-helpers.cjs').completeClockOutDaily(page,NOTES);
     await page.waitForFunction(() => {
       const modal = document.querySelector('#report-modal');
       return Boolean(modal?.open && document.querySelector('#report-form')?.getAttribute('data-current-step') === '2' && document.querySelector('.field-labor-total'));
@@ -191,17 +172,11 @@ async function gateReport(page) {
     assert.match(surfaces.review, /2 min · 0\.03 h/, JSON.stringify(surfaces));
     assert.match(surfaces.timeCard, /2 min/, JSON.stringify(surfaces));
     assert.doesNotMatch(surfaces.review, /3 min|0\.05 h/, JSON.stringify(surfaces));
-    const samePunch = await page.evaluate((inAt, outAt) => {
-      const day = workdays.find(row => row && row.reportId) || workdays[0];
-      window.fieldLaborNow = () => new Date(outAt).getTime();
-      day.startedAt = inAt;
-      openEndDay(day.id);
-      const summary = document.querySelector('#end-day-summary')?.innerText || '';
-      document.querySelector('#end-day-modal')?.close();
-      window.fieldLaborNow = () => Date.now();
-      return summary;
-    }, card.inAt, card.outAt);
-    assert.match(samePunch, /2 min · 0\.03 h/, samePunch);
+    const samePunch = await page.evaluate(async id => {
+      const response=await fetch('/api/workdays/'+id+'/end',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'});
+      return response.json();
+    },card.workdayId);
+    assert.equal(samePunch.workday.endedAt,card.outAt,'retry keeps the original end time');
     assert.equal(scope.formatMinutes(minutes), '2 min');
     assert.equal(label, '2 min · 0.03 h');
     const ownerContext = await browser.createBrowserContext();
