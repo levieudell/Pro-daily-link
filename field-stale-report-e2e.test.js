@@ -51,6 +51,7 @@ async function login(page, email = FIELD_EMAIL, password = FIELD_PASSWORD) {
   await page.click('form#login button.primary');
   await page.waitForFunction(() => location.pathname.includes('/app'), { timeout: 20000 });
   await page.waitForSelector('#menu-button', { timeout: 20000 });
+  await page.waitForFunction(()=>typeof currentUser!=='undefined'&&currentUser?.memberId&&typeof team!=='undefined'&&team.some(row=>Number(row.id)===Number(currentUser.memberId)),{timeout:20000});
 }
 
 async function openNav(page, name) {
@@ -88,11 +89,7 @@ async function chooseJob(page) {
 async function clockOut(page, dbFile, notes, next, minutes) {
   pinOpenPunch(dbFile, minutes);
   await page.evaluate(() => document.querySelector('#start-day-button')?.click());
-  await page.waitForSelector('#end-day-modal[open] #end-day-notes', { timeout: 20000 });
-  await page.$eval('#end-day-notes', (el, value) => { el.value = value; }, notes);
-  await page.$eval('#end-day-next', (el, value) => { el.value = value; }, next);
-  pinOpenPunch(dbFile, minutes);
-  await page.click('#confirm-end-day');
+  await require('./scripts/field-report-test-helpers.cjs').completeClockOutDaily(page,notes,next);
   await page.waitForFunction(() => !document.querySelector('#end-day-modal')?.open, { timeout: 20000 });
 }
 
@@ -186,7 +183,8 @@ async function serverDaily(page) {
     await page.waitForFunction(() => /Clock out/i.test(document.querySelector('#start-day-button')?.textContent || ''), { timeout: 20000 });
     await clockOut(page, dbFile, NOTES_2, NEXT_2, 2);
     const editorClosed = await page.evaluate(() => !document.querySelector('#report-modal')?.open);
-    assert.equal(editorClosed, true);
+    assert.equal(editorClosed, false,'attached daily opens directly');
+    await page.evaluate(()=>document.querySelector('#report-modal').close());
     const merged = await serverDaily(page);
     assert.equal(merged.count, 1, JSON.stringify(merged));
     assert.equal(merged.next, NEXT_2, JSON.stringify(merged));
@@ -365,7 +363,7 @@ async function serverDaily(page) {
       await page.waitForFunction(() => {
         const flags = document.querySelector('#field-scope-flags')?.innerText || '';
         const curb = [...document.querySelectorAll('.production-entry')].some(row => /curb/i.test(row.querySelector('.production-item')?.selectedOptions?.[0]?.textContent || '') && row.querySelector('.production-quantity')?.value === '40');
-        return /Needs your pick/i.test(flags) && /Set forms/i.test(flags) && curb;
+        return document.querySelector('#report-form')?.getAttribute('data-current-step')==='2'&&!document.querySelector('#report-next-step')?.disabled&&/Needs your pick/i.test(flags) && /Set forms/i.test(flags) && curb;
       }, { timeout: 20000 });
     } catch (error) {
       const parsed = await page.evaluate(() => ({

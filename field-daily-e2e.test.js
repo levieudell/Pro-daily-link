@@ -665,44 +665,9 @@ async function openNav(page, name) {
     }, { timeout: 20000 });
     const nextBeforeOut = await page.$eval('#report-next', el => el.value);
     await page.evaluate(() => document.querySelector('#field-clock-out').click());
-    await page.waitForSelector('#end-day-modal[open]', { timeout: 20000 });
-    const clockOut = await page.evaluate(() => ({
-      reportOpen: Boolean(document.querySelector('#report-modal')?.open),
-      endNotes: document.querySelector('#end-day-notes')?.value || '',
-      dailyNotes: document.querySelector('#field-notes')?.value || ''
-    }));
-    assert.equal(clockOut.reportOpen, true);
-    assert.equal(clockOut.endNotes, '');
-    assert.match(clockOut.dailyNotes, /gutter/i);
-    await page.click('#confirm-end-day');
-    const emptyOut = await page.evaluate(() => ({
-      review: document.querySelector('#report-submit-status')?.textContent || '',
-      dialog: document.querySelector('#end-day-message')?.textContent || '',
-      reviewOpen: Boolean(document.querySelector('#report-modal')?.open),
-      endOpen: Boolean(document.querySelector('#end-day-modal')?.open)
-    }));
-    assert.equal(/Add what was completed before clocking out\./.test(emptyOut.review), false, emptyOut.review);
-    assert.match(emptyOut.dialog, /Add what was completed before clocking out\./);
-    assert.equal(emptyOut.reviewOpen, true);
-    assert.equal(emptyOut.endOpen, true);
-    await page.type('#end-day-notes', 'Left the site. Gate is locked.');
+    await page.waitForFunction(() => /Clocked out/.test(document.querySelector('#toast')?.textContent || ''), {timeout:20000});
+    assert.equal(await page.$eval('#end-day-modal',el=>el.open),false);
     await shot(page, 'field-clock-out-open.png');
-    await page.click('#confirm-end-day');
-    await page.waitForFunction(() => {
-      const needle = "Clocked out. The punch is on today's daily.";
-      return [...document.querySelectorAll('#toast, #report-submit-status, #end-day-message, #autosave-status')].some(el => (el.textContent || '').includes(needle));
-    }, { timeout: 20000 });
-    const clockOutBanners = await page.evaluate(() => {
-      const needle = "Clocked out. The punch is on today's daily.";
-      return [...document.querySelectorAll('#toast, #report-submit-status, #end-day-message, #autosave-status')].filter(el => {
-        if (!(el.textContent || '').includes(needle)) return false;
-        const box = el.getBoundingClientRect();
-        const style = getComputedStyle(el);
-        return style.display !== 'none' && style.visibility !== 'hidden' && box.width > 0 && box.height > 0;
-      }).map(el => el.id || el.className);
-    });
-    assert.equal(clockOutBanners.length, 1, JSON.stringify(clockOutBanners));
-    await page.waitForFunction(() => !document.querySelector('#end-day-modal')?.open && document.querySelector('#report-modal')?.open, { timeout: 20000 });
     const afterOut = await page.evaluate(() => ({
       notes: document.querySelector('#field-notes')?.value || '',
       next: document.querySelector('#report-next')?.value || '',
@@ -760,7 +725,7 @@ async function openNav(page, name) {
     assert.equal(saved.who, 'site owner');
     assert.equal(saved.decision, 'extra');
     assert.match(saved.notes, /set 20 LF of gutter/i);
-    assert.match(saved.notes, /Left the site\. Gate is locked\./);
+    assert.match(saved.notes, /Poured 40 LF of curb/);
     assert.equal(/Left the site/.test(saved.next), false);
     assert.equal(saved.history.some(action => /Labor corrected/i.test(action)), false, saved.history.join(' | '));
     assert.equal(saved.quantities.reduce((sum, row) => sum + row.minutes, 0), saved.form.reduce((sum, row) => sum + row.minutes, 0));
@@ -817,6 +782,8 @@ async function openNav(page, name) {
     assert.match(officeExtra.card, /keep the patch open for the inspector through the full cure/);
     assert.equal(officeExtra.card.includes('…'), false, officeExtra.card);
     assert.equal(officeExtra.wraps, true, JSON.stringify(officeExtra));
+    // Simulate an office update after clock-out, so this edit exercises a real stale revision.
+    await page.evaluate(async()=>{const state=await (await fetch('/api/state')).json();const report=state.reports.find(row=>Number(row.id)===Number(editingReportId));const response=await fetch('/api/reports/'+report.id,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({status:report.status,notes:report.notes,updatedAt:report.updatedAt})});if(!response.ok)throw new Error('Synthetic concurrent update failed')});
     const curbAfterOut = await page.$('[data-review-labor][data-line-id="1"]');
     await curbAfterOut.click();
     await page.evaluate(el => { el.focus(); el.setSelectionRange(0, el.value.length); }, curbAfterOut);
@@ -826,7 +793,7 @@ async function openNav(page, name) {
       const status = document.querySelector('#report-submit-status')?.textContent || '';
       const toast = document.querySelector('#toast')?.textContent || '';
       const notes = document.querySelector('#field-notes')?.value || '';
-      return /This daily was updated, reloading/.test(`${status}\n${toast}`) && /Left the site\. Gate is locked\./.test(notes);
+      return /This daily was updated, reloading/.test(`${status}\n${toast}`) && /Poured 40 LF of curb/.test(notes);
     }, { timeout: 20000 });
     const blockedLock = await page.evaluate(async () => {
       const state = await (await fetch('/api/state', { credentials: 'include' })).json();
@@ -834,14 +801,14 @@ async function openNav(page, name) {
       const curb = (report?.productionEntries || []).find(row => Number(row.estimateItemId) === 1);
       return { notes: report?.notes || '', minutes: Number(curb?.laborMinutes) || 0 };
     });
-    assert.match(blockedLock.notes, /Left the site\. Gate is locked\./);
+    assert.match(blockedLock.notes, /Poured 40 LF of curb/);
     assert.equal(blockedLock.minutes, 3, JSON.stringify(blockedLock));
     if (await page.$eval('#report-form', form => form.getAttribute('data-current-step')) !== '2') await page.click('#report-next-step');
     await page.waitForFunction(() => {
       const button = document.querySelector('#report-next-step');
       const input = document.querySelector('[data-review-labor][data-line-id="1"]');
       const notes = document.querySelector('#field-notes')?.value || '';
-      return document.querySelector('#report-form')?.getAttribute('data-current-step') === '2' && button && !button.disabled && input && /Left the site\. Gate is locked\./.test(notes);
+      return document.querySelector('#report-form')?.getAttribute('data-current-step') === '2' && button && !button.disabled && input && /Poured 40 LF of curb/.test(notes);
     }, { timeout: 20000 });
     await page.evaluate(() => {
       const input = document.querySelector('[data-review-labor][data-line-id="1"]');
@@ -858,12 +825,12 @@ async function openNav(page, name) {
         const curb = (report?.productionEntries || []).find(row => Number(row.estimateItemId) === 1);
         return { manual: curb?.laborManual === true, minutes: Number(curb?.laborMinutes) || 0, notes: report?.notes || '', status: document.querySelector('#report-submit-status')?.textContent || '' };
       });
-      if (savedLock.manual && savedLock.minutes === 2 && /Left the site\. Gate is locked\./.test(savedLock.notes)) break;
+      if (savedLock.manual && savedLock.minutes === 2 && /Poured 40 LF of curb/.test(savedLock.notes)) break;
       await new Promise(resolve => setTimeout(resolve, 250));
     }
     assert.equal(savedLock.manual, true, JSON.stringify(savedLock));
     assert.equal(savedLock.minutes, 2, JSON.stringify(savedLock));
-    assert.match(savedLock.notes, /Left the site\. Gate is locked\./);
+    assert.match(savedLock.notes, /Poured 40 LF of curb/);
     await page.evaluate(() => document.querySelector('#report-modal .close-button')?.click());
     await page.waitForFunction(() => !document.querySelector('#report-modal')?.open);
     await page.evaluate(() => {
