@@ -243,7 +243,7 @@ assert.match(instant, /<textarea id="field-review-next"/);
 assert.match(serverSource, /fieldScope\.uniqueMaterials/);
 assert.match(instant, /noPunchLabel\(\)/);
 assert.match(instant, /No punch, enter hours/);
-assert.match(instant, /every\(row=>Number\(row\.value\)>0\)/);
+assert.doesNotMatch(instant, /every\(row=>Number\(row\.value\)>0\)\)renderFieldReview/,'typing hours must not replace the focused input');
 assert.match(instant, /hoursFromMinutes/);
 assert.match(instant, /allocateLaborHours/);
 assert.match(instant, /data-review-labor/);

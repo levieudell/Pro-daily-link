@@ -1077,3 +1077,6 @@ small{font-size:12px}
 @keyframes pdl-capture-pulse{50%{transform:scale(.93);box-shadow:0 0 0 22px #dceee3}}
 :root[data-theme="dark"] .voice-capture-panel{background:#19362b;border-color:#537b66}:root[data-theme="dark"] .voice-capture-panel h3{color:#cde3d8}
 @media(prefers-reduced-motion:reduce){.voice-capture-circle{animation:none!important}}
+
+#report-modal.report-field-compact .field-review-source{padding:16px;border:1px solid var(--line);border-radius:12px;overflow-wrap:anywhere;background:var(--paper)}
+#report-modal.report-field-compact .field-review-source p{margin:8px 0}
