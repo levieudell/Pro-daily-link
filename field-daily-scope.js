@@ -491,9 +491,7 @@
       if(!match||!match.decision)return {...flag,id,decision:null,createsChange:false,who_asked:String(match?.who_asked||flag?.who_asked||'')};
       return {...flag,id,decision:match.decision,createsChange:false,extra_work:match.decision==='extra',who_asked:String(match.who_asked||flag.who_asked||''),quantity:match.quantity!=null?match.quantity:flag.quantity,laborMinutes:match.laborMinutes,laborHours:match.laborHours};
     });
-    const seen=new Set(merged.map(flag=>flag.id||flagIdentity(flag)));
-    const kept=prior.filter(flag=>flag&&flag.decision&&!seen.has(flag.id||flagIdentity(flag)));
-    return [...merged,...kept];
+    return merged;
   }
 
   function displayHoursForMinutes(minuteList){

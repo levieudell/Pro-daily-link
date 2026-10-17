@@ -68,8 +68,12 @@ var fieldScopeFlags=[];
   }
   let reviewedNotesKey='';
   let reviewSave=Promise.resolve();
+  let reviewPersist=Promise.resolve();
   let reviewPersistTimer=0;
-  function scheduleReviewPersist(){clearTimeout(reviewPersistTimer);reviewPersistTimer=setTimeout(()=>{persistReviewDraft().catch(()=>{})},250)}
+  function trackReviewPersist(run){reviewPersist=run;return run}
+  function persistAfterReview(){return trackReviewPersist((async()=>{try{await reviewSave}catch{}await persistReviewDraft()})().catch(()=>{}))}
+  function scheduleReviewPersist(){clearTimeout(reviewPersistTimer);reviewPersistTimer=setTimeout(()=>{persistAfterReview()},250)}
+  function persistResolvedChoice(){clearTimeout(reviewPersistTimer);return persistAfterReview()}
   function stampExtraMinutes(){
     for(const flag of fieldScopeFlags){
       if(!flag||flag.decision!=='extra')continue;
@@ -85,7 +89,7 @@ var fieldScopeFlags=[];
   function restoreResolvedExtras(report){
     if(!fieldCompact())return;
     for(const flag of fieldScopeFlags){
-      if(!flag||flag.decision!=='extra')continue;
+      if(!flag||flag.kind!=='pick'||flag.decision!=='extra')continue;
       const row=markLineExtra(flag);
       if(!row)continue;
       const saved=(report?.extraWork||[]).find(item=>item&&String(item.description||'').trim().toLowerCase()===String(flag.description||'').trim().toLowerCase());
@@ -339,8 +343,7 @@ var fieldScopeFlags=[];
         const send=$('#save-report');if(send)send.disabled=false;
         renderFlags();
         renderFieldReview();
-        clearTimeout(reviewPersistTimer);
-        persistReviewDraft().catch(()=>{});
+        persistResolvedChoice();
         return;
       }
       const mapped=choice==='yes'||choice==='extra'||choice==='bill'?'extra':choice==='no'||choice==='not'?'not':choice;
@@ -353,8 +356,7 @@ var fieldScopeFlags=[];
       const send=$('#save-report');if(send&&next.decision)send.disabled=false;
       renderFlags();
       renderFieldReview();
-      clearTimeout(reviewPersistTimer);
-      persistReviewDraft().catch(()=>{});
+      persistResolvedChoice();
     });
     host.querySelectorAll('[data-flag-asker]').forEach(input=>input.oninput=()=>{const at=fieldScopeFlags.findIndex(row=>String(row.id)===String(input.dataset.flagAsker));if(at>=0)fieldScopeFlags[at]={...fieldScopeFlags[at],who_asked:input.value}});
     syncExtraSendGate();
@@ -370,8 +372,7 @@ var fieldScopeFlags=[];
       bindPickedLine(flag,item);
       renderFlags();
       renderFieldReview();
-      clearTimeout(reviewPersistTimer);
-      persistReviewDraft().catch(()=>{});
+      persistResolvedChoice();
     });
   }
   const CLOCK_OUT_PROMPT=/Add what was completed before clocking out\.|Agregue una nota breve sobre el trabajo terminado/;
@@ -623,7 +624,9 @@ var fieldScopeFlags=[];
     const officeSend=sendButton.onclick;
     sendButton.onclick=async event=>{
       if(fieldCompact()){
+        clearTimeout(reviewPersistTimer);
         try{await reviewSave}catch{}
+        try{await reviewPersist}catch{}
         restoreHeldChoices();
         applyPunchHours();
         applyLaborAllocation();
