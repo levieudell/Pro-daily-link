@@ -116,7 +116,7 @@ var fieldScopeFlags=[];
       kept=true;
       if(row.dataset.aiFilled==='true'&&description&&!String(row.dataset.workDescription||'').trim())row.dataset.workDescription=description;
     }
-    if(!kept&&!fieldScopeFlags.some(flag=>flag&&flag.decision)&&!$('#field-notes')?.value?.trim())return;
+    if(!kept&&!fieldScopeFlags.some(flag=>flag&&flag.decision))return;
     const saved=await saveDailyReport('Draft',{keepOpen:true});
     if(!saved?.id)return;
     if(typeof renderReports==='function')renderReports(saved.id);

@@ -492,7 +492,7 @@ function fieldHoursAllowed(db,user,input){
  if(!fieldRole(user))return true;
  const self=(db.team||[]).find(row=>Number(row.id)===Number(user.memberId));
  const ids=new Set((db.team||[]).filter(row=>self&&(Number(row.id)===Number(self.id)||self.crew&&row.crew===self.crew)&&!row.deletedAt&&!row.archivedAt&&row.archived!==true&&!/^(archived|inactive)$/i.test(String(row.status||''))).map(row=>Number(row.id)));
- return ['reportedLabor','laborEntries','laborEntered'].every(key=>!Array.isArray(input[key])||input[key].every(row=>ids.has(Number(row.memberId))));
+ return ['reportedLabor','laborEntries','laborEntered'].every(key=>!Array.isArray(input[key])||input[key].every(row=>ids.has(Number(row.memberId))||(row.hours==null&&self&&self.crew&&(db.team||[]).some(member=>Number(member.id)===Number(row.memberId)&&member.crew===self.crew))));
 }
 function recordFieldReview(db,report,input,user){
  if(!fieldRole(user))return;
