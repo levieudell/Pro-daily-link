@@ -566,7 +566,7 @@
 
   function narrativeWarnings(notes,summary){
     const source=String(notes||''),interpretation=String(summary||'');
-    if(/\b(?:volcano|volcanic|eruption|explosion|blew up|near miss|rollover|overturned|injured|injury|unsafe|accident)\b|\bjump(?:ed|ing)?\b.{0,40}\b(?:dozer|bulldozer|excavator)\b/i.test(source)||/unrealistic|humorous|non[- ]work|no construction work/i.test(interpretation))return [{code:'narrative_review',message:'Possible incident or uncertain narrative in the original notes. Office must verify the account; no incident or safe condition is confirmed.'}];
+    if(/\b(?:volcano|volcanic|eruption|explosion|blew up|near miss|rollover|overturned|injured|injury|unsafe|accident)\b|\bjump(?:ed|ing)?\b.{0,40}\b(?:dozer|bulldozer|excavator)\b/i.test(source)||/unrealistic|humorous|non[- ]work|no construction work|^Unverified field account\./i.test(interpretation))return [{code:'narrative_review',message:'Possible incident or uncertain narrative in the original notes. Office must verify the account; no incident or safe condition is confirmed.'}];
     return [];
   }
 

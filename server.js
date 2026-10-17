@@ -717,10 +717,11 @@ function finishAiExtract(parsed,notes){
   holdupBackstop(result,notes);
   for(const field of ['materials','equipment','delays','safety','issue'])if(/^needs confirmation[.!\s]*$/i.test(String(result[field]||'').trim()))result[field]='';
   const safetyText=String(result.safety||'').trim();
-  if(fieldScope.narrativeWarnings(notes,result.summary).length){result.summary='Unverified field account. Review the original notes with the field team.';result.safetyReviewRequired=true}
+  const narrativeNeedsReview=fieldScope.narrativeWarnings(notes,result.summary).length>0;
+  if(narrativeNeedsReview){result.summary='Unverified field account. Review the original notes with the field team.';result.safetyReviewRequired=true}
   const noSafetyClaim=/^(?:no safety (?:incidents?|issues?|observations?)|no incidents?)(?: today)?[.!\s]*$/i.test(safetyText);
   result.safetyItems=safetyText&&!noSafetyClaim?[{observation:safetyText,location:'',company:'',notified:'',action:'',owner:'',dueDate:'',status:'open',verification:''}]:[];
-  result.noSafetyObservations=noSafetyClaim&&!fieldScope.narrativeWarnings(notes,result.summary).length;
+  result.noSafetyObservations=noSafetyClaim&&!narrativeNeedsReview;
   if(noSafetyClaim&&!result.noSafetyObservations)result.safety="Needs human review of the original notes.";
   result.safetyTalk=/\b(?:toolbox|tailgate|safety)\s+(?:talk|meeting|discussion)\b/i.test(notes)?String(notes).slice(0,500):'';
   result.safetyInspection=/\b(?:competent person|safety inspection|scaffold inspection|trench inspection)\b/i.test(notes)?String(notes).slice(0,500):'';
