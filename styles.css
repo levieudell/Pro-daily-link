@@ -923,7 +923,7 @@ small{font-size:12px}
 .scope-remaining{font-size:13px;line-height:1.35}
 @media(max-width:760px){.clock-card,.ai-suggestion,.clock-hour{flex-direction:column;align-items:stretch}.clock-card .big-action,.ai-suggestion-actions button{width:100%}}
 
-/* Field daily: one notes screen, then one review. Office keeps the full form. */
+/* Shared daily: notes, then editable review. Office controls remain available. */
 .field-ai-disclosure{display:none;margin:8px 0 0;color:var(--muted);font-size:13px;font-weight:500;line-height:1.4}
 #report-modal.report-field-compact{width:min(440px,100%);background:var(--bg)}
 #report-modal.report-field-compact[open]{display:flex;flex-direction:column;overflow:hidden}
@@ -1080,3 +1080,30 @@ small{font-size:12px}
 
 #report-modal.report-field-compact .field-review-source{padding:16px;border:1px solid var(--line);border-radius:12px;overflow-wrap:anywhere;background:var(--paper)}
 #report-modal.report-field-compact .field-review-source p{margin:8px 0}
+
+/* Office production reports share the compact review without field workday actions. */
+#report-modal.report-office-compact label:has(#report-type),
+#report-modal.report-office-compact #report-project-picker,
+#report-modal.report-office-compact #report-date-field,
+#report-modal.report-office-compact #report-crew-field,
+#report-modal.report-office-compact label:has(#report-photos),
+#report-modal.report-office-compact #report-photo-tags-field,
+#report-modal.report-office-compact .autosave-status,
+#report-modal.report-office-compact .labor-fieldset,
+#report-modal.report-office-compact #report-timecard-status,
+#report-modal.report-office-compact #report-gaps,
+#report-modal.report-office-compact #report-issue-label,
+#report-modal.report-office-compact #report-more{display:block}
+#report-modal.report-office-compact #save-report-draft,
+#report-modal.report-office-compact #save-report-step2-draft{display:inline-flex}
+#report-modal.report-office-compact [data-report-step="1"] .modal-actions{display:grid;gap:10px}
+#report-modal.report-office-compact [data-report-step="2"] .modal-actions{grid-template-columns:1fr 1fr}
+#report-modal.report-office-compact #save-report{grid-column:1/-1}
+#report-modal.report-office-compact #field-notes{min-height:32vh}
+#report-modal.report-office-compact #field-clock-out{display:none}
+#report-modal.report-office-compact #report-job-context{display:none}
+#report-modal.report-office-compact #report-date-field,
+#report-modal.report-office-compact #report-crew-field{display:inline-flex;flex-direction:column;vertical-align:top;width:calc(50% - 5px);min-width:0}
+#report-modal.report-office-compact #report-crew-field{margin-left:6px}
+#report-modal.report-office-compact #report-date-field input,
+#report-modal.report-office-compact #report-crew-field select{min-width:0;width:100%}

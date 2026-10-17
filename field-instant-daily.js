@@ -3,11 +3,13 @@ var fieldScopeFlags=[];
   if(typeof document==='undefined'||typeof $!=='function')return;
   const textFields=[['#report-summary','Summary'],['#report-materials','Materials'],['#report-equipment','Equipment'],['#report-delays','Delays'],['#report-safety','Safety']];
   function fieldCompact(){return typeof currentRole!=='undefined'&&currentRole==='field'&&$('#report-type')?.value!=='superintendent'}
+  function officeCompact(){return typeof currentRole!=='undefined'&&currentRole==='office'&&$('#report-type')?.value!=='superintendent'}
+  function dailyCompact(){return fieldCompact()||officeCompact()}
   function escapeText(value){return typeof escapeHtml==='function'?escapeHtml(value):String(value??'')}
   function polishFieldDaily(){
-    const compact=fieldCompact(),next=$('#report-next-step'),send=$('#save-report'),modal=$('#report-modal');
+    const compact=dailyCompact(),next=$('#report-next-step'),send=$('#save-report'),modal=$('#report-modal');
     if(next&&compact)next.textContent=preferredLanguage==='es'?'Listo':'Done';
-    if(send&&compact){const approved=Boolean(editingReportId)&&(typeof reports==='undefined'?[]:reports).some(row=>Number(row.id)===Number(editingReportId)&&row.status==='Approved');send.textContent=approved?(preferredLanguage==='es'?'Guardar corrección para revisión':'Save correction for office review'):(preferredLanguage==='es'?'Enviar a la oficina':'Send to office')}
+    if(send&&fieldCompact()){const approved=Boolean(editingReportId)&&(typeof reports==='undefined'?[]:reports).some(row=>Number(row.id)===Number(editingReportId)&&row.status==='Approved');send.textContent=approved?(preferredLanguage==='es'?'Guardar corrección para revisión':'Save correction for office review'):(preferredLanguage==='es'?'Enviar a la oficina':'Send to office')}
     ensureFieldClockOut();
     modal?.classList.toggle('field-manual-entry',compact&&!fieldScopeFlags.length&&![...$$('.production-entry')].some(row=>row.dataset.aiFilled==='true'));
     if(!compact){const flags=$('#field-scope-flags'),cards=$('#field-review-cards');if(flags)flags.hidden=true;if(cards)cards.hidden=true}
@@ -67,6 +69,9 @@ var fieldScopeFlags=[];
     await saveDailyReport(status,{keepOpen:true});
   }
   let reviewedNotesKey='';
+  let reviewGeneration=0;
+  function reviewContext(){return [typeof reportAnalyzeSequence==='undefined'?'':reportAnalyzeSequence,typeof currentRole==='undefined'?'':currentRole,$('#report-type')?.value,$('#report-project')?.value,$('#report-date')?.value,typeof editingReportId==='undefined'?'':editingReportId].join('|')}
+  for(const selector of ['#report-project','#report-date','#report-crew','#report-type'])$(selector)?.addEventListener('change',()=>{reviewGeneration++;if(selector==='#report-project'){reviewedNotesKey='';fieldScopeFlags=[];fieldHoursReview=null}const next=$('#report-next-step');if(next)next.disabled=false;if(typeof cancelVoiceRecording==='function')cancelVoiceRecording();if(typeof stopVoiceNotes==='function')stopVoiceNotes();polishFieldDaily();if(dailyCompact()&&$('#report-form')?.getAttribute('data-current-step')==='2')renderFieldReview()});
   let reviewSave=Promise.resolve();
   let reviewPersist=Promise.resolve();
   let reviewPersistTimer=0;
@@ -87,7 +92,7 @@ var fieldScopeFlags=[];
     }
   }
   function restoreResolvedExtras(report){
-    if(!fieldCompact())return;
+    if(!dailyCompact())return;
     for(const flag of fieldScopeFlags){
       if(!flag||flag.kind!=='pick'||flag.decision!=='extra')continue;
       const row=markLineExtra(flag);
@@ -103,7 +108,7 @@ var fieldScopeFlags=[];
     }
   }
   async function persistReviewDraft(){
-    if(!fieldCompact()||!$('#report-modal')?.open||typeof saveDailyReport!=='function'||!(typeof editingReportId!=='undefined'&&editingReportId))return;
+    if(!dailyCompact()||!$('#report-modal')?.open||typeof saveDailyReport!=='function'||!(typeof editingReportId!=='undefined'&&editingReportId))return;
     const current=(typeof reports==='undefined'?[]:reports).find(row=>Number(row.id)===Number(editingReportId));
     if(!current||current.status!=='Draft')return;
     let kept=false;
@@ -181,7 +186,7 @@ var fieldScopeFlags=[];
   var fieldHoursReview=null;
   function clockHoursPresent(){return [...$$('[data-labor-member]')].some(input=>input.dataset.timecardDerived==='true'&&Number(input.value)>0)}
   function enteredLaborHours(){return [...$$('[data-labor-member]')].reduce((sum,input)=>sum+(Number(input.value)||0),0)}
-  function crewStillClockedIn(){const projectId=projects?.[+$('#report-project')?.value]?.id,date=$('#report-date')?.value,cards=typeof timeCards==='undefined'?[]:timeCards,days=typeof workdays==='undefined'?[]:workdays;return cards.some(card=>card&&!card.deletedAt&&Number(card.projectId)===Number(projectId)&&String(card.date||'')===String(date||'')&&card.inAt&&!card.outAt)||days.some(day=>day&&Number(day.projectId)===Number(projectId)&&day.status==='active'&&!day.endedAt)}
+  function crewStillClockedIn(){if(!fieldCompact())return false;const projectId=projects?.[+$('#report-project')?.value]?.id,date=$('#report-date')?.value,cards=typeof timeCards==='undefined'?[]:timeCards,days=typeof workdays==='undefined'?[]:workdays;return cards.some(card=>card&&!card.deletedAt&&Number(card.projectId)===Number(projectId)&&String(card.date||'')===String(date||'')&&card.inAt&&!card.outAt)||days.some(day=>day&&Number(day.projectId)===Number(projectId)&&day.status==='active'&&!day.endedAt)}
   function applyAskedHours(value,headcount){const each=Number(value);if(!Number.isFinite(each)||each<0||each>24)return;const inputs=[...$$('[data-labor-member]')];if(!(each>0)){inputs.forEach(input=>{if(input.dataset.noteDerived==='true')input.value=''});return}const count=Math.max(1,Math.min(inputs.length,Math.floor(Number(headcount)||1)));inputs.forEach(input=>{if(input.dataset.noteDerived==='true')input.value=''});inputs.slice(0,count).forEach(input=>{input.value=each;input.dataset.manualHours='true';input.dataset.noteDerived='true'})}
   function stampFlags(flags){return (Array.isArray(flags)?flags:[]).filter(Boolean).map(flag=>({...flag,id:flag.id||(typeof FieldDailyScope!=='undefined'&&FieldDailyScope.flagIdentity?FieldDailyScope.flagIdentity(flag):`${flag.reason||'note'}:${String(flag.description||'').toLowerCase()}`)}))}
   function flagById(id){return fieldScopeFlags.find(flag=>String(flag?.id)===String(id))}
@@ -299,7 +304,7 @@ var fieldScopeFlags=[];
   function extraChoiceOpen(){return fieldScopeFlags.some(flag=>flag&&flag.reason==='stated_extra'&&!flag.decision)}
   function syncExtraSendGate(){
     const send=$('#save-report');
-    if(!send||!fieldCompact())return;
+    if(!send||!dailyCompact())return;
     if(extraChoiceOpen()){send.disabled=true;send.dataset.extraGate='1';return}
     if(send.dataset.extraGate==='1'){send.disabled=false;delete send.dataset.extraGate}
   }
@@ -309,7 +314,7 @@ var fieldScopeFlags=[];
     const host=$('#field-scope-flags');if(!host)return;
     fieldScopeFlags=stampFlags(fieldScopeFlags);
     const openFlags=fieldScopeFlags.filter(flag=>!(flag.kind==='pick'&&flag.decision));
-    if(!fieldCompact()||!openFlags.length){host.hidden=true;host.innerHTML='';syncExtraSendGate();return}
+    if(!dailyCompact()||!openFlags.length){host.hidden=true;host.innerHTML='';syncExtraSendGate();return}
     host.hidden=false;
     host.innerHTML=fieldScopeFlags.map((flag,index)=>{
       if(flag.kind==='pick'&&flag.decision)return '';
@@ -388,13 +393,13 @@ var fieldScopeFlags=[];
   }
   function clearStaleClockOutPrompt(){
     const status=$('#report-submit-status');
-    if(!status||!fieldCompact()||!CLOCK_OUT_PROMPT.test(status.textContent||''))return;
+    if(!status||!dailyCompact()||!CLOCK_OUT_PROMPT.test(status.textContent||''))return;
     if(!reviewHasContent()&&!userHasClockedOut())return;
     status.textContent='';
     status.className='report-submit-status';
   }
   function renderFieldReview(){
-    const host=$('#field-review-cards');if(!host||!fieldCompact()){if(host)host.hidden=true;return}
+    const host=$('#field-review-cards');if(!host||!dailyCompact()){if(host)host.hidden=true;return}
     syncEstimateBindings();
     dropEmptyLines();
     dropRawProductionRows();
@@ -427,7 +432,7 @@ var fieldScopeFlags=[];
     $$('[data-labor-member]').forEach(input=>{
       if(!(Number(input.value)>0)&&!punchRows().some(row=>Number(row.memberId)===Number(input.dataset.laborMember)))return;
       const name=input.closest('.labor-line')?.querySelector('strong')?.textContent||'Crew';
-      const source=punchRows().some(row=>Number(row.memberId)===Number(input.dataset.laborMember))?'From clock':input.dataset.noteDerived==='true'?'AI filled':'Entered';
+      const source=punchRows().some(row=>Number(row.memberId)===Number(input.dataset.laborMember))?'From clock':input.dataset.timecardDerived==='true'?'Approved time cards':input.dataset.scheduleDerived==='true'?'Scheduled':input.dataset.noteDerived==='true'?'AI filled':'Entered';
       const punchMinutes=typeof punchRows==='function'?punchRows().find(row=>Number(row.memberId)===Number(input.dataset.laborMember))?.minutes:undefined;
       const crewMinutes=punchMinutes!=null?punchMinutes:(typeof FieldDailyScope!=='undefined'&&FieldDailyScope.minutesFromHours?FieldDailyScope.minutesFromHours(Number(input.value)||0):Math.round((Number(input.value)||0)*60));
       const punch=punchRows().find(row=>Number(row.memberId)===Number(input.dataset.laborMember));const shown=punch?`${punch.seconds<60?`${Math.floor(punch.seconds)} sec (under 1 min)`:punchTotalLabel(crewMinutes)} measured${input.dataset.manualHours==='true'?` · ${input.value||'unknown'} h reported`:''}`:clockLabel(crewMinutes);
@@ -443,14 +448,14 @@ var fieldScopeFlags=[];
     const crewName=$('#report-crew')?.value;
     const crew=(typeof team==='undefined'?[]:team).filter(member=>!crewName||member.crew===crewName);
     const punched=punchMemberIds();
-    const gaps=(typeof FieldDailyScope!=='undefined'&&FieldDailyScope.namedCrewGaps?FieldDailyScope.namedCrewGaps(notes,crew,punched):[]).filter(person=>!(Number($(`[data-labor-member="${person.id}"]`)?.value)>0));
+    const gaps=(fieldCompact()&&typeof FieldDailyScope!=='undefined'&&FieldDailyScope.namedCrewGaps?FieldDailyScope.namedCrewGaps(notes,crew,punched):[]).filter(person=>!(Number($(`[data-labor-member="${person.id}"]`)?.value)>0));
     const hours=fieldHoursReview;
     const clocked=clockHoursPresent()||punched.length>0;
     if(gaps.length){
       const label=FieldDailyScope.noPunchLabel?FieldDailyScope.noPunchLabel():'No punch, enter hours';
       const fields=gaps.map(person=>{const current=$(`[data-labor-member="${person.id}"]`)?.value||'';const short=String(person.name||'').replace(/^DEMO\s+/i,'').trim().split(/\s+/)[0]||person.name||'Crew';return `<label>${escapeText(short)}<span>${escapeText(label)}</span><input data-gap-member="${person.id}" type="number" min="0" max="24" step="0.01" inputmode="decimal" value="${escapeText(current)}" placeholder="" aria-label="${escapeText(label)} for ${escapeText(person.name)}"></label>`}).join('');
       cards.unshift(`<article class="field-hours-card"><small>Hours</small><strong>${escapeText(label)}</strong>${fields}</article>`);
-    }else if(hours?.ask&&!clocked){
+    }else if(fieldCompact()&&hours?.ask&&!clocked){
       const kept=$('#field-hours-each')?.value||'';
       const who=hours.headcount?`${hours.headcount} people are in the notes. Enter the hours.`:'Enter the crew hours. Scheduled time is not used.';
       cards.unshift(`<article class="field-hours-card"><small>Hours</small><strong>Hours needed</strong><p>${escapeText(who)}</p><label>Hours each<input id="field-hours-each" type="number" min="0" max="24" step="any" inputmode="decimal" value="${escapeText(kept)}"></label></article>`);
@@ -459,7 +464,7 @@ var fieldScopeFlags=[];
     if(reviewTotal>0)cards.push(`<p class="field-labor-total">Total ${escapeText(punchTotalLabel(reviewTotal))}</p>`);
     if(crewStillClockedIn())cards.unshift('<p class="field-clock-warning">Clock out to include today\'s time</p>');
     host.hidden=false;
-    host.innerHTML=(cards.length?cards.join(''):'<p class="field-review-empty">AI did not fill any lines. Add the work on the cards below.</p>')+'<p>Unknown or mismatched hours can be sent for office review. Clock punches are kept separately.</p><button type="button" id="field-edit-hours">Edit reported hours</button><button type="button" id="field-add-line">Add line</button>';
+    host.innerHTML=(cards.length?cards.join(''):'<p class="field-review-empty">AI did not fill any lines. Add the work on the cards below.</p>')+(fieldCompact()?'<p>Unknown or mismatched hours can be sent for office review. Clock punches are kept separately.</p>':'<p>Review approved time-card, scheduled, or entered crew hours before sending.</p>')+'<button type="button" id="field-edit-hours">Edit reported hours</button><button type="button" id="field-add-line">Add line</button>';
     const editHours=$('#field-edit-hours');if(editHours)editHours.onclick=()=>{const modal=$('#report-modal');modal?.classList.add('field-manual-entry');const more=$('#report-more');if(more)more.open=true;const input=$$('[data-labor-member]')[0];input?.scrollIntoView?.({block:'center'});input?.focus()};
     const addLine=$('#field-add-line');
     if(addLine)addLine.onclick=()=>{
@@ -504,7 +509,7 @@ var fieldScopeFlags=[];
       if(hours)hours.value=typeof FieldDailyScope!=='undefined'&&FieldDailyScope.hoursFromMinutes?FieldDailyScope.hoursFromMinutes(minutes):minutes/60;
       if(String(input.value)!==String(minutes))input.value=String(minutes);
       let note=input.parentElement?.querySelector('.field-clamp-note');
-      if(minutes!==requested){if(!note&&input.parentElement){note=document.createElement('small');note.className='field-clamp-note';input.parentElement.append(note)}if(note)note.textContent=`Kept at ${minutes} min so the lines still equal the punch.`}
+      if(minutes!==requested){if(!note&&input.parentElement){note=document.createElement('small');note.className='field-clamp-note';input.parentElement.append(note)}if(note)note.textContent=`Kept at ${minutes} min so the lines still equal the crew total.`}
       else note?.remove();
       applyLaborAllocation();
       const pair=input.parentElement?.querySelector('.field-time-pair');
@@ -544,16 +549,19 @@ var fieldScopeFlags=[];
     clearStaleClockOutPrompt();
   }
   async function fillFieldReportFromNotes(){
+    const generation=++reviewGeneration;
+    let context=reviewContext();
+    const current=()=>generation===reviewGeneration&&context===reviewContext()&&$('#report-modal')?.open;
     const keptLocks=lockedLaborMap();
     const button=$('#report-next-step'),note=$('#field-notes')?.value.trim()||'',language=$('#report-language')?.value||'en-US';
     const doneLabel=language.startsWith('es')?'Listo':'Done';
     let releaseReview=()=>{};
     reviewSave=new Promise(resolve=>{releaseReview=resolve});
     if(button){button.disabled=true;button.textContent=language.startsWith('es')?'Leyendo notas…':'Reading notes…'}
-    try{await fillFieldReportFromNotesNow(keptLocks,button,note,language,doneLabel)}
+    try{await fillFieldReportFromNotesNow(keptLocks,button,note,language,doneLabel,current)}
     finally{releaseReview()}
   }
-  async function fillFieldReportFromNotesNow(keptLocks,button,note,language,doneLabel){
+  async function fillFieldReportFromNotesNow(keptLocks,button,note,language,doneLabel,current){
     if(note&&note===reviewedNotesKey){
       try{
         if(typeof showReportStep==='function')showReportStep(2);
@@ -565,11 +573,13 @@ var fieldScopeFlags=[];
     }
     let failed=false;
     try{
-      if(typeof refreshReportLaborFromTimeCards==='function'){try{await refreshReportLaborFromTimeCards()}catch{}}
+      if(typeof refreshReportLaborFromTimeCards==='function'&&(fieldCompact()||typeof reportLaborLoadedKey==='undefined'||typeof reportLaborSelectionKey!=='function'||reportLaborLoadedKey!==reportLaborSelectionKey())){try{await refreshReportLaborFromTimeCards()}catch{}}
+      if(!current())return;
       if(!note){failed=true;if(typeof notify==='function')notify(language.startsWith('es')?'Escriba las notas o complete las tarjetas.':'Add notes, or fill the cards yourself.');}
       else{
         const project=projects?.[+$('#report-project')?.value];
         const draft=await api('/api/ai/extract',{method:'POST',body:JSON.stringify({notes:note,language,projectId:project?.id})});
+        if(!current()||note!==String($('#field-notes')?.value||'').trim())return;
         applyScopeLines(draft?.scopeReview||{lines:[]});
         applyNarrative(draft||{});
         const scopeFacts=draft?.scopeReview;
@@ -578,17 +588,20 @@ var fieldScopeFlags=[];
         if(scopeFacts?.materials){const materials=$('#report-materials');if(materials&&typeof FieldDailyScope!=='undefined'&&FieldDailyScope.uniqueMaterials)materials.value=FieldDailyScope.uniqueMaterials([materials.value,scopeFacts.materials])}
         fieldHoursReview=draft?.scopeReview?.hours||null;
         applyPunchHours();
-        if(!clockHoursPresent()&&fieldHoursReview?.total>0&&typeof applyNoteLaborEvidence==='function')applyNoteLaborEvidence(draft.laborEvidence?.total>0?draft.laborEvidence:{total:fieldHoursReview.total,headcount:fieldHoursReview.headcount,perPerson:fieldHoursReview.perPerson});
-        else if(!clockHoursPresent()&&draft?.laborEvidence&&typeof applyNoteLaborEvidence==='function'&&!fieldHoursReview?.ask)applyNoteLaborEvidence(draft.laborEvidence);
+        if(fieldCompact()&&!clockHoursPresent()&&fieldHoursReview?.total>0&&typeof applyNoteLaborEvidence==='function')applyNoteLaborEvidence(draft.laborEvidence?.total>0?draft.laborEvidence:{total:fieldHoursReview.total,headcount:fieldHoursReview.headcount,perPerson:fieldHoursReview.perPerson});
+        else if(fieldCompact()&&!clockHoursPresent()&&draft?.laborEvidence&&typeof applyNoteLaborEvidence==='function'&&!fieldHoursReview?.ask)applyNoteLaborEvidence(draft.laborEvidence);
         harvestFlagAnswers();
         fieldScopeFlags=stampFlags(typeof FieldDailyScope!=='undefined'&&FieldDailyScope.mergeScopeFlags?FieldDailyScope.mergeScopeFlags(fieldScopeFlags,draft?.scopeReview?.flags||[]):(draft?.scopeReview?.flags||[]).map(flag=>({...flag,decision:null,createsChange:false,who_asked:String(flag.who_asked||'')})));
         restoreHeldChoices();
         if(draft?.changesCreated)fieldScopeFlags=[];
       }
     }catch{
+      if(!current())return;
       failed=true;
       if(typeof notify==='function')notify(language.startsWith('es')?'La IA no pudo leer las notas. Complete las tarjetas.':'AI could not read the notes. Fill the cards yourself.');
     }finally{
+      if(!current())return;
+      if(note!==String($('#field-notes')?.value||'').trim()){if(button){button.disabled=false;button.textContent=doneLabel}return;}
       if(typeof showReportStep==='function')showReportStep(2);
       if(failed&&!$$('.production-entry').length&&typeof addProductionRow==='function')addProductionRow();
       dropRawProductionRows();
@@ -610,7 +623,7 @@ var fieldScopeFlags=[];
   const nextButton=$('#report-next-step');
   if(nextButton){
     const officeNext=nextButton.onclick;
-    nextButton.onclick=()=>{if(!fieldCompact())return officeNext?.();return fillFieldReportFromNotes()};
+    nextButton.onclick=()=>{if(!dailyCompact())return officeNext?.();return fillFieldReportFromNotes()};
   }
   const endButton=$('#confirm-end-day');
   if(endButton?.onclick){
@@ -627,7 +640,7 @@ var fieldScopeFlags=[];
   if(sendButton){
     const officeSend=sendButton.onclick;
     sendButton.onclick=async event=>{
-      if(fieldCompact()){
+      if(dailyCompact()){
         clearTimeout(reviewPersistTimer);
         try{await reviewSave}catch{}
         try{await reviewPersist}catch{}
@@ -647,11 +660,11 @@ var fieldScopeFlags=[];
   }
   if(typeof openReport==='function'){
     const openBefore=openReport;
-    openReport=function(report=null,context={}){fieldScopeFlags=[];fieldHoursReview=null;reviewedNotesKey='';const result=openBefore(report,context);if(fieldCompact()&&Array.isArray(report?.officeReview?.reportedLabor)){for(const row of report.officeReview.reportedLabor){const input=$('[data-labor-member="'+Number(row.memberId)+'"]');if(input){input.value=row.hours==null?'':String(row.hours);input.dataset.manualHours='true';delete input.dataset.timecardDerived}}}if(fieldCompact()){const loadedSummary=String($('#report-summary')?.value||'').trim(),loadedNotes=String($('#field-notes')?.value||'').trim(),hasProduction=(report?.productionEntries||[]).some(row=>row&&row.extra_work!==true&&String(row.description||'').trim()),hasResolution=(report?.scopeFlags||[]).some(flag=>flag&&flag.decision)||(report?.extraWork||[]).some(item=>item&&item.extra_work===true);if(loadedNotes&&(hasResolution||(loadedSummary&&(!/^field work recorded:/i.test(loadedSummary)||hasProduction))))reviewedNotesKey=loadedNotes;const saved=(report?.productionEntries||[]).some(row=>row&&((row.estimateItemId!=null&&String(row.estimateItemId)!=='')||Number(row.quantity)>0));if(report?.workSuggestions?.length&&!saved&&$('#production-rows'))$('#production-rows').innerHTML='';const draft=typeof readOfflineDraft==='function'&&typeof offlineReportDraftKey==='function'?readOfflineDraft(offlineReportDraftKey()):null;if(Array.isArray(report?.scopeFlags)&&report.scopeFlags.length)fieldScopeFlags=stampFlags(report.scopeFlags);else if(Array.isArray(draft?.scopeFlags)&&String(draft.notes||'').trim()&&String(draft.notes||'').trim()===String($('#field-notes')?.value||'').trim())fieldScopeFlags=stampFlags(draft.scopeFlags)}restoreResolvedExtras(report);dropEmptyLines();dropRawProductionRows();bindLaborAllocation();polishFieldDaily();renderFlags();if(report?.id&&!(typeof restoringActiveReport!=='undefined'&&restoringActiveReport)&&typeof clearRestoreBanner==='function')clearRestoreBanner();if(fieldCompact()&&$('#report-form')?.getAttribute('data-current-step')==='2')renderFieldReview();return result};
+    openReport=function(report=null,context={}){reviewGeneration++;fieldScopeFlags=[];fieldHoursReview=null;reviewedNotesKey='';const result=openBefore(report,context);if(fieldCompact()&&Array.isArray(report?.officeReview?.reportedLabor)){for(const row of report.officeReview.reportedLabor){const input=$('[data-labor-member="'+Number(row.memberId)+'"]');if(input){input.value=row.hours==null?'':String(row.hours);input.dataset.manualHours='true';delete input.dataset.timecardDerived}}}if($('#report-next-step'))$('#report-next-step').disabled=false;if(dailyCompact()){const loadedSummary=String($('#report-summary')?.value||'').trim(),loadedNotes=String($('#field-notes')?.value||'').trim(),hasProduction=(report?.productionEntries||[]).some(row=>row&&row.extra_work!==true&&String(row.description||'').trim()),hasResolution=(report?.scopeFlags||[]).some(flag=>flag&&flag.decision)||(report?.extraWork||[]).some(item=>item&&item.extra_work===true);if(loadedNotes&&((officeCompact()&&hasProduction)||hasResolution||(loadedSummary&&(!/^field work recorded:/i.test(loadedSummary)||hasProduction))))reviewedNotesKey=loadedNotes;if(officeCompact()&&report?.productionEntries?.length&&typeof addProductionRow==='function'){$('#production-rows').innerHTML='';report.productionEntries.forEach(entry=>addProductionRow({...entry,laborManual:entry.laborManual===true||Number(entry.laborHours)>0,laborMinutes:entry.laborMinutes??Math.round((Number(entry.laborHours)||0)*60)}))}const saved=(report?.productionEntries||[]).some(row=>row&&((row.estimateItemId!=null&&String(row.estimateItemId)!=='')||Number(row.quantity)>0));if(report?.workSuggestions?.length&&!saved&&$('#production-rows'))$('#production-rows').innerHTML='';const draft=typeof readOfflineDraft==='function'&&typeof offlineReportDraftKey==='function'?readOfflineDraft(offlineReportDraftKey()):null;if(Array.isArray(report?.scopeFlags)&&report.scopeFlags.length)fieldScopeFlags=stampFlags(report.scopeFlags);else if(Array.isArray(draft?.scopeFlags)&&String(draft.notes||'').trim()&&String(draft.notes||'').trim()===String($('#field-notes')?.value||'').trim())fieldScopeFlags=stampFlags(draft.scopeFlags)}restoreResolvedExtras(report);dropEmptyLines();dropRawProductionRows();bindLaborAllocation();polishFieldDaily();renderFlags();if(report?.id&&!(typeof restoringActiveReport!=='undefined'&&restoringActiveReport)&&typeof clearRestoreBanner==='function')clearRestoreBanner();if(dailyCompact()&&$('#report-form')?.getAttribute('data-current-step')==='2')renderFieldReview();return result};
   }
   if(typeof showReportStep==='function'){
     const stepBefore=showReportStep;
-    showReportStep=function(step){const result=stepBefore(step);if(Number(step)===2&&fieldCompact()){renderFlags();renderFieldReview()}polishFieldDaily();return result};
+    showReportStep=function(step){const result=stepBefore(step);if(Number(step)===2&&dailyCompact()){renderFlags();renderFieldReview()}polishFieldDaily();return result};
   }
   let laborTickAt=0;
   function beginFieldLaborTick(){if(!(laborTickAt&&Date.now()-laborTickAt<250))laborTickAt=Date.now();return laborTickAt}
@@ -662,6 +675,8 @@ var fieldScopeFlags=[];
   function punchTotalLabel(minutes){if(typeof FieldDailyScope!=='undefined'&&FieldDailyScope.formatPunchTotal)return FieldDailyScope.formatPunchTotal(minutes);const whole=Math.max(0,Math.round(Number(minutes)||0));const hours=(Math.round(whole/60*100)/100).toFixed(2);return `${clockLabel(whole)} · ${hours} h`}
   function workTimeLabel(minutes){if(typeof FieldDailyScope!=='undefined'&&FieldDailyScope.formatWorkTime)return FieldDailyScope.formatWorkTime(minutes);return punchTotalLabel(minutes)}
   function punchRows(){
+    // Office hours are approved/manual/scheduled inputs, never raw field punches.
+    if(!fieldCompact())return [];
     const projectId=projects?.[+$('#report-project')?.value]?.id,date=$('#report-date')?.value;
     const cards=(typeof timeCards==='undefined'?[]:timeCards).filter(card=>card&&!card.deletedAt&&card.inAt&&card.outAt&&Number(card.projectId)===Number(projectId)&&String(card.date||'')===String(date||''));
     const totals=new Map();
@@ -705,7 +720,7 @@ var fieldScopeFlags=[];
     });
   }
   function ensureFieldClockOut(){
-    if(!fieldCompact())return;
+    if(!fieldCompact()){const button=$('#field-clock-out');if(button)button.hidden=true;return;}
     const modal=$('#report-modal');if(!modal)return;
     let button=$('#field-clock-out');
     if(!button){button=document.createElement('button');button.type='button';button.id='field-clock-out';button.className='secondary';modal.append(button)}
@@ -759,12 +774,12 @@ var fieldScopeFlags=[];
     $$('.production-hours').forEach(input=>{
       if(input.dataset.allocationBound==='true')return;
       input.dataset.allocationBound='true';
-      input.addEventListener('input',()=>{const row=input.closest('.production-entry');if(row){row.dataset.laborManual='true';paintManualBadge(row)}applyLaborAllocation();scheduleLaborLockSave();if(fieldCompact())renderFieldReview()});
+      input.addEventListener('input',()=>{const row=input.closest('.production-entry');if(row){row.dataset.laborManual='true';paintManualBadge(row)}applyLaborAllocation();scheduleLaborLockSave();if(dailyCompact())renderFieldReview()});
     });
     $$('.production-quantity').forEach(input=>{
       if(input.dataset.allocationBound==='true')return;
       input.dataset.allocationBound='true';
-      input.addEventListener('input',()=>{applyLaborAllocation();scheduleReviewPersist();if(fieldCompact())renderFieldReview()});
+      input.addEventListener('input',()=>{applyLaborAllocation();scheduleReviewPersist();if(dailyCompact())renderFieldReview()});
     });
     $$('[data-labor-member]').forEach(input=>{
       if(input.dataset.totalBound==='true')return;
@@ -785,7 +800,7 @@ var fieldScopeFlags=[];
       dropEmptyLines();
       applyPunchHours();
       const result=applyLaborAllocation();
-      if($('#report-modal')?.open&&fieldCompact())renderFieldReview();
+      if($('#report-modal')?.open&&dailyCompact())renderFieldReview();
       if($('#report-modal')?.open&&typeof rememberActiveReport==='function')rememberActiveReport();
       ensureFieldClockOut();
       return result;
@@ -813,7 +828,7 @@ var fieldScopeFlags=[];
   window.presentReportSent=presentReportSent;
   window.renderFieldReview=renderFieldReview;
   if(typeof suggestReportHourSplit==='function'){const officeSplit=suggestReportHourSplit;suggestReportHourSplit=function(options){if(fieldCompact()){applyLiveLabor();if(typeof updateReportGaps==='function')updateReportGaps();return true}return officeSplit(options)}}
-  if(typeof saveDailyReport==='function'){const saveBefore=saveDailyReport;saveDailyReport=async function(status,saveOptions){const review=$('#field-review-next'),field=$('#report-next');if(review&&field&&typeof FieldDailyScope!=='undefined'&&FieldDailyScope.mergedNext)field.value=FieldDailyScope.mergedNext(field.value,review.value);harvestFlagAnswers();syncEstimateBindings();dropEmptyLines();if(fieldCompact()){applyLaborAllocation();stampExtraMinutes()}const reportId=Number(typeof editingReportId==='undefined'?0:editingReportId);const saved=await saveBefore(status,saveOptions);const stored=saved&&saved.id?saved:(typeof reports==='undefined'?null:reports.find(row=>Number(row.id)===reportId));if(stored&&String(stored.status||'')!=='Draft'&&typeof timeCards!=='undefined'){let changed=false;for(const card of timeCards){if(!card||!card.outAt||Number(card.reportId)!==Number(stored.id))continue;const cardStatus=String(card.status||'').trim().toLowerCase();if(cardStatus!=='draft'&&cardStatus!=='rejected')continue;card.status='submitted';if(card.fieldAccess)card.fieldAccess={...card.fieldAccess,canEdit:false,canSubmit:false,reason:'This time is awaiting review. Ask your office time administrator to return it to Draft if a correction is needed.'};changed=true}if(changed&&typeof renderFieldClock==='function')renderFieldClock();else if(changed&&typeof renderFieldClockHours==='function')renderFieldClockHours()}return saved}}
+  if(typeof saveDailyReport==='function'){const saveBefore=saveDailyReport;saveDailyReport=async function(status,saveOptions){const review=$('#field-review-next'),field=$('#report-next');if(review&&field&&typeof FieldDailyScope!=='undefined'&&FieldDailyScope.mergedNext)field.value=FieldDailyScope.mergedNext(field.value,review.value);harvestFlagAnswers();syncEstimateBindings();dropEmptyLines();if(dailyCompact()){applyLaborAllocation();stampExtraMinutes()}const reportId=Number(typeof editingReportId==='undefined'?0:editingReportId);const saved=await saveBefore(status,saveOptions);const stored=saved&&saved.id?saved:(typeof reports==='undefined'?null:reports.find(row=>Number(row.id)===reportId));if(stored&&String(stored.status||'')!=='Draft'&&typeof timeCards!=='undefined'){let changed=false;for(const card of timeCards){if(!card||!card.outAt||Number(card.reportId)!==Number(stored.id))continue;const cardStatus=String(card.status||'').trim().toLowerCase();if(cardStatus!=='draft'&&cardStatus!=='rejected')continue;card.status='submitted';if(card.fieldAccess)card.fieldAccess={...card.fieldAccess,canEdit:false,canSubmit:false,reason:'This time is awaiting review. Ask your office time administrator to return it to Draft if a correction is needed.'};changed=true}if(changed&&typeof renderFieldClock==='function')renderFieldClock();else if(changed&&typeof renderFieldClockHours==='function')renderFieldClockHours()}return saved}}
   if(typeof confirmReportDiscard==='function'){const officeConfirm=confirmReportDiscard;confirmReportDiscard=function(){if(typeof currentRole!=='undefined'&&currentRole==='field')return true;return officeConfirm()}}
   function fieldSameDayReport(projectId,dateIso){
     if(typeof currentRole==='undefined'||currentRole!=='field'||typeof FieldDailyScope==='undefined'||!FieldDailyScope.sameDayDaily)return null;
@@ -846,13 +861,13 @@ var fieldScopeFlags=[];
     const notifyBefore=notify;
     notify=function(message){
       const result=notifyBefore.apply(this,arguments);
-      if(fieldCompact()&&CLOCK_OUT_PROMPT.test(String(message||'')))clearStaleClockOutPrompt();
+      if(dailyCompact()&&CLOCK_OUT_PROMPT.test(String(message||'')))clearStaleClockOutPrompt();
       return result;
     };
   }
   if(typeof saveDailyReport==='function'){
     const saveBeforeExtras=saveDailyReport;
-    saveDailyReport=async function(status,saveOptions){if(fieldCompact())stampExtraMinutes();return saveBeforeExtras(status,saveOptions)};
+    saveDailyReport=async function(status,saveOptions){if(dailyCompact())stampExtraMinutes();return saveBeforeExtras(status,saveOptions)};
   }
   polishFieldDaily();
 })();
