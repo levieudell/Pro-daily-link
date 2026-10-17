@@ -457,6 +457,7 @@
   }
 
   function emptyProductionLine(entry){
+    if(entry?.extra_work===true&&String(entry?.description||'').trim())return false;
     const item=entry?.estimateItemId!=null&&String(entry.estimateItemId)!=='';
     const qty=Number(entry?.quantity)>0;
     return !item&&!qty;
@@ -557,7 +558,7 @@
     const block=[],warn=[];
     if((flags||[]).some(flag=>flag&&!flag.decision))block.push('Answer each flag before sending this daily to the office.');
     if(!(Number(laborHours)>0))block.push('Enter the crew hours before sending.');
-    if((lines||[]).some(line=>line&&line.needsQuantity&&!(Number(line.quantity)>0)))block.push('Enter a quantity for each work line.');
+    if((lines||[]).some(line=>line&&line.extra!==true&&line.needsQuantity&&!(Number(line.quantity)>0)))block.push('Enter a quantity for each work line.');
     if(openClock)warn.push('Clock out to include today\'s time');
     return {block,warn};
   }

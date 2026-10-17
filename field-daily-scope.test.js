@@ -91,6 +91,15 @@ assert.equal(scope.appendClockNotes('Set forms.',''),'Set forms.');
 assert.equal(scope.elapsedMinutes('2026-10-16T22:38:50.000Z','2026-10-16T22:39:10.000Z'),0);
 assert.equal(scope.hoursFromMinutes(0),0);
 assert.equal(scope.punchLengthLabel({inAt:'2026-10-16T22:38:50.000Z',outAt:'2026-10-16T22:39:10.000Z'}),'0 min');
+const extraSend=scope.sendGate({flags:[],laborHours:0.07,openClock:false,lines:[{quantity:'',needsQuantity:true,extra:true}]});
+assert.equal(extraSend.block.length,0,'extra work can send without a quantity');
+const optionalExtra=scope.sendGate({flags:[],laborHours:0.07,openClock:false,lines:[{quantity:'12',needsQuantity:false,extra:true}]});
+assert.equal(optionalExtra.block.length,0,'an optional extra-work quantity still sends');
+const quantityStillRequired=scope.sendGate({flags:[],laborHours:0.07,openClock:false,lines:[{quantity:'',needsQuantity:true}]});
+assert.ok(quantityStillRequired.block.some(line=>/quantity/i.test(line)));
+const keptExtra=scope.keepProductionLines([{description:'Set forms',extra_work:true,quantity:0,laborHours:0.05}],'Set forms');
+assert.equal(keptExtra.length,1);
+assert.equal(keptExtra[0].description,'Set forms');
 
 const server=fs.readFileSync(__dirname+'/server.js','utf8'),app=fs.readFileSync(__dirname+'/app.js','utf8');
 assert.match(server,/status:fieldScope\.submissionStatus\(input\.status\)/);

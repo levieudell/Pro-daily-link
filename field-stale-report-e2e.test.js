@@ -16,6 +16,8 @@ const STALE_NOTES = 'Stale note from the phone.';
 const STALE_NEXT = 'Stale next';
 const FIELD_EMAIL = 'levi+field@prodailylink.com';
 const FIELD_PASSWORD = 'staging-field-pass';
+const OWNER_EMAIL = 'levi+owner@prodailylink.com';
+const OWNER_PASSWORD = 'staging-owner-pass';
 
 function puppeteer() {
   try { return require('puppeteer-core'); }
@@ -41,11 +43,11 @@ function pinOpenPunch(file, minutes) {
   return start;
 }
 
-async function login(page) {
+async function login(page, email = FIELD_EMAIL, password = FIELD_PASSWORD) {
   await page.goto(`http://127.0.0.1:${page.__port}/login.html`, { waitUntil: 'domcontentloaded' });
   await page.waitForSelector('#email');
-  await page.$eval('#email', (el, value) => { el.value = value; }, FIELD_EMAIL);
-  await page.$eval('#password', (el, value) => { el.value = value; }, FIELD_PASSWORD);
+  await page.$eval('#email', (el, value) => { el.value = value; }, email);
+  await page.$eval('#password', (el, value) => { el.value = value; }, password);
   await page.click('form#login button.primary');
   await page.waitForFunction(() => location.pathname.includes('/app'), { timeout: 20000 });
   await page.waitForSelector('#menu-button', { timeout: 20000 });
@@ -262,9 +264,12 @@ async function serverDaily(page) {
       if (curb) {
         select.value = curb.value;
         row.dataset.estimateItemId = curb.value;
+        select.dispatchEvent(new Event('change', { bubbles: true }));
       }
       const quantity = row?.querySelector('.production-quantity');
-      if (quantity) quantity.value = '1';
+      if (quantity) quantity.value = '40';
+      const unit = row?.querySelector('.production-unit');
+      if (unit && !unit.value) unit.value = 'LF';
     }, STALE_NEXT);
     await page.click('#save-report');
     try {
@@ -317,8 +322,115 @@ async function serverDaily(page) {
     assert.match(reloaded.next, /Pour pad Monday/);
     assert.doesNotMatch(`${reloaded.notes}\n${reloaded.next}\n${reloaded.reviewNext}`, /Stale note|Stale next/);
     assert.match(reloaded.status, /This daily was updated, reloading/);
-    await page.evaluate(() => document.querySelector('#report-modal .close-button')?.click());
-    await page.waitForFunction(() => !document.querySelector('#report-modal')?.open, { timeout: 5000 });
+    const punchLabel = minutes => `${minutes} min · ${(Math.round(minutes / 60 * 100) / 100).toFixed(2)} h`;
+    const freshLabel = punchLabel(ended.minutes);
+    const staleLabel = punchLabel(merged.minutes);
+    let refreshed;
+    try {
+      await page.waitForFunction(label => {
+        const total = document.querySelector('.field-labor-total')?.textContent || '';
+        const fromClock = [...document.querySelectorAll('#field-review-cards .field-review-card')].some(card => /From clock/i.test(card.querySelector('small')?.textContent || '') && (card.innerText || '').includes(label));
+        const curb = [...document.querySelectorAll('.production-entry')].some(row => /curb/i.test(row.querySelector('.production-item')?.selectedOptions?.[0]?.textContent || '') && row.querySelector('.production-quantity')?.value === '40');
+        const add = /Add line/.test(document.querySelector('#field-add-line')?.textContent || '');
+        return fromClock && total.includes(label) && curb && add;
+      }, { timeout: 20000 }, freshLabel);
+      refreshed = await page.evaluate(() => ({
+        total: document.querySelector('.field-labor-total')?.textContent || '',
+        fromClock: [...document.querySelectorAll('#field-review-cards .field-review-card')].filter(card => /From clock/i.test(card.querySelector('small')?.textContent || '')).map(card => card.innerText || ''),
+        curb: [...document.querySelectorAll('.production-entry')].map(row => ({ name: row.querySelector('.production-item')?.selectedOptions?.[0]?.textContent || '', qty: row.querySelector('.production-quantity')?.value || '', unit: row.querySelector('.production-unit')?.value || '' })),
+        add: document.querySelector('#field-add-line')?.textContent || ''
+      }));
+    } catch (error) {
+      refreshed = await page.evaluate(() => ({
+        step: document.querySelector('#report-form')?.getAttribute('data-current-step') || '',
+        total: document.querySelector('.field-labor-total')?.textContent || '',
+        cards: document.querySelector('#field-review-cards')?.innerText || '',
+        curb: [...document.querySelectorAll('.production-entry')].map(row => ({ name: row.querySelector('.production-item')?.selectedOptions?.[0]?.textContent || row.querySelector('.custom-description')?.value || '', qty: row.querySelector('.production-quantity')?.value || '', unit: row.querySelector('.production-unit')?.value || '' })),
+        add: document.querySelector('#field-add-line')?.textContent || '',
+        hours: [...document.querySelectorAll('[data-labor-member]')].map(el => ({ value: el.value, derived: el.dataset.timecardDerived || '' }))
+      }));
+      throw new Error(`${error.message}\n${JSON.stringify(refreshed, null, 2)}`);
+    }
+    assert.match(refreshed.total, new RegExp(freshLabel.replace(/[.]/g, '\\.')));
+    assert.ok(refreshed.fromClock.some(text => text.includes(freshLabel)), JSON.stringify(refreshed));
+    if (freshLabel !== staleLabel) assert.equal(refreshed.total.includes(staleLabel), false, JSON.stringify(refreshed));
+    assert.ok(refreshed.curb.some(row => /curb/i.test(row.name) && row.qty === '40' && /LF/i.test(row.unit)), JSON.stringify(refreshed));
+    assert.match(refreshed.add, /Add line/);
+    if (await page.$eval('#report-form', form => form.getAttribute('data-current-step')) === '2') {
+      await page.click('#report-back');
+      await page.waitForFunction(() => document.querySelector('#report-form')?.getAttribute('data-current-step') === '1');
+    }
+    await page.click('#report-next-step');
+    try {
+      await page.waitForFunction(() => {
+        const flags = document.querySelector('#field-scope-flags')?.innerText || '';
+        const curb = [...document.querySelectorAll('.production-entry')].some(row => /curb/i.test(row.querySelector('.production-item')?.selectedOptions?.[0]?.textContent || '') && row.querySelector('.production-quantity')?.value === '40');
+        return /Needs your pick/i.test(flags) && /Set forms/i.test(flags) && curb;
+      }, { timeout: 20000 });
+    } catch (error) {
+      const parsed = await page.evaluate(() => ({
+        flags: document.querySelector('#field-scope-flags')?.innerText || '',
+        status: document.querySelector('#report-submit-status')?.textContent || '',
+        notes: document.querySelector('#field-notes')?.value || '',
+        curb: [...document.querySelectorAll('.production-entry')].map(row => ({ name: row.querySelector('.production-item')?.selectedOptions?.[0]?.textContent || row.querySelector('.custom-description')?.value || '', qty: row.querySelector('.production-quantity')?.value || '', extra: row.dataset.extraWork || '' }))
+      }));
+      throw new Error(`${error.message}\n${JSON.stringify(parsed, null, 2)}`);
+    }
+    await page.click('[data-flag-choice="extra"]');
+    await page.waitForFunction(() => {
+      const row = [...document.querySelectorAll('.production-entry')].find(entry => entry.dataset.extraWork === 'true');
+      const card = [...document.querySelectorAll('#field-review-cards .field-review-card')].find(node => /Set forms/i.test(node.innerText || ''));
+      return row && !(Number(row.querySelector('.production-quantity')?.value) > 0) && card && !/Quantity needed/i.test(card.innerText || '');
+    }, { timeout: 10000 });
+    await page.click('#save-report');
+    try {
+      await page.waitForSelector('#report-sent-modal[open]', { timeout: 20000 });
+    } catch (error) {
+      const blocked = await page.evaluate(async () => {
+        const data = await (await fetch('/api/state', { credentials: 'include' })).json();
+        const report = (data.reports || [])[0] || null;
+        return {
+          status: document.querySelector('#report-submit-status')?.textContent || '',
+          toast: document.querySelector('#toast')?.textContent || '',
+          lines: [...document.querySelectorAll('.production-entry')].map(row => ({ extra: row.dataset.extraWork || '', qty: row.querySelector('.production-quantity')?.value || '', hours: row.querySelector('.production-hours')?.value || '', minutes: row.dataset.laborMinutes || '' })),
+          serverStatus: report?.status || '',
+          extra: report?.extraWork || []
+        };
+      });
+      throw new Error(`${error.message}\n${JSON.stringify(blocked, null, 2)}`);
+    }
+    const sent = await page.evaluate(async () => {
+      const data = await (await fetch('/api/state', { credentials: 'include' })).json();
+      const report = (data.reports || [])[0] || null;
+      return {
+        status: report?.status || '',
+        extra: (report?.extraWork || []).map(item => item.description || ''),
+        curb: (report?.productionEntries || []).filter(row => /curb/i.test(row.description || '')).map(row => ({ qty: Number(row.quantity), unit: row.unit || '' }))
+      };
+    });
+    assert.equal(sent.status, 'Needs review', JSON.stringify(sent));
+    assert.ok(sent.extra.some(text => /Set forms/i.test(text)), JSON.stringify(sent));
+    assert.ok(sent.curb.some(row => row.qty === 40), JSON.stringify(sent));
+    const ownerContext = await browser.createBrowserContext();
+    const owner = await ownerContext.newPage();
+    owner.__port = port;
+    await owner.setViewport({ width: 390, height: 844, deviceScaleFactor: 2, isMobile: true, hasTouch: true });
+    owner.on('dialog', async dialog => { await dialog.accept(); });
+    await owner.evaluateOnNewDocument(() => localStorage.setItem('pdl-analytics-consent', 'declined'));
+    await login(owner, OWNER_EMAIL, OWNER_PASSWORD);
+    await openNav(owner, 'reports');
+    await owner.waitForFunction(() => {
+      const text = document.querySelector('#report-detail')?.innerText || '';
+      return /Set forms/i.test(text) && /Curb/i.test(text) && /40/.test(text);
+    }, { timeout: 20000 });
+    const office = await owner.evaluate(() => ({
+      extra: document.querySelector('#report-detail .extra-work-item')?.innerText || '',
+      production: [...document.querySelectorAll('#report-detail .data-box')].find(row => /PRODUCTION/i.test(row.querySelector('small')?.textContent || ''))?.innerText || ''
+    }));
+    assert.match(office.extra, /Set forms/);
+    assert.match(office.production, /Curb/);
+    assert.match(office.production, /40/);
+    await ownerContext.close();
     const afterSend = await detailFacts(page);
     assert.equal(afterSend.stayed, 'open');
     assert.equal(afterSend.next, NEXT_2, JSON.stringify(afterSend));

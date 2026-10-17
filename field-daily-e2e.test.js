@@ -836,7 +836,7 @@ async function openNav(page, name) {
     });
     assert.match(blockedLock.notes, /Left the site\. Gate is locked\./);
     assert.equal(blockedLock.minutes, 3, JSON.stringify(blockedLock));
-    await page.click('#report-next-step');
+    if (await page.$eval('#report-form', form => form.getAttribute('data-current-step')) !== '2') await page.click('#report-next-step');
     await page.waitForFunction(() => {
       const button = document.querySelector('#report-next-step');
       const input = document.querySelector('[data-review-labor][data-line-id="1"]');
