@@ -1,0 +1,16 @@
+'use strict';
+const assert=require('node:assert/strict');
+const {spawnSync}=require('node:child_process');
+const sdkPath=require.resolve('@heycatch/sdk');
+assert(require.cache[sdkPath]?.loaded,'analytics must be stubbed before tests load the SDK');
+const {analytics}=require('@heycatch/sdk');
+assert.equal(analytics.init,analytics.trackEvent,'analytics methods are inert test-only functions');
+let networkCalls=0;
+global.fetch=()=>{networkCalls++;throw new Error('Tests must not send analytics');};
+analytics.init({projectKey:'synthetic'});
+analytics.setIdentity('synthetic-owner',{email:'synthetic@example.invalid'});
+analytics.trackEvent('synthetic_event',{},{userId:'synthetic-owner'});
+assert.equal(networkCalls,0);
+const child=spawnSync(process.execPath,['-e',"const assert=require('node:assert/strict');const p=require.resolve('@heycatch/sdk');assert(require.cache[p]?.loaded);const {analytics}=require('@heycatch/sdk');assert.equal(analytics.init,analytics.trackEvent);"],{cwd:require('node:path').join(__dirname,'..'),encoding:'utf8'});
+assert.equal(child.status,0,child.stderr||'spawned test servers must inherit analytics isolation');
+console.log('Test analytics isolation: SDK is inert before load and inherited by child servers.');

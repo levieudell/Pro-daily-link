@@ -217,9 +217,10 @@ const saveAt = app.indexOf('async function saveDailyReport');
 const saveDaily = app.slice(saveAt, saveAt + 12000);
 assert.ok(saveDaily.indexOf('adoptReport(saved)') < saveDaily.indexOf('renderReports(saved.id)'));
 assert.ok(saveDaily.indexOf('presentReportSent(') > saveDaily.indexOf('renderReports(saved.id)'));
-const endDay = app.slice(app.indexOf("$('#confirm-end-day').onclick"), app.indexOf('function reportApprovalBlockers'));
-assert.ok(endDay.indexOf('renderFieldClock()') < endDay.indexOf('renderReports('));
-assert.match(endDay, /Clocked out\. The punch is on today\\'s daily\./);
+const endDay = app.slice(app.indexOf('async function openEndDay(id)'), app.indexOf('let endDayVoice='));
+assert.ok(endDay.indexOf('renderWorkdays()') < endDay.indexOf('renderReports('));
+assert.match(endDay, /Complete today/);
+assert.doesNotMatch(endDay, /ai-convert|showModal/);
 assert.match(app.slice(app.indexOf('function renderFieldClockHours'), app.indexOf('function renderFieldClock(')), /punchLengthLabel\(card\)/);
 
 const instant = fs.readFileSync(__dirname + '/field-instant-daily.js', 'utf8');

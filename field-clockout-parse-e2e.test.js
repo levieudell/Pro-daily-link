@@ -44,6 +44,7 @@ async function login(page) {
   await page.click('form#login button.primary');
   await page.waitForFunction(() => location.pathname.includes('/app'), { timeout: 20000 });
   await page.waitForSelector('#menu-button', { timeout: 20000 });
+  await page.waitForFunction(()=>typeof currentUser!=='undefined'&&currentUser?.memberId&&typeof team!=='undefined'&&team.some(row=>Number(row.id)===Number(currentUser.memberId)),{timeout:20000});
 }
 
 async function openNav(page, name) {
@@ -104,10 +105,13 @@ async function openNav(page, name) {
     await page.click('#confirm-start-day');
     await page.waitForFunction(() => /Clock out/i.test(document.querySelector('#start-day-button')?.textContent || ''), { timeout: 20000 });
     pinOpenPunch(dbFile, 2);
+    const aiRequests=[];page.on('request',request=>{if(request.url().includes('/api/ai/extract'))aiRequests.push(request.url())});
     await page.click('#start-day-button');
-    await page.waitForSelector('#end-day-modal[open] #end-day-notes', { timeout: 20000 });
-    await page.$eval('#end-day-notes', (el, value) => { el.value = value; }, NOTES);
-    await page.click('#confirm-end-day');
+    await page.waitForFunction(()=>document.querySelector('#report-modal')?.open&&endingWorkdays.size===0,{timeout:20000});
+    assert.equal(await page.$eval('#field-notes',el=>el.value),'','clock-out opens the blank daily directly');
+    assert.equal(await page.$eval('#end-day-modal',el=>el.open),false);
+    assert.equal(aiRequests.length,0,'blank clock-out does not analyze notes');
+    await require('./scripts/field-report-test-helpers.cjs').completeClockOutDaily(page,NOTES,'');
     try {
       await page.waitForFunction(() => {
         const modal = document.querySelector('#report-modal');

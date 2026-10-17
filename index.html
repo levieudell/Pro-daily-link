@@ -9,7 +9,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Oswald:wght@500;600;700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="styles.css?v=20261014-review3" />
+  <link rel="stylesheet" href="styles.css?v=20261014-review3-20261017-voice5" />
   <link rel="stylesheet" href="estimate-mobile.css" />
   <link rel="stylesheet" href="project-notes-ui.css?v=20261005-notes-focus" />
   <link rel="manifest" href="manifest.webmanifest" />
@@ -314,7 +314,13 @@
         <div id="manual-weather" class="manual-weather two-col" hidden><label>Conditions<input id="manual-weather-condition" placeholder="Clear, rain, windy…"></label><label>Temperature °F<input id="manual-weather-temperature" type="number" inputmode="numeric" placeholder="72"></label><button type="button" class="secondary" id="save-manual-weather">Use this weather</button></div>
         <input type="hidden" id="report-weather" /><input type="hidden" id="report-temperature" />
         <label id="field-notes-label">Tell us what happened today<textarea id="field-notes" rows="8" placeholder="Example: Concrete crew poured 86 yards on the east foundation with 3 people for 8 hours. Pump arrived 45 minutes late…"></textarea></label>
-        <div class="note-tools"><button type="button" id="voice-notes">🎙 Speak notes</button><button type="button" id="flag-extra-work">＋ Flag extra work</button><button type="button" data-note-chip="No delays today. ">No delays</button><button type="button" data-note-chip="No safety incidents. ">No incidents</button><button type="button" data-note-chip="Tomorrow we plan to ">Tomorrow</button></div>
+        <div class="note-tools" id="field-note-tools"><button type="button" id="voice-notes">🎙 Speak notes</button><button type="button" id="flag-extra-work">＋ Flag extra work</button><button type="button" data-note-chip="No delays today. ">No delays</button><button type="button" data-note-chip="No safety incidents. ">No incidents</button><button type="button" data-note-chip="Tomorrow we plan to ">Tomorrow</button></div>
+        <section id="voice-capture-panel" class="voice-capture-panel" aria-labelledby="voice-capture-title" hidden>
+          <div class="voice-capture-circle" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 10v2a7 7 0 0 0 14 0v-2M12 19v3M8 22h8"/></svg></div>
+          <h3 id="voice-capture-title">Listening…</h3>
+          <button type="button" class="primary" id="voice-capture-stop">Stop &amp; transcribe</button>
+          <button type="button" class="secondary" id="voice-capture-cancel">Cancel</button>
+        </section>
         <p class="voice-status" id="voice-status" role="status" aria-live="polite" hidden></p>
         <div class="autosave-status" id="autosave-status">Notes save automatically on this device</div>
         <label>Daily photos<input type="file" id="report-photos" accept="image/jpeg,image/png,image/webp" multiple /><small class="input-help">Add progress, material, issue, or completed-work photos.</small></label><label id="report-photo-tags-field">Photo tags<input id="report-photo-tags" placeholder="progress, concrete, east wall"><small class="input-help">Separate tags with commas. Date and time are added automatically.</small></label>
@@ -581,7 +587,7 @@
   <script src="report-labor-review.js?v=20261009-labor-exclusions"></script>
   <script src="company-timezone.js?v=20261014-review3"></script>
   <script src="schedule-approved-labor.js?v=20261008-approved-evidence"></script>
-  <script src="app.js?v=20261014-review3"></script>
+  <script src="app.js?v=20261016-voice2-20261017-voice5"></script>
   <script src="field-daily-scope.js?v=20261016-d1b"></script>
   <script src="field-instant-daily.js?v=20261016-d1c"></script>
   <script src="estimate-mobile.js"></script>
