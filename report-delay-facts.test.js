@@ -2,7 +2,7 @@
 const assert=require('node:assert/strict'),fs=require('node:fs'),vm=require('node:vm');
 const server=fs.readFileSync(__dirname+'/server.js','utf8'),app=fs.readFileSync(__dirname+'/app.js','utf8');
 function code(source,name){const lines=source.split('\n'),start=source.indexOf('function '+name+'(');assert.ok(start>=0,name);const text=source.slice(start),line=text.split('\n')[0];if(line.trimEnd().endsWith('}'))return line;const rest=text.split('\n'),end=rest.findIndex((line,i)=>i>0&&line.trimEnd()==='}');assert.ok(end>0,name);return rest.slice(0,end+1).join('\n')}
-const c={dailyWork:require('./daily-work-extraction'),normalizeLanguageCode:value=>value,crewHourFact:()=>null,applyCrewHours(){},applyNextBackstop(){}};vm.createContext(c);
+const c={dailyWork:require('./daily-work-extraction'),fieldScope:require('./field-daily-scope'),normalizeLanguageCode:value=>value,crewHourFact:()=>null,applyCrewHours(){},applyNextBackstop(){}};vm.createContext(c);
 for(const name of ['pureNoDelayClaim','delayFromNotes','localExtract','reportHasOpenUnplanned','alignReportNarrative','holdupBackstop','finishAiExtract'])vm.runInContext(code(server,name),c);
 const positives=['No delays','No delays today.','Without delays','Sin retrasos.','No hubo retrasos hoy.','Sin demoras.','None reported'];
 for(const delays of positives){const report={delays,issue:delays,summary:delays,flags:[{type:'unplanned_work'}]};c.alignReportNarrative(report);assert.equal(report.delays,delays);assert.equal(report.issue,delays);assert.ok(report.summary.includes(delays));assert.match(report.summary,/office decision/)}

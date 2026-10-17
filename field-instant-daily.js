@@ -182,7 +182,7 @@ var fieldScopeFlags=[];
   function clockHoursPresent(){return [...$$('[data-labor-member]')].some(input=>input.dataset.timecardDerived==='true'&&Number(input.value)>0)}
   function enteredLaborHours(){return [...$$('[data-labor-member]')].reduce((sum,input)=>sum+(Number(input.value)||0),0)}
   function crewStillClockedIn(){const projectId=projects?.[+$('#report-project')?.value]?.id,date=$('#report-date')?.value,cards=typeof timeCards==='undefined'?[]:timeCards,days=typeof workdays==='undefined'?[]:workdays;return cards.some(card=>card&&!card.deletedAt&&Number(card.projectId)===Number(projectId)&&String(card.date||'')===String(date||'')&&card.inAt&&!card.outAt)||days.some(day=>day&&Number(day.projectId)===Number(projectId)&&day.status==='active'&&!day.endedAt)}
-  function applyAskedHours(value,headcount){const each=Number(value),inputs=[...$$('[data-labor-member]')];if(!(each>0)){inputs.forEach(input=>{if(input.dataset.noteDerived==='true')input.value=''});return}const count=Math.max(1,Math.min(inputs.length,Math.floor(Number(headcount)||1)));inputs.forEach(input=>{if(input.dataset.noteDerived==='true')input.value=''});inputs.slice(0,count).forEach(input=>{input.value=Math.min(24,each);input.dataset.noteDerived='true'})}
+  function applyAskedHours(value,headcount){const each=Number(value);if(!Number.isFinite(each)||each<0||each>24)return;const inputs=[...$$('[data-labor-member]')];if(!(each>0)){inputs.forEach(input=>{if(input.dataset.noteDerived==='true')input.value=''});return}const count=Math.max(1,Math.min(inputs.length,Math.floor(Number(headcount)||1)));inputs.forEach(input=>{if(input.dataset.noteDerived==='true')input.value=''});inputs.slice(0,count).forEach(input=>{input.value=each;input.dataset.manualHours='true';input.dataset.noteDerived='true'})}
   function stampFlags(flags){return (Array.isArray(flags)?flags:[]).filter(Boolean).map(flag=>({...flag,id:flag.id||(typeof FieldDailyScope!=='undefined'&&FieldDailyScope.flagIdentity?FieldDailyScope.flagIdentity(flag):`${flag.reason||'note'}:${String(flag.description||'').toLowerCase()}`)}))}
   function flagById(id){return fieldScopeFlags.find(flag=>String(flag?.id)===String(id))}
   function findUnmatchedRow(flag){
@@ -402,6 +402,9 @@ var fieldScopeFlags=[];
     applyPunchHours();
     applyLaborAllocation();
     const cards=[];
+    const sourceNotes=$('#field-notes')?.value||'';
+    if(sourceNotes.trim())cards.push(`<article class="field-review-source"><strong>Original field notes</strong><p style="white-space:pre-wrap">${escapeText(sourceNotes)}</p><small>Source notes are saved with this daily. AI suggestions need your review.</small></article>`);
+    for(const reason of FieldDailyScope.narrativeWarnings(sourceNotes,$('#report-summary')?.value))cards.push(`<p class="field-clock-warning" role="status">${escapeText(reason.message)} You can send this to the office for review.</p>`);
     const notesForLines=$('#field-notes')?.value||'';
     $$('.production-entry').forEach((row,index)=>{
       const select=row.querySelector('.production-item'),custom=row.querySelector('.custom-description');
@@ -422,12 +425,12 @@ var fieldScopeFlags=[];
       cards.push(`<article class="field-review-card" data-edit-line="${index}"><small>${ai?'AI filled':'Tap to edit'}${row.dataset.laborManual==='true'?' · manual':''}</small><strong>${escapeText(name)}</strong><em>${escapeText(qtyLabel)}</em><label class="field-line-labor">Minutes<input data-review-labor="${index}" data-line-id="${escapeText(lineId)}" data-unit="min" inputmode="numeric" value="${escapeText(String(shownMinutes))}" aria-label="Minutes for ${escapeText(name)}"><span class="field-time-pair">${escapeText(pairText)}</span></label></article>`);
     });
     $$('[data-labor-member]').forEach(input=>{
-      if(!(Number(input.value)>0))return;
+      if(!(Number(input.value)>0)&&!punchRows().some(row=>Number(row.memberId)===Number(input.dataset.laborMember)))return;
       const name=input.closest('.labor-line')?.querySelector('strong')?.textContent||'Crew';
-      const source=input.dataset.timecardDerived==='true'?'From clock':input.dataset.noteDerived==='true'?'AI filled':'Entered';
+      const source=punchRows().some(row=>Number(row.memberId)===Number(input.dataset.laborMember))?'From clock':input.dataset.noteDerived==='true'?'AI filled':'Entered';
       const punchMinutes=typeof punchRows==='function'?punchRows().find(row=>Number(row.memberId)===Number(input.dataset.laborMember))?.minutes:undefined;
       const crewMinutes=punchMinutes!=null?punchMinutes:(typeof FieldDailyScope!=='undefined'&&FieldDailyScope.minutesFromHours?FieldDailyScope.minutesFromHours(Number(input.value)||0):Math.round((Number(input.value)||0)*60));
-      const shown=punchMinutes!=null?punchTotalLabel(crewMinutes):clockLabel(crewMinutes);
+      const punch=punchRows().find(row=>Number(row.memberId)===Number(input.dataset.laborMember));const shown=punch?`${punch.seconds<60?`${Math.floor(punch.seconds)} sec (under 1 min)`:punchTotalLabel(crewMinutes)} measured${input.dataset.manualHours==='true'?` · ${input.value||'unknown'} h reported`:''}`:clockLabel(crewMinutes);
       cards.push(`<button type="button" class="field-review-card" data-edit-labor="${input.dataset.laborMember}"><small>${escapeText(source)}</small><strong>${escapeText(name)}</strong><em>${escapeText(shown)}</em></button>`);
     });
     for(const [id,label] of textFields){
@@ -450,13 +453,14 @@ var fieldScopeFlags=[];
     }else if(hours?.ask&&!clocked){
       const kept=$('#field-hours-each')?.value||'';
       const who=hours.headcount?`${hours.headcount} people are in the notes. Enter the hours.`:'Enter the crew hours. Scheduled time is not used.';
-      cards.unshift(`<article class="field-hours-card"><small>Hours</small><strong>Hours needed</strong><p>${escapeText(who)}</p><label>Hours each<input id="field-hours-each" type="number" min="0" max="24" step="0.5" inputmode="decimal" value="${escapeText(kept)}"></label></article>`);
+      cards.unshift(`<article class="field-hours-card"><small>Hours</small><strong>Hours needed</strong><p>${escapeText(who)}</p><label>Hours each<input id="field-hours-each" type="number" min="0" max="24" step="any" inputmode="decimal" value="${escapeText(kept)}"></label></article>`);
     }
     const reviewTotal=Number(fieldLaborContext().total?.totalMinutes)||0;
     if(reviewTotal>0)cards.push(`<p class="field-labor-total">Total ${escapeText(punchTotalLabel(reviewTotal))}</p>`);
     if(crewStillClockedIn())cards.unshift('<p class="field-clock-warning">Clock out to include today\'s time</p>');
     host.hidden=false;
-    host.innerHTML=(cards.length?cards.join(''):'<p class="field-review-empty">AI did not fill any lines. Add the work on the cards below.</p>')+'<button type="button" id="field-add-line">Add line</button>';
+    host.innerHTML=(cards.length?cards.join(''):'<p class="field-review-empty">AI did not fill any lines. Add the work on the cards below.</p>')+'<p>Unknown or mismatched hours can be sent for office review. Clock punches are kept separately.</p><button type="button" id="field-edit-hours">Edit reported hours</button><button type="button" id="field-add-line">Add line</button>';
+    const editHours=$('#field-edit-hours');if(editHours)editHours.onclick=()=>{const modal=$('#report-modal');modal?.classList.add('field-manual-entry');const more=$('#report-more');if(more)more.open=true;const input=$$('[data-labor-member]')[0];input?.scrollIntoView?.({block:'center'});input?.focus()};
     const addLine=$('#field-add-line');
     if(addLine)addLine.onclick=()=>{
       if(typeof addProductionRow!=='function')return;
@@ -469,16 +473,16 @@ var fieldScopeFlags=[];
       row.querySelector('.production-item, .custom-description, input')?.focus();
     };
     const hourInput=$('#field-hours-each');
-    if(hourInput)hourInput.oninput=()=>{applyAskedHours(hourInput.value,hours?.headcount);if(Number(hourInput.value)>0)renderFieldReview()};
+    if(hourInput)hourInput.oninput=()=>{applyAskedHours(hourInput.value,hours?.headcount);applyLaborAllocation()};
     host.querySelectorAll('[data-gap-member]').forEach(input=>input.oninput=()=>{
       const labor=$(`[data-labor-member="${input.dataset.gapMember}"]`);
       if(labor){labor.value=input.value;labor.dataset.noteDerived='true';labor.dataset.manualHours='true'}
       applyLaborAllocation();
-      if(Number(input.value)>0&&[...host.querySelectorAll('[data-gap-member]')].every(row=>Number(row.value)>0))renderFieldReview();
+
     });
     const nextInput=$('#field-review-next');
     const growNext=()=>{if(!nextInput)return;nextInput.style.height='auto';const border=Math.max(0,nextInput.offsetHeight-nextInput.clientHeight);nextInput.style.height=`${Math.max(48,nextInput.scrollHeight+border)}px`};
-    if(nextInput)nextInput.oninput=()=>{const field=$('#report-next');if(field&&nextInput.value.trim()){field.value=nextInput.value;field.dataset.aiAccepted='true'}growNext()};
+    if(nextInput)nextInput.oninput=()=>{const field=$('#report-next');if(field){field.value=nextInput.value;field.dataset.aiAccepted='true'}growNext()};
     growNext();
     requestAnimationFrame(growNext);
     const modal=$('#report-modal');
@@ -643,7 +647,7 @@ var fieldScopeFlags=[];
   }
   if(typeof openReport==='function'){
     const openBefore=openReport;
-    openReport=function(report=null,context={}){fieldScopeFlags=[];fieldHoursReview=null;reviewedNotesKey='';const result=openBefore(report,context);if(fieldCompact()){const loadedSummary=String($('#report-summary')?.value||'').trim(),loadedNotes=String($('#field-notes')?.value||'').trim(),hasProduction=(report?.productionEntries||[]).some(row=>row&&row.extra_work!==true&&String(row.description||'').trim()),hasResolution=(report?.scopeFlags||[]).some(flag=>flag&&flag.decision)||(report?.extraWork||[]).some(item=>item&&item.extra_work===true);if(loadedNotes&&(hasResolution||(loadedSummary&&(!/^field work recorded:/i.test(loadedSummary)||hasProduction))))reviewedNotesKey=loadedNotes;const saved=(report?.productionEntries||[]).some(row=>row&&((row.estimateItemId!=null&&String(row.estimateItemId)!=='')||Number(row.quantity)>0));if(report?.workSuggestions?.length&&!saved&&$('#production-rows'))$('#production-rows').innerHTML='';const draft=typeof readOfflineDraft==='function'&&typeof offlineReportDraftKey==='function'?readOfflineDraft(offlineReportDraftKey()):null;if(Array.isArray(report?.scopeFlags)&&report.scopeFlags.length)fieldScopeFlags=stampFlags(report.scopeFlags);else if(Array.isArray(draft?.scopeFlags)&&String(draft.notes||'').trim()&&String(draft.notes||'').trim()===String($('#field-notes')?.value||'').trim())fieldScopeFlags=stampFlags(draft.scopeFlags)}restoreResolvedExtras(report);dropEmptyLines();dropRawProductionRows();bindLaborAllocation();polishFieldDaily();renderFlags();if(report?.id&&!(typeof restoringActiveReport!=='undefined'&&restoringActiveReport)&&typeof clearRestoreBanner==='function')clearRestoreBanner();if(fieldCompact()&&$('#report-form')?.getAttribute('data-current-step')==='2')renderFieldReview();return result};
+    openReport=function(report=null,context={}){fieldScopeFlags=[];fieldHoursReview=null;reviewedNotesKey='';const result=openBefore(report,context);if(fieldCompact()&&Array.isArray(report?.officeReview?.reportedLabor)){for(const row of report.officeReview.reportedLabor){const input=$('[data-labor-member="'+Number(row.memberId)+'"]');if(input){input.value=row.hours==null?'':String(row.hours);input.dataset.manualHours='true';delete input.dataset.timecardDerived}}}if(fieldCompact()){const loadedSummary=String($('#report-summary')?.value||'').trim(),loadedNotes=String($('#field-notes')?.value||'').trim(),hasProduction=(report?.productionEntries||[]).some(row=>row&&row.extra_work!==true&&String(row.description||'').trim()),hasResolution=(report?.scopeFlags||[]).some(flag=>flag&&flag.decision)||(report?.extraWork||[]).some(item=>item&&item.extra_work===true);if(loadedNotes&&(hasResolution||(loadedSummary&&(!/^field work recorded:/i.test(loadedSummary)||hasProduction))))reviewedNotesKey=loadedNotes;const saved=(report?.productionEntries||[]).some(row=>row&&((row.estimateItemId!=null&&String(row.estimateItemId)!=='')||Number(row.quantity)>0));if(report?.workSuggestions?.length&&!saved&&$('#production-rows'))$('#production-rows').innerHTML='';const draft=typeof readOfflineDraft==='function'&&typeof offlineReportDraftKey==='function'?readOfflineDraft(offlineReportDraftKey()):null;if(Array.isArray(report?.scopeFlags)&&report.scopeFlags.length)fieldScopeFlags=stampFlags(report.scopeFlags);else if(Array.isArray(draft?.scopeFlags)&&String(draft.notes||'').trim()&&String(draft.notes||'').trim()===String($('#field-notes')?.value||'').trim())fieldScopeFlags=stampFlags(draft.scopeFlags)}restoreResolvedExtras(report);dropEmptyLines();dropRawProductionRows();bindLaborAllocation();polishFieldDaily();renderFlags();if(report?.id&&!(typeof restoringActiveReport!=='undefined'&&restoringActiveReport)&&typeof clearRestoreBanner==='function')clearRestoreBanner();if(fieldCompact()&&$('#report-form')?.getAttribute('data-current-step')==='2')renderFieldReview();return result};
   }
   if(typeof showReportStep==='function'){
     const stepBefore=showReportStep;
@@ -663,9 +667,9 @@ var fieldScopeFlags=[];
     const totals=new Map();
     for(const card of cards){
       const minutes=typeof FieldDailyScope!=='undefined'&&FieldDailyScope.elapsedMinutes?FieldDailyScope.elapsedMinutes(card.inAt,card.outAt):Math.max(0,Math.floor((new Date(card.outAt)-new Date(card.inAt))/60000));
-      totals.set(Number(card.memberId),(totals.get(Number(card.memberId))||0)+minutes);
+      const seconds=(new Date(card.outAt)-new Date(card.inAt))/1000;if(!Number.isFinite(seconds)||seconds<=0)continue;const prior=totals.get(Number(card.memberId))||{minutes:0,seconds:0};totals.set(Number(card.memberId),{minutes:prior.minutes+minutes,seconds:prior.seconds+seconds});
     }
-    return [...totals].filter(([,minutes])=>minutes>0).map(([memberId,minutes])=>({memberId,minutes}));
+    return [...totals].map(([memberId,value])=>({memberId,...value}));
   }
   function punchMemberIds(){return punchRows().map(row=>row.memberId)}
   function fieldLaborContext(){
@@ -765,7 +769,7 @@ var fieldScopeFlags=[];
     $$('[data-labor-member]').forEach(input=>{
       if(input.dataset.totalBound==='true')return;
       input.dataset.totalBound='true';
-      input.addEventListener('input',()=>applyLaborAllocation());
+      input.addEventListener('input',()=>{input.dataset.manualHours='true';delete input.dataset.timecardDerived;applyLaborAllocation()});
     });
   }
   let liveLaborDepth=0;

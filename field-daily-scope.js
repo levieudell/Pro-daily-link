@@ -558,10 +558,16 @@
   function sendGate({flags,laborHours,openClock,lines}={}){
     const block=[],warn=[];
     if((flags||[]).some(flag=>flag&&!flag.decision))block.push('Answer each flag before sending this daily to the office.');
-    if(!(Number(laborHours)>0))block.push('Enter the crew hours before sending.');
+    if(!(Number(laborHours)>0))warn.push('Crew hours need office review. You can send this daily without confirmed hours.');
     if((lines||[]).some(line=>line&&line.extra!==true&&line.needsQuantity&&!(Number(line.quantity)>0)))block.push('Enter a quantity for each work line.');
     if(openClock)warn.push('Clock out to include today\'s time');
     return {block,warn};
+  }
+
+  function narrativeWarnings(notes,summary){
+    const source=String(notes||''),interpretation=String(summary||'');
+    if(/\b(?:volcano|volcanic|eruption|explosion|blew up|near miss|rollover|overturned|injured|injury|unsafe|accident)\b|\bjump(?:ed|ing)?\b.{0,40}\b(?:dozer|bulldozer|excavator)\b/i.test(source)||/unrealistic|humorous|non[- ]work|no construction work|^Unverified field account\./i.test(interpretation))return [{code:'narrative_review',message:'Possible incident or uncertain narrative in the original notes. Office must verify the account; no incident or safe condition is confirmed.'}];
+    return [];
   }
 
   function clockOutMessage(notes){
@@ -672,5 +678,5 @@
     return {potential_change:'Billable · potential change',tm:'Billable · T&M',mapped:'Mapped to estimate',non_billable:'Not billable'}[decision]||'';
   }
 
-  return {normalizeUnit,matchEstimateLine,reviewScope,reviewNotes,uniqueMaterials,isMaterialPhrase,tidyNext,mergedNext,appendClockNotes,clockOutSummary,attachClockOut,decideFlag,confirmedExtraChanges,fieldExtraItems,whoAsked,approvedQuantityMap,hoursFromClock,statedCrew,sendGate,clockOutMessage,submissionStatus,namedCrewGaps,crewGapReason,noPunchLabel,punchLengthLabel,formatMinutes,formatHours,formatClock,formatPunchTotal,formatWorkTime,hoursFromMinutes,displayHoursForMinutes,minutesFromHours,elapsedMinutes,laborTotal,dedupeLaborEntries,rawNoteLine,emptyProductionLine,dedupeProductionLines,keepProductionLines,flagIdentity,normalizeLaborGaps,mergeScopeFlags,splitLargestRemainder,allocateLaborHours,sameDayDaily,clientProjectIndex,singleLineLaborHours,extraDecisionLabel,QUANTITY_TOLERANCE,PRODUCTIVITY_LIMIT};
+  return {narrativeWarnings,normalizeUnit,matchEstimateLine,reviewScope,reviewNotes,uniqueMaterials,isMaterialPhrase,tidyNext,mergedNext,appendClockNotes,clockOutSummary,attachClockOut,decideFlag,confirmedExtraChanges,fieldExtraItems,whoAsked,approvedQuantityMap,hoursFromClock,statedCrew,sendGate,clockOutMessage,submissionStatus,namedCrewGaps,crewGapReason,noPunchLabel,punchLengthLabel,formatMinutes,formatHours,formatClock,formatPunchTotal,formatWorkTime,hoursFromMinutes,displayHoursForMinutes,minutesFromHours,elapsedMinutes,laborTotal,dedupeLaborEntries,rawNoteLine,emptyProductionLine,dedupeProductionLines,keepProductionLines,flagIdentity,normalizeLaborGaps,mergeScopeFlags,splitLargestRemainder,allocateLaborHours,sameDayDaily,clientProjectIndex,singleLineLaborHours,extraDecisionLabel,QUANTITY_TOLERANCE,PRODUCTIVITY_LIMIT};
 });
