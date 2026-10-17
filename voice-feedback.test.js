@@ -16,8 +16,8 @@ assert.ok(app.includes('setVoiceStatus(status'), 'listening state is surfaced th
 assert.ok(app.includes("button.setAttribute('aria-pressed'"), 'listening state is exposed to assistive tech');
 assert.ok(app.indexOf("button.textContent=spanish?'■ Dejar de escuchar':'■ Stop listening'") < app.indexOf('recognition.start()'), 'the listening label appears before the browser service starts');
 assert.ok(styles.includes('.voice-status') && styles.includes('@keyframes pdl-voice-pulse'), 'status line and pulse animation are styled');
-assert.match(index, /app\.js\?v=20261016-voice2-20261017-voice4/);
-assert.match(index, /styles\.css\?v=20261014-review3-20261017-voice4/);
+assert.match(index, /app\.js\?v=20261016-voice2-20261017-voice5/);
+assert.match(index, /styles\.css\?v=20261014-review3-20261017-voice5/);
 
 // --- Behavioral harness -----------------------------------------------------
 const aStart = app.indexOf('let endDayVoice=null');
@@ -67,38 +67,38 @@ function harness(language) {
 // Server-side recording harness: mic access and MediaRecorder exist, so the
 // button must record, upload on stop, and put the returned transcript in the
 // notes — falling back to browser dictation when transcription is empty.
-function recordingHarness(language) {
+function recordingHarness(language, config={}) {
   const elements = {};
   for (const id of ['voice-notes', 'voice-status', 'field-notes', 'report-language']) elements[id] = makeElement(id);
   elements['report-language'].value = language;
-  const notifications = [], apiCalls = [];
+  const notifications = [], apiCalls = [],timers=[];
   let apiBarrier=null,micBarrier=null;
   let apiResult = { text: '', source: 'unavailable' };
   let streamStopped = false;
   const stream = { getTracks: () => [{ stop() { streamStopped = true; } }] };
-  class FakeBlob { constructor(parts, options) { this.parts = parts; this.type = (options && options.type) || ''; } }
+  class FakeBlob { constructor(parts, options) { this.parts = parts; this.size=parts.reduce((n,p)=>n+(p.size||0),0); this.type = (options && options.type) || ''; } }
   class FakeFileReader { readAsDataURL(blob) { this.result = 'data:' + (blob.type || 'audio/webm') + ';base64,c3ludGhldGlj'; queueMicrotask(() => this.onload && this.onload()); } }
   const recorders = [];
   class FakeMediaRecorder {
-    constructor(strm, options) { this.stream = strm; this.mimeType = (options && options.mimeType) || 'audio/webm'; recorders.push(this); }
+    constructor(strm, options) { this.stream = strm; this.mimeType = (options && options.mimeType) || 'audio/mp4';this.state='inactive';this.stopCalls=0;recorders.push(this); }
     static isTypeSupported() { return true; }
-    start() { this.started = true; }
-    stop() { this.stopped = true; if (this.ondataavailable) this.ondataavailable({ data: { size: 9 } }); if (this.onstop) this.onstop(); }
+    start() { this.started = true;this.state='recording'; }
+    stop() {this.stopCalls++;if(this.state==='inactive')throw Error('InvalidStateError');this.state='inactive';this.stopped=true;this.deliverStop=()=>{if(!config.empty)this.ondataavailable?.({data:{size:9,type:this.mimeType}});this.onstop?.()};if(!config.delayStop)queueMicrotask(this.deliverStop); }
   }
   const context = {
     window: { SpeechRecognition: class { start() { this.started = true; } stop() {} abort() {} }, MediaRecorder: FakeMediaRecorder },
-    navigator: { onLine: true, mediaDevices: { getUserMedia: async () => {if(micBarrier)await micBarrier;return stream} } },
+    navigator: { onLine: true, mediaDevices: { getUserMedia: async () => {if(micBarrier)await micBarrier;if(config.permissionError)throw Error('NotAllowedError');return stream} } },
     Blob: FakeBlob, FileReader: FakeFileReader,
-    setTimeout: () => 0, clearTimeout: () => {},
+    setTimeout:(fn,ms)=>{const timer={fn,ms};timers.push(timer);return timer},clearTimeout:timer=>{if(timer)timer.cleared=true},
     Event: class { constructor(type) { this.type = type; } },
     notify: message => notifications.push(message),
     applyReportLanguage() { elements['voice-notes'].textContent = '🎙 Speak notes'; },
-    api: async (path, options) => { apiCalls.push({ path, body: JSON.parse(options.body) }); if(apiBarrier)await apiBarrier; return apiResult; },
+    api: async (path, options) => { apiCalls.push({ path, body: JSON.parse(options.body) }); if(apiBarrier)await apiBarrier;if(config.apiError)throw config.apiError;return apiResult; },
     $: selector => { const id = selector.replace(/^#/, ''); return elements[id] || (elements[id] = makeElement(id)); },
   };
   vm.createContext(context);
   vm.runInContext(block, context);
-  return { elements, notifications, apiCalls, recorders, cancel:()=>elements['report-modal'].listeners.close(), holdMic() {let release;micBarrier=new Promise(resolve=>{release=resolve});return release;}, get streamStopped() { return streamStopped; }, setResult(value) { apiResult = value; }, holdResponse() { let release;apiBarrier=new Promise(resolve=>{release=resolve});return release; } };
+  return { elements, notifications, apiCalls, recorders, fireTimer:ms=>{const timer=timers.find(t=>t.ms===ms&&!t.cleared);assert.ok(timer);timer.fn()}, cancel:()=>elements['report-modal'].listeners.close(), holdMic() {let release;micBarrier=new Promise(resolve=>{release=resolve});return release;}, get streamStopped() { return streamStopped; }, setResult(value) { apiResult = value; }, holdResponse() { let release;apiBarrier=new Promise(resolve=>{release=resolve});return release; } };
 }
 
 // Field notes: immediate feedback, interim streaming, single append, clean stop.
@@ -162,7 +162,7 @@ function recordingHarness(language) {
   assert.equal(h.recorders[0].started, true);
   assert.equal(button.textContent, '■ Stop & transcribe', 'recording label replaces the listening label');
   assert.match(h.elements['voice-status'].textContent, /Listening. speak now/);
-  assert.equal(h.recorders[0].mimeType, 'audio/webm;codecs=opus', 'the most compact supported codec is preferred');
+  assert.equal(h.recorders[0].mimeType, 'audio/mp4', 'MP4 is preferred when the browser supports it');
   button.onclick();
   await new Promise(resolve => setTimeout(resolve, 5));
   assert.equal(h.recorders[0].stopped, true);
@@ -256,3 +256,31 @@ console.log('voice feedback contracts: ok');
  old.onresult({resultIndex:0,results:[{isFinal:true,0:{transcript:'Old recording'}}]});old.onerror({error:'not-allowed'});
  assert.equal(h.elements['field-notes'].value,'Next report.');assert.equal(h.elements['voice-status'].hidden,true);
 }
+
+// Safari-style asynchronous stop: immediate processing UI, one stop, then final data before upload.
+(async()=>{
+ const h=recordingHarness('en-US',{delayStop:true}),notes=h.elements['field-notes'];notes.value='Keep these notes.';h.setResult({text:'Appended safely.'});
+ h.elements['voice-notes'].onclick();await new Promise(r=>setTimeout(r,5));
+ assert.equal(notes.hidden,true);assert.equal(h.elements['field-notes-label'].hidden,true);assert.equal(h.elements['field-note-tools'].hidden,true);assert.equal(h.elements['voice-capture-panel'].hidden,false);assert.equal(h.elements['voice-capture-stop'].hidden,false);
+ h.elements['voice-capture-stop'].onclick();h.elements['voice-capture-stop'].onclick();
+ assert.equal(h.recorders[0].stopCalls,1);assert.equal(h.elements['voice-capture-panel'].classList.contains('voice-capture-processing'),true);assert.match(h.elements['voice-status'].textContent,/Transcribing/);assert.equal(h.apiCalls.length,0);assert.equal(notes.value,'Keep these notes.');
+ h.recorders[0].deliverStop();await new Promise(r=>setTimeout(r,5));
+ assert.equal(h.apiCalls.length,1);assert.equal(notes.value,'Keep these notes. Appended safely.');assert.equal(notes.hidden,false);assert.equal(h.elements['field-note-tools'].hidden,false);assert.equal(h.elements['voice-capture-panel'].hidden,true);
+})().catch(e=>{console.error(e);process.exitCode=1});
+(async()=>{
+ for(const options of [{empty:true},{permissionError:true},{apiError:Object.assign(new Error('Rejected'),{status:400})}]){
+  const h=recordingHarness('en-US',options);h.elements['field-notes'].value='Keep on failure.';h.elements['voice-notes'].onclick();await new Promise(r=>setTimeout(r,5));
+  if(h.recorders.length)h.elements['voice-capture-stop'].onclick();await new Promise(r=>setTimeout(r,5));
+  assert.equal(h.elements['field-notes'].value,'Keep on failure.');assert.equal(h.elements['field-notes'].hidden,false);assert.equal(h.elements['voice-capture-panel'].hidden,true);assert.match(h.elements['voice-status'].textContent,/notes are unchanged/);
+  if(options.empty||options.permissionError)assert.equal(h.apiCalls.length,0);
+ }
+})().catch(e=>{console.error(e);process.exitCode=1});
+
+// Stop or network timeouts restore existing notes and invalidate late completion.
+(async()=>{
+ for(const mode of ['stop','network']){
+  const h=recordingHarness('en-US',{delayStop:mode==='stop'});h.elements['field-notes'].value='Saved notes.';h.setResult({text:'Late words.'});const release=h.holdResponse();
+  h.elements['voice-notes'].onclick();await new Promise(r=>setTimeout(r,5));h.elements['voice-capture-stop'].onclick();await new Promise(r=>setTimeout(r,5));h.fireTimer(mode==='stop'?10000:60000);
+  release();if(mode==='stop')h.recorders[0].deliverStop();await new Promise(r=>setTimeout(r,5));assert.equal(h.elements['field-notes'].value,'Saved notes.');assert.equal(h.elements['field-notes'].hidden,false);assert.equal(h.streamStopped,true);assert.match(h.elements['voice-status'].textContent,/notes are unchanged/);
+ }
+})().catch(e=>{console.error(e);process.exitCode=1});

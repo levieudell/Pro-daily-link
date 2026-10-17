@@ -1067,3 +1067,13 @@ small{font-size:12px}
 @keyframes pdl-voice-spin{to{transform:rotate(360deg)}}
 :root[data-theme="dark"] .voice-status.voice-listening,:root[data-theme="dark"] .voice-status.voice-transcribing{background:#19362b;color:#cde3d8;border-color:#537b66}
 @media(prefers-reduced-motion:reduce){button.voice-listening,.voice-status.voice-listening:before,.voice-status.voice-transcribing:before{animation:none}}
+
+/* Recording replaces the text area with one clear, touch-friendly listening view. */
+.voice-capture-panel{display:flex;align-items:center;flex-direction:column;gap:16px;padding:30px 20px;margin:12px 0;border:1px solid #b7cfbf;border-radius:18px;background:#edf7f1;text-align:center}
+.voice-capture-panel[hidden],#field-note-tools[hidden],#field-notes[hidden],#field-notes-label[hidden]{display:none!important}
+.voice-capture-circle{width:140px;height:140px;display:grid;place-items:center;border-radius:50%;background:#245d46;color:#fff;box-shadow:0 0 0 12px #cce4d5;animation:pdl-capture-pulse 1.5s ease-in-out infinite}
+.voice-capture-circle svg{width:54px;height:54px}.voice-capture-panel h3{margin:8px 0 0;font-size:22px;color:#17382d}.voice-capture-panel button{min-height:48px;min-width:190px;font-size:16px}
+.voice-capture-processing .voice-capture-circle{animation:pdl-voice-spin 1.2s linear infinite;background:transparent;border:7px solid #b7cfbf;border-top-color:#245d46;box-shadow:none}.voice-capture-processing .voice-capture-circle svg{visibility:hidden}
+@keyframes pdl-capture-pulse{50%{transform:scale(.93);box-shadow:0 0 0 22px #dceee3}}
+:root[data-theme="dark"] .voice-capture-panel{background:#19362b;border-color:#537b66}:root[data-theme="dark"] .voice-capture-panel h3{color:#cde3d8}
+@media(prefers-reduced-motion:reduce){.voice-capture-circle{animation:none!important}}
