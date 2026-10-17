@@ -120,7 +120,7 @@ async function call(method, route, body, auth = ownerToken) {
     assert.ok(app.includes('changeLineRow('), 'line rows render from a helper');
     assert.ok(app.includes('FROM THE FIELD'), 'field-flag context block renders');
     assert.ok(app.includes('data-change-line-row'), 'save gathers line rows');
-    assert.match(index, /app\.js\?v=20261014-review3/);
+    assert.match(index, /app\.js\?v=20261016-voice1/);
     assert.match(index, /styles\.css\?v=20261014-review3/);
     const styles = fs.readFileSync('styles.css', 'utf8');
     assert.ok(styles.includes('.change-line-row'), 'line rows are styled');
