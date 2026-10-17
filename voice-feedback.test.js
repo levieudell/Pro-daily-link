@@ -16,13 +16,13 @@ assert.ok(app.includes('setVoiceStatus(status'), 'listening state is surfaced th
 assert.ok(app.includes("button.setAttribute('aria-pressed'"), 'listening state is exposed to assistive tech');
 assert.ok(app.indexOf("button.textContent=spanish?'■ Dejar de escuchar':'■ Stop listening'") < app.indexOf('recognition.start()'), 'the listening label appears before the browser service starts');
 assert.ok(styles.includes('.voice-status') && styles.includes('@keyframes pdl-voice-pulse'), 'status line and pulse animation are styled');
-assert.match(index, /app\.js\?v=20261016-voice1/);
+assert.match(index, /app\.js\?v=20261016-voice2/);
 assert.match(index, /styles\.css\?v=20261014-review3/);
 
 // --- Behavioral harness -----------------------------------------------------
 const aStart = app.indexOf('let endDayVoice=null');
 const aEnd = app.indexOf("$('#end-day-voice').onclick=startEndDayVoice;") + "$('#end-day-voice').onclick=startEndDayVoice;".length;
-const bStart = app.indexOf('let voiceNotesRestartTimer=null;');
+const bStart = app.indexOf('let voiceNotesRestartTimer=null,');
 const bEnd = app.indexOf("$('#voice-notes').onclick=startVoiceNotes;") + "$('#voice-notes').onclick=startVoiceNotes;".length;
 assert.ok(aStart >= 0 && aEnd > aStart && bStart > aEnd && bEnd > bStart, 'voice blocks located in app.js');
 const block = app.slice(aStart, aEnd) + '\n;\n' + app.slice(bStart, bEnd);
@@ -63,6 +63,41 @@ function harness(language) {
   vm.createContext(context);
   vm.runInContext(block, context);
   return { elements, notifications, recognitions, get recognition() { return recognitions[recognitions.length - 1]; } };
+}
+// Server-side recording harness: mic access and MediaRecorder exist, so the
+// button must record, upload on stop, and put the returned transcript in the
+// notes — falling back to browser dictation when transcription is empty.
+function recordingHarness(language) {
+  const elements = {};
+  for (const id of ['voice-notes', 'voice-status', 'field-notes', 'report-language']) elements[id] = makeElement(id);
+  elements['report-language'].value = language;
+  const notifications = [], apiCalls = [];
+  let apiResult = { text: '', source: 'unavailable' };
+  let streamStopped = false;
+  const stream = { getTracks: () => [{ stop() { streamStopped = true; } }] };
+  class FakeBlob { constructor(parts, options) { this.parts = parts; this.type = (options && options.type) || ''; } }
+  class FakeFileReader { readAsDataURL(blob) { this.result = 'data:' + (blob.type || 'audio/webm') + ';base64,c3ludGhldGlj'; queueMicrotask(() => this.onload && this.onload()); } }
+  const recorders = [];
+  class FakeMediaRecorder {
+    constructor(strm, options) { this.stream = strm; this.mimeType = (options && options.mimeType) || 'audio/webm'; recorders.push(this); }
+    static isTypeSupported() { return true; }
+    start() { this.started = true; }
+    stop() { this.stopped = true; if (this.ondataavailable) this.ondataavailable({ data: { size: 9 } }); if (this.onstop) this.onstop(); }
+  }
+  const context = {
+    window: { SpeechRecognition: class { start() { this.started = true; } stop() {} abort() {} }, MediaRecorder: FakeMediaRecorder },
+    navigator: { onLine: true, mediaDevices: { getUserMedia: async () => stream } },
+    Blob: FakeBlob, FileReader: FakeFileReader,
+    setTimeout: () => 0, clearTimeout: () => {},
+    Event: class { constructor(type) { this.type = type; } },
+    notify: message => notifications.push(message),
+    applyReportLanguage() { elements['voice-notes'].textContent = '🎙 Speak notes'; },
+    api: async (path, options) => { apiCalls.push({ path, body: JSON.parse(options.body) }); return apiResult; },
+    $: selector => { const id = selector.replace(/^#/, ''); return elements[id] || (elements[id] = makeElement(id)); },
+  };
+  vm.createContext(context);
+  vm.runInContext(block, context);
+  return { elements, notifications, apiCalls, recorders, get streamStopped() { return streamStopped; }, setResult(value) { apiResult = value; } };
 }
 
 // Field notes: immediate feedback, interim streaming, single append, clean stop.
@@ -113,5 +148,47 @@ function harness(language) {
   assert.equal(elements['voice-notes'].textContent, '■ Dejar de escuchar');
   assert.match(elements['voice-status'].textContent, /Escuchando…/);
 }
+
+// Server-side recording: tap records with immediate feedback, second tap
+// stops and uploads, and the transcript lands in the notes exactly once.
+(async () => {
+  const h = recordingHarness('en-US');
+  h.setResult({ text: 'Poured the east wall with three crew.', source: 'openai' });
+  const button = h.elements['voice-notes'], notes = h.elements['field-notes'];
+  button.onclick();
+  await new Promise(resolve => setTimeout(resolve, 5));
+  assert.equal(h.recorders.length, 1, 'a MediaRecorder session starts');
+  assert.equal(h.recorders[0].started, true);
+  assert.equal(button.textContent, '■ Stop & transcribe', 'recording label replaces the listening label');
+  assert.match(h.elements['voice-status'].textContent, /Recording… speak now/);
+  assert.equal(h.recorders[0].mimeType, 'audio/webm;codecs=opus', 'the most compact supported codec is preferred');
+  button.onclick();
+  await new Promise(resolve => setTimeout(resolve, 5));
+  assert.equal(h.recorders[0].stopped, true);
+  assert.equal(h.streamStopped, true, 'the mic track is released after upload');
+  assert.equal(h.apiCalls.length, 1, 'exactly one transcription request is sent');
+  assert.equal(h.apiCalls[0].path, '/api/ai/transcribe');
+  assert.match(h.apiCalls[0].body.audio, /^data:audio\//, 'the recorded clip uploads as an audio data-URL');
+  assert.equal(h.apiCalls[0].body.language, 'en-US');
+  assert.equal(notes.value, 'Poured the east wall with three crew.', 'the transcript is appended to the notes');
+  assert.ok(notes.dispatched.length, 'the input event fires so autosave and analysis see the text');
+  assert.equal(button.textContent, '🎙 Speak notes', 'the label restores after transcription');
+  assert.equal(button.disabled, false);
+  assert.equal(h.elements['voice-status'].textContent, '✓ Notes added');
+})().catch(error => { console.error(error); process.exitCode = 1; });
+
+// Unavailable transcription falls back to the phone's dictation.
+(async () => {
+  const h = recordingHarness('en-US');
+  h.setResult({ text: '', source: 'unavailable', warning: 'synthetic' });
+  const button = h.elements['voice-notes'];
+  button.onclick();
+  await new Promise(resolve => setTimeout(resolve, 5));
+  button.onclick();
+  await new Promise(resolve => setTimeout(resolve, 5));
+  assert.equal(h.apiCalls.length, 1);
+  assert.ok(h.notifications.some(message => /Switching to your phone's dictation/.test(message)), 'the user is told dictation is taking over');
+  assert.equal(button.textContent, '■ Stop listening', 'browser dictation starts after the fallback');
+})().catch(error => { console.error(error); process.exitCode = 1; });
 
 console.log('voice feedback contracts: ok');
