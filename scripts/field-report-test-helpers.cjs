@@ -13,6 +13,6 @@ exports.completeClockOutDaily=async function(page,notes,next=''){
     if(next){document.querySelector('#report-next').value=next;const review=document.querySelector('#field-review-next');if(review)review.value=next}
     const saved=await saveDailyReport('Draft',{keepOpen:true});
     if(!saved)throw new Error(document.querySelector('#report-submit-status')?.textContent||'Daily draft did not save');
-    renderMyDay();renderFieldClock();
+    renderReports(saved.id);renderMyDay();renderFieldClock();
   },{notes,next});
 };

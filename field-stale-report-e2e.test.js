@@ -183,7 +183,8 @@ async function serverDaily(page) {
     await page.waitForFunction(() => /Clock out/i.test(document.querySelector('#start-day-button')?.textContent || ''), { timeout: 20000 });
     await clockOut(page, dbFile, NOTES_2, NEXT_2, 2);
     const editorClosed = await page.evaluate(() => !document.querySelector('#report-modal')?.open);
-    assert.equal(editorClosed, true);
+    assert.equal(editorClosed, false,'attached daily opens directly');
+    await page.evaluate(()=>document.querySelector('#report-modal').close());
     const merged = await serverDaily(page);
     assert.equal(merged.count, 1, JSON.stringify(merged));
     assert.equal(merged.next, NEXT_2, JSON.stringify(merged));
@@ -373,7 +374,7 @@ async function serverDaily(page) {
       }));
       throw new Error(`${error.message}\n${JSON.stringify(parsed, null, 2)}`);
     }
-    await page.click('[data-flag-choice="extra"]');
+    await page.evaluate(()=>document.querySelector('[data-flag-choice="extra"]')?.click());
     await page.waitForFunction(() => {
       const row = [...document.querySelectorAll('.production-entry')].find(entry => entry.dataset.extraWork === 'true');
       const card = [...document.querySelectorAll('#field-review-cards .field-review-card')].find(node => /Set forms/i.test(node.innerText || ''));

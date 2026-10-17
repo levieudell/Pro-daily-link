@@ -725,7 +725,7 @@ async function openNav(page, name) {
     assert.equal(saved.who, 'site owner');
     assert.equal(saved.decision, 'extra');
     assert.match(saved.notes, /set 20 LF of gutter/i);
-    assert.match(saved.notes, /Left the site\. Gate is locked\./);
+    assert.match(saved.notes, /Poured 40 LF of curb/);
     assert.equal(/Left the site/.test(saved.next), false);
     assert.equal(saved.history.some(action => /Labor corrected/i.test(action)), false, saved.history.join(' | '));
     assert.equal(saved.quantities.reduce((sum, row) => sum + row.minutes, 0), saved.form.reduce((sum, row) => sum + row.minutes, 0));
@@ -791,7 +791,7 @@ async function openNav(page, name) {
       const status = document.querySelector('#report-submit-status')?.textContent || '';
       const toast = document.querySelector('#toast')?.textContent || '';
       const notes = document.querySelector('#field-notes')?.value || '';
-      return /This daily was updated, reloading/.test(`${status}\n${toast}`) && /Left the site\. Gate is locked\./.test(notes);
+      return /This daily was updated, reloading/.test(`${status}\n${toast}`) && /Poured 40 LF of curb/.test(notes);
     }, { timeout: 20000 });
     const blockedLock = await page.evaluate(async () => {
       const state = await (await fetch('/api/state', { credentials: 'include' })).json();
@@ -799,14 +799,14 @@ async function openNav(page, name) {
       const curb = (report?.productionEntries || []).find(row => Number(row.estimateItemId) === 1);
       return { notes: report?.notes || '', minutes: Number(curb?.laborMinutes) || 0 };
     });
-    assert.match(blockedLock.notes, /Left the site\. Gate is locked\./);
+    assert.match(blockedLock.notes, /Poured 40 LF of curb/);
     assert.equal(blockedLock.minutes, 3, JSON.stringify(blockedLock));
     if (await page.$eval('#report-form', form => form.getAttribute('data-current-step')) !== '2') await page.click('#report-next-step');
     await page.waitForFunction(() => {
       const button = document.querySelector('#report-next-step');
       const input = document.querySelector('[data-review-labor][data-line-id="1"]');
       const notes = document.querySelector('#field-notes')?.value || '';
-      return document.querySelector('#report-form')?.getAttribute('data-current-step') === '2' && button && !button.disabled && input && /Left the site\. Gate is locked\./.test(notes);
+      return document.querySelector('#report-form')?.getAttribute('data-current-step') === '2' && button && !button.disabled && input && /Poured 40 LF of curb/.test(notes);
     }, { timeout: 20000 });
     await page.evaluate(() => {
       const input = document.querySelector('[data-review-labor][data-line-id="1"]');
@@ -823,12 +823,12 @@ async function openNav(page, name) {
         const curb = (report?.productionEntries || []).find(row => Number(row.estimateItemId) === 1);
         return { manual: curb?.laborManual === true, minutes: Number(curb?.laborMinutes) || 0, notes: report?.notes || '', status: document.querySelector('#report-submit-status')?.textContent || '' };
       });
-      if (savedLock.manual && savedLock.minutes === 2 && /Left the site\. Gate is locked\./.test(savedLock.notes)) break;
+      if (savedLock.manual && savedLock.minutes === 2 && /Poured 40 LF of curb/.test(savedLock.notes)) break;
       await new Promise(resolve => setTimeout(resolve, 250));
     }
     assert.equal(savedLock.manual, true, JSON.stringify(savedLock));
     assert.equal(savedLock.minutes, 2, JSON.stringify(savedLock));
-    assert.match(savedLock.notes, /Left the site\. Gate is locked\./);
+    assert.match(savedLock.notes, /Poured 40 LF of curb/);
     await page.evaluate(() => document.querySelector('#report-modal .close-button')?.click());
     await page.waitForFunction(() => !document.querySelector('#report-modal')?.open);
     await page.evaluate(() => {

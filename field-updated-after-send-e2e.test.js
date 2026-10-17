@@ -274,7 +274,7 @@ async function startJordan(page) {
     assert.equal(await flagStillSet(), true, 'opening Daily reports cleared the flag');
     assert.equal(reviewedPosts.length, 0, JSON.stringify(reviewedPosts));
     const openLog = await owner.evaluate(() => document.querySelector('.approval-history')?.innerText || '');
-    assert.match(openLog, /Labor 0\.03h → 0\.07h; Curb 1→3 min; next step changed, by DEMO Jordan Reed's clock-out/);
+    assert.match(openLog, /Labor 0\.03h → 0\.07h; Curb 1→3 min, by DEMO Jordan Reed's clock-out/);
     assert.equal(/Corrected/i.test(openLog), false, openLog);
     await owner.click('[data-report].active');
     await waitUntil(owner, () => document.querySelector('#report-detail')?.classList.contains('is-collapsed') === true, 'report collapsed');
@@ -368,7 +368,7 @@ async function startJordan(page) {
     await owner.reload({ waitUntil: 'domcontentloaded' });
     await owner.waitForSelector('#menu-button', { timeout: 20000 });
     await openNav(owner, 'reports');
-    await owner.waitForFunction(() => /Labor 0\.03h → 0\.07h; Curb 1→3 min; next step changed, by DEMO Jordan Reed's clock-out/.test(document.querySelector('.approval-history')?.innerText || ''), { timeout: 20000 });
+    await owner.waitForFunction(() => /Labor 0\.03h → 0\.07h; Curb 1→3 min, by DEMO Jordan Reed's clock-out/.test(document.querySelector('.approval-history')?.innerText || ''), { timeout: 20000 });
     const stillClear = await owner.evaluate(() => ({
       badge: document.querySelector('[data-updated-after-send]')?.textContent || '',
       banner: document.querySelector('[data-updated-after-send-banner]')?.innerText || ''

@@ -105,7 +105,12 @@ async function openNav(page, name) {
     await page.click('#confirm-start-day');
     await page.waitForFunction(() => /Clock out/i.test(document.querySelector('#start-day-button')?.textContent || ''), { timeout: 20000 });
     pinOpenPunch(dbFile, 2);
+    const aiRequests=[];page.on('request',request=>{if(request.url().includes('/api/ai/extract'))aiRequests.push(request.url())});
     await page.click('#start-day-button');
+    await page.waitForFunction(()=>document.querySelector('#report-modal')?.open&&endingWorkdays.size===0,{timeout:20000});
+    assert.equal(await page.$eval('#field-notes',el=>el.value),'','clock-out opens the blank daily directly');
+    assert.equal(await page.$eval('#end-day-modal',el=>el.open),false);
+    assert.equal(aiRequests.length,0,'blank clock-out does not analyze notes');
     await require('./scripts/field-report-test-helpers.cjs').completeClockOutDaily(page,NOTES,'');
     try {
       await page.waitForFunction(() => {
