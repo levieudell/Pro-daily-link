@@ -753,7 +753,7 @@ body.schedule-touch-dragging{overflow:hidden;-webkit-user-select:none;user-selec
 :root[data-theme="dark"] .project-schedule-progress b{color:#cde3d8}
 .voice-status{margin:8px 0 0;font-size:13px;color:#64726c;min-height:18px}
 .voice-status.voice-listening{color:#17382d;font-weight:600}
-.voice-status.voice-listening:before{content:"🎙 "}
+.voice-status.voice-listening:before{content:"";display:inline-block;width:10px;height:10px;margin-right:10px;border-radius:50%;background:currentColor;animation:pdl-voice-dot 1.4s ease-in-out infinite}
 button.voice-listening{outline:2px solid #2e6b52;outline-offset:2px;animation:pdl-voice-pulse 1.4s ease-in-out infinite}
 @keyframes pdl-voice-pulse{0%,100%{outline-color:#2e6b52}50%{outline-color:#8fd0ae}}
 :root[data-theme="dark"] .voice-status{color:#9fb3aa}
@@ -1058,3 +1058,12 @@ small{font-size:12px}
 #report-modal.report-field-compact .field-hours-card label{display:grid;gap:4px}
 #report-detail.is-collapsed{display:none}
 [data-updated-after-send] [data-mark-reviewed],[data-updated-after-send-header] [data-mark-reviewed]{margin-left:6px;border:1px solid currentColor;border-radius:12px;background:#fff;color:#10251e;font:700 11px/1.2 "DM Sans",sans-serif;padding:4px 8px;cursor:pointer}
+
+/* Keep recording and upload progress visible beside the notes on small screens. */
+.voice-status.voice-listening,.voice-status.voice-transcribing{padding:14px 16px;border:1px solid #95b5a4;border-radius:12px;background:#edf7f1;min-height:48px;font-size:15px;line-height:1.5}
+.voice-status.voice-transcribing{color:#17382d;font-weight:600}
+.voice-status.voice-transcribing:before{content:"";display:inline-block;vertical-align:-2px;width:14px;height:14px;margin-right:10px;border:2px solid #95b5a4;border-top-color:currentColor;border-radius:50%;animation:pdl-voice-spin .8s linear infinite}
+@keyframes pdl-voice-dot{50%{opacity:.35;transform:scale(.8)}}
+@keyframes pdl-voice-spin{to{transform:rotate(360deg)}}
+:root[data-theme="dark"] .voice-status.voice-listening,:root[data-theme="dark"] .voice-status.voice-transcribing{background:#19362b;color:#cde3d8;border-color:#537b66}
+@media(prefers-reduced-motion:reduce){button.voice-listening,.voice-status.voice-listening:before,.voice-status.voice-transcribing:before{animation:none}}
