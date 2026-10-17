@@ -727,15 +727,15 @@ async function aiTranscribe(bytes,format,language,onUsage=null){
   const extension={webm:'webm',mp4:'m4a',ogg:'ogg',mpeg:'mp3',mp3:'mp3',wav:'wav'}[format]||'webm';
   const form=new FormData();
   form.append('file',new Blob([bytes],{type:`audio/${format}`}),`note.${extension}`);
-  form.append('model','whisper-1');
+  form.append('model','gpt-transcribe');
   form.append('response_format','json');
-  if(language)form.append('language',String(language).slice(0,10));
-  form.append('prompt','Construction daily report field notes: concrete, curb, gutter, excavation, trench, backfill, rebar, pump, slab, footing, crew hours.');
+  form.append('languages',JSON.stringify([String(language||'en').slice(0,10)]));
+  form.append('keywords',JSON.stringify(['concrete','concreto','curb','gutter','excavation','trench','backfill','rebar','pump','slab','footing','footings','crew hours','horas','compaction','forming','sidewalk','foundation']));
   const response=await fetch('https://api.openai.com/v1/audio/transcriptions',{method:'POST',headers:{Authorization:`Bearer ${process.env.OPENAI_API_KEY}`},body:form});
   if(!response.ok)throw new Error(`AI service returned ${response.status}`);
   const data=await response.json();
-  onUsage&&onUsage({model:'whisper-1',usage:{input_tokens:0,output_tokens:0}});
-  return {text:String(data.text||'').trim(),language:String(data.language||language||'').slice(0,10)};
+  onUsage&&onUsage({model:'gpt-transcribe',usage:data.usage&&Number.isSafeInteger(data.usage.input_tokens)&&Number.isSafeInteger(data.usage.output_tokens)?data.usage:{input_tokens:0,output_tokens:0}});
+  return {text:String(data.text||'').trim(),language:String(data.language||data.languages?.[0]||language||'').slice(0,10)};
 }
 
 function timeCardsEnabled(company){return company?.features?.timeCards===true}
