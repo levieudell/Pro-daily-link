@@ -62,7 +62,8 @@ assert.equal(crew.total, 24);
 assert.equal(crew.ask, false);
 
 const blocked = scope.sendGate({ flags: grounded.flags, laborHours: 0, openClock: false, lines: grounded.lines });
-assert.ok(blocked.block.some(line => /hours/i.test(line)));
+assert.ok(blocked.warn.some(line => /hours.*office review/i.test(line)));
+assert.equal(blocked.block.some(line => /hours/i.test(line)),false,'hours are an office review warning, not a field submission gate');
 assert.ok(blocked.block.some(line => /flag/i.test(line)));
 const decided = grounded.flags.map(flag => scope.decideFlag(flag, flag.reason === 'stated_extra' ? 'bill' : 'noted'));
 const ready = scope.sendGate({ flags: decided, laborHours: 8, openClock: true, lines: grounded.lines });
