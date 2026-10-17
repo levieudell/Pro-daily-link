@@ -48,6 +48,9 @@ async function run(){
   await page.evaluate(()=>$('#report-next-step').click());await page.waitForFunction(()=>$('#report-form').getAttribute('data-current-step')==='2');
   assert.equal(await page.$eval('.production-quantity',e=>e.value),'37','saved edit survives reopen/Done');
   assert.equal(await page.$eval('#report-summary',e=>e.value),'Office edited summary');
+  await set(page,'#field-review-next','');
+  await page.evaluate(()=>$('#report-back').click());await page.evaluate(()=>$('#report-next-step').click());
+  assert.equal(await page.$eval('#field-review-next',e=>e.value),'','Next can be cleared');
   await page.evaluate(()=>{company.features.templates=true;company.requireReportSignature=true;$('#report-signature').value='';});
   await page.evaluate(()=>$('#save-report').click());await page.waitForFunction(()=>/signature/i.test($('#report-submit-status').textContent));
   assert.equal(await page.$eval('#report-modal',e=>e.open),true,'required signature blocks send');
@@ -73,6 +76,38 @@ async function run(){
   assert.equal(await page.$eval('#report-modal',e=>e.classList.contains('report-field-compact')),false,'superintendent unchanged');
   assert.equal(await visible(page,'#superintendent-safety'),false,'superintendent safety is on second step');
   await page.evaluate(()=>$('#report-next-step').click());assert.equal(await visible(page,'#superintendent-safety'),true);
+  // No-activity office dailies retain the existing submission path.
+  await page.evaluate(()=>{$('#report-modal').close();openReport();});
+  await page.waitForFunction(()=>reportLaborLoadedKey===reportLaborSelectionKey());
+  await page.evaluate(()=>{populateReportLabor();$$('[data-labor-member]').forEach(input=>input.value='');$('#field-notes').value='No field activity today.';});
+  await page.evaluate(()=>$('#report-next-step').click());
+  await page.waitForFunction(()=>$('#report-form').getAttribute('data-current-step')==='2'&&!$('#report-next-step').disabled);
+  await set(page,'#report-signature','Synthetic signer');
+  await page.evaluate(()=>$('#save-report').click());await page.waitForFunction(()=>!$('#report-modal').open);
+  assert.ok(await page.evaluate(()=>reports.some(row=>row.notes==='No field activity today.'&&row.status!=='Draft')));
+  await page.evaluate(()=>{$('#report-sent-modal').close();openReport();$('#report-project').value=String(projects.findIndex(p=>/Cedar Grove/.test(p.name)));$('#report-project').dispatchEvent(new Event('change',{bubbles:true}));});
+  await page.waitForFunction(()=>reportLaborLoadedKey===reportLaborSelectionKey());
+  await set(page,'#field-notes','Poured 40 LF of curb. Extra work: owner asked us to patch 2 potholes by the gate.');
+  await page.evaluate(()=>$('#report-next-step').click());
+  await page.waitForFunction(()=>$('#report-form').getAttribute('data-current-step')==='2'&&!$('#report-next-step').disabled);
+  await page.evaluate(()=>{const flag=fieldScopeFlags.find(row=>row.reason==='stated_extra');if(!flag)throw Error('Synthetic extra flag missing');document.querySelector('[data-flag-choice="yes"]').click();});
+  const decisions=await page.evaluate(()=>JSON.stringify(fieldScopeFlags));
+  await page.evaluate(()=>$('#report-crew').dispatchEvent(new Event('change',{bubbles:true})));
+  assert.equal(await page.evaluate(()=>JSON.stringify(fieldScopeFlags)),decisions,'crew change preserves extra decisions');
+  await set(page,'#report-date','2026-10-02','change');
+  assert.equal(await page.evaluate(()=>JSON.stringify(fieldScopeFlags)),decisions,'date change preserves extra decisions');
+  await page.waitForFunction(()=>reportLaborLoadedKey===reportLaborSelectionKey());
+  await set(page,'#report-signature','Synthetic signer');
+  const photo=path.join(root,'synthetic.png');fs.writeFileSync(photo,Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/l9sAAAAASUVORK5CYII=','base64'));
+  await page.evaluate(()=>$('#report-back').click());await (await page.$('#report-photos')).uploadFile(photo);
+  await page.evaluate(()=>$('#save-report-draft').click());await page.waitForFunction(()=>!$('#report-modal').open);
+  const extra=await page.evaluate(()=>reports.find(row=>row.dateIso==='2026-10-02'&&row.notes.includes('potholes')));
+  assert.ok(extra?.extraWork?.length,'extra decisions survive draft save');
+  assert.ok(await page.evaluate(id=>photos.some(row=>Number(row.reportId)===Number(id)),extra.id),'photo saved with draft');
+  await page.setViewport({width:1280,height:900});await page.evaluate(id=>openReport(reports.find(row=>row.id===id)),extra.id);
+  await page.evaluate(()=>$('#report-next-step').click());await page.waitForFunction(()=>$('#report-form').getAttribute('data-current-step')==='2');
+  assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false,'desktop has no overflow');
+  fs.mkdirSync(shotRoot,{recursive:true});await page.screenshot({path:path.join(shotRoot,'office-review-desktop.png')});
   assert.deepEqual(errors,[]);console.log('Office daily browser flow passed: compact create/review, office controls, raw punch exclusion, draft/edit/reopen, required fields, stale AI, manual fallback, superintendent.');
  }catch(error){if(page){console.error('Office failure:',error);console.error(await page.evaluate(()=>({step:$('#report-form')?.getAttribute('data-current-step'),status:$('#report-submit-status')?.textContent,toast:$('#toast')?.textContent,notes:$('#field-notes')?.value})).catch(()=>({}))); fs.mkdirSync(shotRoot,{recursive:true});await page.screenshot({path:path.join(shotRoot,'office-failure.png')}).catch(()=>{})}console.error(log.slice(-2500));throw error}
  finally{if(browser)await browser.close();child.kill();await new Promise(resolve=>child.exitCode!==null?resolve():child.once('exit',resolve));fs.rmSync(root,{recursive:true,force:true})}

@@ -71,7 +71,7 @@ var fieldScopeFlags=[];
   let reviewedNotesKey='';
   let reviewGeneration=0;
   function reviewContext(){return [typeof reportAnalyzeSequence==='undefined'?'':reportAnalyzeSequence,typeof currentRole==='undefined'?'':currentRole,$('#report-type')?.value,$('#report-project')?.value,$('#report-date')?.value,typeof editingReportId==='undefined'?'':editingReportId].join('|')}
-  for(const selector of ['#report-project','#report-date','#report-crew','#report-type'])$(selector)?.addEventListener('change',()=>{reviewGeneration++;reviewedNotesKey='';const next=$('#report-next-step');if(next)next.disabled=false;fieldScopeFlags=[];fieldHoursReview=null;if(typeof cancelVoiceRecording==='function')cancelVoiceRecording();if(typeof stopVoiceNotes==='function')stopVoiceNotes();polishFieldDaily();if(dailyCompact()&&$('#report-form')?.getAttribute('data-current-step')==='2')renderFieldReview()});
+  for(const selector of ['#report-project','#report-date','#report-crew','#report-type'])$(selector)?.addEventListener('change',()=>{reviewGeneration++;if(selector==='#report-project'){reviewedNotesKey='';fieldScopeFlags=[];fieldHoursReview=null}const next=$('#report-next-step');if(next)next.disabled=false;if(typeof cancelVoiceRecording==='function')cancelVoiceRecording();if(typeof stopVoiceNotes==='function')stopVoiceNotes();polishFieldDaily();if(dailyCompact()&&$('#report-form')?.getAttribute('data-current-step')==='2')renderFieldReview()});
   let reviewSave=Promise.resolve();
   let reviewPersist=Promise.resolve();
   let reviewPersistTimer=0;
@@ -464,7 +464,7 @@ var fieldScopeFlags=[];
     if(reviewTotal>0)cards.push(`<p class="field-labor-total">Total ${escapeText(punchTotalLabel(reviewTotal))}</p>`);
     if(crewStillClockedIn())cards.unshift('<p class="field-clock-warning">Clock out to include today\'s time</p>');
     host.hidden=false;
-    host.innerHTML=(cards.length?cards.join(''):'<p class="field-review-empty">AI did not fill any lines. Add the work on the cards below.</p>')+'<p>Unknown or mismatched hours can be sent for office review. Clock punches are kept separately.</p><button type="button" id="field-edit-hours">Edit reported hours</button><button type="button" id="field-add-line">Add line</button>';
+    host.innerHTML=(cards.length?cards.join(''):'<p class="field-review-empty">AI did not fill any lines. Add the work on the cards below.</p>')+(fieldCompact()?'<p>Unknown or mismatched hours can be sent for office review. Clock punches are kept separately.</p>':'<p>Review approved time-card, scheduled, or entered crew hours before sending.</p>')+'<button type="button" id="field-edit-hours">Edit reported hours</button><button type="button" id="field-add-line">Add line</button>';
     const editHours=$('#field-edit-hours');if(editHours)editHours.onclick=()=>{const modal=$('#report-modal');modal?.classList.add('field-manual-entry');const more=$('#report-more');if(more)more.open=true;const input=$$('[data-labor-member]')[0];input?.scrollIntoView?.({block:'center'});input?.focus()};
     const addLine=$('#field-add-line');
     if(addLine)addLine.onclick=()=>{
