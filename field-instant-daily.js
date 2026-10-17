@@ -68,6 +68,36 @@ var fieldScopeFlags=[];
   }
   let reviewedNotesKey='';
   let reviewSave=Promise.resolve();
+  let reviewPersistTimer=0;
+  function scheduleReviewPersist(){clearTimeout(reviewPersistTimer);reviewPersistTimer=setTimeout(()=>{persistReviewDraft().catch(()=>{})},250)}
+  function stampExtraMinutes(){
+    for(const flag of fieldScopeFlags){
+      if(!flag||flag.decision!=='extra')continue;
+      const wanted=String(flag.description||'').trim().toLowerCase();
+      const row=[...$$('.production-entry')].find(entry=>entry.dataset.extraWork==='true'&&String(entry.querySelector('.custom-description')?.value||'').trim().toLowerCase()===wanted);
+      if(!row)continue;
+      if(row.dataset.laborMinutes!=null&&row.dataset.laborMinutes!=='')flag.laborMinutes=Number(row.dataset.laborMinutes);
+      const hours=row.querySelector('.production-hours')?.value;
+      if(hours!=null&&hours!=='')flag.laborHours=Number(hours)||0;
+      flag.laborManual=row.dataset.laborManual==='true';
+    }
+  }
+  function restoreResolvedExtras(report){
+    if(!fieldCompact())return;
+    for(const flag of fieldScopeFlags){
+      if(!flag||flag.decision!=='extra')continue;
+      const row=markLineExtra(flag);
+      if(!row)continue;
+      const saved=(report?.extraWork||[]).find(item=>item&&String(item.description||'').trim().toLowerCase()===String(flag.description||'').trim().toLowerCase());
+      const minutes=saved&&saved.laborMinutes!=null&&saved.laborMinutes!==''?saved.laborMinutes:flag.laborMinutes;
+      if(minutes==null||minutes==='')continue;
+      const savedHours=saved&&saved.laborHours!=null&&saved.laborHours!==''?saved.laborHours:flag.laborHours;
+      row.dataset.laborManual='true';
+      row.dataset.laborMinutes=String(minutes);
+      const hours=row.querySelector('.production-hours');
+      if(hours)hours.value=savedHours!=null&&savedHours!==''?savedHours:(typeof FieldDailyScope!=='undefined'&&FieldDailyScope.hoursFromMinutes?FieldDailyScope.hoursFromMinutes(minutes):'');
+    }
+  }
   async function persistReviewDraft(){
     if(!fieldCompact()||!$('#report-modal')?.open||typeof saveDailyReport!=='function'||!(typeof editingReportId!=='undefined'&&editingReportId))return;
     const current=(typeof reports==='undefined'?[]:reports).find(row=>Number(row.id)===Number(editingReportId));
@@ -82,7 +112,7 @@ var fieldScopeFlags=[];
       kept=true;
       if(row.dataset.aiFilled==='true'&&description&&!String(row.dataset.workDescription||'').trim())row.dataset.workDescription=description;
     }
-    if(!kept)return;
+    if(!kept&&!fieldScopeFlags.some(flag=>flag&&flag.decision))return;
     const saved=await saveDailyReport('Draft',{keepOpen:true});
     if(!saved?.id)return;
     if(typeof renderReports==='function')renderReports(saved.id);
@@ -107,7 +137,7 @@ var fieldScopeFlags=[];
       const existing=id&&byId.get(id);
       if(existing){
         const quantity=existing.querySelector('.production-quantity');
-        if(quantity&&line.quantity!=null)quantity.value=line.quantity;
+        if(quantity&&line.quantity!=null&&!(Number(quantity.value)>0))quantity.value=line.quantity;
         const unit=existing.querySelector('.production-unit');
         const safeUnit=line.unit&&String(line.unit).toLowerCase()!=='x'?line.unit:'';
         if(unit&&safeUnit)unit.value=safeUnit;
@@ -309,6 +339,8 @@ var fieldScopeFlags=[];
         const send=$('#save-report');if(send)send.disabled=false;
         renderFlags();
         renderFieldReview();
+        clearTimeout(reviewPersistTimer);
+        persistReviewDraft().catch(()=>{});
         return;
       }
       const mapped=choice==='yes'||choice==='extra'||choice==='bill'?'extra':choice==='no'||choice==='not'?'not':choice;
@@ -321,6 +353,8 @@ var fieldScopeFlags=[];
       const send=$('#save-report');if(send&&next.decision)send.disabled=false;
       renderFlags();
       renderFieldReview();
+      clearTimeout(reviewPersistTimer);
+      persistReviewDraft().catch(()=>{});
     });
     host.querySelectorAll('[data-flag-asker]').forEach(input=>input.oninput=()=>{const at=fieldScopeFlags.findIndex(row=>String(row.id)===String(input.dataset.flagAsker));if(at>=0)fieldScopeFlags[at]={...fieldScopeFlags[at],who_asked:input.value}});
     syncExtraSendGate();
@@ -336,6 +370,8 @@ var fieldScopeFlags=[];
       bindPickedLine(flag,item);
       renderFlags();
       renderFieldReview();
+      clearTimeout(reviewPersistTimer);
+      persistReviewDraft().catch(()=>{});
     });
   }
   const CLOCK_OUT_PROMPT=/Add what was completed before clocking out\.|Agregue una nota breve sobre el trabajo terminado/;
@@ -604,7 +640,7 @@ var fieldScopeFlags=[];
   }
   if(typeof openReport==='function'){
     const openBefore=openReport;
-    openReport=function(report=null,context={}){fieldScopeFlags=[];fieldHoursReview=null;reviewedNotesKey='';const result=openBefore(report,context);if(fieldCompact()){const loadedSummary=String($('#report-summary')?.value||'').trim(),loadedNotes=String($('#field-notes')?.value||'').trim(),hasProduction=(report?.productionEntries||[]).some(row=>row&&String(row.description||'').trim());if(loadedSummary&&loadedNotes&&(!/^field work recorded:/i.test(loadedSummary)||hasProduction))reviewedNotesKey=loadedNotes;const saved=(report?.productionEntries||[]).some(row=>row&&((row.estimateItemId!=null&&String(row.estimateItemId)!=='')||Number(row.quantity)>0));if(report?.workSuggestions?.length&&!saved&&$('#production-rows'))$('#production-rows').innerHTML='';const draft=typeof readOfflineDraft==='function'&&typeof offlineReportDraftKey==='function'?readOfflineDraft(offlineReportDraftKey()):null;if(Array.isArray(report?.scopeFlags)&&report.scopeFlags.length)fieldScopeFlags=stampFlags(report.scopeFlags);else if(Array.isArray(draft?.scopeFlags)&&String(draft.notes||'').trim()&&String(draft.notes||'').trim()===String($('#field-notes')?.value||'').trim())fieldScopeFlags=stampFlags(draft.scopeFlags)}dropEmptyLines();dropRawProductionRows();bindLaborAllocation();polishFieldDaily();renderFlags();if(report?.id&&!(typeof restoringActiveReport!=='undefined'&&restoringActiveReport)&&typeof clearRestoreBanner==='function')clearRestoreBanner();if(fieldCompact()&&$('#report-form')?.getAttribute('data-current-step')==='2')renderFieldReview();return result};
+    openReport=function(report=null,context={}){fieldScopeFlags=[];fieldHoursReview=null;reviewedNotesKey='';const result=openBefore(report,context);if(fieldCompact()){const loadedSummary=String($('#report-summary')?.value||'').trim(),loadedNotes=String($('#field-notes')?.value||'').trim(),hasProduction=(report?.productionEntries||[]).some(row=>row&&row.extra_work!==true&&String(row.description||'').trim()),hasResolution=(report?.scopeFlags||[]).some(flag=>flag&&flag.decision)||(report?.extraWork||[]).some(item=>item&&item.extra_work===true);if(loadedNotes&&(hasResolution||(loadedSummary&&(!/^field work recorded:/i.test(loadedSummary)||hasProduction))))reviewedNotesKey=loadedNotes;const saved=(report?.productionEntries||[]).some(row=>row&&((row.estimateItemId!=null&&String(row.estimateItemId)!=='')||Number(row.quantity)>0));if(report?.workSuggestions?.length&&!saved&&$('#production-rows'))$('#production-rows').innerHTML='';const draft=typeof readOfflineDraft==='function'&&typeof offlineReportDraftKey==='function'?readOfflineDraft(offlineReportDraftKey()):null;if(Array.isArray(report?.scopeFlags)&&report.scopeFlags.length)fieldScopeFlags=stampFlags(report.scopeFlags);else if(Array.isArray(draft?.scopeFlags)&&String(draft.notes||'').trim()&&String(draft.notes||'').trim()===String($('#field-notes')?.value||'').trim())fieldScopeFlags=stampFlags(draft.scopeFlags)}restoreResolvedExtras(report);dropEmptyLines();dropRawProductionRows();bindLaborAllocation();polishFieldDaily();renderFlags();if(report?.id&&!(typeof restoringActiveReport!=='undefined'&&restoringActiveReport)&&typeof clearRestoreBanner==='function')clearRestoreBanner();if(fieldCompact()&&$('#report-form')?.getAttribute('data-current-step')==='2')renderFieldReview();return result};
   }
   if(typeof showReportStep==='function'){
     const stepBefore=showReportStep;
@@ -721,7 +757,7 @@ var fieldScopeFlags=[];
     $$('.production-quantity').forEach(input=>{
       if(input.dataset.allocationBound==='true')return;
       input.dataset.allocationBound='true';
-      input.addEventListener('input',()=>{applyLaborAllocation();if(fieldCompact())renderFieldReview()});
+      input.addEventListener('input',()=>{applyLaborAllocation();scheduleReviewPersist();if(fieldCompact())renderFieldReview()});
     });
     $$('[data-labor-member]').forEach(input=>{
       if(input.dataset.totalBound==='true')return;
@@ -770,7 +806,7 @@ var fieldScopeFlags=[];
   window.presentReportSent=presentReportSent;
   window.renderFieldReview=renderFieldReview;
   if(typeof suggestReportHourSplit==='function'){const officeSplit=suggestReportHourSplit;suggestReportHourSplit=function(options){if(fieldCompact()){applyLiveLabor();if(typeof updateReportGaps==='function')updateReportGaps();return true}return officeSplit(options)}}
-  if(typeof saveDailyReport==='function'){const saveBefore=saveDailyReport;saveDailyReport=async function(status,saveOptions){const review=$('#field-review-next'),field=$('#report-next');if(review&&field&&typeof FieldDailyScope!=='undefined'&&FieldDailyScope.mergedNext)field.value=FieldDailyScope.mergedNext(field.value,review.value);harvestFlagAnswers();syncEstimateBindings();dropEmptyLines();if(fieldCompact())applyLaborAllocation();const reportId=Number(typeof editingReportId==='undefined'?0:editingReportId);const saved=await saveBefore(status,saveOptions);const stored=saved&&saved.id?saved:(typeof reports==='undefined'?null:reports.find(row=>Number(row.id)===reportId));if(stored&&String(stored.status||'')!=='Draft'&&typeof timeCards!=='undefined'){let changed=false;for(const card of timeCards){if(!card||!card.outAt||Number(card.reportId)!==Number(stored.id))continue;const cardStatus=String(card.status||'').trim().toLowerCase();if(cardStatus!=='draft'&&cardStatus!=='rejected')continue;card.status='submitted';if(card.fieldAccess)card.fieldAccess={...card.fieldAccess,canEdit:false,canSubmit:false,reason:'This time is awaiting review. Ask your office time administrator to return it to Draft if a correction is needed.'};changed=true}if(changed&&typeof renderFieldClock==='function')renderFieldClock();else if(changed&&typeof renderFieldClockHours==='function')renderFieldClockHours()}return saved}}
+  if(typeof saveDailyReport==='function'){const saveBefore=saveDailyReport;saveDailyReport=async function(status,saveOptions){const review=$('#field-review-next'),field=$('#report-next');if(review&&field&&typeof FieldDailyScope!=='undefined'&&FieldDailyScope.mergedNext)field.value=FieldDailyScope.mergedNext(field.value,review.value);harvestFlagAnswers();syncEstimateBindings();dropEmptyLines();if(fieldCompact()){applyLaborAllocation();stampExtraMinutes()}const reportId=Number(typeof editingReportId==='undefined'?0:editingReportId);const saved=await saveBefore(status,saveOptions);const stored=saved&&saved.id?saved:(typeof reports==='undefined'?null:reports.find(row=>Number(row.id)===reportId));if(stored&&String(stored.status||'')!=='Draft'&&typeof timeCards!=='undefined'){let changed=false;for(const card of timeCards){if(!card||!card.outAt||Number(card.reportId)!==Number(stored.id))continue;const cardStatus=String(card.status||'').trim().toLowerCase();if(cardStatus!=='draft'&&cardStatus!=='rejected')continue;card.status='submitted';if(card.fieldAccess)card.fieldAccess={...card.fieldAccess,canEdit:false,canSubmit:false,reason:'This time is awaiting review. Ask your office time administrator to return it to Draft if a correction is needed.'};changed=true}if(changed&&typeof renderFieldClock==='function')renderFieldClock();else if(changed&&typeof renderFieldClockHours==='function')renderFieldClockHours()}return saved}}
   if(typeof confirmReportDiscard==='function'){const officeConfirm=confirmReportDiscard;confirmReportDiscard=function(){if(typeof currentRole!=='undefined'&&currentRole==='field')return true;return officeConfirm()}}
   function fieldSameDayReport(projectId,dateIso){
     if(typeof currentRole==='undefined'||currentRole!=='field'||typeof FieldDailyScope==='undefined'||!FieldDailyScope.sameDayDaily)return null;
@@ -806,6 +842,10 @@ var fieldScopeFlags=[];
       if(fieldCompact()&&CLOCK_OUT_PROMPT.test(String(message||'')))clearStaleClockOutPrompt();
       return result;
     };
+  }
+  if(typeof saveDailyReport==='function'){
+    const saveBeforeExtras=saveDailyReport;
+    saveDailyReport=async function(status,saveOptions){if(fieldCompact())stampExtraMinutes();return saveBeforeExtras(status,saveOptions)};
   }
   polishFieldDaily();
 })();

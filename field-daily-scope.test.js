@@ -97,9 +97,20 @@ const optionalExtra=scope.sendGate({flags:[],laborHours:0.07,openClock:false,lin
 assert.equal(optionalExtra.block.length,0,'an optional extra-work quantity still sends');
 const quantityStillRequired=scope.sendGate({flags:[],laborHours:0.07,openClock:false,lines:[{quantity:'',needsQuantity:true}]});
 assert.ok(quantityStillRequired.block.some(line=>/quantity/i.test(line)));
-const keptExtra=scope.keepProductionLines([{description:'Set forms',extra_work:true,quantity:0,laborHours:0.05}],'Set forms');
+const keptExtra=scope.keepProductionLines([{description:'Set forms',extra_work:true,quantity:0,laborHours:0.05},{description:'Curb',estimateItemId:1,quantity:40,laborHours:0.02}],'Poured 40 LF of curb. Set forms.');
 assert.equal(keptExtra.length,1);
-assert.equal(keptExtra[0].description,'Set forms');
+assert.equal(keptExtra[0].description,'Curb');
+const extraMinutes=scope.fieldExtraItems([{...extra,who_asked:'owner',description:'Set forms.',laborMinutes:1,laborHours:0.02}]);
+assert.equal(extraMinutes[0].laborMinutes,1);
+assert.equal(extraMinutes[0].laborHours,0.02);
+assert.equal(extraMinutes[0].extra_work,true);
+const reparsed=scope.mergeScopeFlags([{id:'no_match:set forms',kind:'pick',reason:'no_match',description:'Set forms.',decision:'extra',extra_work:true,laborMinutes:1}],[{kind:'pick',reason:'no_match',description:'Set forms.',decision:null},{kind:'pick',reason:'no_match',description:'Patch the gate.',decision:null}]);
+assert.equal(reparsed.find(flag=>/set forms/i.test(flag.description)).decision,'extra');
+assert.equal(reparsed.find(flag=>/gate/i.test(flag.description)).decision,null);
+const split=scope.allocateLaborHours({totalMinutes:5,lines:[{quantity:40,unitRate:0.1},{quantity:0,unitRate:0}]});
+assert.equal(split.lines.reduce((sum,line)=>sum+line.minutes,0),5);
+assert.ok(split.lines.every(line=>line.minutes>0));
+assert.equal(split.lines.reduce((sum,line)=>sum+Math.round(line.hours*100),0),Math.round(scope.hoursFromMinutes(5)*100));
 
 const server=fs.readFileSync(__dirname+'/server.js','utf8'),app=fs.readFileSync(__dirname+'/app.js','utf8');
 assert.match(server,/status:fieldScope\.submissionStatus\(input\.status\)/);

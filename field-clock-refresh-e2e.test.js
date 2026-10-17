@@ -14,6 +14,8 @@ const NEXT_2 = 'Pour pad Monday';
 const NOTES_3 = 'Cleaned up site.';
 const FIELD_EMAIL = 'levi+field@prodailylink.com';
 const FIELD_PASSWORD = 'staging-field-pass';
+const OWNER_EMAIL = 'levi+owner@prodailylink.com';
+const OWNER_PASSWORD = 'staging-owner-pass';
 
 function puppeteer() {
   try { return require('puppeteer-core'); }
@@ -39,11 +41,11 @@ function pinOpenPunch(file, minutes) {
   return start;
 }
 
-async function login(page) {
+async function login(page, email = FIELD_EMAIL, password = FIELD_PASSWORD) {
   await page.goto(`http://127.0.0.1:${page.__port}/login.html`, { waitUntil: 'domcontentloaded' });
   await page.waitForSelector('#email');
-  await page.$eval('#email', (el, value) => { el.value = value; }, FIELD_EMAIL);
-  await page.$eval('#password', (el, value) => { el.value = value; }, FIELD_PASSWORD);
+  await page.$eval('#email', (el, value) => { el.value = value; }, email);
+  await page.$eval('#password', (el, value) => { el.value = value; }, password);
   await page.click('form#login button.primary');
   await page.waitForFunction(() => location.pathname.includes('/app'), { timeout: 20000 });
   await page.waitForSelector('#menu-button', { timeout: 20000 });
@@ -288,6 +290,103 @@ async function clockSurfaces(page) {
       return (report?.productionEntries || []).map(row => ({ description: row.description, quantity: Number(row.quantity) || 0 }));
     });
     assert.ok(keptProduction.some(row => /Curb/i.test(row.description) && row.quantity === 40), JSON.stringify(keptProduction));
+    await page.click('[data-edit-report]');
+    await page.waitForFunction(() => document.querySelector('#report-modal')?.open && document.querySelector('#field-notes'), { timeout: 10000 });
+    const extraNotes = 'Poured 40 LF of curb. Set forms.';
+    await page.$eval('#field-notes', (el, value) => {
+      el.value = value;
+      el.dispatchEvent(new Event('input', { bubbles: true }));
+    }, extraNotes);
+    await page.click('#report-next-step');
+    await page.waitForFunction(() => {
+      const button = document.querySelector('#report-next-step');
+      const flags = document.querySelector('#field-scope-flags')?.innerText || '';
+      const curb = [...document.querySelectorAll('.production-entry')].find(row => /Curb/i.test(row.querySelector('.production-item')?.selectedOptions?.[0]?.textContent || ''));
+      return button && !button.disabled && document.querySelector('#report-form')?.getAttribute('data-current-step') === '2' && /Needs your pick/i.test(flags) && /Set forms/i.test(flags) && curb?.querySelector('.production-quantity')?.value === '40';
+    }, { timeout: 20000 });
+    await page.click('[data-flag-choice="extra"]');
+    let resolved = null;
+    for (let attempt = 0; attempt < 40; attempt += 1) {
+      resolved = await page.evaluate(async () => {
+        const state = await (await fetch('/api/state', { credentials: 'include' })).json();
+        const report = (state.reports || [])[0] || {};
+        const production = report.productionEntries || [];
+        const extras = (report.extraWork || []).filter(item => item && item.extra_work === true);
+        const flag = (report.scopeFlags || []).find(row => /set forms/i.test(row.description || ''));
+        const labor = (report.laborEntries || []).reduce((sum, row) => sum + (Number(row.minutes) || 0), 0);
+        const productionMinutes = production.reduce((sum, row) => sum + (Number(row.laborMinutes) || 0), 0);
+        const extraMinutes = extras.reduce((sum, item) => sum + (Number(item.laborMinutes) || 0), 0);
+        return {
+          decision: flag?.decision || null,
+          curb: production.find(row => /curb/i.test(row.description || '')) || null,
+          leaked: production.some(row => /set forms/i.test(row.description || '') || row.extra_work === true),
+          extra: extras.find(item => /set forms/i.test(item.description || '')) || null,
+          labor,
+          productionMinutes,
+          extraMinutes
+        };
+      });
+      if (resolved.decision === 'extra' && resolved.curb && Number(resolved.curb.quantity) === 40 && !resolved.leaked && resolved.extra && resolved.extraMinutes > 0 && resolved.productionMinutes + resolved.extraMinutes === resolved.labor) break;
+      await new Promise(resolve => setTimeout(resolve, 250));
+    }
+    assert.equal(resolved.decision, 'extra', JSON.stringify(resolved));
+    assert.equal(Number(resolved.curb.quantity), 40, JSON.stringify(resolved));
+    assert.equal(resolved.leaked, false, JSON.stringify(resolved));
+    assert.match(resolved.extra.description, /Set forms/i);
+    assert.ok(resolved.extraMinutes > 0, JSON.stringify(resolved));
+    assert.equal(resolved.productionMinutes + resolved.extraMinutes, resolved.labor, JSON.stringify(resolved));
+    await page.click('#report-modal .close-button');
+    await page.waitForFunction(() => !document.querySelector('#report-modal')?.open, { timeout: 5000 });
+    await page.click('[data-edit-report]');
+    await page.waitForFunction(() => document.querySelector('#report-modal')?.open && document.querySelector('#field-notes'), { timeout: 10000 });
+    await page.click('#report-next-step');
+    await page.waitForFunction(() => {
+      const button = document.querySelector('#report-next-step');
+      return button && !button.disabled && document.querySelector('#report-form')?.getAttribute('data-current-step') === '2';
+    }, { timeout: 20000 });
+    const summaryHeld = await page.$eval('#report-summary', el => el.value);
+    await page.$eval('#report-next-step', button => button.scrollIntoView({ block: 'center' }));
+    await page.evaluate(() => document.querySelector('#report-next-step')?.click());
+    await page.waitForFunction(() => {
+      const button = document.querySelector('#report-next-step');
+      return button && !button.disabled && document.querySelector('#report-form')?.getAttribute('data-current-step') === '2';
+    }, { timeout: 20000 });
+    assert.equal(await page.$eval('#report-summary', el => el.value), summaryHeld);
+    const reopened = await page.evaluate(() => {
+      const flags = document.querySelector('#field-scope-flags')?.innerText || '';
+      const curb = [...document.querySelectorAll('.production-entry')].find(row => /Curb/i.test(row.querySelector('.production-item')?.selectedOptions?.[0]?.textContent || row.innerText || ''));
+      const extra = [...document.querySelectorAll('.production-entry')].find(row => row.dataset.extraWork === 'true' && /set forms/i.test(row.querySelector('.custom-description')?.value || row.innerText || ''));
+      return {
+        flags,
+        curb: curb?.querySelector('.production-quantity')?.value || '',
+        extra: Boolean(extra)
+      };
+    });
+    assert.doesNotMatch(reopened.flags, /Needs your pick/i, JSON.stringify(reopened));
+    assert.equal(reopened.curb, '40', JSON.stringify(reopened));
+    assert.equal(reopened.extra, true, JSON.stringify(reopened));
+    await page.click('#report-modal .close-button');
+    await page.waitForFunction(() => !document.querySelector('#report-modal')?.open, { timeout: 5000 });
+    const ownerContext = await browser.createBrowserContext();
+    const owner = await ownerContext.newPage();
+    owner.__port = port;
+    await owner.setViewport({ width: 390, height: 844, deviceScaleFactor: 2, isMobile: true, hasTouch: true });
+    await owner.evaluateOnNewDocument(() => localStorage.setItem('pdl-analytics-consent', 'declined'));
+    await login(owner, OWNER_EMAIL, OWNER_PASSWORD);
+    await openNav(owner, 'reports');
+    await owner.waitForFunction(() => {
+      const box = [...document.querySelectorAll('#report-detail .data-box')].find(row => /PRODUCTION/i.test(row.querySelector('small')?.textContent || ''));
+      return /Curb/.test(box?.innerText || '') && /40/.test(box?.innerText || '');
+    }, { timeout: 20000 });
+    const ownerView = await owner.evaluate(() => {
+      const box = [...document.querySelectorAll('#report-detail .data-box')].find(row => /PRODUCTION/i.test(row.querySelector('small')?.textContent || ''));
+      return { production: box?.innerText || '', extra: document.querySelector('#report-detail .extra-work-item')?.innerText || '' };
+    });
+    assert.match(ownerView.production, /Curb/);
+    assert.match(ownerView.production, /40/);
+    assert.doesNotMatch(ownerView.production, /Set forms/i, ownerView.production);
+    assert.match(ownerView.extra, /Set forms/i, ownerView.extra);
+    await ownerContext.close();
     console.log('Clock refresh and next-step browser flow passed.');
   } finally {
     if (browser) await browser.close();

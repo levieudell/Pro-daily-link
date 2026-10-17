@@ -464,7 +464,7 @@
   }
 
   function keepProductionLines(entries,notes){
-    const kept=(entries||[]).filter(entry=>entry&&!emptyProductionLine(entry)&&String(entry.description||'').trim()&&!rawNoteLine(entry,notes));
+    const kept=(entries||[]).filter(entry=>entry&&entry.extra_work!==true&&!emptyProductionLine(entry)&&String(entry.description||'').trim()&&!rawNoteLine(entry,notes));
     return dedupeProductionLines(kept);
   }
 
@@ -482,15 +482,18 @@
     const prior=(Array.isArray(previous)?previous:[]).filter(Boolean).map(flag=>({...flag,id:flag.id||flagIdentity(flag)}));
     const rows=(Array.isArray(incoming)?incoming:[]).filter(Boolean);
     const statedIncoming=rows.filter(flag=>flag.reason==='stated_extra').length;
-    return rows.map(flag=>{
+    const merged=rows.map(flag=>{
       const identity=flagIdentity(flag);
       const exact=prior.find(row=>row.id===flag.id||row.id===identity||(row.reason===flag.reason&&String(row.description||'')===String(flag.description||'')));
       const stated=prior.filter(row=>row.reason==='stated_extra'&&flag.reason==='stated_extra');
       const match=exact||(stated.length===1&&statedIncoming===1?stated[0]:null);
       const id=match?.id||flag.id||identity;
       if(!match||!match.decision)return {...flag,id,decision:null,createsChange:false,who_asked:String(match?.who_asked||flag?.who_asked||'')};
-      return {...flag,id,decision:match.decision,createsChange:false,extra_work:match.decision==='extra',who_asked:String(match.who_asked||flag.who_asked||'')};
+      return {...flag,id,decision:match.decision,createsChange:false,extra_work:match.decision==='extra',who_asked:String(match.who_asked||flag.who_asked||''),quantity:match.quantity!=null?match.quantity:flag.quantity,laborMinutes:match.laborMinutes,laborHours:match.laborHours};
     });
+    const seen=new Set(merged.map(flag=>flag.id||flagIdentity(flag)));
+    const kept=prior.filter(flag=>flag&&flag.decision&&!seen.has(flag.id||flagIdentity(flag)));
+    return [...merged,...kept];
   }
 
   function displayHoursForMinutes(minuteList){
@@ -625,6 +628,9 @@
       const item={description:String(flag.description||'Extra work').slice(0,300),extra_work:true,who_asked:String(flag.who_asked||flag.whoAsked||'').trim().slice(0,80)};
       if(flag.quantity!=null&&flag.quantity!=='')item.quantity=Number(flag.quantity)||0;
       if(flag.unit)item.unit=String(flag.unit).slice(0,20);
+      if(flag.laborMinutes!=null&&flag.laborMinutes!=='')item.laborMinutes=Math.max(0,Math.round(Number(flag.laborMinutes)||0));
+      if(flag.laborHours!=null&&flag.laborHours!=='')item.laborHours=Number(flag.laborHours)||0;
+      else if(item.laborMinutes!=null)item.laborHours=hoursFromMinutes(item.laborMinutes);
       return item;
     });
   }
