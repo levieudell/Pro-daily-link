@@ -641,7 +641,7 @@ function cancelVoiceRecording(){clearVoiceTimers();voiceRecordingGeneration++;vo
 let voiceNotesRestartTimer=null,voiceNotesRecorder=null;function resetVoiceNotesButton(){setVoiceCaptureState('idle');const button=$('#voice-notes'),status=$('#voice-status');applyReportLanguage();button?.setAttribute('aria-pressed','false');button?.classList.remove('voice-listening');if(button){button.disabled=false;button.onclick=startVoiceNotes}setVoiceStatus(status,'',false)}function stopVoiceNotes(){clearTimeout(voiceNotesRestartTimer);const session=voiceNotesSession;voiceNotesSession=null;if(session){try{session.stop()}catch{try{session.abort()}catch{}}}resetVoiceNotesButton()}function startVoiceNotes(){const button=$('#voice-notes');if(voiceNotesRecorder){stopVoiceRecording();return}if(voiceNotesSession){stopVoiceNotes();return}if(typeof navigator!=='undefined'&&navigator.mediaDevices?.getUserMedia&&window.MediaRecorder&&navigator.onLine!==false){beginVoiceRecording();return}const Recognition=window.SpeechRecognition||window.webkitSpeechRecognition;if(!Recognition){notify('Voice notes are not supported by this browser');return}beginVoiceNotesSession()}function beginVoiceRecording(){
  const button=$('#voice-notes'),status=$('#voice-status'),spanish=$('#report-language').value.startsWith('es'),generation=++voiceRecordingGeneration;
  const controller=typeof AbortController==='function'?new AbortController():null;voiceRecordingAbort=controller;
- const current=()=>generation===voiceRecordingGeneration;
+ const current=()=>generation===voiceRecordingGeneration&&$('#report-modal')?.open!==false;
  let failed=false;
  const unavailable=(reason='unavailable')=>{
   if(!current()||failed)return;failed=true;cancelVoiceRecording();

@@ -278,6 +278,14 @@ console.log('voice feedback contracts: ok');
 
 // Stop or network timeouts restore existing notes and invalidate late completion.
 (async()=>{
+ const h=recordingHarness('en-US');h.elements['field-notes'].value='Saved before closing.';h.elements['report-modal'].open=true;h.setResult({text:'Late transcript.'});const release=h.holdResponse();
+ h.elements['voice-notes'].onclick();await new Promise(r=>setTimeout(r,5));h.elements['voice-capture-stop'].onclick();await new Promise(r=>setTimeout(r,5));
+ h.elements['report-modal'].open=false;release();await new Promise(r=>setTimeout(r,5));
+ assert.equal(h.elements['field-notes'].value,'Saved before closing.','closed dialog rejects transcription before its close event dispatches');
+ h.cancel();
+})().catch(e=>{console.error(e);process.exitCode=1});
+
+(async()=>{
  for(const mode of ['stop','network']){
   const h=recordingHarness('en-US',{delayStop:mode==='stop'});h.elements['field-notes'].value='Saved notes.';h.setResult({text:'Late words.'});const release=h.holdResponse();
   h.elements['voice-notes'].onclick();await new Promise(r=>setTimeout(r,5));h.elements['voice-capture-stop'].onclick();await new Promise(r=>setTimeout(r,5));h.fireTimer(mode==='stop'?10000:60000);

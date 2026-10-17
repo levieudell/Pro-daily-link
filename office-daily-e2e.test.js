@@ -28,6 +28,7 @@ async function run(){
   await page.waitForFunction(()=>reportLaborLoadedKey===reportLaborSelectionKey());
   assert.equal(await page.$eval('#report-next-step',e=>e.textContent),'Done');
   for(const selector of ['#report-project-picker','#report-date-field','#report-crew-field','#report-photos','#save-report-draft'])assert.equal(await visible(page,selector),true,selector);
+  fs.mkdirSync(shotRoot,{recursive:true});await page.screenshot({path:path.join(shotRoot,'office-notes-390.png')});
   assert.equal(await page.$('#field-clock-out'),null,'office has no clock action');
   // Inject raw unapproved punches in browser memory only; approved/manual inputs must win.
   await page.evaluate(()=>{const member=team[0];timeCards.push({id:999999,memberId:member.id,projectId:projects[+$('#report-project').value].id,date:$('#report-date').value,inAt:'2026-10-17T00:00:00Z',outAt:'2026-10-17T23:00:00Z',status:'draft'});populateReportLabor([{memberId:member.id,hours:2}]);});
@@ -108,6 +109,32 @@ async function run(){
   await page.evaluate(()=>$('#report-next-step').click());await page.waitForFunction(()=>$('#report-form').getAttribute('data-current-step')==='2');
   assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false,'desktop has no overflow');
   fs.mkdirSync(shotRoot,{recursive:true});await page.screenshot({path:path.join(shotRoot,'office-review-desktop.png')});
+  // Synthetic recorder exercises the shared office voice UI without a real microphone/provider.
+  await page.evaluate(()=>$('#report-modal').close());
+  await page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));
+  await page.evaluate(()=>{
+   openReport();$('#field-notes').value='Typed notes.';
+   navigator.mediaDevices.getUserMedia=async()=>({getTracks:()=>[{stop(){}}]});
+   window.MediaRecorder=class{static isTypeSupported(){return true}constructor(stream){this.stream=stream;this.mimeType='audio/webm';this.state='inactive'}start(){this.state='recording'}stop(){this.state='inactive';this.ondataavailable?.({data:new Blob(['synthetic audio'],{type:'audio/webm'})});this.onstop?.()}};
+   window.__voiceApi=api;api=async function(url,opts){if(url==='/api/ai/transcribe')return new Promise(resolve=>window.__transcribe=resolve);return window.__voiceApi(url,opts)};
+   startVoiceNotes();
+  });
+  await page.waitForFunction(()=>!$('#voice-capture-panel').hidden&&voiceNotesRecorder?.state==='recording');
+  assert.equal(await visible(page,'.voice-capture-circle'),true);
+  await page.evaluate(()=>$('#voice-capture-stop').click());
+  await page.waitForFunction(()=>typeof window.__transcribe==='function');
+  assert.equal(await page.$eval('#voice-capture-panel',el=>el.classList.contains('voice-capture-processing')),true);
+  await page.evaluate(()=>window.__transcribe({text:'Dictated once.'}));
+  await page.waitForFunction(()=>$('#field-notes').value==='Typed notes. Dictated once.');
+  for(const action of ['cancel','date','close']){
+   await page.evaluate(()=>{delete window.__transcribe;startVoiceNotes()});
+   await page.waitForFunction(()=>!$('#voice-capture-panel').hidden&&voiceNotesRecorder?.state==='recording');
+   await page.evaluate(()=>$('#voice-capture-stop').click());await page.waitForFunction(()=>typeof window.__transcribe==='function');
+   await page.evaluate(action=>{if(action==='cancel')$('#voice-capture-cancel').click();else if(action==='date'){$('#report-date').value='2026-10-03';$('#report-date').dispatchEvent(new Event('change',{bubbles:true}))}else $('#report-modal').close();window.__transcribe({text:'Cancelled transcript must not append.'})},action);
+   await page.waitForFunction(()=>$('#field-notes').value==='Typed notes. Dictated once.');
+   assert.equal(await page.$eval('#field-notes',el=>el.value),'Typed notes. Dictated once.',action);
+  }
+  await page.evaluate(()=>{api=window.__voiceApi;});
   assert.deepEqual(errors,[]);console.log('Office daily browser flow passed: compact create/review, office controls, raw punch exclusion, draft/edit/reopen, required fields, stale AI, manual fallback, superintendent.');
  }catch(error){if(page){console.error('Office failure:',error);console.error(await page.evaluate(()=>({step:$('#report-form')?.getAttribute('data-current-step'),status:$('#report-submit-status')?.textContent,toast:$('#toast')?.textContent,notes:$('#field-notes')?.value})).catch(()=>({}))); fs.mkdirSync(shotRoot,{recursive:true});await page.screenshot({path:path.join(shotRoot,'office-failure.png')}).catch(()=>{})}console.error(log.slice(-2500));throw error}
  finally{if(browser)await browser.close();child.kill();await new Promise(resolve=>child.exitCode!==null?resolve():child.once('exit',resolve));fs.rmSync(root,{recursive:true,force:true})}
