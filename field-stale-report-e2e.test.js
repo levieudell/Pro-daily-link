@@ -363,7 +363,7 @@ async function serverDaily(page) {
       await page.waitForFunction(() => {
         const flags = document.querySelector('#field-scope-flags')?.innerText || '';
         const curb = [...document.querySelectorAll('.production-entry')].some(row => /curb/i.test(row.querySelector('.production-item')?.selectedOptions?.[0]?.textContent || '') && row.querySelector('.production-quantity')?.value === '40');
-        return /Needs your pick/i.test(flags) && /Set forms/i.test(flags) && curb;
+        return document.querySelector('#report-form')?.getAttribute('data-current-step')==='2'&&!document.querySelector('#report-next-step')?.disabled&&/Needs your pick/i.test(flags) && /Set forms/i.test(flags) && curb;
       }, { timeout: 20000 });
     } catch (error) {
       const parsed = await page.evaluate(() => ({
@@ -374,7 +374,7 @@ async function serverDaily(page) {
       }));
       throw new Error(`${error.message}\n${JSON.stringify(parsed, null, 2)}`);
     }
-    await page.evaluate(()=>document.querySelector('[data-flag-choice="extra"]')?.click());
+    await page.click('[data-flag-choice="extra"]');
     await page.waitForFunction(() => {
       const row = [...document.querySelectorAll('.production-entry')].find(entry => entry.dataset.extraWork === 'true');
       const card = [...document.querySelectorAll('#field-review-cards .field-review-card')].find(node => /Set forms/i.test(node.innerText || ''));

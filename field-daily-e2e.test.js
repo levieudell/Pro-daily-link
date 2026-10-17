@@ -782,6 +782,8 @@ async function openNav(page, name) {
     assert.match(officeExtra.card, /keep the patch open for the inspector through the full cure/);
     assert.equal(officeExtra.card.includes('…'), false, officeExtra.card);
     assert.equal(officeExtra.wraps, true, JSON.stringify(officeExtra));
+    // Simulate an office update after clock-out, so this edit exercises a real stale revision.
+    await page.evaluate(async()=>{const state=await (await fetch('/api/state')).json();const report=state.reports.find(row=>Number(row.id)===Number(editingReportId));const response=await fetch('/api/reports/'+report.id,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({status:report.status,notes:report.notes,updatedAt:report.updatedAt})});if(!response.ok)throw new Error('Synthetic concurrent update failed')});
     const curbAfterOut = await page.$('[data-review-labor][data-line-id="1"]');
     await curbAfterOut.click();
     await page.evaluate(el => { el.focus(); el.setSelectionRange(0, el.value.length); }, curbAfterOut);
