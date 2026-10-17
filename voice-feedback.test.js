@@ -16,13 +16,13 @@ assert.ok(app.includes('setVoiceStatus(status'), 'listening state is surfaced th
 assert.ok(app.includes("button.setAttribute('aria-pressed'"), 'listening state is exposed to assistive tech');
 assert.ok(app.indexOf("button.textContent=spanish?'■ Dejar de escuchar':'■ Stop listening'") < app.indexOf('recognition.start()'), 'the listening label appears before the browser service starts');
 assert.ok(styles.includes('.voice-status') && styles.includes('@keyframes pdl-voice-pulse'), 'status line and pulse animation are styled');
-assert.match(index, /app\.js\?v=20261016-voice2/);
-assert.match(index, /styles\.css\?v=20261014-review3/);
+assert.match(index, /app\.js\?v=20261017-voice4/);
+assert.match(index, /styles\.css\?v=20261017-voice4/);
 
 // --- Behavioral harness -----------------------------------------------------
 const aStart = app.indexOf('let endDayVoice=null');
 const aEnd = app.indexOf("$('#end-day-voice').onclick=startEndDayVoice;") + "$('#end-day-voice').onclick=startEndDayVoice;".length;
-const bStart = app.indexOf('let voiceNotesRestartTimer=null,');
+const bStart = app.indexOf('let voiceRecordingGeneration=0,');
 const bEnd = app.indexOf("$('#voice-notes').onclick=startVoiceNotes;") + "$('#voice-notes').onclick=startVoiceNotes;".length;
 assert.ok(aStart >= 0 && aEnd > aStart && bStart > aEnd && bEnd > bStart, 'voice blocks located in app.js');
 const block = app.slice(aStart, aEnd) + '\n;\n' + app.slice(bStart, bEnd);
@@ -32,7 +32,7 @@ function makeElement(id) {
   return {
     id, value: '', textContent: '', hidden: false,
     classList: { add: c => classes.add(c), remove: c => classes.delete(c), toggle: (c, on) => on ? classes.add(c) : classes.delete(c), contains: c => classes.has(c) },
-    setAttribute() {}, append() {}, focus() {}, onclick: null,
+    attributes: {}, addEventListener(name,handler) { this.listeners=this.listeners||{};this.listeners[name]=handler; }, setAttribute(name,value) { this.attributes[name]=value; }, getAttribute(name) { return this.attributes[name]; }, append() {}, focus() {}, onclick: null,
     dispatched: [],
     dispatchEvent(event) { this.dispatched.push(event); },
   };
@@ -72,6 +72,7 @@ function recordingHarness(language) {
   for (const id of ['voice-notes', 'voice-status', 'field-notes', 'report-language']) elements[id] = makeElement(id);
   elements['report-language'].value = language;
   const notifications = [], apiCalls = [];
+  let apiBarrier=null,micBarrier=null;
   let apiResult = { text: '', source: 'unavailable' };
   let streamStopped = false;
   const stream = { getTracks: () => [{ stop() { streamStopped = true; } }] };
@@ -86,18 +87,18 @@ function recordingHarness(language) {
   }
   const context = {
     window: { SpeechRecognition: class { start() { this.started = true; } stop() {} abort() {} }, MediaRecorder: FakeMediaRecorder },
-    navigator: { onLine: true, mediaDevices: { getUserMedia: async () => stream } },
+    navigator: { onLine: true, mediaDevices: { getUserMedia: async () => {if(micBarrier)await micBarrier;return stream} } },
     Blob: FakeBlob, FileReader: FakeFileReader,
     setTimeout: () => 0, clearTimeout: () => {},
     Event: class { constructor(type) { this.type = type; } },
     notify: message => notifications.push(message),
     applyReportLanguage() { elements['voice-notes'].textContent = '🎙 Speak notes'; },
-    api: async (path, options) => { apiCalls.push({ path, body: JSON.parse(options.body) }); return apiResult; },
+    api: async (path, options) => { apiCalls.push({ path, body: JSON.parse(options.body) }); if(apiBarrier)await apiBarrier; return apiResult; },
     $: selector => { const id = selector.replace(/^#/, ''); return elements[id] || (elements[id] = makeElement(id)); },
   };
   vm.createContext(context);
   vm.runInContext(block, context);
-  return { elements, notifications, apiCalls, recorders, get streamStopped() { return streamStopped; }, setResult(value) { apiResult = value; } };
+  return { elements, notifications, apiCalls, recorders, cancel:()=>elements['report-modal'].listeners.close(), holdMic() {let release;micBarrier=new Promise(resolve=>{release=resolve});return release;}, get streamStopped() { return streamStopped; }, setResult(value) { apiResult = value; }, holdResponse() { let release;apiBarrier=new Promise(resolve=>{release=resolve});return release; } };
 }
 
 // Field notes: immediate feedback, interim streaming, single append, clean stop.
@@ -160,7 +161,7 @@ function recordingHarness(language) {
   assert.equal(h.recorders.length, 1, 'a MediaRecorder session starts');
   assert.equal(h.recorders[0].started, true);
   assert.equal(button.textContent, '■ Stop & transcribe', 'recording label replaces the listening label');
-  assert.match(h.elements['voice-status'].textContent, /Recording… speak now/);
+  assert.match(h.elements['voice-status'].textContent, /Listening. speak now/);
   assert.equal(h.recorders[0].mimeType, 'audio/webm;codecs=opus', 'the most compact supported codec is preferred');
   button.onclick();
   await new Promise(resolve => setTimeout(resolve, 5));
@@ -190,7 +191,7 @@ function recordingHarness(language) {
   assert.equal(h.recorders.length, 1);
   assert.equal(h.recorders[0].started, true);
   assert.equal(button.textContent, '■ Detener y transcribir');
-  assert.match(h.elements['voice-status'].textContent, /Grabando… hable ahora/);
+  assert.match(h.elements['voice-status'].textContent, /Escuchando. hable ahora/);
   button.onclick();
   await new Promise(resolve => setTimeout(resolve, 5));
   assert.equal(h.recorders[0].stopped, true);
@@ -206,7 +207,7 @@ function recordingHarness(language) {
   assert.equal(h.elements['voice-status'].textContent, '✓ Notas agregadas');
 })().catch(error => { console.error(error); process.exitCode = 1; });
 
-// Unavailable transcription falls back to the phone's dictation.
+// Unavailable transcription leaves persistent, explicit retry feedback.
 (async () => {
   const h = recordingHarness('en-US');
   h.setResult({ text: '', source: 'unavailable', warning: 'synthetic' });
@@ -216,8 +217,42 @@ function recordingHarness(language) {
   button.onclick();
   await new Promise(resolve => setTimeout(resolve, 5));
   assert.equal(h.apiCalls.length, 1);
-  assert.ok(h.notifications.some(message => /Switching to your phone's dictation/.test(message)), 'the user is told dictation is taking over');
-  assert.equal(button.textContent, '■ Stop listening', 'browser dictation starts after the fallback');
+  assert.ok(h.notifications.some(message => /Could not transcribe/.test(message)), 'failure is reported');assert.equal(h.elements['voice-status'].hidden,false);assert.match(h.elements['voice-status'].textContent,/notes are unchanged/);assert.equal(h.streamStopped,true);assert.equal(h.elements['field-notes'].value,'');
+  assert.equal(button.disabled,false);assert.match(h.elements['voice-status'].textContent,/try again/);
 })().catch(error => { console.error(error); process.exitCode = 1; });
 
 console.log('voice feedback contracts: ok');
+
+// A pending upload keeps progress visible, releases the mic, and ignores duplicate stop/read events.
+(async()=>{
+ const h=recordingHarness('en-US'),status=h.elements['voice-status'],notes=h.elements['field-notes'],button=h.elements['voice-notes'];
+ notes.value='Existing notes.';h.setResult({text:'New words.',source:'openai'});const release=h.holdResponse();
+ button.onclick();assert.equal(button.disabled,true,'permission pending prevents duplicate requests');
+ await new Promise(resolve=>setTimeout(resolve,5));assert.equal(status.classList.contains('voice-listening'),true);
+ button.onclick();await new Promise(resolve=>setTimeout(resolve,5));
+ assert.equal(h.streamStopped,true);assert.equal(button.disabled,true);assert.equal(status.hidden,false);assert.equal(status.classList.contains('voice-transcribing'),true);assert.equal(status.attributes['aria-busy'],'true');assert.equal(notes.value,'Existing notes.');
+ h.recorders[0].onstop();assert.equal(h.apiCalls.length,1);
+ release();await new Promise(resolve=>setTimeout(resolve,5));
+ assert.equal(notes.value,'Existing notes. New words.');assert.equal(notes.dispatched.length,1);assert.equal(status.classList.contains('voice-transcribing'),false);assert.equal(status.attributes['aria-busy'],'false');
+})().catch(error=>{console.error(error);process.exitCode=1});
+
+// Closing the report invalidates late permission and transcript callbacks.
+(async()=>{
+ for(const phase of ['permission','recording','transcribing']){
+  const h=recordingHarness('en-US'),notes=h.elements['field-notes'];notes.value='Original report.';
+  const releaseMic=phase==='permission'?h.holdMic():null,releaseApi=h.holdResponse();h.setResult({text:'Old report audio.'});
+  h.elements['voice-notes'].onclick();await new Promise(r=>setTimeout(r,5));
+  if(phase==='transcribing'){h.elements['voice-notes'].onclick();await new Promise(r=>setTimeout(r,5))}
+  h.cancel();notes.value='New report.';releaseMic?.();releaseApi();await new Promise(r=>setTimeout(r,5));
+  assert.equal(h.streamStopped,true,phase+' releases microphone');assert.equal(notes.value,'New report.',phase+' cannot append into next report');assert.equal(h.elements['voice-status'].classList.contains('voice-transcribing'),false);
+  if(phase!=='transcribing')assert.equal(h.apiCalls.length,0,phase+' canceled recording is not uploaded');
+ }
+})().catch(error=>{console.error(error);process.exitCode=1});
+
+// Browser dictation must ignore final results delivered after report close.
+{
+ const h=harness('en-US');h.elements['voice-notes'].onclick();const old=h.recognition;
+ h.elements['report-modal'].listeners.close();h.elements['field-notes'].value='Next report.';
+ old.onresult({resultIndex:0,results:[{isFinal:true,0:{transcript:'Old recording'}}]});old.onerror({error:'not-allowed'});
+ assert.equal(h.elements['field-notes'].value,'Next report.');assert.equal(h.elements['voice-status'].hidden,true);
+}
