@@ -67,6 +67,7 @@ var fieldScopeFlags=[];
     await saveDailyReport(status,{keepOpen:true});
   }
   let reviewedNotesKey='';
+  let reviewSave=Promise.resolve();
   async function persistReviewDraft(){
     if(!fieldCompact()||!$('#report-modal')?.open||typeof saveDailyReport!=='function'||!(typeof editingReportId!=='undefined'&&editingReportId))return;
     const current=(typeof reports==='undefined'?[]:reports).find(row=>Number(row.id)===Number(editingReportId));
@@ -505,7 +506,13 @@ var fieldScopeFlags=[];
     const keptLocks=lockedLaborMap();
     const button=$('#report-next-step'),note=$('#field-notes')?.value.trim()||'',language=$('#report-language')?.value||'en-US';
     const doneLabel=language.startsWith('es')?'Listo':'Done';
+    let releaseReview=()=>{};
+    reviewSave=new Promise(resolve=>{releaseReview=resolve});
     if(button){button.disabled=true;button.textContent=language.startsWith('es')?'Leyendo notas…':'Reading notes…'}
+    try{await fillFieldReportFromNotesNow(keptLocks,button,note,language,doneLabel)}
+    finally{releaseReview()}
+  }
+  async function fillFieldReportFromNotesNow(keptLocks,button,note,language,doneLabel){
     if(note&&note===reviewedNotesKey){
       try{
         if(typeof showReportStep==='function')showReportStep(2);
@@ -578,8 +585,9 @@ var fieldScopeFlags=[];
   const sendButton=$('#save-report');
   if(sendButton){
     const officeSend=sendButton.onclick;
-    sendButton.onclick=event=>{
+    sendButton.onclick=async event=>{
       if(fieldCompact()){
+        try{await reviewSave}catch{}
         restoreHeldChoices();
         applyPunchHours();
         applyLaborAllocation();
