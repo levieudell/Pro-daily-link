@@ -625,52 +625,79 @@ $('#report-next-step').onclick=()=>{const notes=$('#field-notes');notes.removeAt
 $$('[data-open-report]').forEach(b=>b.onclick=event=>{if(Date.now()<suppressReportOpenUntil){event.preventDefault();event.stopPropagation();return}$('#report-photo-tags').value='';syncReportPhotoTagsVisibility();openReport()});
 function syncReportPhotoTagsVisibility(){const field=$('#report-photo-tags-field');if(field)field.hidden=!$('#report-photos')?.files?.length}$('#report-photos').addEventListener('change',syncReportPhotoTagsVisibility);syncReportPhotoTagsVisibility();
 $('#field-notes').addEventListener('input',()=>{const key=offlineReportDraftKey(),notes=$('#field-notes').value;if(discardedOfflineReportDrafts.has(key)&&!notes.trim()){localStorage.removeItem(offlineReportStorageKey(key));return}discardedOfflineReportDrafts.delete(key);writeOfflineDraft(key,notes);$('#autosave-status').textContent='Draft saved just now'});$$('[data-note-chip]').forEach(button=>button.onclick=()=>{$('#field-notes').value+=button.dataset.noteChip;$('#field-notes').dispatchEvent(new Event('input'));$('#field-notes').focus()});
-let voiceRecordingGeneration=0,voiceRecordingAbort=null;
-function cancelVoiceRecording(){voiceRecordingGeneration++;voiceRecordingAbort?.abort();voiceRecordingAbort=null;const recorder=voiceNotesRecorder;voiceNotesRecorder=null;if(recorder){recorder.stream?.getTracks().forEach(track=>track.stop());try{recorder.stop()}catch{}}resetVoiceNotesButton()}
-let voiceNotesRestartTimer=null,voiceNotesRecorder=null;function resetVoiceNotesButton(){const button=$('#voice-notes'),status=$('#voice-status');applyReportLanguage();button?.setAttribute('aria-pressed','false');button?.classList.remove('voice-listening');if(button){button.disabled=false;button.onclick=startVoiceNotes}setVoiceStatus(status,'',false)}function stopVoiceNotes(){clearTimeout(voiceNotesRestartTimer);const session=voiceNotesSession;voiceNotesSession=null;if(session){try{session.stop()}catch{try{session.abort()}catch{}}}resetVoiceNotesButton()}function startVoiceNotes(){const button=$('#voice-notes');if(voiceNotesRecorder){stopVoiceRecording();return}if(voiceNotesSession){stopVoiceNotes();return}if(typeof navigator!=='undefined'&&navigator.mediaDevices?.getUserMedia&&window.MediaRecorder&&navigator.onLine!==false){beginVoiceRecording();return}const Recognition=window.SpeechRecognition||window.webkitSpeechRecognition;if(!Recognition){notify('Voice notes are not supported by this browser');return}beginVoiceNotesSession()}function beginVoiceRecording(){
-  const button=$('#voice-notes'),status=$('#voice-status'),spanish=$('#report-language').value.startsWith('es'),generation=++voiceRecordingGeneration;
-  const controller=typeof AbortController==='function'?new AbortController():null;voiceRecordingAbort=controller;
-  const current=()=>generation===voiceRecordingGeneration;
-  const unavailable=()=>{if(!current())return;voiceRecordingAbort=null;resetVoiceNotesButton();const message=spanish?'No se pudo transcribir la grabación. Sus notas no cambiaron. Toque Hablar para intentar otra vez o escriba las notas.':'Could not transcribe the recording. Your notes are unchanged. Tap Speak to try again or type the notes.';setVoiceStatus(status,message,false);notify(message)};
-  button.disabled=true;
-  setVoiceStatus(status,spanish?'Abriendo micrófono…':'Opening microphone…',false);
-  navigator.mediaDevices.getUserMedia({audio:true}).then(stream=>{
-    if(!current()){stream.getTracks().forEach(track=>track.stop());return}
-    try{
-      const supported=['audio/webm;codecs=opus','audio/webm','audio/mp4','audio/aac'],mimeType=supported.find(type=>!window.MediaRecorder.isTypeSupported||window.MediaRecorder.isTypeSupported(type))||'',recorder=new window.MediaRecorder(stream,mimeType?{mimeType}:undefined),chunks=[];
-      let stopped=false;
-      voiceNotesRecorder=recorder;
-      recorder.ondataavailable=event=>{if(event.data&&event.data.size)chunks.push(event.data)};
-      recorder.onerror=()=>{if(stopped||!current())return;stopped=true;voiceNotesRecorder=null;stream.getTracks().forEach(track=>track.stop());unavailable()};
-      recorder.onstop=()=>{
-        stream.getTracks().forEach(track=>track.stop());
-        if(stopped||!current()||voiceNotesRecorder!==recorder)return;
-        stopped=true;voiceNotesRecorder=null;button.classList.remove('voice-listening');button.setAttribute('aria-pressed','false');button.disabled=true;button.textContent=spanish?'Transcribiendo…':'Transcribing…';
-        setVoiceStatus(status,spanish?'Transcribiendo notas…':'Transcribing notes…',false);
-        const blob=new Blob(chunks,{type:recorder.mimeType||mimeType||'audio/webm'}),reader=new FileReader();
-        let readHandled=false;
-        reader.onerror=()=>{if(readHandled||!current())return;readHandled=true;unavailable()};
-        reader.onload=async()=>{
-          if(readHandled||!current())return;readHandled=true;
-          try{
-            const result=await api('/api/ai/transcribe',{method:'POST',signal:controller?.signal,body:JSON.stringify({audio:reader.result,language:$('#report-language').value})});
-            if(!current())return;voiceRecordingAbort=null;
-            if(result&&typeof result.text==='string'&&result.text.trim()){
-              const notes=$('#field-notes');notes.value+=(notes.value?' ':'')+result.text.trim();notes.dispatchEvent(new Event('input'));resetVoiceNotesButton();setVoiceStatus(status,spanish?'✓ Notas agregadas':'✓ Notes added',false);
-            }else unavailable();
-          }catch{unavailable()}
-        };
-        try{reader.readAsDataURL(blob)}catch{unavailable()}
-      };
-      recorder.start();button.disabled=false;button.textContent=spanish?'■ Detener y transcribir':'■ Stop & transcribe';button.setAttribute('aria-pressed','true');button.classList.add('voice-listening');button.onclick=()=>stopVoiceRecording();
-      setVoiceStatus(status,spanish?'Escuchando… hable ahora (toque otra vez para terminar)':'Listening… speak now (tap again to finish)',true);
-    }catch{stream.getTracks().forEach(track=>track.stop());voiceNotesRecorder=null;unavailable()}
-  }).catch(unavailable);
+let voiceRecordingGeneration=0,voiceRecordingAbort=null,voiceStopTimer=null,voiceRequestTimer=null,voiceCapturePriorConvertDisabled=null;
+function setVoiceCaptureState(mode){
+ const busy=mode!=='idle',spanish=$('#report-language').value.startsWith('es'),panel=$('#voice-capture-panel'),notes=$('#field-notes'),tools=$('#field-note-tools'),convert=$('#ai-convert');
+ if(panel)panel.hidden=!busy;if(notes)notes.hidden=busy;const label=$('#field-notes-label');if(label)label.hidden=busy;if(tools)tools.hidden=busy;
+ if(convert){if(busy){if(voiceCapturePriorConvertDisabled===null)voiceCapturePriorConvertDisabled=Boolean(convert.disabled);convert.disabled=true}else if(voiceCapturePriorConvertDisabled!==null){convert.disabled=voiceCapturePriorConvertDisabled;voiceCapturePriorConvertDisabled=null}}
+ panel?.classList.toggle('voice-capture-processing',mode==='processing');
+ const title=$('#voice-capture-title');if(title)title.textContent=mode==='processing'?(spanish?'Transcribiendo…':'Transcribing…'):(spanish?'Escuchando…':'Listening…');
+ const stop=$('#voice-capture-stop');if(stop){stop.hidden=mode!=='listening';stop.disabled=mode!=='listening';stop.textContent=spanish?'Detener y transcribir':'Stop & transcribe'}
+ const cancel=$('#voice-capture-cancel');if(cancel)cancel.textContent=spanish?'Cancelar':'Cancel';if(mode==='processing')cancel?.focus();else if(mode==='listening')stop?.focus();
 }
-function stopVoiceRecording(){const recorder=voiceNotesRecorder;if(!recorder)return;try{recorder.stop()}catch{voiceNotesRecorder=null;recorder.stream?.getTracks().forEach(track=>track.stop());resetVoiceNotesButton();setVoiceStatus($('#voice-status'),'Could not stop the recording. Your notes are unchanged. Please try again.',false)}}
-function beginVoiceNotesSession(){const Recognition=window.SpeechRecognition||window.webkitSpeechRecognition,button=$('#voice-notes'),status=$('#voice-status');if(!Recognition)return;const spanish=$('#report-language').value.startsWith('es'),recognition=new Recognition();voiceNotesSession=recognition;recognition.lang=$('#report-language').value;recognition.continuous=true;recognition.interimResults=true;recognition.maxAlternatives=1;let lastFinal='';button.textContent=spanish?'\u25a0 Dejar de escuchar':'\u25a0 Stop listening';button.setAttribute('aria-pressed','true');button.classList.add('voice-listening');setVoiceStatus(status,spanish?'Escuchando\u2026 hable ahora':'Listening\u2026 speak now',true);button.onclick=()=>stopVoiceNotes();recognition.onresult=event=>{if(voiceNotesSession!==recognition)return;let interim='';for(let i=event.resultIndex;i<event.results.length;i++){const result=event.results[i],text=String(result[0]?.transcript||'').trim();if(!text)continue;if(result.isFinal){const norm=text.replace(/[\s\p{P}]+/gu,'').toLowerCase();if(norm&&norm===lastFinal)continue;lastFinal=norm;$('#field-notes').value+=`${$('#field-notes').value?' ':''}${text}`;$('#field-notes').dispatchEvent(new Event('input'));setVoiceStatus(status,spanish?'\u2713 Agregado. Sigue hablando\u2026':'\u2713 Added. Still listening\u2026',true)}else interim+=`${text} `}if(interim)setVoiceStatus(status,`${spanish?'Escuchando':'Listening'}: ${interim.trim()}`,true)};recognition.onend=()=>{if(voiceNotesSession!==recognition)return;voiceNotesSession=null;if(button.getAttribute('aria-pressed')==='true'){setVoiceStatus(status,spanish?'Reanudando la escucha\u2026':'Resuming listening\u2026',true);voiceNotesRestartTimer=setTimeout(()=>{if(button.getAttribute('aria-pressed')==='true')beginVoiceNotesSession()},250)}else resetVoiceNotesButton()};recognition.onerror=event=>{if(voiceNotesSession!==recognition)return;if(voiceNotesSession===recognition)voiceNotesSession=null;const fatal=event&&('not-allowed'===event.error||'service-not-allowed'===event.error||'audio-capture'===event.error);if(fatal){resetVoiceNotesButton();notify(spanish?'La entrada de voz se detuvo. Puede seguir escribiendo.':'Voice entry stopped. You can continue typing.')}else if(button.getAttribute('aria-pressed')==='true'){voiceNotesRestartTimer=setTimeout(()=>{if(button.getAttribute('aria-pressed')==='true')beginVoiceNotesSession()},400)}else resetVoiceNotesButton()};try{recognition.start()}catch{voiceNotesSession=null;resetVoiceNotesButton();notify(spanish?'No se pudo iniciar la voz. Puede escribir.':'Voice could not start. You can type instead.')}}
+function clearVoiceTimers(){clearTimeout(voiceStopTimer);clearTimeout(voiceRequestTimer);voiceStopTimer=null;voiceRequestTimer=null}
+
+function cancelVoiceRecording(){clearVoiceTimers();voiceRecordingGeneration++;voiceRecordingAbort?.abort();voiceRecordingAbort=null;const recorder=voiceNotesRecorder;voiceNotesRecorder=null;if(recorder){recorder.stream?.getTracks().forEach(track=>track.stop());try{recorder.stop()}catch{}}resetVoiceNotesButton()}
+let voiceNotesRestartTimer=null,voiceNotesRecorder=null;function resetVoiceNotesButton(){setVoiceCaptureState('idle');const button=$('#voice-notes'),status=$('#voice-status');applyReportLanguage();button?.setAttribute('aria-pressed','false');button?.classList.remove('voice-listening');if(button){button.disabled=false;button.onclick=startVoiceNotes}setVoiceStatus(status,'',false)}function stopVoiceNotes(){clearTimeout(voiceNotesRestartTimer);const session=voiceNotesSession;voiceNotesSession=null;if(session){try{session.stop()}catch{try{session.abort()}catch{}}}resetVoiceNotesButton()}function startVoiceNotes(){const button=$('#voice-notes');if(voiceNotesRecorder){stopVoiceRecording();return}if(voiceNotesSession){stopVoiceNotes();return}if(typeof navigator!=='undefined'&&navigator.mediaDevices?.getUserMedia&&window.MediaRecorder&&navigator.onLine!==false){beginVoiceRecording();return}const Recognition=window.SpeechRecognition||window.webkitSpeechRecognition;if(!Recognition){notify('Voice notes are not supported by this browser');return}beginVoiceNotesSession()}function beginVoiceRecording(){
+ const button=$('#voice-notes'),status=$('#voice-status'),spanish=$('#report-language').value.startsWith('es'),generation=++voiceRecordingGeneration;
+ const controller=typeof AbortController==='function'?new AbortController():null;voiceRecordingAbort=controller;
+ const current=()=>generation===voiceRecordingGeneration;
+ let failed=false;
+ const unavailable=(reason='unavailable')=>{
+  if(!current()||failed)return;failed=true;cancelVoiceRecording();
+  const detail=reason==='empty'?(spanish?'No se capturó audio.':'No audio was captured.'):reason==='format'?(spanish?'El formato de la grabación no se aceptó.':'The recording format was not accepted.'):reason==='size'?(spanish?'La grabación es demasiado grande. Pruebe una grabación más corta.':'The recording is too large. Try a shorter recording.'):reason==='permission'?(spanish?'No se pudo acceder al micrófono. Revise el permiso del navegador.':'The microphone could not open. Check your browser microphone permission.'):reason==='stop'?(spanish?'No se pudo finalizar la grabación.':'The recording could not finish.'):reason==='timeout'?(spanish?'La transcripción tardó demasiado.':'Transcription took too long.'):spanish?'No se pudo transcribir la grabación.':'Could not transcribe the recording.';
+  const message=detail+' '+(spanish?'Sus notas no cambiaron. Intente otra vez o escriba las notas.':'Your notes are unchanged. Please try again or type the notes.');setVoiceStatus(status,message,false);notify(message);$('#field-notes')?.focus();
+ };
+ button.disabled=true;setVoiceStatus(status,spanish?'Abriendo micrófono…':'Opening microphone…',false);
+ navigator.mediaDevices.getUserMedia({audio:true}).then(stream=>{
+  if(!current()){stream.getTracks().forEach(track=>track.stop());return}
+  try{
+   const supported=['audio/mp4','audio/webm;codecs=opus','audio/webm','audio/aac'],mimeType=window.MediaRecorder.isTypeSupported?supported.find(type=>window.MediaRecorder.isTypeSupported(type))||'':'',recorder=new window.MediaRecorder(stream,mimeType?{mimeType}:undefined),chunks=[];
+   let stopped=false;voiceNotesRecorder=recorder;
+   recorder.ondataavailable=event=>{if(current()&&!stopped&&event.data?.size)chunks.push(event.data)};
+   recorder.onerror=()=>{if(stopped||!current())return;unavailable()};
+   recorder.onstop=()=>{
+    if(stopped||!current()||voiceNotesRecorder!==recorder){stream.getTracks().forEach(track=>track.stop());return}
+    stopped=true;clearTimeout(voiceStopTimer);voiceStopTimer=null;voiceNotesRecorder=null;
+    stream.getTracks().forEach(track=>track.stop());setVoiceCaptureState('processing');button.disabled=true;button.classList.remove('voice-listening');button.setAttribute('aria-pressed','false');
+    setVoiceStatus(status,spanish?'Transcribiendo notas…':'Transcribing notes…',false);
+    if(!chunks.length){unavailable('empty');return}
+    // Use the recorder's final container type; codec parameters are preserved and parsed on the server.
+    const blob=new Blob(chunks,{type:recorder.mimeType||chunks.find(chunk=>chunk.type)?.type||mimeType||'audio/mp4'}),reader=new FileReader();
+    if(!blob.size){unavailable('empty');return}
+    let readHandled=false;
+    voiceRequestTimer=setTimeout(()=>{if(current())unavailable('timeout')},60000);
+    reader.onerror=()=>{if(readHandled||!current())return;readHandled=true;unavailable()};
+    reader.onload=async()=>{
+     if(readHandled||!current())return;readHandled=true;
+     try{
+      const result=await api('/api/ai/transcribe',{method:'POST',signal:controller?.signal,body:JSON.stringify({audio:reader.result,language:$('#report-language').value})});
+      if(!current())return;clearVoiceTimers();voiceRecordingAbort=null;
+      if(result&&typeof result.text==='string'&&result.text.trim()){
+       const notes=$('#field-notes');notes.value+=(notes.value?' ':'')+result.text.trim();notes.dispatchEvent(new Event('input'));resetVoiceNotesButton();setVoiceStatus(status,spanish?'✓ Notas agregadas':'✓ Notes added',false);notes.focus();
+      }else unavailable();
+     }catch(error){unavailable(error?.status===413||error?.code==='audio_too_large'?'size':error?.code==='empty_audio'?'empty':error?.status===400?'format':'unavailable')}
+    };
+    try{reader.readAsDataURL(blob)}catch{unavailable()}
+   };
+   recorder.voiceStopFailure=()=>unavailable('stop');
+   recorder.start();button.disabled=false;button.textContent=spanish?'■ Detener y transcribir':'■ Stop & transcribe';button.setAttribute('aria-pressed','true');button.classList.add('voice-listening');button.onclick=stopVoiceRecording;
+   setVoiceCaptureState('listening');setVoiceStatus(status,spanish?'Escuchando… hable ahora. Toque Detener al terminar.':'Listening… speak now. Tap Stop when finished.',true);$('#voice-capture-stop')?.focus();
+  }catch{stream.getTracks().forEach(track=>track.stop());voiceNotesRecorder=null;unavailable()}
+ }).catch(()=>unavailable('permission'));
+}
+function stopVoiceRecording(){
+ const recorder=voiceNotesRecorder;if(!recorder||recorder.voiceStopRequested)return;
+ recorder.voiceStopRequested=true;const spanish=$('#report-language').value.startsWith('es'),button=$('#voice-notes');
+ button.disabled=true;button.textContent=spanish?'Transcribiendo…':'Transcribing…';button.classList.remove('voice-listening');button.setAttribute('aria-pressed','false');setVoiceCaptureState('processing');setVoiceStatus($('#voice-status'),spanish?'Transcribiendo notas…':'Transcribing notes…',false);
+ voiceStopTimer=setTimeout(()=>{if(voiceNotesRecorder===recorder)recorder.voiceStopFailure()},10000);
+ try{if(recorder.state!=='inactive')recorder.stop()}catch{recorder.voiceStopFailure()}
+}
+function beginVoiceNotesSession(){const Recognition=window.SpeechRecognition||window.webkitSpeechRecognition,button=$('#voice-notes'),status=$('#voice-status');if(!Recognition)return;const spanish=$('#report-language').value.startsWith('es'),recognition=new Recognition();voiceNotesSession=recognition;recognition.lang=$('#report-language').value;recognition.continuous=true;recognition.interimResults=true;recognition.maxAlternatives=1;let lastFinal='';setVoiceCaptureState('listening');button.textContent=spanish?'\u25a0 Dejar de escuchar':'\u25a0 Stop listening';button.setAttribute('aria-pressed','true');button.classList.add('voice-listening');setVoiceStatus(status,spanish?'Escuchando\u2026 hable ahora':'Listening\u2026 speak now',true);button.onclick=()=>stopVoiceNotes();recognition.onresult=event=>{if(voiceNotesSession!==recognition)return;let interim='';for(let i=event.resultIndex;i<event.results.length;i++){const result=event.results[i],text=String(result[0]?.transcript||'').trim();if(!text)continue;if(result.isFinal){const norm=text.replace(/[\s\p{P}]+/gu,'').toLowerCase();if(norm&&norm===lastFinal)continue;lastFinal=norm;$('#field-notes').value+=`${$('#field-notes').value?' ':''}${text}`;$('#field-notes').dispatchEvent(new Event('input'));setVoiceStatus(status,spanish?'\u2713 Agregado. Sigue hablando\u2026':'\u2713 Added. Still listening\u2026',true)}else interim+=`${text} `}if(interim)setVoiceStatus(status,`${spanish?'Escuchando':'Listening'}: ${interim.trim()}`,true)};recognition.onend=()=>{if(voiceNotesSession!==recognition)return;voiceNotesSession=null;if(button.getAttribute('aria-pressed')==='true'){setVoiceStatus(status,spanish?'Reanudando la escucha\u2026':'Resuming listening\u2026',true);voiceNotesRestartTimer=setTimeout(()=>{if(button.getAttribute('aria-pressed')==='true')beginVoiceNotesSession()},250)}else resetVoiceNotesButton()};recognition.onerror=event=>{if(voiceNotesSession!==recognition)return;if(voiceNotesSession===recognition)voiceNotesSession=null;const fatal=event&&('not-allowed'===event.error||'service-not-allowed'===event.error||'audio-capture'===event.error);if(fatal){resetVoiceNotesButton();notify(spanish?'La entrada de voz se detuvo. Puede seguir escribiendo.':'Voice entry stopped. You can continue typing.')}else if(button.getAttribute('aria-pressed')==='true'){voiceNotesRestartTimer=setTimeout(()=>{if(button.getAttribute('aria-pressed')==='true')beginVoiceNotesSession()},400)}else resetVoiceNotesButton()};try{recognition.start()}catch{voiceNotesSession=null;resetVoiceNotesButton();notify(spanish?'No se pudo iniciar la voz. Puede escribir.':'Voice could not start. You can type instead.')}}
 $('#report-modal')?.addEventListener?.('close',()=>{cancelVoiceRecording();stopVoiceNotes()});
 window.addEventListener?.('pagehide',()=>{cancelVoiceRecording();stopVoiceNotes()});
+$('#voice-capture-stop').onclick=()=>{if(voiceNotesRecorder)stopVoiceRecording();else{stopVoiceNotes();$('#field-notes')?.focus()}};
+$('#voice-capture-cancel').onclick=()=>{cancelVoiceRecording();stopVoiceNotes();$('#field-notes')?.focus()};
 $('#voice-notes').onclick=startVoiceNotes;
 let flagChangeVoice=null;
 function startFlagVoice(){const Recognition=window.SpeechRecognition||window.webkitSpeechRecognition,button=$('#flag-change-voice'),status=$('#flag-change-voice-status'),spanish=$('#report-language').value.startsWith('es');if(flagChangeVoice){try{flagChangeVoice.stop()}catch{try{flagChangeVoice.abort()}catch{}}return}if(!Recognition){notify(spanish?'Este navegador no admite voz':'Voice notes are not supported by this browser');return}const recognition=new Recognition();recognition.lang=$('#report-language').value;recognition.continuous=true;recognition.interimResults=true;const seen=new Set();button.textContent=spanish?'■ Dejar de escuchar':'■ Stop listening';button.setAttribute('aria-pressed','true');button.classList.add('voice-listening');setVoiceStatus(status,spanish?'Escuchando… hable ahora':'Listening… speak now',true);button.onclick=()=>{try{recognition.stop()}catch{try{recognition.abort()}catch{}}};recognition.onresult=event=>{let interim='';for(let i=event.resultIndex;i<event.results.length;i++){const result=event.results[i],text=String(result[0]?.transcript||'').trim();if(!text)continue;if(result.isFinal){if(seen.has(i))continue;seen.add(i);$('#flag-change-description').value+=`${$('#flag-change-description').value?' ':''}${text}`;setVoiceStatus(status,spanish?'✓ Agregado. Sigue hablando…':'✓ Added. Still listening…',true)}else interim+=`${text} `}if(interim)setVoiceStatus(status,`${spanish?'Escuchando':'Listening'}: ${interim.trim()}`,true)};recognition.onend=()=>{flagChangeVoice=null;button.textContent='🎙 Speak';button.setAttribute('aria-pressed','false');button.classList.remove('voice-listening');button.onclick=startFlagVoice;setVoiceStatus(status,'',false)};recognition.onerror=()=>{setVoiceStatus(status,'',false);notify(spanish?'La entrada de voz se detuvo. Puede escribir.':'Voice entry stopped. You can type instead.')};try{recognition.start()}catch{flagChangeVoice=null;button.textContent='🎙 Speak';button.classList.remove('voice-listening');setVoiceStatus(status,'',false)}flagChangeVoice=recognition}
