@@ -729,13 +729,14 @@ async function aiTranscribe(bytes,format,language,onUsage=null){
   form.append('file',new Blob([bytes],{type:`audio/${format}`}),`note.${extension}`);
   form.append('model','gpt-transcribe');
   form.append('response_format','json');
-  form.append('languages',JSON.stringify([String(language||'en').slice(0,10)]));
-  form.append('keywords',JSON.stringify(['concrete','concreto','curb','gutter','excavation','trench','backfill','rebar','pump','slab','footing','footings','crew hours','horas','compaction','forming','sidewalk','foundation']));
+  form.append('languages[]',String(language||'en').slice(0,10));
+  for(const keyword of ['concrete','concreto','curb','gutter','excavation','trench','backfill','rebar','pump','slab','footing','footings','crew hours','horas','compaction','forming','sidewalk','foundation'])form.append('keywords[]',keyword);
   const response=await fetch('https://api.openai.com/v1/audio/transcriptions',{method:'POST',headers:{Authorization:`Bearer ${process.env.OPENAI_API_KEY}`},body:form});
   if(!response.ok)throw new Error(`AI service returned ${response.status}`);
   const data=await response.json();
   onUsage&&onUsage({model:'gpt-transcribe',usage:data.usage&&Number.isSafeInteger(data.usage.input_tokens)&&Number.isSafeInteger(data.usage.output_tokens)?data.usage:{input_tokens:0,output_tokens:0}});
-  return {text:String(data.text||'').trim(),language:String(data.language||data.languages?.[0]||language||'').slice(0,10)};
+  const detectedLanguage=data.languages?.[0]?.code;
+  return {text:String(data.text||'').trim(),language:(typeof detectedLanguage==='string'&&detectedLanguage||typeof data.language==='string'&&data.language||language||'').slice(0,10)};
 }
 
 function timeCardsEnabled(company){return company?.features?.timeCards===true}

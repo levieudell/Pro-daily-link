@@ -177,6 +177,35 @@ function recordingHarness(language) {
   assert.equal(h.elements['voice-status'].textContent, '✓ Notes added');
 })().catch(error => { console.error(error); process.exitCode = 1; });
 
+// Spanish recording preserves existing notes and appends the transcript once.
+// This is a mocked UI contract, not a live microphone/provider round trip.
+(async () => {
+  const h = recordingHarness('es-MX');
+  const transcript = 'Colamos cuarenta pies de bordillo con tres trabajadores.';
+  const button = h.elements['voice-notes'], notes = h.elements['field-notes'];
+  notes.value = 'Notas existentes: preparar el lado este.';
+  h.setResult({ text: transcript, source: 'openai' });
+  button.onclick();
+  await new Promise(resolve => setTimeout(resolve, 5));
+  assert.equal(h.recorders.length, 1);
+  assert.equal(h.recorders[0].started, true);
+  assert.equal(button.textContent, '■ Detener y transcribir');
+  assert.match(h.elements['voice-status'].textContent, /Grabando… hable ahora/);
+  button.onclick();
+  await new Promise(resolve => setTimeout(resolve, 5));
+  assert.equal(h.recorders[0].stopped, true);
+  assert.equal(h.streamStopped, true);
+  assert.equal(h.apiCalls.length, 1);
+  assert.equal(h.apiCalls[0].path, '/api/ai/transcribe');
+  assert.equal(h.apiCalls[0].body.language, 'es-MX');
+  assert.match(h.apiCalls[0].body.audio, /^data:audio\//);
+  assert.equal(notes.value, 'Notas existentes: preparar el lado este. ' + transcript);
+  assert.equal(notes.dispatched.filter(event => event.type === 'input').length, 1);
+  assert.equal(button.disabled, false);
+  assert.equal(button.classList.contains('voice-listening'), false);
+  assert.equal(h.elements['voice-status'].textContent, '✓ Notas agregadas');
+})().catch(error => { console.error(error); process.exitCode = 1; });
+
 // Unavailable transcription falls back to the phone's dictation.
 (async () => {
   const h = recordingHarness('en-US');
