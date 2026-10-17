@@ -9,7 +9,8 @@ const root=fs.mkdtempSync(path.join(os.tmpdir(),'pdl-voice-transcribe-')),compan
 const db={company:{id:companyId,name:'Synthetic transcribe',demo:true,timezone:'UTC'},projects:[],team:[],assignments:[],reports:[],photos:[],workdays:[],timeCards:[],users:[{id:1,name:'Synthetic owner',role:'owner',status:'Active',companyId}],sessions:[{companyId,userId:1,tokenHash:crypto.createHash('sha256').update(token).digest('hex'),expiresAt:'2099-01-01'}],customers:[],changes:[],catalog:[]};
 const file=path.join(root,'db.json');fs.writeFileSync(file,JSON.stringify(db));fs.writeFileSync(path.join(root,'platform.json'),JSON.stringify({users:[],sessions:[]}));
 Object.assign(process.env,{PDL_DB_FILE:file,PDL_PLATFORM_FILE:path.join(root,'platform.json'),PDL_REQUIRE_AUTH:'1',PDL_SUPABASE_ENABLED:'0',PDL_TRANSACTIONAL_DB:'off',PDL_EMAIL_DEV_MODE:'1'});for(const name of ['OPENAI_API_KEY','SENTRY_DSN','RESEND_API_KEY','STRIPE_SECRET_KEY','STRIPE_WEBHOOK_SECRET'])delete process.env[name];require('./database/supabase').loadLocalEnv=()=>{};
-const {server}=require('./server'),nativeFetch=global.fetch;let base,mode='ok',providerCalls=[];
+const {server}=require('./server'),nativeFetch=global.fetch;
+const diagnosticLines=[],nativeInfo=console.info;console.info=(...values)=>{diagnosticLines.push(values.join(' '))};process.env.PDL_STAGING='1';let base,mode='ok',providerCalls=[];
 global.fetch=async(url,options)=>{
  if(String(url).startsWith(base+'/'))return nativeFetch(url,options);
  assert.equal(String(url),'https://api.openai.com/v1/audio/transcriptions');
@@ -28,6 +29,9 @@ global.fetch=async(url,options)=>{
  if(mode==='transport-error')throw new Error('Synthetic provider connection failure');
  if(mode==='legacy-language')return{ok:true,json:async()=>({text:' Legacy transcript. ',language:'es'})};
  if(mode==='garbage')return{ok:true,json:async()=>({unexpected:true})};
+ if(mode==='invalid-json')return{ok:true,json:async()=>{throw Error('private-provider-body-sentinel')}};
+ if(mode==='empty')return{ok:true,json:async()=>({text:'   '})};
+ if(mode==='object-text')return{ok:true,json:async()=>({text:{private:'private-provider-body-sentinel'}})};
  const languages=mode==='spanish'?[{code:'es'}]:mode==='undetected'?[]:mode==='malformed-language'?[{code:{unexpected:true}}]:[{code:'en'}];
  const text=mode==='spanish'?' Vaciamos concreto, tres trabajadores, ocho horas. ':' Poured the east wall, three crew, eight hours. ';
  return{ok:true,json:async()=>({text,languages,usage:{input_tokens:12,output_tokens:24}})};
@@ -36,9 +40,9 @@ const audioBytes=Buffer.from('synthetic-opus-audio-bytes'),dataUrl='data:audio/w
 async function call(route,input,sendAuth=true){const headers={'Content-Type':'application/json','x-pdl-company':companyId};if(sendAuth)headers.Authorization='Bearer '+token;const response=await fetch(base+route,{method:'POST',signal:AbortSignal.timeout(10000),headers,...(input?{body:JSON.stringify(input)}:{})});return{status:response.status,data:await response.json()}}
 (async()=>{await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));base='http://127.0.0.1:'+server.address().port;try{
  const anonymous=await call('/api/ai/transcribe',{audio:dataUrl,language:'en-US'},false);assert.ok([401,404].includes(anonymous.status),'unauthenticated request is rejected');
- const noKey=await call('/api/ai/transcribe',{audio:dataUrl,language:'en-US'});assert.equal(noKey.status,200);assert.equal(noKey.data.text,'');assert.equal(noKey.data.source,'unavailable');assert.match(noKey.data.warning,/not configured/);assert.equal(providerCalls.length,0,'no provider call is made without a key');
+ const noKey=await call('/api/ai/transcribe',{audio:dataUrl,language:'en-US'});assert.equal(noKey.status,200);assert.equal(noKey.data.text,'');assert.equal(noKey.data.source,'unavailable');assert.equal(noKey.data.code,'not_configured');assert.match(noKey.data.warning,/not configured/);assert.equal(providerCalls.length,0,'no provider call is made without a key');
  process.env.OPENAI_API_KEY='synthetic-provider-mock';mode='ok';
- const ok=await call('/api/ai/transcribe',{audio:dataUrl,language:'en-US'});assert.equal(ok.status,200);assert.equal(ok.data.text,'Poured the east wall, three crew, eight hours.');assert.equal(ok.data.source,'openai');assert.equal(providerCalls.length,1);
+ const ok=await call('/api/ai/transcribe',{audio:dataUrl,language:'en-US'});assert.equal(ok.status,200);assert.equal(ok.data.text,'Poured the east wall, three crew, eight hours.');assert.equal(ok.data.source,'openai');assert.equal(ok.data.code,'success');assert.equal(providerCalls.length,1);
  assert.equal(ok.data.language,'en','documented language objects return a code, never [object Object]');
  const {form,wire}=providerCalls[0];assert.deepEqual(form.getAll('languages[]'),['en'],'en-US is narrowed to an ISO code in repeated multipart fields');assert.match(wire,/name="languages\[\]"/);assert.match(wire,/name="keywords\[\]"/);
  const sentFile=form.get('file');assert(sentFile&&typeof sentFile.arrayBuffer==='function','audio file is attached');assert.equal(sentFile.name,'note.webm');assert.equal(sentFile.type,'audio/webm');assert.deepEqual(Buffer.from(await sentFile.arrayBuffer()),audioBytes,'decoded audio bytes are forwarded intact');
@@ -61,11 +65,19 @@ async function call(route,input,sendAuth=true){const headers={'Content-Type':'ap
  mode='undetected';const undetected=await call('/api/ai/transcribe',{audio:dataUrl,language:'es-MX'});assert.equal(undetected.data.language,'es','empty detected languages falls back to normalized input hint');
  mode='malformed-language';const malformedLanguage=await call('/api/ai/transcribe',{audio:dataUrl,language:'es-MX'});assert.equal(malformedLanguage.data.language,'es','non-string language codes are not coerced into object text');
  mode='legacy-language';const legacyLanguage=await call('/api/ai/transcribe',{audio:dataUrl,language:'en-US'});assert.equal(legacyLanguage.data.language,'es','legacy string language remains supported');
- mode='transport-error';const transportError=await call('/api/ai/transcribe',{audio:dataUrl,language:'en-US'});assert.equal(transportError.status,200);assert.equal(transportError.data.source,'unavailable');assert.equal(transportError.data.text,'');assert.match(transportError.data.warning,/connection failure/);
- mode='http-error';const providerError=await call('/api/ai/transcribe',{audio:dataUrl,language:'en-US'});assert.equal(providerError.status,200);assert.equal(providerError.data.source,'unavailable');assert.match(providerError.data.warning,/503/);assert.equal(providerError.data.text,'');
+ mode='transport-error';const transportError=await call('/api/ai/transcribe',{audio:dataUrl,language:'en-US'});assert.equal(transportError.status,200);assert.equal(transportError.data.source,'unavailable');assert.equal(transportError.data.text,'');assert.equal(transportError.data.code,'transport_failure');assert.doesNotMatch(transportError.data.warning,/Synthetic/);
+ mode='http-error';const providerError=await call('/api/ai/transcribe',{audio:dataUrl,language:'en-US'});assert.equal(providerError.status,200);assert.equal(providerError.data.source,'unavailable');assert.equal(providerError.data.code,'provider_rejected');assert.equal(providerError.data.text,'');
  mode='garbage';const malformed=await call('/api/ai/transcribe',{audio:dataUrl,language:'en-US'});assert.equal(malformed.status,200);assert.equal(malformed.data.text,'','an empty provider transcript surfaces as empty text and the client falls back');
+ for(const [responseMode,code] of [['garbage','invalid_provider_response'],['invalid-json','invalid_provider_response'],['object-text','invalid_provider_response'],['empty','empty_transcript']]){
+  mode=responseMode;const outcome=await call('/api/ai/transcribe',{audio:dataUrl,language:'en-US'});assert.equal(outcome.status,200);assert.equal(outcome.data.text,'');assert.equal(outcome.data.code,code);assert.doesNotMatch(JSON.stringify(outcome.data),/private-provider-body-sentinel/);
+ }
+ for(const code of ['success','not_configured','provider_rejected','transport_failure','invalid_provider_response','empty_transcript'])assert.ok(diagnosticLines.some(line=>line.startsWith('Voice transcription stage: '+code)),code+' is observable without content');
+ assert.ok(diagnosticLines.some(line=>/provider_rejected provider_status=503/.test(line)));
+ assert.ok(diagnosticLines.every(line=>/^Voice transcription stage: (not_configured|transport_failure|provider_rejected|invalid_provider_response|empty_transcript|success)(?: provider_status=\d{3})? request=[a-f0-9-]{36}$/i.test(line)),'logs contain only fixed categories, numeric status and generated UUID');
+ assert.ok(diagnosticLines.every(line=>!line.includes('synthetic-opus-audio-bytes')&&!line.includes('private-provider-body-sentinel')&&!line.includes('synthetic-provider-mock')&&!line.includes('Poured the east wall')));
+ process.env.PDL_STAGING='0';mode='ok';const logCount=diagnosticLines.length;await call('/api/ai/transcribe',{audio:dataUrl,language:'en-US'});assert.equal(diagnosticLines.length,logCount,'non-staging does not log stage diagnostics');process.env.PDL_STAGING='1';
  delete process.env.OPENAI_API_KEY;
  const badPrefix=await call('/api/ai/transcribe',{audio:'data:text/plain;base64,aGk=',language:'en-US'});assert.equal(badPrefix.status,400,'non-audio data-URL is rejected');
  const empty=await call('/api/ai/transcribe',{audio:'data:audio/webm;base64,',language:'en-US'});assert.equal(empty.status,400,'empty audio is rejected');
  console.log('Voice transcribe API: auth gate, no-key/provider-error/malformed graceful unavailability, gpt-transcribe serialized multipart contract, English/Spanish detected language objects and hint fallback, usage metering, and audio validation passed with intercepted provider transport.');
-}finally{server.closeAllConnections();await new Promise(resolve=>server.close(resolve));global.fetch=nativeFetch;fs.rmSync(root,{recursive:true,force:true})}})().catch(error=>{console.error(error);process.exitCode=1;server.close()});
+}finally{server.closeAllConnections();await new Promise(resolve=>server.close(resolve));global.fetch=nativeFetch;console.info=nativeInfo;delete process.env.PDL_STAGING;fs.rmSync(root,{recursive:true,force:true})}})().catch(error=>{console.error(error);process.exitCode=1;server.close()});
