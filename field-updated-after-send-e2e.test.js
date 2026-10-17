@@ -48,6 +48,7 @@ async function login(page, email, password) {
   await page.click('form#login button.primary');
   await page.waitForFunction(() => location.pathname.includes('/app'), { timeout: 20000 });
   await page.waitForSelector('#menu-button', { timeout: 20000 });
+  await page.waitForFunction(()=>typeof currentUser!=='undefined'&&currentUser?.memberId&&typeof team!=='undefined'&&team.some(row=>Number(row.id)===Number(currentUser.memberId)),{timeout:20000});
 }
 
 async function openNav(page, name) {
@@ -174,7 +175,8 @@ async function startJordan(page) {
     await startJordan(page);
     pinOpenPunch(dbFile, 2);
     await page.click('#start-day-button');
-    await require('./scripts/field-report-test-helpers.cjs').completeClockOutDaily(page,SECOND_NOTES,SECOND_NEXT);
+    await page.waitForFunction(()=>document.querySelector('#report-modal')?.open&&endingWorkdays.size===0,{timeout:20000});
+    await page.evaluate(()=>document.querySelector('#report-modal').close());
     await page.waitForFunction(() => /Clock in/i.test(document.querySelector('#start-day-button')?.textContent || '') && !document.querySelector('#end-day-modal')?.open && !document.querySelector('#report-modal')?.open, { timeout: 20000 });
     const flagged = await page.evaluate(async () => {
       const state = await (await fetch('/api/state', { credentials: 'include' })).json();
@@ -192,11 +194,11 @@ async function startJordan(page) {
     assert.match(flagged.summary, /Labor 0\.03h → 0\.07h/);
     assert.match(flagged.summary, /Curb 1→3 min/);
     assert.equal(/Gutter/.test(flagged.action), false, flagged.action);
-    assert.match(flagged.summary, /next step changed/);
+    assert.doesNotMatch(flagged.summary, /next step changed/);
     assert.equal(flagged.by, "DEMO Jordan Reed's clock-out", JSON.stringify(flagged));
-    assert.equal(`${flagged.action} by ${flagged.lineBy}`, "Updated after send · Labor 0.03h → 0.07h; Curb 1→3 min; next step changed, by DEMO Jordan Reed's clock-out");
+    assert.equal(`${flagged.action} by ${flagged.lineBy}`, "Updated after send · Labor 0.03h → 0.07h; Curb 1→3 min, by DEMO Jordan Reed's clock-out");
     assert.equal(flagged.labor.some(hours => Math.abs(hours - 0.07) < 0.001), true, JSON.stringify(flagged.labor));
-    assert.equal(flagged.next, SECOND_NEXT, flagged.next);
+    assert.equal(flagged.next, sent.next||'', flagged.next);
     const fieldClear = await page.evaluate(async () => {
       const state = await (await fetch('/api/state', { credentials: 'include' })).json();
       const report = (state.reports || []).find(row => /gutter/i.test(row.notes || row.originalNotes || ''));

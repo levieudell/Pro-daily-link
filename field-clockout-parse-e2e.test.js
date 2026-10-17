@@ -44,6 +44,7 @@ async function login(page) {
   await page.click('form#login button.primary');
   await page.waitForFunction(() => location.pathname.includes('/app'), { timeout: 20000 });
   await page.waitForSelector('#menu-button', { timeout: 20000 });
+  await page.waitForFunction(()=>typeof currentUser!=='undefined'&&currentUser?.memberId&&typeof team!=='undefined'&&team.some(row=>Number(row.id)===Number(currentUser.memberId)),{timeout:20000});
 }
 
 async function openNav(page, name) {
