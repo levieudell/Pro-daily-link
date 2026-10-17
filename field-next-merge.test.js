@@ -122,6 +122,95 @@ function sendPayload(report, next) {
     assert.equal(gutterMerge.data.attached, true);
     assert.equal(gutterMerge.data.report.id, gutterEnd.data.report.id);
     assert.equal(gutterMerge.data.report.next, NEXT_A, 'a second punch with no next step keeps the earlier text');
+    const notedStart = await call('POST', '/api/workdays/start', { projectId: 102, memberIds: [11] });
+    assert.equal(notedStart.status, 201, JSON.stringify(notedStart.data));
+    pinPunch(notedStart.data.id, 2);
+    const notedEnd = await call('POST', '/api/workdays/' + notedStart.data.id + '/end', { notes: 'Short check-in. Next: backfill curb.', next: '' });
+    assert.equal(notedEnd.status, 200, JSON.stringify(notedEnd.data));
+    assert.equal(notedEnd.data.attached, false);
+    assert.equal(notedEnd.data.report.next, 'backfill curb.', 'a Next: clause in the clock-out notes sets the next step');
+    const typedStart = await call('POST', '/api/workdays/start', { projectId: 102, memberIds: [11] });
+    assert.equal(typedStart.status, 201, JSON.stringify(typedStart.data));
+    pinPunch(typedStart.data.id, 2);
+    const typedEnd = await call('POST', '/api/workdays/' + typedStart.data.id + '/end', { notes: 'Short check-in. Next: backfill curb.', next: 'Stage the pump.' });
+    assert.equal(typedEnd.status, 200, JSON.stringify(typedEnd.data));
+    assert.equal(typedEnd.data.attached, true);
+    assert.equal(typedEnd.data.report.next, 'Stage the pump.', 'the dedicated next field wins over a Next: clause');
+    const keepStart = await call('POST', '/api/workdays/start', { projectId: 102, memberIds: [11] });
+    assert.equal(keepStart.status, 201, JSON.stringify(keepStart.data));
+    pinPunch(keepStart.data.id, 2);
+    const keepEnd = await call('POST', '/api/workdays/' + keepStart.data.id + '/end', { notes: 'Finished the remaining gutter.', next: '' });
+    assert.equal(keepEnd.status, 200, JSON.stringify(keepEnd.data));
+    assert.equal(keepEnd.data.report.next, 'Stage the pump.', 'notes without a next step keep the stored text');
+    assert.match(keepEnd.data.report.notes, /Short check-in\. Next: backfill curb\./);
+    assert.match(keepEnd.data.report.notes, /Finished the remaining gutter\./);
+    assert.match(keepEnd.data.report.summary, /Finished the remaining gutter/);
+    const again = await call('POST', '/api/workdays/start', { projectId: 102, memberIds: [11] });
+    pinPunch(again.data.id, 1);
+    const emptyNote = await call('POST', '/api/workdays/' + again.data.id + '/end', { notes: 'Finished the remaining gutter.', next: '   ' });
+    assert.equal(emptyNote.data.attached, true);
+    assert.equal(emptyNote.data.report.next, 'Stage the pump.');
+    assert.equal(emptyNote.data.report.notes.match(/Finished the remaining gutter\./g).length, 1);
+    const latest = emptyNote.data.report;
+    const minutesOf = report => (report?.laborEntries || []).reduce((sum, row) => sum + (Number(row.minutes) || 0), 0);
+    const staleBody = {
+      status: 'Draft',
+      notes: 'Stale note from the phone.',
+      next: 'Stale next',
+      laborEntries: [{ memberId: 11, hours: 0.02, minutes: 1 }],
+      productionEntries: latest.productionEntries || [],
+      updatedAt: notedEnd.data.report.updatedAt
+    };
+    const stale = await call('PATCH', '/api/reports/' + latest.id, staleBody);
+    assert.equal(stale.status, 409, JSON.stringify(stale.data));
+    assert.equal(stale.data.error, 'This daily was updated, reloading');
+    assert.match(stale.data.report.notes, /Short check-in/);
+    assert.match(stale.data.report.notes, /Finished the remaining gutter/);
+    assert.equal(/Stale note|Stale next/.test(`${stale.data.report.notes}\n${stale.data.report.next}`), false);
+    assert.equal(stale.data.report.next, 'Stage the pump.');
+    assert.ok(minutesOf(stale.data.report) > 1, JSON.stringify(stale.data.report.laborEntries));
+    const kept = (await call('GET', '/api/state')).data.reports.find(row => row.id === latest.id);
+    assert.equal(kept.next, 'Stage the pump.');
+    assert.match(kept.notes, /Finished the remaining gutter/);
+    assert.equal(minutesOf(kept), minutesOf(stale.data.report));
+    const allowed = await call('PATCH', '/api/reports/' + latest.id, {
+      status: 'Draft',
+      notes: stale.data.report.notes,
+      next: 'Call after the conflict.',
+      laborEntries: stale.data.report.laborEntries,
+      productionEntries: stale.data.report.productionEntries,
+      updatedAt: stale.data.report.updatedAt
+    });
+    assert.equal(allowed.status, 200, JSON.stringify(allowed.data));
+    assert.equal(allowed.data.next, 'Call after the conflict.');
+    assert.match(allowed.data.notes, /Finished the remaining gutter/);
+    assert.equal(/Stale note/.test(allowed.data.notes), false);
+    const omitted = await call('PATCH', '/api/reports/' + latest.id, {
+      status: 'Draft',
+      notes: allowed.data.notes,
+      next: allowed.data.next,
+      laborEntries: allowed.data.laborEntries,
+      productionEntries: allowed.data.productionEntries
+    });
+    assert.equal(omitted.status, 200, JSON.stringify(omitted.data));
+    assert.equal(omitted.data.next, 'Call after the conflict.');
+    const beforeCount = (await call('GET', '/api/state')).data.reports.length;
+    const posted = await call('POST', '/api/reports', {
+      status: 'Draft',
+      projectId: 102,
+      dateIso: omitted.data.dateIso,
+      foreman: omitted.data.foreman,
+      notes: omitted.data.notes,
+      next: 'Posted stale next',
+      laborEntries: omitted.data.laborEntries,
+      productionEntries: omitted.data.productionEntries,
+      updatedAt: notedEnd.data.report.updatedAt
+    });
+    assert.equal(posted.status, 409, JSON.stringify(posted.data));
+    assert.equal(posted.data.error, 'This daily was updated, reloading');
+    assert.equal(posted.data.report.next, 'Call after the conflict.');
+    assert.equal(/Posted stale next|Stale note/.test(`${posted.data.report.notes}\n${posted.data.report.next}`), false);
+    assert.equal((await call('GET', '/api/state')).data.reports.length, beforeCount);
     console.log('Next-step merge checks passed.');
   } finally {
     server.closeAllConnections();

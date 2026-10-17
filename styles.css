@@ -991,6 +991,7 @@ small{font-size:12px}
 #report-modal.report-field-compact .field-flag button[data-flag-choice="extra"]{background:var(--green);color:#fff;border-color:transparent}
 #report-modal.report-field-compact .field-flag.is-answered b{font-size:15px}
 #report-modal.report-field-compact .field-review-empty{margin:0;color:var(--muted)}
+#report-modal.report-field-compact #field-add-line{min-height:48px;border-radius:12px;font-weight:700}
 #report-modal.report-field-compact .production-entry{display:none}
 #report-modal.report-field-compact .production-entry.is-editing,
 #report-modal.report-field-compact.field-manual-entry .production-entry{display:grid;margin-bottom:12px}
