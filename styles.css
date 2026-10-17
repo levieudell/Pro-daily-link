@@ -1100,3 +1100,9 @@ small{font-size:12px}
 #report-modal.report-office-compact #save-report{grid-column:1/-1}
 #report-modal.report-office-compact #field-notes{min-height:32vh}
 #report-modal.report-office-compact #field-clock-out{display:none}
+#report-modal.report-office-compact #report-job-context{display:none}
+#report-modal.report-office-compact #report-date-field,
+#report-modal.report-office-compact #report-crew-field{display:inline-flex;flex-direction:column;vertical-align:top;width:calc(50% - 5px);min-width:0}
+#report-modal.report-office-compact #report-crew-field{margin-left:6px}
+#report-modal.report-office-compact #report-date-field input,
+#report-modal.report-office-compact #report-crew-field select{min-width:0;width:100%}
