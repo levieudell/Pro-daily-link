@@ -5,7 +5,7 @@ const chrome=process.env.PDL_TEST_CHROME||(process.platform==='win32'?'C:\\Progr
 const root=fs.mkdtempSync(path.join(os.tmpdir(),'pdl-office-entrypoints-'));
 const file=path.join(root,'db.json');
 const sleep=ms=>new Promise(resolve=>setTimeout(resolve,ms));
-async function waitForBoot(page){await page.waitForFunction(()=>typeof currentUser!=='undefined'&&currentUser?.id&&typeof projects!=='undefined'&&projects.length&&document.documentElement.classList.contains('workspace-ready'));await page.waitForNetworkIdle({idleTime:300,timeout:20000})}
+async function waitForBoot(page){await page.waitForFunction(()=>typeof currentUser!=='undefined'&&currentUser?.id&&typeof projects!=='undefined'&&projects.length&&document.documentElement.classList.contains('workspace-ready')&&localStorage.getItem('pdl-role')==='office'&&document.querySelector('.page.active'));await page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))))}
 async function navigate(page,name){
  if(page.viewport().width<760&&!await page.$eval('#sidebar',el=>el.classList.contains('open')))await page.click('#menu-button');
  await page.waitForFunction(name=>{const r=document.querySelector('.nav-item[data-page="'+name+'"]').getBoundingClientRect();return r.width>0&&r.left>=0&&r.right<=innerWidth}, {},name);
@@ -16,7 +16,7 @@ async function assertOfficeEntry(page,selector,label){
  console.log('Checking '+label);
  // Honor the existing close/tap-through guard before a deliberate new click.
  await page.waitForFunction(()=>Date.now()>=suppressReportOpenUntil);
- await page.click(selector);await page.waitForSelector('#report-modal[open]');
+ await page.click(selector);if(!await page.$eval('#report-modal',el=>el.open))console.log('Entry diagnostic',await page.$eval(selector,el=>{const r=el.getBoundingClientRect();return{rect:{x:r.x,y:r.y,width:r.width,height:r.height},top:document.elementFromPoint(r.x+r.width/2,r.y+r.height/2)?.outerHTML.slice(0,300),handler:String(el.onclick).slice(0,250),sidebar:document.querySelector('#sidebar').className,suppression:Date.now()-suppressReportOpenUntil,toast:document.querySelector('#toast').textContent}}));await page.waitForSelector('#report-modal[open]');
  const result=await page.evaluate(()=>{
   const modal=document.querySelector('#report-modal'),notes=document.querySelector('#field-notes'),voice=document.querySelector('#voice-notes'),rect=notes.getBoundingClientRect(),vr=voice.getBoundingClientRect();
   return{compact:modal.classList.contains('report-office-compact'),type:document.querySelector('#report-type').value,details:document.querySelector('#report-context-details').open,next:document.querySelector('#report-next-step').textContent,notesVisible:rect.height>0&&rect.top>=0&&rect.bottom<innerHeight-80,voiceVisible:vr.height>0&&vr.top>=0&&vr.bottom<innerHeight-80,clock:!!document.querySelector('#field-clock-out:not([hidden])')};
