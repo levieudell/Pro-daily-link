@@ -1107,3 +1107,16 @@ small{font-size:12px}
 #report-modal.report-office-compact #report-crew-field{margin-left:6px}
 #report-modal.report-office-compact #report-date-field input,
 #report-modal.report-office-compact #report-crew-field select{min-width:0;width:100%}
+
+/* Office opens on notes; context remains available without a separate form. */
+#report-modal.report-office-compact #report-context-details{margin:0 36px 18px 0;border:0;padding:0;min-width:0}
+#report-modal.report-office-compact #report-context-summary{cursor:pointer;padding:12px 14px;border:1px solid var(--line);border-radius:14px;background:var(--panel);list-style:none}
+#report-modal.report-office-compact #report-context-summary::-webkit-details-marker{display:none}
+#report-modal.report-office-compact #report-context-summary strong,
+#report-modal.report-office-compact #report-context-summary small,
+#report-modal.report-office-compact #report-context-summary span{display:block;overflow-wrap:anywhere}
+#report-modal.report-office-compact #report-context-summary strong{font-size:18px;line-height:1.3}
+#report-modal.report-office-compact #report-context-summary small{margin-top:5px;color:var(--muted);font-size:13px}
+#report-modal.report-office-compact #report-context-summary span{margin-top:7px;color:var(--green);font-size:12px;font-weight:700}
+#report-modal.report-office-compact #report-context-details[open]{margin-right:0}
+#report-modal.report-office-compact #report-context-details[open] #report-context-summary{margin:0 36px 16px 0}
