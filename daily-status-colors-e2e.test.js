@@ -1,8 +1,9 @@
 'use strict';
-// Real rendered entry points, synthetic owner/admin sessions, no report writes.
+// Real daily list, disposable synthetic owner session, no report writes.
 const assert=require('node:assert/strict'),fs=require('node:fs'),os=require('node:os'),path=require('node:path'),net=require('node:net'),{spawn}=require('node:child_process');
 const chrome=process.env.PDL_TEST_CHROME||(process.platform==='win32'?'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe':'/usr/bin/google-chrome-stable');
-const root=fs.mkdtempSync(path.join(os.tmpdir(),'pdl-office-entrypoints-'));
+const root=fs.mkdtempSync(path.join(os.tmpdir(),'pdl-daily-status-'));
+fs.mkdirSync(path.join(__dirname,'qa-tmp'),{recursive:true});
 const file=path.join(root,'db.json');
 const sleep=ms=>new Promise(resolve=>setTimeout(resolve,ms));
 async function waitForBoot(page){await page.waitForFunction(()=>typeof currentUser!=='undefined'&&currentUser?.id&&typeof projects!=='undefined'&&projects.length&&document.documentElement.classList.contains('workspace-ready')&&localStorage.getItem('pdl-role')==='office'&&document.querySelector('.page.active'));await page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))))}
@@ -14,8 +15,6 @@ async function waitForBoot(page){await page.waitForFunction(()=>typeof currentUs
  try{
   for(let n=0;n<200&&!log.includes('running at');n++)await sleep(100);assert.ok(log.includes('running at'),'synthetic server started: '+log);
   const db=JSON.parse(fs.readFileSync(file));const owner=db.users.find(u=>u.role==='owner');
-  // Both passwords and identities originate in this disposable seed only.
-  db.users.push({...owner,id:Math.max(...db.users.map(u=>Number(u.id)))+1,role:'admin',name:'Synthetic administrator',email:'synthetic-admin@example.test'});fs.writeFileSync(file,JSON.stringify(db));
   const reportCount=db.reports.length;
   browser=await require('puppeteer-core').launch({executablePath:chrome,headless:true,args:['--no-sandbox','--disable-dev-shm-usage']});
   const page=await browser.newPage(),errors=[];page.on('pageerror',e=>errors.push(e.message));
@@ -39,6 +38,8 @@ async function waitForBoot(page){await page.waitForFunction(()=>typeof currentUs
    for(const b of badges){const a=luminance(b.bg),c=luminance(b.fg);assert.ok((Math.max(a,c)+.05)/(Math.min(a,c)+.05)>=4.5,`${theme} ${b.text} contrast`)}
    assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true,'no horizontal overflow');
    for(const i of [1,2,3,4,5,0]){
+    await page.$eval(`[data-report="${9000+i}"]`,el=>el.scrollIntoView({behavior:'instant',block:'center'}));
+    await page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));
     await page.click(`[data-report="${9000+i}"]`);
     await page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));
     assert.equal(await page.$eval('#report-list .active .status',el=>el.textContent),statuses[i]);
@@ -49,7 +50,7 @@ async function waitForBoot(page){await page.waitForFunction(()=>typeof currentUs
    console.log(`${width}px ${theme}: six distinct badges, WCAG AA text contrast, all selections, no overflow`);
   }
   await page.evaluate(()=>document.querySelector('#report-list button').focus());
-  await page.keyboard.press('Tab');await page.keyboard.press('Shift+Tab');
+  await page.keyboard.press('Tab');await page.keyboard.down('Shift');await page.keyboard.press('Tab');await page.keyboard.up('Shift');
   assert.equal(await page.$eval('#report-list button',el=>getComputedStyle(el).outlineWidth),'3px','keyboard focus visible');
   await page.keyboard.press('Enter');assert.equal(await page.$eval('#report-list .active',el=>el.dataset.report),'9005','keyboard selection');
   assert.deepEqual(errors,[]);assert.equal(JSON.parse(fs.readFileSync(file)).reports.length,reportCount,'no report writes');
