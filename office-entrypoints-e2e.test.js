@@ -29,6 +29,25 @@ async function assertOfficeEntry(page,selector,label){
  assert.equal(await page.$eval('#report-modal',el=>el.classList.contains('report-office-compact')),false,label+' superintendent');assert.equal(await page.$eval('#report-context-details',el=>el.open),true,label+' superintendent details open');
  await page.click('#close-report');await page.waitForFunction(()=>!document.querySelector('#report-modal').open);
 }
+async function checkOfficeLayout(page,width,height,shot){
+ await page.$eval('#report-modal',el=>Promise.all(el.getAnimations().map(animation=>animation.finished)));
+ await page.setViewport({width,height,isMobile:page.viewport().isMobile,hasTouch:page.viewport().hasTouch});
+ await page.evaluate(()=>{const modal=document.querySelector('#report-modal');modal.scrollTop=0;document.querySelector('#report-context-details').open=true;document.querySelector('#weather-summary').textContent='Heavy rain and gusty conditions at the north construction entrance';const crew=document.querySelector('#report-crew');crew.options[crew.selectedIndex].textContent='Concrete crew — north entrance and retaining wall';});
+ await page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));
+ const layout=await page.evaluate(()=>{
+  const modal=document.querySelector('#report-modal'),rect=el=>{const r=el.getBoundingClientRect();return{left:r.left,right:r.right,top:r.top,bottom:r.bottom,width:r.width}},date=document.querySelector('#report-date'),crew=document.querySelector('#report-crew'),weather=document.querySelector('.weather-row'),actions=document.querySelector('[data-report-step="1"] .modal-actions');
+  return{modal:rect(modal),date:rect(date),crew:rect(crew),weather:rect(weather),buttons:[...weather.querySelectorAll('button')].map(rect),overflow:modal.scrollWidth-modal.clientWidth,position:getComputedStyle(actions).position};
+ });
+ assert(layout.overflow<=1,`${width}x${height} no horizontal overflow`);
+ if(width<760){assert(layout.modal.left>=-1&&layout.modal.right<=width+1&&layout.modal.width>=width-1,'phone modal fills viewport '+JSON.stringify(layout.modal));assert(layout.crew.top>=layout.date.bottom,`${width} date and crew stack`);assert.equal(layout.position,'static','office actions scroll with content');}
+ for(const r of [layout.date,layout.crew,...layout.buttons])assert(r.left>=layout.modal.left&&r.right<=layout.modal.right,`${width} controls stay within modal`);
+ for(const selector of ['#report-date','#report-crew','#field-notes','#voice-notes','#report-photos','#report-next-step','#save-report-draft']){
+  await page.$eval(selector,el=>el.scrollIntoView({block:'center'}));
+  const hit=await page.$eval(selector,el=>{const r=el.getBoundingClientRect(),x=r.left+r.width/2,y=r.top+Math.min(r.height/2,24),hit=document.elementFromPoint(x,y);return{ok:y>=0&&y<innerHeight&&(hit===el||el.contains(hit)),x,y,hit:hit?.outerHTML.slice(0,150)}});assert(hit.ok,`${width}x${height} ${selector} reachable ${JSON.stringify(hit)}`);
+ }
+ await page.$eval('#field-notes',el=>{el.focus();el.scrollIntoView({block:'center'})});
+ if(shot){await page.$eval('#field-notes',el=>el.blur());await page.$eval('#report-modal form',el=>el.scrollTop=0);const directory=process.env.PDL_TEST_SCREENSHOTS||root;fs.mkdirSync(directory,{recursive:true});await page.screenshot({path:path.join(directory,`office-expanded-${width}-${height}.png`)});}
+}
 (async()=>{
  const port=await new Promise(resolve=>{const s=net.createServer();s.listen(0,'127.0.0.1',()=>{const p=s.address().port;s.close(()=>resolve(p))})});
  const env={...process.env,PORT:String(port),PDL_STAGING:'1',PDL_STAGING_OWNER_PASSWORD:'synthetic-owner-pass',PDL_STAGING_FIELD_PASSWORD:'synthetic-field-pass',PDL_DB_FILE:file,PDL_PLATFORM_FILE:path.join(root,'platform.json'),PDL_SUPABASE_ENABLED:'0',PDL_TRANSACTIONAL_DB:'off',PDL_EMAIL_DEV_MODE:'1',OPENAI_API_KEY:''};
@@ -41,6 +60,23 @@ async function assertOfficeEntry(page,selector,label){
   db.users.push({...owner,id:Math.max(...db.users.map(u=>Number(u.id)))+1,role:'admin',name:'Synthetic administrator',email:'synthetic-admin@example.test'});fs.writeFileSync(file,JSON.stringify(db));
   const reportCount=db.reports.length;
   browser=await require('puppeteer-core').launch({executablePath:chrome,headless:true,args:['--no-sandbox','--disable-dev-shm-usage']});
+  {
+   const context=await browser.createBrowserContext(),page=await context.newPage();page.on('dialog',d=>d.accept());
+   await page.setViewport({width:390,height:844,isMobile:true,hasTouch:true});await page.evaluateOnNewDocument(()=>localStorage.setItem('pdl-analytics-consent','declined'));
+   await page.goto(`http://127.0.0.1:${port}/login.html`);await page.type('#email',owner.email);await page.type('#password','synthetic-owner-pass');await page.click('form#login button.primary');await waitForBoot(page);
+   await page.click('.top-actions [data-open-report]');await page.waitForSelector('#report-modal[open]');
+   for(const width of [320,375,390,430,1280]){await checkOfficeLayout(page,width,844,true);if(width<760)await checkOfficeLayout(page,width,390,true);}
+   await page.evaluate(()=>showReportStep(2));
+   for(const width of [320,375,390,430,1280]){
+    await page.setViewport({width,height:width<760?390:844,isMobile:true,hasTouch:true});
+    for(const selector of ['#report-signature','#save-report-step2-draft','#save-report']){await page.$eval(selector,el=>{el.scrollIntoView({block:'center'});if(el.tagName==='INPUT')el.focus()});assert(await page.$eval(selector,el=>{const r=el.getBoundingClientRect(),hit=document.elementFromPoint(r.left+r.width/2,r.top+Math.min(r.height/2,24));return hit===el||el.contains(hit)}),`${width} review ${selector} reachable`)}
+    assert(await page.$eval('#report-modal',el=>el.scrollWidth<=el.clientWidth+1),`${width} review no horizontal overflow`);
+    if(process.env.PDL_TEST_SCREENSHOTS)await page.screenshot({path:path.join(process.env.PDL_TEST_SCREENSHOTS,`office-review-${width}.png`)});
+   }
+   await page.setViewport({width:390,height:844,isMobile:true,hasTouch:true});await page.$eval('#close-report',el=>el.scrollIntoView({block:'center'}));await page.click('#close-report');await page.waitForFunction(()=>Date.now()>=suppressReportOpenUntil);await page.evaluate(()=>openReport());assert.equal(await page.$eval('#report-context-details',el=>el.open),false,'reopening keeps notes-first default');
+   if(process.env.PDL_TEST_SCREENSHOTS){fs.mkdirSync(process.env.PDL_TEST_SCREENSHOTS,{recursive:true});for(const name of fs.readdirSync(root).filter(name=>name.endsWith('.png')))fs.copyFileSync(path.join(root,name),path.join(process.env.PDL_TEST_SCREENSHOTS,name));}
+   await context.close();
+  }
   {
    const context=await browser.createBrowserContext(),page=await context.newPage();let release;page.on('pageerror',e=>console.log('Slow boot error',e.message));
    await page.setViewport({width:390,height:844,isMobile:true,hasTouch:true});await page.evaluateOnNewDocument(()=>localStorage.setItem('pdl-analytics-consent','declined'));await page.setRequestInterception(true);page.on('request',request=>{if(request.url().includes('/field-instant-daily.js'))release=()=>request.continue();else request.continue()});
