@@ -1120,3 +1120,18 @@ small{font-size:12px}
 #report-modal.report-office-compact #report-context-summary span{margin-top:7px;color:var(--green);font-size:12px;font-weight:700}
 #report-modal.report-office-compact #report-context-details[open]{margin-right:0}
 #report-modal.report-office-compact #report-context-details[open] #report-context-summary{margin:0 36px 16px 0}
+
+/* Daily report badges: selection stays blue and independent of workflow status. */
+#reports-page .status.report-status-draft{background:#f1f5f9;color:#334155}
+#reports-page .status.report-status-review{background:#fef3c7;color:#92400e}
+#reports-page .status.report-status-approved{background:#dcfce7;color:#166534}
+#reports-page .status.report-status-missing{background:#ffedd5;color:#9a3412}
+#reports-page .status.report-status-correction{background:#fee2e2;color:#991b1b}
+#reports-page .status.report-status-submitted{background:#ede9fe;color:#5b21b6}
+#reports-page .report-list-item:focus-visible{outline:3px solid #1769e0;outline-offset:3px}
+:root[data-theme="dark"] #reports-page .status.report-status-draft{background:#334155;color:#e2e8f0}
+:root[data-theme="dark"] #reports-page .status.report-status-review{background:#49351c;color:#fde68a}
+:root[data-theme="dark"] #reports-page .status.report-status-approved{background:#163c2b;color:#bbf7d0}
+:root[data-theme="dark"] #reports-page .status.report-status-missing{background:#4a2918;color:#fed7aa}
+:root[data-theme="dark"] #reports-page .status.report-status-correction{background:#482724;color:#fecaca}
+:root[data-theme="dark"] #reports-page .status.report-status-submitted{background:#35254e;color:#ddd6fe}
