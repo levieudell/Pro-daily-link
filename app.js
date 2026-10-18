@@ -906,7 +906,8 @@ const renderCatalogBeforeDerivedScopes=renderCatalog;
 renderCatalog=function(filter=''){const result=renderCatalogBeforeDerivedScopes(filter),items=catalog.filter(item=>(item.name+item.category).toLowerCase().includes(filter.toLowerCase()));$$('#catalog-grid .catalog-card').forEach((card,index)=>{if(!items[index]?.derived)return;const button=card.querySelector('[data-use-catalog]');if(button){button.textContent='Already used on a project estimate';button.disabled=true}});return result};
 const loadRoleBeforeBillingReconcile=loadRole;
 loadRole=async function(role){const result=await loadRoleBeforeBillingReconcile(role);if(role==='office'&&currentUser?.role==='owner')await loadBilling().catch(()=>{});return result};
-boot();
+// All workspace controllers must be installed before data renders expose actions.
+if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',()=>boot(),{once:true});else boot();
 
 // Pricing access is company-controlled. The server is the authority; this only
 // presents the approved policy clearly in the workspace.

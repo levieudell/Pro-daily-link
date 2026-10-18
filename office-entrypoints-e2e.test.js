@@ -7,16 +7,18 @@ const file=path.join(root,'db.json');
 const sleep=ms=>new Promise(resolve=>setTimeout(resolve,ms));
 async function waitForBoot(page){await page.waitForFunction(()=>typeof currentUser!=='undefined'&&currentUser?.id&&typeof projects!=='undefined'&&projects.length&&document.documentElement.classList.contains('workspace-ready')&&localStorage.getItem('pdl-role')==='office'&&document.querySelector('.page.active'));await page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))))}
 async function navigate(page,name){
+ await page.waitForFunction(()=>Date.now()>=suppressReportOpenUntil);
  if(page.viewport().width<760&&!await page.$eval('#sidebar',el=>el.classList.contains('open')))await page.click('#menu-button');
- await page.waitForFunction(name=>{const r=document.querySelector('.nav-item[data-page="'+name+'"]').getBoundingClientRect();return r.width>0&&r.left>=0&&r.right<=innerWidth}, {},name);
- await page.click(`.nav-item[data-page="${name}"]`);
+ await page.waitForFunction(name=>{const r=document.querySelector('.nav-item[data-page="'+name+'"]').getBoundingClientRect();return r.width>0&&r.left>=-1&&r.right<=innerWidth+1}, {},name);
+ await page.locator(`.nav-item[data-page="${name}"]`).click();
  await page.waitForSelector(`#${name}-page.active`);
 }
 async function assertOfficeEntry(page,selector,label){
+ if(page.viewport().width<760)await page.waitForFunction(()=>document.querySelector('#sidebar').getBoundingClientRect().right<=1);
  console.log('Checking '+label);
  // Honor the existing close/tap-through guard before a deliberate new click.
  await page.waitForFunction(()=>Date.now()>=suppressReportOpenUntil);
- await page.click(selector);if(!await page.$eval('#report-modal',el=>el.open))console.log('Entry diagnostic',await page.$eval(selector,el=>{const r=el.getBoundingClientRect();return{rect:{x:r.x,y:r.y,width:r.width,height:r.height},top:document.elementFromPoint(r.x+r.width/2,r.y+r.height/2)?.outerHTML.slice(0,300),handler:String(el.onclick).slice(0,250),sidebar:document.querySelector('#sidebar').className,suppression:Date.now()-suppressReportOpenUntil,toast:document.querySelector('#toast').textContent}}));await page.waitForSelector('#report-modal[open]');
+ await page.locator(selector).click();await page.waitForSelector('#report-modal[open]');
  const result=await page.evaluate(()=>{
   const modal=document.querySelector('#report-modal'),notes=document.querySelector('#field-notes'),voice=document.querySelector('#voice-notes'),rect=notes.getBoundingClientRect(),vr=voice.getBoundingClientRect();
   return{compact:modal.classList.contains('report-office-compact'),type:document.querySelector('#report-type').value,details:document.querySelector('#report-context-details').open,next:document.querySelector('#report-next-step').textContent,notesVisible:rect.height>0&&rect.top>=0&&rect.bottom<innerHeight-80,voiceVisible:vr.height>0&&vr.top>=0&&vr.bottom<innerHeight-80,clock:!!document.querySelector('#field-clock-out:not([hidden])')};
@@ -39,6 +41,16 @@ async function assertOfficeEntry(page,selector,label){
   db.users.push({...owner,id:Math.max(...db.users.map(u=>Number(u.id)))+1,role:'admin',name:'Synthetic administrator',email:'synthetic-admin@example.test'});fs.writeFileSync(file,JSON.stringify(db));
   const reportCount=db.reports.length;
   browser=await require('puppeteer-core').launch({executablePath:chrome,headless:true,args:['--no-sandbox','--disable-dev-shm-usage']});
+  {
+   const context=await browser.createBrowserContext(),page=await context.newPage();let release;page.on('pageerror',e=>console.log('Slow boot error',e.message));
+   await page.setViewport({width:390,height:844,isMobile:true,hasTouch:true});await page.evaluateOnNewDocument(()=>localStorage.setItem('pdl-analytics-consent','declined'));await page.setRequestInterception(true);page.on('request',request=>{if(request.url().includes('/field-instant-daily.js'))release=()=>request.continue();else request.continue()});
+   await page.goto('http://127.0.0.1:'+port+'/login.html');await page.type('#email',owner.email);await page.type('#password','synthetic-owner-pass');await page.click('form#login button.primary');
+   for(let attempt=0;attempt<1500&&!release;attempt++)await sleep(20);
+   assert.ok(release,'shared report controller requested within 30 seconds');
+   await sleep(300);
+   assert.equal(await page.evaluate(()=>document.documentElement.classList.contains('workspace-ready')),false,'slow controller cannot expose legacy New Daily');
+   release();await waitForBoot(page);await assertOfficeEntry(page,'.top-actions [data-open-report]','delayed shared controller');await context.close();
+  }
   for(const role of ['owner','admin'])for(const width of [390,1280]){
    const context=await browser.createBrowserContext(),page=await context.newPage(),errors=[];page.on('pageerror',e=>errors.push(e.message));page.on('dialog',d=>d.accept());
    await page.setViewport({width,height:844,isMobile:width===390,hasTouch:width===390});await page.evaluateOnNewDocument(()=>localStorage.setItem('pdl-analytics-consent','declined'));
