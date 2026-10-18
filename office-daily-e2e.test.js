@@ -24,10 +24,15 @@ async function run(){
   await set(page,'#email','levi+owner@prodailylink.com');await set(page,'#password','synthetic-owner-pass');await page.click('form#login button.primary');
   await page.waitForFunction(()=>typeof currentRole!=='undefined'&&currentRole==='office'&&projects.length>0);
   await page.evaluate(()=>new Promise(resolve=>{const before=restoreInterruptedReport;restoreInterruptedReport=async function(){try{return await before()}finally{resolve()}};setTimeout(resolve,1500)}));
-  await page.evaluate(()=>{openReport();$('#report-project').value=String(projects.findIndex(p=>/Cedar Grove/.test(p.name)));$('#report-project').dispatchEvent(new Event('change',{bubbles:true}));});
+  await page.click('.top-actions [data-open-report]');
+  await page.waitForSelector('#report-modal[open]');
+  assert.equal(await page.$eval('#report-context-details',el=>el.open),false,'office New Daily opens notes first');
+  await page.click('#report-context-summary');
+  await page.evaluate(()=>{$('#report-project').value=String(projects.findIndex(p=>/Cedar Grove/.test(p.name)));$('#report-project').dispatchEvent(new Event('change',{bubbles:true}));});
   await page.waitForFunction(()=>reportLaborLoadedKey===reportLaborSelectionKey());
   assert.equal(await page.$eval('#report-next-step',e=>e.textContent),'Done');
   for(const selector of ['#report-project-picker','#report-date-field','#report-crew-field','#report-photos','#save-report-draft'])assert.equal(await visible(page,selector),true,selector);
+  await page.click('#report-context-summary');
   fs.mkdirSync(shotRoot,{recursive:true});await page.screenshot({path:path.join(shotRoot,'office-notes-390.png')});
   assert.equal(await page.$('#field-clock-out'),null,'office has no clock action');
   // Inject raw unapproved punches in browser memory only; approved/manual inputs must win.

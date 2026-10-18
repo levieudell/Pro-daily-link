@@ -1,5 +1,9 @@
 'use strict';
 const assert=require('node:assert/strict'),fs=require('node:fs'),os=require('node:os'),path=require('node:path'),crypto=require('node:crypto');
+// Keep the two-hour fixture and subsequent punch on the same company date,
+// including CI runs shortly after midnight. Time continues advancing normally.
+const RealDate=Date,clockOffset=Date.UTC(2026,9,18,12)-RealDate.now();
+global.Date=class extends RealDate{constructor(...args){super(...(args.length?args:[RealDate.now()+clockOffset]))}static now(){return RealDate.now()+clockOffset}};
 const root=fs.mkdtempSync(path.join(os.tmpdir(),'pdl-direct-clockout-')),companyId='11221122-1122-4122-8122-112211221122',token='synthetic-clockout';
 const db={company:{id:companyId,name:'Synthetic clock-out',demo:true,timezone:'UTC',features:{timeCards:true}},projects:[{id:101,name:'Synthetic project',estimateItems:[]}],team:[{id:11,name:'Synthetic worker',crew:'A'},{id:12,name:'Synthetic coworker',crew:'A'}],assignments:[],reports:[],photos:[],workdays:[],timeCards:[],users:[{id:1,name:'Synthetic owner',role:'owner',status:'Active',companyId}],sessions:[{companyId,userId:1,tokenHash:crypto.createHash('sha256').update(token).digest('hex'),expiresAt:'2099-01-01'}],customers:[],changes:[],catalog:[]};
 const file=path.join(root,'db.json');fs.writeFileSync(file,JSON.stringify(db));fs.writeFileSync(path.join(root,'platform.json'),JSON.stringify({users:[],sessions:[]}));

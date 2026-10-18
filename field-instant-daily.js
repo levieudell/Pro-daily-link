@@ -11,6 +11,7 @@ var fieldScopeFlags=[];
     if(next&&compact)next.textContent=preferredLanguage==='es'?'Listo':'Done';
     if(send&&fieldCompact()){const approved=Boolean(editingReportId)&&(typeof reports==='undefined'?[]:reports).some(row=>Number(row.id)===Number(editingReportId)&&row.status==='Approved');send.textContent=approved?(preferredLanguage==='es'?'Guardar corrección para revisión':'Save correction for office review'):(preferredLanguage==='es'?'Enviar a la oficina':'Send to office')}
     ensureFieldClockOut();
+    if(typeof updateReportContextSummary==='function')updateReportContextSummary();
     modal?.classList.toggle('field-manual-entry',compact&&!fieldScopeFlags.length&&![...$$('.production-entry')].some(row=>row.dataset.aiFilled==='true'));
     if(!compact){const flags=$('#field-scope-flags'),cards=$('#field-review-cards');if(flags)flags.hidden=true;if(cards)cards.hidden=true}
   }
