@@ -325,6 +325,7 @@ async function startJordan(page) {
       const line = (report?.history || []).find(row => row.action === 'Update reviewed' && row.by === 'DEMO Avery Lang');
       return Boolean(report && !report.updatedAfterSend && line);
     }, 'approve recorded the reviewer');
+    await waitUntil(owner, () => /Update reviewed by DEMO Avery Lang/.test(document.querySelector('.approval-history')?.innerText || ''), 'review history rendered');
     const reviewedLog = await owner.evaluate(() => document.querySelector('.approval-history')?.innerText || '');
     assert.match(reviewedLog, /Update reviewed by DEMO Avery Lang/);
     view = await badgeView();
