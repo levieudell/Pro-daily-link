@@ -14,10 +14,11 @@ if(typeof module!=='undefined'&&module.exports)module.exports={officeWorkspaceTo
 else {
   function availableOfficeTools(){return officeWorkspaceTools({mode:currentRole,canViewTime:canViewTime(),timeCards:timeCardsOn(),settingsTabs:availableCompanyTabs(currentUser,company?.features,currentRole)})}
   function renderOfficeWorkspace(){
-    const host=$('#office-workspace-tools');if(!host)return;
-    const tools=availableOfficeTools();host.hidden=!tools.length;
-    host.innerHTML=tools.map(tool=>`<button type="button" class="office-tool" data-office-tool="${tool.id}"><span class="office-tool-icon" aria-hidden="true">${tool.icon}</span><span><strong>${tool.label}</strong><small>${tool.detail}</small></span><span class="office-tool-arrow" aria-hidden="true">→</span></button>`).join('');
+    const tools=availableOfficeTools();
     $$('[data-office-payreports]').forEach(button=>button.hidden=!tools.some(tool=>tool.id==='payreports'));
+    const host=$('#office-workspace-tools');if(!host)return;
+    host.hidden=!tools.length;
+    host.innerHTML=tools.map(tool=>`<button type="button" class="office-tool" data-office-tool="${tool.id}"><span class="office-tool-icon" aria-hidden="true">${tool.icon}</span><span><strong>${tool.label}</strong><small>${tool.detail}</small></span><span class="office-tool-arrow" aria-hidden="true">→</span></button>`).join('');
   }
   const previousOfficeRender=renderEverything;
   renderEverything=function(){const result=previousOfficeRender();renderOfficeWorkspace();return result};

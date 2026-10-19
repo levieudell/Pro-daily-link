@@ -12,6 +12,8 @@
   <link rel="stylesheet" href="styles.css?v=20261014-review3-20261017-fieldreview1-office1-mobile3" />
   <link rel="stylesheet" href="estimate-mobile.css" />
   <link rel="stylesheet" href="project-notes-ui.css?v=20261005-notes-focus" />
+  <link rel="stylesheet" href="project-assistant-ui.css?v=20261007-assistant-draft" />
+  <link rel="stylesheet" href="design-system.css?v=20261019-first-principles" />
   <link rel="manifest" href="manifest.webmanifest" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="default" />
@@ -75,18 +77,22 @@
     <aside class="sidebar" id="sidebar">
       <div class="brand"><button type="button" class="brand-home" id="sidebar-home" aria-label="Go to Overview"><span class="brand-mark"><img src="assets/pro-daily-link-logo.png" alt="" /></span><span>Pro Daily <b>Link</b></span></button></div>
       <nav id="main-nav" aria-label="Primary navigation">
+        <p class="nav-section-label office-only">Command</p>
         <button class="nav-item active office-only" data-page="dashboard"><span>▦</span> Overview</button>
         <button class="nav-item office-only" data-page="actions"><span>!</span> Action center <em id="action-count">0</em></button>
+        <p class="nav-section-label office-only">Operations</p>
         <button class="nav-item office-only" data-page="schedule"><span>▣</span> Schedule</button>
-        <button class="nav-item office-only" data-page="messages"><span>✉</span> Messages <em id="message-count" hidden>0</em></button>
         <button class="nav-item office-only time-cards-nav time-manager-only" data-page="timeoverview"><span>◷</span> Time</button>
+        <button class="nav-item office-only" data-page="messages"><span>✉</span> Messages <em id="message-count" hidden>0</em></button>
+        <p class="nav-section-label field-only">Field</p>
         <button class="nav-item field-only" data-page="myday"><span>☀</span> My day</button>
-        <button class="nav-item field-only" data-page="fieldday"><span>◷</span> Clock</button>
-        <button class="nav-item field-only" data-page="timeoff"><span>☂</span> Time off</button>
-        <button class="nav-item office-only" data-page="customers"><span>▤</span> Customers</button>
+        <button class="nav-item field-only" data-page="fieldday"><span>◷</span> Time</button>
+        <button class="nav-item" data-page="reports"><span>≡</span> Daily reports <em id="report-count" hidden>0</em></button>
+        <p class="nav-section-label office-only">Work</p>
         <button class="nav-item office-only" data-page="projects"><span>⌂</span> Projects</button>
-        <button class="nav-item" data-page="reports"><span>≡</span> Daily reports <em id="report-count">3</em></button>
-        <details class="nav-more office-only" id="nav-more"><summary><span>•••</span> More tools</summary><div><button class="nav-item office-only" data-page="insights"><span>↗</span> Production insights</button><button class="nav-item office-only" data-page="catalog"><span>▧</span> Production catalog</button><button class="nav-item office-only" data-page="team"><span>♙</span> Team</button><button class="nav-item office-only" data-page="settings"><span>⚙</span> Company settings</button></div></details>
+        <button class="nav-item office-only" data-page="customers"><span>▤</span> Customers</button>
+        <button class="nav-item office-only" data-page="team"><span>♙</span> Team</button>
+        <details class="nav-more office-only" id="nav-more"><summary><span>•••</span> Analyze &amp; configure</summary><div><button class="nav-item office-only" data-page="insights"><span>↗</span> Production insights</button><button class="nav-item office-only" data-page="catalog"><span>▧</span> Production catalog</button><button class="nav-item office-only" data-page="settings"><span>⚙</span> Company settings</button></div></details>
       </nav>
       <div class="sidebar-bottom">
         <div class="trial-card"><small id="plan-name">PLAN</small><strong id="trial-days">Loading plan…</strong><div class="trial-bar"><i id="trial-progress"></i></div><button type="button" id="manage-plan">Manage plan</button></div>
@@ -101,15 +107,13 @@
         <button type="button" class="header-company-mark" id="header-company-mark" aria-label="Go to Overview" title="Overview">PD</button>
         <button class="app-back-button topbar-control" id="app-back-button" type="button" aria-label="Go back" hidden><span aria-hidden="true">←</span> Back</button>
         <div class="site-switcher"><small>VIEW AS</small><select id="role-switcher"><option value="office">Office administrator</option><option value="field">Field team · Marcus Reed</option></select></div>
-        <div class="top-actions"><button class="icon-button help-trigger topbar-control" id="help-button" aria-label="Open Help Center" title="Help Center"><svg aria-hidden="true" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M9.7 9a2.4 2.4 0 0 1 4.6.9c0 1.7-2.3 2-2.3 3.6M12 17h.01"/></svg></button><button class="secondary small" id="logout-button" hidden style="display:none!important">Sign out</button><button class="primary small" data-open-report aria-label="New daily report">＋ New daily report</button></div>
+        <div class="top-actions"><button class="icon-button help-trigger topbar-control" id="help-button" aria-label="Open Help Center" title="Help Center"><svg aria-hidden="true" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M9.7 9a2.4 2.4 0 0 1 4.6.9c0 1.7-2.3 2-2.3 3.6M12 17h.01"/></svg></button><button class="secondary small" id="logout-button" hidden style="display:none!important">Sign out</button><button class="primary small" data-open-report aria-label="New daily report"><span aria-hidden="true">＋</span> <span class="daily-label-wide">New daily report</span><span class="daily-label-short">Daily</span></button></div>
       </header>
 
       <section class="page active" id="dashboard-page">
-        <div class="page-heading"><div><p class="eyebrow">TODAY</p><h1>Welcome back.</h1><p>Here’s what’s happening across your jobs today.</p></div><button class="secondary" id="export-button">⇩ Export summary</button></div>
+        <div class="page-heading dashboard-heading"><div><p class="eyebrow">OPERATIONS COMMAND</p><h1>Welcome back.</h1><p>What needs action, what’s moving, and what’s at risk—without the noise.</p></div><div class="dashboard-heading-actions"><span class="system-live"><i aria-hidden="true"></i><span>Live workspace</span></span><button class="secondary" id="export-button">⇩ Export summary</button></div></div>
 
-        <nav class="office-workspace-tools" id="office-workspace-tools" aria-label="Office shortcuts" hidden></nav>
-
-        <div class="alert"><span>!</span><div><strong>3 daily reports need attention</strong><p>Two are missing production quantities and one has a potential delay.</p></div><button data-page-link="reports">Review reports →</button></div>
+        <div class="alert command-priority"><span>!</span><div><small class="alert-kicker">NEXT ACTION</small><strong>3 daily reports need attention</strong><p>Two are missing production quantities and one has a potential delay.</p></div><button data-page-link="actions">Open action center →</button></div>
         <section class="setup-checklist" id="setup-checklist" hidden>
           <div class="setup-checklist-copy"><p class="eyebrow">SELF-GUIDED SETUP</p><h2>Setup checklist</h2><p>Setup checklist, Help Center, templates, and standard support are included. Finish these three steps in the workspace.</p></div>
           <ol>
@@ -132,7 +136,7 @@
         </div>
 
         <div class="dashboard-grid">
-          <article class="panel production-panel">
+          <article class="panel production-panel" aria-label="Production trend available in Production insights">
             <div class="panel-header"><div><h2>Production performance</h2><p>Actual production compared with estimate</p></div><select id="period-select"><option>This week</option><option>This month</option></select></div>
             <div class="chart-summary"><div><small>ACTUAL</small><strong>94.2%</strong><span class="trend">-3.1%</span></div><div class="legend"><span><i class="actual"></i>Actual</span><span><i class="estimate"></i>Estimated</span></div></div>
             <div class="chart" id="production-chart"></div>
@@ -144,7 +148,7 @@
         </div>
 
         <article class="panel projects-panel">
-          <div class="panel-header"><div><h2>Projects at a glance</h2><p>Live progress across active work</p></div><button data-page-link="projects">View all projects →</button></div>
+          <div class="panel-header"><div><h2>Jobs to watch</h2><p>Highest-risk active work, with the reason visible</p></div><button data-page-link="projects">View all projects →</button></div>
           <div class="table-wrap"><table><thead><tr><th>PROJECT</th><th>CREW TODAY</th><th>COMPLETION</th><th>PRODUCTION</th><th>STATUS</th></tr></thead><tbody id="project-table"></tbody></table></div>
         </article>
       </section>
@@ -194,7 +198,8 @@
       </section>
 
       <section class="page" id="fieldday-page">
-        <div class="page-heading"><div><p class="eyebrow">YOUR TIME</p><h1>Clock</h1><p>Clock in when you start and clock out when you finish. Your hours stay on this screen.</p></div></div>
+        <div class="page-heading"><div><p class="eyebrow">YOUR TIME</p><h1>Time</h1><p>Clock in, review your hours, or request time off in one place.</p></div></div>
+        <nav class="field-time-tabs field-only" aria-label="Your time tools"><button type="button" class="active" data-page-link="fieldday">Clock &amp; hours</button><button type="button" data-page-link="timeoff">Time off</button></nav>
         <article class="clock-card" id="field-clock-card"><div><small id="field-clock-status-label">NOT CLOCKED IN</small><h2 id="field-clock-title">Ready to clock in</h2><p id="field-clock-detail">Clock in on the job. Company time is only for shop, driving, or other paid work off the job.</p></div><button class="primary big-action" id="start-day-button" type="button">Clock in</button></article>
         <div class="clock-company"><button class="secondary" id="company-clock" type="button">Not on a job? Clock company time</button></div>
         <div id="company-clock-status"></div>
@@ -226,6 +231,7 @@
 
       <section class="page" id="timeoff-page">
         <div class="page-heading"><div><p class="eyebrow">AVAILABILITY</p><h1>Time off</h1><p class="office-only">Review and decide employee time-off requests.</p><p class="field-only">Request time away and track the office decision.</p></div><button class="primary field-only" id="new-time-off" type="button">＋ Request time off</button></div>
+        <nav class="field-time-tabs field-only" aria-label="Your time tools"><button type="button" data-page-link="fieldday">Clock &amp; hours</button><button type="button" class="active" data-page-link="timeoff">Time off</button></nav>
         <nav class="time-workspace-tabs office-only" aria-label="Time tools"><button type="button" data-time-workspace="overview">Live overview</button><button type="button" data-time-workspace="approvals">Time-card approval</button><button type="button" class="active" data-time-workspace="timeoff">Time off</button></nav>
         <article class="panel office-only"><div id="time-office-timeoff-list"></div></article>
         <article class="panel field-only"><div id="time-off-list"></div></article>
@@ -554,7 +560,7 @@
 
   <dialog id="help-modal" class="wide-modal"><form method="dialog"><div class="modal-header"><div><p class="eyebrow">PRO DAILY LINK SUPPORT</p><h2>Help Center</h2></div><button class="close-button" value="cancel">×</button></div><label class="help-search">Search help<input id="help-search" type="search" placeholder="Search setup, dailies, production, mobile…"></label><div class="help-layout"><aside id="help-categories"></aside><section id="help-results"></section><article id="help-detail"><div class="help-empty"><strong>Choose a help topic</strong><p>Step-by-step guidance will appear here.</p></div></article></div></form></dialog>
   <dialog id="billing-modal" class="wide-modal"><form method="dialog"><div class="modal-header"><div><p class="eyebrow">ACCOUNT &amp; BILLING</p><h2>Manage plan</h2></div><button class="close-button" value="cancel">×</button></div><div id="billing-summary" class="billing-summary"></div><div class="billing-cycle" role="group" aria-label="Billing frequency"><button type="button" data-billing-cycle="monthly" class="active">Monthly</button><button type="button" data-billing-cycle="annual">Annual · two months free</button></div><div id="billing-plans" class="billing-plans"></div><div class="billing-note">Payments are securely processed by Stripe. Pro Daily Link never stores card numbers. Fair-use limits apply to unusually heavy storage, AI processing, or support.</div><div class="modal-actions"><button value="cancel" class="secondary">Close</button><button type="button" class="secondary" id="billing-portal">Payment methods &amp; invoices</button></div></form></dialog>
-  <dialog id="profile-modal"><form method="dialog"><div class="modal-header"><div><p class="eyebrow">YOUR ACCOUNT</p><h2>Profile settings</h2></div><button class="close-button" value="cancel">×</button></div><div class="profile-photo-editor"><span class="avatar" id="profile-preview">LF</span><div><strong>Profile photo</strong><p>Upload a JPG, PNG, or WebP image.</p><input id="profile-photo" type="file" accept="image/jpeg,image/png,image/webp"></div></div><label>Display name<input id="profile-display-name"></label><label>Language preference<select id="profile-language"><option value="en">English</option><option value="es">Español</option></select><small>Used as your default throughout the app.</small></label><label>Appearance<select id="profile-theme"><option value="light">Light</option><option value="dark">Dark</option><option value="system">Use device setting</option></select></label><div class="modal-actions"><button type="button" id="profile-logout-button" style="margin-right:auto;border:0;background:transparent;color:#b44236;font-weight:700;padding:10px 4px">Sign out</button><button value="cancel" class="secondary">Cancel</button><button type="button" class="primary" id="save-profile">Save profile</button></div></form></dialog>
+  <dialog id="profile-modal"><form method="dialog"><div class="modal-header"><div><p class="eyebrow">YOUR ACCOUNT</p><h2>Profile settings</h2></div><button class="close-button" value="cancel">×</button></div><div class="profile-photo-editor"><span class="avatar" id="profile-preview">LF</span><div><strong>Profile photo</strong><p>Upload a JPG, PNG, or WebP image.</p><input id="profile-photo" type="file" accept="image/jpeg,image/png,image/webp"></div></div><label>Display name<input id="profile-display-name"></label><label>Language preference<select id="profile-language"><option value="en">English</option><option value="es">Español</option></select><small>Used as your default throughout the app.</small></label><label>Appearance<select id="profile-theme"><option value="light">Light</option><option value="dark">Dark</option><option value="system">Use device setting</option></select></label><div class="modal-actions"><button type="button" id="profile-logout-button" class="profile-signout">Sign out</button><button value="cancel" class="secondary">Cancel</button><button type="button" class="primary" id="save-profile">Save profile</button></div></form></dialog>
   <dialog id="photo-detail-modal"><form method="dialog"><div class="modal-header"><div><p class="eyebrow">PHOTO RECORD</p><h2>Photo details</h2></div><button class="close-button" value="cancel">×</button></div><div id="photo-detail"></div><div class="modal-actions"><button value="cancel" class="secondary">Close</button></div></form></dialog>
   <div class="toast" id="toast" role="status" aria-live="polite" aria-atomic="true"></div>
   <dialog id="pay-period-dialog"><form id="pay-period-form">
@@ -600,7 +606,6 @@
   <script src="reporting-controls.js?v=20261014-review3"></script>
   <script src="project-notes-ui.js?v=20261005-notes-focus"></script>
   <script src="project-schedule-ui.js?v=20261014-uifix"></script>
-  <link rel="stylesheet" href="project-assistant-ui.css?v=20261007-assistant-draft">
   <script src="project-assistant-voice.js?v=20261007-voice-prototype"></script>
   <script src="project-assistant-conversation.js?v=20261007-natural-names"></script>
   <script src="project-assistant-names.js?v=20261007-natural-names"></script>

@@ -185,6 +185,14 @@ var fieldScopeFlags=[];
     }
   }
   var fieldHoursReview=null;
+  function revealFieldInput(input){
+    if(!input)return;
+    requestAnimationFrame(()=>{
+      const reveal=()=>{input.scrollIntoView?.({block:'center',behavior:'auto'});input.focus?.({preventScroll:true})};
+      reveal();
+      requestAnimationFrame(reveal);
+    });
+  }
   function clockHoursPresent(){return [...$$('[data-labor-member]')].some(input=>input.dataset.timecardDerived==='true'&&Number(input.value)>0)}
   function enteredLaborHours(){return [...$$('[data-labor-member]')].reduce((sum,input)=>sum+(Number(input.value)||0),0)}
   function crewStillClockedIn(){if(!fieldCompact())return false;const projectId=projects?.[+$('#report-project')?.value]?.id,date=$('#report-date')?.value,cards=typeof timeCards==='undefined'?[]:timeCards,days=typeof workdays==='undefined'?[]:workdays;return cards.some(card=>card&&!card.deletedAt&&Number(card.projectId)===Number(projectId)&&String(card.date||'')===String(date||'')&&card.inAt&&!card.outAt)||days.some(day=>day&&Number(day.projectId)===Number(projectId)&&day.status==='active'&&!day.endedAt)}
@@ -466,7 +474,7 @@ var fieldScopeFlags=[];
     if(crewStillClockedIn())cards.unshift('<p class="field-clock-warning">Clock out to include today\'s time</p>');
     host.hidden=false;
     host.innerHTML=(cards.length?cards.join(''):'<p class="field-review-empty">AI did not fill any lines. Add the work on the cards below.</p>')+(fieldCompact()?'<p>Unknown or mismatched hours can be sent for office review. Clock punches are kept separately.</p>':'<p>Review approved time-card, scheduled, or entered crew hours before sending.</p>')+'<button type="button" id="field-edit-hours">Edit reported hours</button><button type="button" id="field-add-line">Add line</button>';
-    const editHours=$('#field-edit-hours');if(editHours)editHours.onclick=()=>{const modal=$('#report-modal');modal?.classList.add('field-manual-entry');const more=$('#report-more');if(more)more.open=true;const input=$$('[data-labor-member]')[0];input?.scrollIntoView?.({block:'center'});input?.focus()};
+    const editHours=$('#field-edit-hours');if(editHours)editHours.onclick=()=>{const modal=$('#report-modal');modal?.classList.add('field-manual-entry');const more=$('#report-more');if(more)more.open=true;revealFieldInput($$('[data-labor-member]')[0])};
     const addLine=$('#field-add-line');
     if(addLine)addLine.onclick=()=>{
       if(typeof addProductionRow!=='function')return;
@@ -538,13 +546,13 @@ var fieldScopeFlags=[];
     host.querySelectorAll('[data-edit-labor]').forEach(button=>button.onclick=()=>{
       const input=$(`[data-labor-member="${button.dataset.editLabor}"]`);
       $('#report-modal')?.classList.add('field-manual-entry');
-      input?.focus();
+      revealFieldInput(input);
     });
     host.querySelectorAll('[data-edit-field]').forEach(button=>button.onclick=()=>{
       const field=$('#'+button.dataset.editField);if(!field)return;
       const more=$('#report-more');if(more&&field.closest('#report-more'))more.open=true;
       $('#report-modal')?.classList.add('field-manual-entry');
-      field.focus();
+      revealFieldInput(field);
     });
     bindLaborAllocation();
     clearStaleClockOutPrompt();

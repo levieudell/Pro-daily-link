@@ -1,0 +1,333 @@
+/*
+ * Pro Daily Link — canonical product design layer
+ *
+ * First-principles contract:
+ * 1. Orange commits work. Blue selects or navigates. Red destroys.
+ * 2. Every screen exposes one obvious next action before secondary detail.
+ * 3. Components consume semantic tokens so light and dark mode cannot drift.
+ * 4. Field controls remain glove-friendly and required information is never hidden.
+ *
+ * This file intentionally loads last while the legacy cascade is migrated.
+ */
+
+:root{
+  color-scheme:light;
+  --surface-canvas:#f4f3ef;
+  --surface-panel:#ffffff;
+  --surface-raised:#ffffff;
+  --surface-subtle:#eeefeb;
+  --surface-inverse:#151816;
+  --text-primary:#171a18;
+  --text-secondary:#626964;
+  --text-tertiary:#626a64;
+  --text-on-accent:#111411;
+  --border-default:#dfe2dd;
+  --border-strong:#c7ccc6;
+  --action-primary:#f76018;
+  --action-primary-hover:#dc4f0d;
+  --action-primary-soft:#fff0e7;
+  --action-selection:#1769e0;
+  --action-selection-soft:#edf4ff;
+  --state-success:#19734c;
+  --state-success-surface:#e9f5ee;
+  --state-warning:#9b5d0b;
+  --state-warning-surface:#fff3df;
+  --state-danger:#ad3f37;
+  --state-danger-surface:#fcecea;
+  --state-info:#2b5f9f;
+  --state-info-surface:#edf4ff;
+  --radius-sm:8px;
+  --radius-md:12px;
+  --radius-lg:18px;
+  --radius-pill:999px;
+  --space-1:4px;
+  --space-2:8px;
+  --space-3:12px;
+  --space-4:16px;
+  --space-6:24px;
+  --space-8:32px;
+  --space-12:48px;
+  --shadow-1:0 1px 2px rgba(17,24,20,.05),0 10px 28px -18px rgba(17,24,20,.22);
+  --shadow-2:0 2px 5px rgba(17,24,20,.06),0 18px 42px -20px rgba(17,24,20,.28);
+  --focus-ring:0 0 0 3px rgba(247,96,24,.24);
+
+  /* Compatibility aliases while older feature CSS is retired. */
+  --ink:var(--text-primary);
+  --muted:var(--text-secondary);
+  --line:var(--border-default);
+  --bg:var(--surface-canvas);
+  --panel:var(--surface-panel);
+  --green:var(--state-success);
+  --blue:var(--action-selection);
+  --amber:var(--state-warning);
+  --red:var(--state-danger);
+  --shadow:var(--shadow-1);
+  --r-sm:var(--radius-sm);
+  --r-md:var(--radius-md);
+  --r-lg:var(--radius-lg);
+  --ring:var(--focus-ring);
+}
+
+:root[data-theme="dark"]{
+  color-scheme:dark;
+  --surface-canvas:#101311;
+  --surface-panel:#1a1f1c;
+  --surface-raised:#222824;
+  --surface-subtle:#272d29;
+  --surface-inverse:#f4f5f2;
+  --text-primary:#f3f5f2;
+  --text-secondary:#bdc5bf;
+  --text-tertiary:#99a39c;
+  --text-on-accent:#101311;
+  --border-default:#343c37;
+  --border-strong:#4a554e;
+  --action-primary:#ff702b;
+  --action-primary-hover:#ff854a;
+  --action-primary-soft:#432719;
+  --action-selection:#72a7f5;
+  --action-selection-soft:#203047;
+  --state-success:#73d3a5;
+  --state-success-surface:#193628;
+  --state-warning:#f0bd70;
+  --state-warning-surface:#422f18;
+  --state-danger:#ff9b94;
+  --state-danger-surface:#452420;
+  --state-info:#9bc4ff;
+  --state-info-surface:#203047;
+  --shadow-1:0 1px 2px rgba(0,0,0,.34),0 12px 30px -18px rgba(0,0,0,.9);
+  --shadow-2:0 2px 5px rgba(0,0,0,.45),0 20px 46px -20px rgba(0,0,0,.95);
+  --focus-ring:0 0 0 3px rgba(255,112,43,.34);
+}
+
+html{background:var(--surface-canvas)}
+body{background:var(--surface-canvas);color:var(--text-primary);font-family:"DM Sans",sans-serif;font-size:15px;line-height:1.5}
+body,button,input,select,textarea{font-family:"DM Sans",sans-serif}
+main{background:var(--surface-canvas)}
+.workspace-loader{background:var(--surface-canvas)!important;color:var(--text-primary)!important}
+.workspace-loader-card span{color:var(--text-secondary)!important}
+.workspace-loader-bar{background:var(--surface-subtle)!important}
+.workspace-loader-bar::after{background:var(--action-primary)!important}
+
+/* One display face, one UI face. Manrope was never loaded and caused silent fallback. */
+.page-heading h1,.field-welcome h1,.panel-header h2,.modal-header h2,.settings-section-heading h2,
+.project-card h3,.report-detail h2,.customer-detail h2,.setup-checklist h2,.stat-card strong,
+.time-overview strong,.success-dialog h2{font-family:"Oswald",sans-serif}
+.page-heading h1,.field-welcome h1{font-size:clamp(30px,3vw,42px);font-weight:700;line-height:1.04;letter-spacing:-.02em;text-transform:uppercase}
+.panel-header h2,.settings-section-heading h2{font-size:20px;line-height:1.2;letter-spacing:.01em;text-transform:uppercase}
+.page-heading p,.panel-header p{font-size:14px;line-height:1.45;color:var(--text-secondary)}
+.eyebrow,.page-heading .eyebrow{font-size:11px;font-weight:800;letter-spacing:.14em;color:var(--action-primary)}
+
+/* Shell and navigation: task groups, not a feature inventory. */
+.sidebar{width:252px;padding:24px 16px 18px;background:#121513;color:#f5f7f5;border-right:1px solid #292e2b}
+main{margin-left:252px}
+.brand{padding:0 8px 20px}
+.brand-home{min-height:48px}
+.brand b{color:#ff7a38}
+.brand-mark{width:40px;height:40px;border:0;background:#fff;border-radius:10px}
+.sidebar nav{gap:2px;padding-right:2px}
+.nav-section-label{margin:18px 12px 5px;color:#929c95;font-size:10px;font-weight:800;letter-spacing:.14em;text-transform:uppercase}
+.field-mode .nav-section-label.field-only{display:block}
+.nav-item{min-height:44px;padding:10px 12px;border-radius:var(--radius-sm);color:#adb6b0;font-size:13px;font-weight:650}
+.nav-item span{font-size:16px;color:#7f8983}
+.nav-item:hover{background:#1d221f;color:#fff}
+.nav-item.active{background:#262c28;color:#fff;box-shadow:inset 3px 0 var(--action-primary)}
+.nav-item.active span{color:#ff8247}
+.nav-item em{min-width:22px;padding:2px 7px;background:var(--action-primary);color:var(--text-on-accent);text-align:center}
+.nav-more{margin-top:8px;border-top:1px solid #292e2b;padding-top:8px}
+.nav-more summary{min-height:44px;color:#aeb7b1;font-size:12px}
+.nav-more summary:hover,.nav-more[open] summary{background:#1d221f}
+.nav-more>div{padding-left:10px}
+.nav-more .nav-item{font-size:12px}
+.trial-card{background:#1d221f;border-color:#303732}
+.trial-card small{color:#ff8247}
+.trial-card button{color:#d3dad5}
+.profile{min-height:58px;margin-top:8px;padding:10px 6px;border-radius:var(--radius-md)}
+.profile:hover{background:#1d221f}
+.profile small,.profile i{color:#8f9992}
+
+.topbar{height:72px;padding:0 32px;background:color-mix(in srgb,var(--surface-panel) 96%,transparent);border:0;border-bottom:1px solid var(--border-default);box-shadow:0 1px 0 rgba(17,24,20,.02)}
+.header-company-mark{display:none}
+.top-actions{gap:10px}
+.icon-button,.secondary{background:var(--surface-panel);border-color:var(--border-default);color:var(--text-primary)}
+.icon-button:hover,.secondary:hover{background:var(--surface-raised);border-color:var(--border-strong)}
+
+/* Action semantics: orange commits, blue selects/navigates, red destroys. */
+.primary{min-height:44px;border:1px solid var(--action-primary);border-radius:var(--radius-sm);background:var(--action-primary);box-shadow:none;color:var(--text-on-accent)!important}
+.primary:hover{border-color:var(--action-primary-hover);background:var(--action-primary-hover);box-shadow:0 8px 18px -12px rgba(208,72,8,.9)}
+.secondary{min-height:44px;border-radius:var(--radius-sm)}
+.danger-button,.profile-signout{color:var(--state-danger)!important}
+.profile-signout{margin-right:auto;padding:10px 4px;border:0;background:transparent;font-weight:800}
+.profile-signout:hover{color:var(--state-danger)!important;background:var(--state-danger-surface);border-radius:var(--radius-sm)}
+.alert button,.panel-header button,.photo-actions button,.project-open,.customer-list-item b{color:var(--action-selection)}
+:where(button,a,input,select,textarea,summary,[tabindex]):focus-visible{outline:3px solid var(--action-primary);outline-offset:3px;box-shadow:none}
+
+/* Inputs and dialogs share the same surface contract in both themes. */
+label{font-size:13px;color:var(--text-primary)}
+label input,label select,label textarea,.search-box,.filter-row select,.panel-header select{
+  min-height:44px;border:1px solid var(--border-default);border-radius:var(--radius-sm);background:var(--surface-panel);color:var(--text-primary)
+}
+label textarea{min-height:112px}
+label input:hover,label select:hover,label textarea:hover{border-color:var(--border-strong)}
+label textarea:focus,label input:focus,label select:focus{border-color:var(--action-primary);box-shadow:var(--focus-ring)}
+input::placeholder,textarea::placeholder{color:var(--text-tertiary);opacity:1}
+dialog{border:1px solid var(--border-default);border-radius:var(--radius-lg);background:var(--surface-panel);color:var(--text-primary);box-shadow:0 30px 80px rgba(0,0,0,.3)}
+dialog::backdrop{background:rgba(9,12,10,.62);backdrop-filter:blur(5px)}
+.modal-header{background:var(--surface-panel)}
+.close-button{background:var(--surface-subtle);color:var(--text-primary)}
+.modal-actions{background:var(--surface-panel)}
+
+/* Shared surfaces. This list deliberately covers every primary workspace family. */
+:where(.panel,.stat-card,.project-card,.member-card,.report-list-item,.customer-list-item,.data-box,
+  .settings-panel,.customer-metric,.detail-meta>div,.schedule-summary article,.schedule-cell,.time-overview article,
+  .clocked-in-card,.time-card,.time-summary-card,.approval-card,.template-builder,.template-question-card,
+  .permission-grid .check-row,.subcontractor-card,.compliance-form,.guest-link-row,.subcontractor-secondary,
+  .office-tool,.setup-checklist,.setup-checklist li button,.empty-state,.dashboard-empty){
+  border-color:var(--border-default);background:var(--surface-panel);color:var(--text-primary)
+}
+:where(.panel,.stat-card,.project-card,.member-card,.settings-panel,.subcontractor-card){border-radius:var(--radius-md);box-shadow:var(--shadow-1)}
+.panel-header{padding:20px 22px 16px}
+.panel-header p,.project-card>p,.data-box p,.activity-item small,.member-card p{color:var(--text-secondary)}
+table th,.schedule-cell.header,.estimate-row.header{background:var(--surface-subtle);color:var(--text-secondary)}
+table td,.activity-item,.schedule-cell{border-color:var(--border-default)}
+.status{background:var(--state-success-surface);color:var(--state-success)}
+.status.warning{background:var(--state-warning-surface);color:var(--state-warning)}
+.status.danger{background:var(--state-danger-surface);color:var(--state-danger)}
+
+/* Overview: one priority, live work, then performance detail. */
+.page{max-width:1460px;padding:40px 42px 64px}
+.page-heading{align-items:center;margin-bottom:24px}
+.dashboard-heading-actions{display:flex;align-items:center;gap:12px}
+.system-live{display:inline-flex;align-items:center;gap:7px;color:var(--text-secondary);font-size:12px;font-weight:800}
+.system-live i{width:8px;height:8px;border-radius:50%;background:#1ca464;box-shadow:0 0 0 5px rgba(28,164,100,.12)}
+.system-live.offline{color:var(--state-warning)}
+.system-live.offline i{background:var(--state-warning);box-shadow:0 0 0 5px color-mix(in srgb,var(--state-warning) 16%,transparent)}
+.command-priority{min-height:88px;margin-bottom:18px;padding:16px 18px;border:1px solid #343a36;border-left:5px solid var(--action-primary);border-radius:var(--radius-md);background:var(--surface-inverse);color:#fff;box-shadow:var(--shadow-1)}
+.command-priority>span{width:34px;height:34px;background:var(--action-primary);color:var(--text-on-accent)}
+.command-priority>div{display:grid;gap:1px}
+.command-priority .alert-kicker{color:#ff9b69;font-size:9px;font-weight:900;letter-spacing:.14em}
+.command-priority strong{font-size:15px}
+.command-priority p{color:#b9c1bc;font-size:12px}
+.command-priority button{min-height:44px;margin-left:auto;padding:0 4px;color:#fff;font-size:13px}
+.command-priority.all-clear{border-color:var(--border-default);border-left-color:var(--state-success);background:var(--surface-panel);color:var(--text-primary)}
+.command-priority.all-clear>span{background:var(--state-success-surface);color:var(--state-success)}
+.command-priority.all-clear .alert-kicker{color:var(--state-success)}
+.command-priority.all-clear p{color:var(--text-secondary)}
+.office-workspace-tools{grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:10px;margin-bottom:18px}
+.office-tools-label{grid-column:1/-1;margin:0 0 -2px;color:var(--text-tertiary);font-size:10px;font-weight:900;letter-spacing:.13em;text-transform:uppercase}
+.office-tool{min-height:66px;padding:12px 14px;box-shadow:none}
+.office-tool:hover{border-color:var(--action-selection);background:var(--action-selection-soft)}
+.office-tool-icon{color:var(--action-selection)}
+.office-tool strong{font-size:13px}.office-tool small{color:var(--text-secondary);font-size:11px}
+.stats-grid{gap:10px;margin-bottom:16px}
+.stat-card{min-height:104px;padding:16px;gap:12px;box-shadow:none}
+.stat-card:hover{box-shadow:var(--shadow-1)}
+.stat-card small{color:var(--text-tertiary);font-size:10px}
+.stat-card strong{margin:2px 0;font-size:29px}
+.stat-card p{color:var(--text-secondary);font-size:11px}
+.stat-card-arrow{background:var(--action-selection-soft);color:var(--action-selection)}
+.dashboard-grid{grid-template-columns:1fr;grid-template-areas:"activity";gap:14px}
+.today-panel{grid-area:activity}.production-panel{display:none}
+.dashboard-grid>.panel{min-height:330px}
+.projects-panel{margin-top:14px}
+.dashboard-risk-reason{display:block;max-width:390px;margin-top:6px;color:var(--text-secondary);font-size:11px;line-height:1.4;white-space:normal}
+
+/* Project cards answer: job, progress/risk, next action. */
+.project-card-grid{gap:14px}
+.project-card{padding:20px;box-shadow:none}
+.project-card[data-project-card]:hover{border-color:var(--action-selection);box-shadow:var(--shadow-2);transform:translateY(-2px)}
+.project-card h3{font-size:20px}
+.project-card>p{font-size:13px}
+.project-meta{border-color:var(--border-default)}
+.project-health-reason{border-radius:var(--radius-sm)}
+.project-open{min-height:44px;border-color:var(--border-default);background:var(--surface-panel)}
+.project-open:hover{border-color:var(--action-selection);background:var(--action-selection-soft)}
+
+/* Field work: one primary move and no decorative arithmetic. */
+.field-welcome>p:last-child{font-size:14px;color:var(--text-secondary)}
+.start-day-hero{gap:24px;border:0;border-left:5px solid var(--action-primary);border-radius:var(--radius-lg);background:linear-gradient(120deg,#151816,#252b27);box-shadow:var(--shadow-2)}
+.start-day-hero small{color:#ff9b69}
+.start-day-hero p{font-size:13px;color:#c6cec8}
+.hero-start-button{width:auto;height:auto;min-width:148px;min-height:54px;padding:12px 22px;border:1px solid var(--action-primary);border-radius:var(--radius-sm);background:var(--action-primary);box-shadow:none;color:var(--text-on-accent);font:700 16px "DM Sans",sans-serif}
+.hero-start-button:hover{background:var(--action-primary-hover)}
+.field-assignment-card{background:var(--surface-panel)}
+.field-time-tabs{display:flex;gap:4px;width:max-content;max-width:100%;margin:0 0 16px;padding:4px;border:1px solid var(--border-default);border-radius:var(--radius-md);background:var(--surface-subtle)}
+.field-time-tabs button{min-height:44px;padding:9px 16px;border:0;border-radius:var(--radius-sm);background:transparent;color:var(--text-secondary);font-weight:800}
+.field-time-tabs button.active{background:var(--surface-panel);color:var(--text-primary);box-shadow:var(--shadow-1)}
+.daily-label-short{display:none}
+
+/* Token-driven dark mode: no component may keep a light surface with light text. */
+:root[data-theme="dark"] :where(.topbar,.panel,.stat-card,.project-card,.member-card,.report-list-item,
+  .customer-list-item,.data-box,.settings-panel,.customer-metric,.detail-meta>div,.schedule-summary article,
+  .schedule-cell,.time-overview article,.time-card,.time-summary-card,.approval-card,.template-builder,
+  .template-question-card,.permission-grid .check-row,.subcontractor-card,.compliance-form,.guest-link-row,
+  .subcontractor-secondary,.office-tool,.setup-checklist,.setup-checklist li button,.empty-state,.dashboard-empty,
+  dialog,.modal-header,.modal-actions){background:var(--surface-panel)!important;color:var(--text-primary)!important;border-color:var(--border-default)!important}
+:root[data-theme="dark"] :where(input,select,textarea,.secondary,.icon-button,.search-box,.filter-row select,.panel-header select,
+  .project-open,.project-menu summary){background:var(--surface-raised)!important;color:var(--text-primary)!important;border-color:var(--border-default)!important}
+:root[data-theme="dark"] :where(table th,.schedule-cell.header,.estimate-row.header,.photo-empty){background:var(--surface-subtle)!important;color:var(--text-secondary)!important}
+:root[data-theme="dark"] :where(.panel p,.stat-card p,.project-card>p,.activity-item small,.project-cell small,.member-card p,.input-help){color:var(--text-secondary)!important}
+:root[data-theme="dark"] .command-priority:not(.all-clear){background:#0b0e0c!important;border-color:#343a36!important;border-left-color:var(--action-primary)!important;color:#fff!important}
+:root[data-theme="dark"] .command-priority:not(.all-clear) p{color:#b9c1bc!important}
+:root[data-theme="dark"] .office-tool:hover,:root[data-theme="dark"] .project-open:hover{background:var(--action-selection-soft)!important;border-color:var(--action-selection)!important}
+:root[data-theme="dark"] .field-assignment-card.assignment-confirmed{background:var(--state-success-surface)!important}
+
+/* Responsive shell. Preserve required content; stack it instead of hiding it. */
+@media(max-width:1050px){
+  .dashboard-grid{grid-template-columns:1fr;grid-template-areas:"activity"}
+}
+
+@media(max-width:760px){
+  main{margin-left:0}
+  .sidebar{width:min(88vw,328px);padding:calc(env(safe-area-inset-top) + 18px) 14px calc(env(safe-area-inset-bottom) + 14px)}
+  .topbar{min-height:64px;height:auto;padding:max(8px,env(safe-area-inset-top)) 14px 8px;gap:8px}
+  .header-company-mark{display:grid;width:44px;height:44px;flex:0 0 44px}
+  main:has(#app-back-button:not([hidden])) .header-company-mark{display:none}
+  .top-actions{margin-left:auto;gap:6px}
+  .top-actions .primary{min-width:92px;padding:9px 12px;font-size:13px}
+  .daily-label-wide{display:none}
+  .daily-label-short{display:inline}
+  .page{padding:24px 16px calc(72px + env(safe-area-inset-bottom))}
+  .page-heading{display:grid;grid-template-columns:minmax(0,1fr);gap:14px;margin-bottom:18px}
+  .page-heading h1{font-size:30px}
+  .page-heading p{font-size:13px}
+  .dashboard-heading-actions{justify-content:space-between}
+  .dashboard-heading-actions .secondary{display:none}
+  .command-priority{display:grid;grid-template-columns:auto minmax(0,1fr);gap:12px;min-height:0;padding:15px}
+  .command-priority button{grid-column:2;margin:8px 0 0;justify-self:start}
+  .office-workspace-tools{grid-template-columns:1fr 1fr;gap:8px}
+  .office-tool{min-height:76px;padding:11px}
+  .office-tool-arrow{display:none}
+  #dashboard-page .stats-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+  #dashboard-page .stat-card{min-height:118px;padding:14px 12px 14px;padding-right:34px;display:grid;grid-template-columns:32px minmax(0,1fr);gap:8px}
+  #dashboard-page .stat-icon{width:32px;height:32px}
+  #dashboard-page .stat-card strong{font-size:25px}
+  #dashboard-page .stat-card-arrow{right:10px;width:24px;height:24px}
+  .dashboard-grid{gap:12px}
+  .dashboard-grid>.panel{min-height:0}
+  .panel-header{padding:17px 16px 13px}
+  .panel-header h2{font-size:18px}
+  .projects-panel th:nth-child(2),.projects-panel td:nth-child(2),.projects-panel th:nth-child(4),.projects-panel td:nth-child(4){display:none}
+  .projects-panel th,.projects-panel td{padding:12px 10px}
+  .start-day-hero{display:grid;grid-template-columns:1fr;padding:20px 18px}
+  .hero-start-button{width:100%;min-width:0;min-height:54px}
+  .field-dashboard-grid{gap:12px}
+  .field-mode:has(#myday-page.active) .top-actions [data-open-report]{display:none}
+  .field-time-tabs{display:grid!important;grid-template-columns:1fr 1fr;width:100%}
+  dialog:not(#report-modal):not(.success-dialog){background:var(--surface-panel)}
+  .modal-actions{gap:8px}
+  .modal-actions>button{min-height:48px}
+}
+
+@media(max-width:390px){
+  .topbar{padding-left:10px;padding-right:10px}
+  .topbar .menu-button{width:44px;flex-basis:44px}
+  .top-actions .primary{min-width:82px;padding-inline:8px}
+  .system-live{font-size:11px}
+  #dashboard-page .stat-card{min-height:124px}
+  .office-workspace-tools{grid-template-columns:1fr}
+  .office-tool{min-height:62px}
+}
+
+@media(prefers-reduced-motion:reduce){
+  *,*::before,*::after{scroll-behavior:auto!important;animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important}
+}

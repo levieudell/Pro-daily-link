@@ -58,7 +58,8 @@ async function openNav(page, name) {
 }
 
 (async () => {
-  assert.ok(fs.existsSync('/usr/bin/google-chrome-stable'), 'Chrome is required for the clock-out parse test');
+  const chrome = process.env.PDL_TEST_CHROME || (process.platform === 'win32' ? 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe' : '/usr/bin/google-chrome-stable');
+  assert.ok(fs.existsSync(chrome), 'Chrome is required for the clock-out parse test');
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'pdl-clockout-parse-'));
   const port = await freePort();
   const dbFile = path.join(root, 'db.json');
@@ -70,7 +71,7 @@ async function openNav(page, name) {
   child.stderr.on('data', chunk => { log += chunk; });
   let browser;
   try {
-    browser = await puppeteer().launch({ executablePath: '/usr/bin/google-chrome-stable', headless: true, args: ['--no-sandbox', '--disable-dev-shm-usage', '--disable-gpu'] });
+    browser = await puppeteer().launch({ executablePath: chrome, headless: true, args: ['--no-sandbox', '--disable-dev-shm-usage', '--disable-gpu'] });
     await new Promise((resolve, reject) => {
       const timer = setTimeout(() => reject(new Error('staging server did not start\n' + log)), 20000);
       const poll = () => {
