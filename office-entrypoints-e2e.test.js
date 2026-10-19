@@ -64,6 +64,8 @@ async function checkOfficeLayout(page,width,height,shot){
    const context=await browser.createBrowserContext(),page=await context.newPage();page.on('dialog',d=>d.accept());
    await page.setViewport({width:390,height:844,isMobile:true,hasTouch:true});await page.evaluateOnNewDocument(()=>localStorage.setItem('pdl-analytics-consent','declined'));
    await page.goto(`http://127.0.0.1:${port}/login.html`);await page.type('#email',owner.email);await page.type('#password','synthetic-owner-pass');await page.click('form#login button.primary');await waitForBoot(page);
+   const commandCenter=await page.evaluate(()=>{const priority=document.querySelector('.command-priority'),production=document.querySelector('.production-panel'),team=document.querySelector('.nav-item[data-page="team"]');return{priorityDisplay:getComputedStyle(priority).display,productionDisplay:getComputedStyle(production).display,teamDisplay:getComputedStyle(team).display,overflow:document.documentElement.scrollWidth-innerWidth}});
+   assert.equal(commandCenter.priorityDisplay,'grid','phone Overview serves the canonical command-center layout');assert.equal(commandCenter.productionDisplay,'none','the duplicate production chart lives in Insights, not Overview');assert.notEqual(commandCenter.teamDisplay,'none','Team remains a first-class destination');assert.ok(commandCenter.overflow<=1,'phone Overview has no horizontal overflow');
    await page.click('.top-actions [data-open-report]');await page.waitForSelector('#report-modal[open]');
    for(const width of [320,375,390,430,1280]){await checkOfficeLayout(page,width,844,true);if(width<760)await checkOfficeLayout(page,width,390,true);}
    await page.evaluate(()=>showReportStep(2));

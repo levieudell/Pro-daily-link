@@ -15,6 +15,9 @@ const FIELD_EMAIL = 'levi+field@prodailylink.com';
 const OWNER_EMAIL = 'levi+owner@prodailylink.com';
 const FIELD_PASSWORD = 'staging-field-pass';
 const OWNER_PASSWORD = 'staging-owner-pass';
+const CHROME = process.env.PDL_TEST_CHROME || (process.platform === 'win32'
+  ? 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe'
+  : '/usr/bin/google-chrome-stable');
 
 function puppeteer() {
   try { return require('puppeteer-core'); }
@@ -167,7 +170,7 @@ async function openNav(page, name) {
 }
 
 (async () => {
-  assert.ok(fs.existsSync('/usr/bin/google-chrome-stable'), 'Chrome is required for the field daily browser test');
+  assert.ok(fs.existsSync(CHROME), `Chrome is required for the field daily browser test (${CHROME})`);
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'pdl-field-e2e-'));
   const port = await freePort();
   const env = { ...process.env, PORT: String(port), PDL_STAGING: '1', PDL_STAGING_OWNER_PASSWORD: OWNER_PASSWORD, PDL_STAGING_FIELD_PASSWORD: FIELD_PASSWORD, PDL_DB_FILE: path.join(root, 'db.json'), PDL_PLATFORM_FILE: path.join(root, 'platform.json'), PDL_EMAIL_DEV_MODE: '1', PDL_SUPABASE_ENABLED: '0', PDL_TRANSACTIONAL_DB: 'off', OPENAI_API_KEY: '' };
@@ -182,7 +185,7 @@ async function openNav(page, name) {
   let page;
   try {
     browser = await puppeteer().launch({
-      executablePath: '/usr/bin/google-chrome-stable',
+      executablePath: CHROME,
       headless: true,
       args: ['--no-sandbox', '--disable-dev-shm-usage', '--disable-gpu']
     });
@@ -634,7 +637,26 @@ async function openNav(page, name) {
     await shot(page, 'field-reopen-stable.png');
     await page.evaluate(() => document.querySelector('#report-modal .close-button')?.click());
     await page.waitForFunction(() => !document.querySelector('#report-modal')?.open);
-    await page.click('[data-open-report]');
+    await page.waitForFunction(() => Date.now() >= suppressReportOpenUntil);
+    const reopenTarget = await page.evaluate(() => {
+      const button = document.querySelector('.top-actions [data-open-report]');
+      const rect = button?.getBoundingClientRect();
+      const memberId = Number(currentUser?.memberId), today = companyTodayIso();
+      const active = workdays.find(row => row?.status === 'active' && (row.memberIds || []).map(Number).includes(memberId));
+      const assignment = assignments.find(row => row?.date === today && (row.memberIds || []).map(Number).includes(memberId));
+      const projectIndex = projects.findIndex(project => Number(project.id) === Number(active?.projectId || assignment?.projectId));
+      const existing = FieldDailyScope.sameDayDaily(reports, { projectIndex, dateIso: today, memberIds: [memberId], foreman: currentUser?.name || '' });
+      const hit = rect ? document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2) : null;
+      return { visible: Boolean(button && rect && rect.width > 0 && rect.height > 0), hit: hit?.closest?.('[data-open-report]') === button, hitTag: hit?.tagName || null, hitId: hit?.id || null, hitClass: hit?.className || null, hitHtml: hit?.outerHTML?.slice(0,240) || null, buttonRect: rect ? { left: rect.left, top: rect.top, width: rect.width, height: rect.height } : null, buttonPointer: button ? getComputedStyle(button).pointerEvents : null, sameDayId: existing?.id || null, suppressFor: suppressReportOpenUntil - Date.now() };
+    });
+    assert.equal(reopenTarget.visible, true, JSON.stringify(reopenTarget));
+    assert.equal(reopenTarget.hit, true, JSON.stringify(reopenTarget));
+    assert.ok(reopenTarget.sameDayId, `same-day report missing before reopen: ${JSON.stringify(reopenTarget)}`);
+    assert.ok(reopenTarget.suppressFor <= 0, JSON.stringify(reopenTarget));
+    await page.click('.top-actions [data-open-report]');
+    await new Promise(resolve => setTimeout(resolve, 150));
+    const reopenedImmediately = await page.evaluate(() => ({ open: document.querySelector('#report-modal')?.open, title: document.querySelector('#report-modal-title')?.textContent, suppressFor: suppressReportOpenUntil - Date.now() }));
+    assert.equal(reopenedImmediately.open, true, `daily opener did not open the report: ${JSON.stringify({ reopenTarget, reopenedImmediately })}`);
     await page.waitForFunction(() => {
       const notes = document.querySelector('#field-notes')?.value || '';
       const ids = [...document.querySelectorAll('.production-entry')].map(row => row.dataset.estimateItemId);

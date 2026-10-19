@@ -16,3 +16,4 @@ node_modules/
 
 .demo-recovery/
 qa-tmp/
+.tmp-ui-qa/
