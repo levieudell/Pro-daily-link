@@ -9,11 +9,11 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Oswald:wght@500;600;700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="styles.css?v=20261014-review3-20261017-fieldreview1-office1-mobile3" />
+  <link rel="stylesheet" href="styles.css?v=20261014-review3-20261017-fieldreview1-office1-mobile3-20261019-schedule1" />
   <link rel="stylesheet" href="estimate-mobile.css" />
   <link rel="stylesheet" href="project-notes-ui.css?v=20261005-notes-focus" />
   <link rel="stylesheet" href="project-assistant-ui.css?v=20261007-assistant-draft" />
-  <link rel="stylesheet" href="design-system.css?v=20261019-first-principles" />
+  <link rel="stylesheet" href="design-system.css?v=20261019-first-principles-schedule1" />
   <link rel="manifest" href="manifest.webmanifest" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="default" />
@@ -189,10 +189,12 @@
       </section>
 
       <section class="page" id="schedule-page">
-        <div class="page-heading"><div><p class="eyebrow">FIELD OPERATIONS</p><h1>Crew schedule</h1><p>Assign crews and individual team members to job sites.</p></div><div><button class="secondary" id="repeat-week" type="button">⇩ Repeat last week</button><button class="primary" id="new-assignment">＋ New assignment</button></div></div>
-        <div class="schedule-view-switcher" role="group" aria-label="Schedule view"><button type="button" data-schedule-view="day">Day</button><button type="button" data-schedule-view="week" class="active">Week</button><button type="button" data-schedule-view="month">Month</button></div>
-        <div class="schedule-toolbar"><button id="schedule-previous-week" aria-label="Previous schedule period">‹</button><button type="button" id="schedule-pick-date" aria-haspopup="dialog" aria-controls="schedule-date-dialog" title="Choose schedule date"><span id="schedule-week-label" aria-live="polite">This week</span><small aria-hidden="true">Choose date</small></button><button id="schedule-next-week" aria-label="Next schedule period">›</button><span></span><button class="secondary" id="schedule-today">Today</button></div>
-        <div class="schedule-filters"><label>People<select id="schedule-crew-filter"><option value="all">All crews</option></select></label><label class="filter-check"><input type="checkbox" id="schedule-show-office" /><span>Show office staff</span></label><small id="schedule-filter-status">Filters save to your profile.</small></div>
+        <div class="page-heading schedule-heading"><div><p class="eyebrow">FIELD OPERATIONS</p><h1>Crew schedule</h1><p>See who is working where, then make changes without losing your place.</p></div><div class="schedule-heading-actions"><details class="schedule-more"><summary class="secondary">More</summary><div><button class="secondary" id="repeat-week" type="button">Repeat last week</button></div></details><button class="primary" id="new-assignment">＋ Add assignment</button></div></div>
+        <section class="schedule-command-bar" aria-label="Schedule controls">
+          <div class="schedule-toolbar"><button id="schedule-previous-week" aria-label="Previous schedule period">‹</button><button type="button" id="schedule-pick-date" aria-haspopup="dialog" aria-controls="schedule-date-dialog" title="Choose schedule date"><span id="schedule-week-label" aria-live="polite">This week</span><small aria-hidden="true">Choose date</small></button><button id="schedule-next-week" aria-label="Next schedule period">›</button><button class="secondary" id="schedule-today">Today</button></div>
+          <div class="schedule-command-actions"><div class="schedule-view-switcher" role="group" aria-label="Schedule view"><button type="button" data-schedule-view="day">Day</button><button type="button" data-schedule-view="week" class="active">Week</button><button type="button" data-schedule-view="month">Month</button></div><button class="secondary schedule-filter-toggle" id="schedule-filter-toggle" type="button" aria-expanded="false" aria-controls="schedule-filters">Filters <span id="schedule-filter-count" hidden></span></button></div>
+        </section>
+        <div class="schedule-filters" id="schedule-filters" hidden><label>Show people<select id="schedule-crew-filter"><option value="all">All field crews</option></select></label><label class="filter-check"><input type="checkbox" id="schedule-show-office" /><span>Include office staff</span></label><small id="schedule-filter-status">Your filter is saved automatically.</small></div>
         <div class="schedule-summary" id="schedule-summary" aria-live="polite"></div>
         <article class="panel schedule-board" id="schedule-board"></article>
       </section>
@@ -447,37 +449,33 @@
     </form>
   </dialog>
 
-  <dialog id="assignment-modal">
-    <form method="dialog">
-      <div class="modal-header"><div><p class="eyebrow">FIELD SCHEDULING</p><h2 id="assignment-modal-title">New assignment</h2></div><button class="close-button" value="cancel">×</button></div>
-      <div class="two-col"><label>Assign by<select id="assignment-type"><option value="crew">Whole crew</option><option value="individual">Individual person</option></select></label><label id="assignment-target-label">Crew<select id="assignment-target"></select></label></div>
-      <label>Project / job site<select id="assignment-project"></select></label>
-      <div class="two-col"><label>First day<input id="assignment-date" type="date" required /></label><label>Through date <small>Optional for multiple days</small><input id="assignment-end-date" type="date" /></label></div>
-      <label class="inline-check"><input id="assignment-include-weekends" type="checkbox" /> Include Saturdays and Sundays in this date range</label>
-      <label>Work activity<input id="assignment-activity" placeholder="Concrete pour, framing…" /></label>
-      <div class="two-col"><label>Start time<input id="assignment-start" type="time" value="07:00" required /></label><label>End time<input id="assignment-end" type="time" value="15:30" required /></label></div>
-      <div id="assignment-warning" class="form-warning"></div>
-      <div class="modal-actions"><button value="cancel" class="secondary">Cancel</button><button type="button" class="primary" id="save-assignment">Assign to site</button></div>
+  <dialog id="assignment-modal" aria-labelledby="assignment-modal-title">
+    <form method="dialog" id="assignment-form" novalidate>
+      <div class="modal-header"><div><p class="eyebrow">FIELD SCHEDULING</p><h2 id="assignment-modal-title">Add assignment</h2><p class="assignment-intro">Choose the people, job, and shift. We will check availability before anything is sent.</p></div><button class="close-button" value="cancel" aria-label="Close assignment">×</button></div>
+      <fieldset class="assignment-step"><legend><span>1</span> Who is working?</legend><label id="assignment-target-label">Crew or person<select id="assignment-target" required><option value="">Choose a crew or person</option></select></label><p class="input-help" id="assignment-who-help">Whole crews are listed first, followed by individual team members.</p></fieldset>
+      <fieldset class="assignment-step"><legend><span>2</span> Where?</legend><label>Project / job site<select id="assignment-project" required><option value="">Choose a project</option></select></label></fieldset>
+      <fieldset class="assignment-step"><legend><span>3</span> When?</legend><div class="assignment-date-time-grid"><label>Work date<input id="assignment-date" type="date" required /></label><label>Start<input id="assignment-start" type="time" value="07:00" required /></label><label>End<input id="assignment-end" type="time" value="15:30" required /></label></div><button type="button" class="assignment-range-toggle" id="assignment-multiple-days" aria-expanded="false" aria-controls="assignment-range-fields">＋ Add multiple days</button><div class="assignment-range-fields" id="assignment-range-fields" hidden><label>Through date<input id="assignment-end-date" type="date" /></label><label class="inline-check"><input id="assignment-include-weekends" type="checkbox" /> Include Saturdays and Sundays</label></div></fieldset>
+      <fieldset class="assignment-step assignment-optional"><legend><span>4</span> What are they doing? <small>Optional</small></legend><label>Activity or instructions<input id="assignment-activity" maxlength="120" placeholder="Example: Form and pour east footings" /></label></fieldset>
+      <section id="assignment-preview" class="assignment-preview" role="status" aria-live="polite"><strong>Choose a crew or person to begin.</strong><span>Your assignment will be checked here before it is sent.</span></section>
+      <div id="assignment-day-tools" class="assignment-day-tools" hidden><span>More for this person and day</span><button type="button" class="secondary" id="assignment-add-event">Add event</button><button type="button" class="secondary" id="assignment-mark-off">Mark off</button></div>
+      <div id="assignment-warning" class="form-warning" role="alert" aria-live="assertive" tabindex="-1"></div>
+      <div class="modal-actions assignment-save-actions"><button value="cancel" class="secondary">Cancel</button><button type="button" class="primary" id="save-assignment">Add assignment</button></div>
     </form>
   </dialog>
 
-  <dialog id="assignment-detail-modal">
+  <dialog id="assignment-detail-modal" aria-labelledby="scheduled-project-name">
     <form method="dialog">
-      <div class="modal-header"><div><p class="eyebrow">SCHEDULED WORK</p><h2 id="scheduled-project-name">Assignment</h2></div><button class="close-button" value="cancel">×</button></div>
+      <div class="modal-header"><div><p class="eyebrow">SCHEDULED WORK</p><h2 id="scheduled-project-name">Assignment</h2></div><button class="close-button" value="cancel" aria-label="Close assignment details">×</button></div>
       <div id="scheduled-work-detail"></div>
-      <div class="add-schedule-day">
-        <div class="two-col"><label>Schedule again from<input id="additional-day-date" type="date" required /></label><label>Through date <small>Optional</small><input id="additional-day-end-date" type="date" /></label></div>
-        <label class="inline-check"><input id="additional-day-weekends" type="checkbox" /> Include weekends</label>
-        <button type="button" class="primary" id="add-assignment-day">＋ Add scheduled days</button>
-      </div>
-      <div id="additional-day-warning" class="form-warning"></div>
-      <div class="modal-actions assignment-remove-actions"><button value="cancel" class="secondary">Close</button><button type="button" class="primary" id="edit-assignment">Edit assignment</button><button type="button" class="danger-button" id="remove-person">Unassign this person</button><button type="button" class="secondary" id="adopt-actual-times" hidden>Adopt actual times</button><button type="button" class="danger-button solid" id="remove-assignment">Unassign entire crew</button></div>
+      <details class="assignment-extend"><summary>Copy this assignment to more days</summary><div class="add-schedule-day"><div class="two-col"><label>Schedule again from<input id="additional-day-date" type="date" required /></label><label>Through date <small>Optional</small><input id="additional-day-end-date" type="date" /></label></div><label class="inline-check"><input id="additional-day-weekends" type="checkbox" /> Include weekends</label><button type="button" class="primary" id="add-assignment-day">＋ Add scheduled days</button></div><div id="additional-day-warning" class="form-warning" role="alert"></div></details>
+      <div class="modal-actions assignment-detail-actions"><button value="cancel" class="secondary">Close</button><button type="button" class="primary" id="edit-assignment">Edit assignment</button></div>
+      <details class="assignment-detail-more"><summary>More assignment actions</summary><div><button type="button" class="secondary" id="adopt-actual-times" hidden>Use actual clock times</button><button type="button" class="danger-button" id="remove-person">Unassign this person</button><button type="button" class="danger-button solid" id="remove-assignment">Unassign entire crew</button></div></details>
     </form>
   </dialog>
 
-  <dialog id="repeat-week-modal" class="wide-modal">
+  <dialog id="repeat-week-modal" class="wide-modal" aria-labelledby="repeat-week-modal-title">
     <form method="dialog">
-      <div class="modal-header"><div><p class="eyebrow">FIELD SCHEDULING</p><h2>Repeat last week</h2></div><button class="close-button" value="cancel">×</button></div>
+      <div class="modal-header"><div><p class="eyebrow">FIELD SCHEDULING</p><h2 id="repeat-week-modal-title">Repeat last week</h2></div><button class="close-button" value="cancel" aria-label="Close repeat week">×</button></div>
       <p class="input-help" id="repeat-week-summary"></p>
       <div class="repeat-week-picker-head"><button type="button" class="link-button" id="repeat-week-select-all">Select all</button><button type="button" class="link-button" id="repeat-week-clear">Clear</button></div>
       <div class="member-picker" id="repeat-week-list"></div>
@@ -486,26 +484,18 @@
     </form>
   </dialog>
 
-  <dialog id="repeat-week-result">
+  <dialog id="repeat-week-result" aria-labelledby="repeat-week-result-title">
     <form method="dialog">
-      <div class="modal-header"><div><p class="eyebrow">FIELD SCHEDULING</p><h2 id="repeat-week-result-title">Week copied</h2></div><button class="close-button" value="cancel">×</button></div>
+      <div class="modal-header"><div><p class="eyebrow">FIELD SCHEDULING</p><h2 id="repeat-week-result-title">Week copied</h2></div><button class="close-button" value="cancel" aria-label="Close copy results">×</button></div>
       <p class="input-help" id="repeat-week-result-summary"></p>
       <div id="repeat-week-skipped"></div>
       <div class="modal-actions"><button value="cancel" class="primary">Done</button></div>
     </form>
   </dialog>
 
-  <dialog id="day-action-modal">
+  <dialog id="event-modal" aria-labelledby="event-modal-title">
     <form method="dialog">
-      <div class="modal-header"><div><p class="eyebrow">FIELD SCHEDULING</p><h2 id="day-action-title">Plan this day</h2></div><button class="close-button" value="cancel">×</button></div>
-      <p class="input-help" id="day-action-summary"></p>
-      <div class="day-action-buttons"><button type="button" class="primary" id="day-action-schedule">Schedule work</button><button type="button" class="secondary" id="day-action-event">Add event · delivery / inspection</button><button type="button" class="secondary" id="day-action-markoff">Mark off · sick / no work</button></div>
-      <div class="modal-actions"><button value="cancel" class="secondary">Cancel</button></div>
-    </form>
-  </dialog>
-  <dialog id="event-modal">
-    <form method="dialog">
-      <div class="modal-header"><div><p class="eyebrow">PROJECT EVENT</p><h2 id="event-modal-title">Add event</h2></div><button class="close-button" value="cancel">×</button></div>
+      <div class="modal-header"><div><p class="eyebrow">PROJECT EVENT</p><h2 id="event-modal-title">Add event</h2></div><button class="close-button" value="cancel" aria-label="Close event">×</button></div>
       <p class="input-help">Deliveries, inspections, other trades on site — everyone assigned to the project that day sees it in their day.</p>
       <label>Project<select id="event-project"></select></label>
       <div class="two-col"><label>Day<input type="date" id="event-date"></label><label>Type<select id="event-type"><option value="delivery">🚚 Delivery</option><option value="inspection">🔍 Inspection</option><option value="trade">🤝 Other trade on site</option><option value="safety">🦺 Safety</option><option value="other">📌 Other</option></select></label></div>
@@ -516,9 +506,17 @@
     </form>
   </dialog>
 
-  <dialog id="mark-off-modal">
+  <dialog id="event-detail-modal" aria-labelledby="event-detail-title">
     <form method="dialog">
-      <div class="modal-header"><div><p class="eyebrow">AVAILABILITY</p><h2>Mark off</h2></div><button class="close-button" value="cancel">×</button></div>
+      <div class="modal-header"><div><p class="eyebrow">PROJECT EVENT</p><h2 id="event-detail-title">Event details</h2></div><button class="close-button" value="cancel" aria-label="Close event details">×</button></div>
+      <div id="event-detail-content"></div>
+      <div class="modal-actions"><button type="button" class="danger-button" id="remove-project-event">Remove event</button><button value="cancel" class="primary">Done</button></div>
+    </form>
+  </dialog>
+
+  <dialog id="mark-off-modal" aria-labelledby="mark-off-modal-title">
+    <form method="dialog">
+      <div class="modal-header"><div><p class="eyebrow">AVAILABILITY</p><h2 id="mark-off-modal-title">Mark off</h2></div><button class="close-button" value="cancel" aria-label="Close mark-off">×</button></div>
       <p class="input-help" id="mark-off-summary"></p>
       <input id="mark-off-member" type="hidden"><input id="mark-off-date" type="hidden">
       <label>Reason<select id="mark-off-reason"><option value="sick">Called in sick</option><option value="personal">Personal day</option><option value="no_work">No work</option><option value="other">Other</option></select></label>
@@ -588,7 +586,7 @@
       window.addEventListener('load', () => navigator.serviceWorker.register('/sw.js').catch(() => {}));
   </script>
   <script src="offline.js?v=20261014-offline"></script>
-  <script src="i18n.js?v=20260930a"></script>
+  <script src="i18n.js?v=20261019-schedule1"></script>
   <script src="csv-cell.js?v=20261004-security"></script>
   <script src="schedule-touch-drag.js?v=20261011-task-assign"></script>
   <script src="schedule-availability.js?v=20261005-partial-day-leave"></script>
@@ -596,7 +594,7 @@
   <script src="report-labor-review.js?v=20261009-labor-exclusions"></script>
   <script src="company-timezone.js?v=20261014-review3"></script>
   <script src="schedule-approved-labor.js?v=20261008-approved-evidence"></script>
-  <script src="app.js?v=20261016-voice2-20261017-fieldreview1-office1-entry2"></script>
+  <script src="app.js?v=20261016-voice2-20261017-fieldreview1-office1-entry2-20261019-schedule1"></script>
   <script src="field-daily-scope.js?v=20261017-fieldreview1"></script>
   <script src="field-instant-daily.js?v=20261017-fieldreview1-office1-entry2"></script>
   <script src="estimate-mobile.js"></script>
@@ -605,7 +603,7 @@
   <script src="office-workspace.js?v=20261005-office-recovery"></script>
   <script src="reporting-controls.js?v=20261014-review3"></script>
   <script src="project-notes-ui.js?v=20261005-notes-focus"></script>
-  <script src="project-schedule-ui.js?v=20261014-uifix"></script>
+  <script src="project-schedule-ui.js?v=20261014-uifix-20261019-schedule1"></script>
   <script src="project-assistant-voice.js?v=20261007-voice-prototype"></script>
   <script src="project-assistant-conversation.js?v=20261007-natural-names"></script>
   <script src="project-assistant-names.js?v=20261007-natural-names"></script>

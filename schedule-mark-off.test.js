@@ -7,12 +7,12 @@
 const assert=require('node:assert/strict'),fs=require('node:fs'),os=require('node:os'),path=require('node:path'),crypto=require('node:crypto');
 // Markup + wiring contract.
 const index=fs.readFileSync('index.html','utf8'),appSource=fs.readFileSync('app.js','utf8');
-assert.match(index,/id="day-action-modal"/,'day chooser dialog exists');
 assert.match(index,/id="mark-off-modal"/,'mark-off dialog exists');
 assert.match(index,/id="mark-off-reason"/,'reason select exists');
 assert.match(index,/name="mark-off-paid"/,'paid/unpaid choice exists');
 assert.match(appSource,/\$\('#mark-off-save'\)\.onclick=saveMarkOff/,'save wired');
-assert.match(appSource,/canManageSchedule\(\)\?openDayAction\(\+cell\.dataset\.scheduleMember/,'week cells route through the day chooser');
+assert.match(appSource,/openAssignment\(\{memberId:\+cell\.dataset\.scheduleMember,date:cell\.dataset\.scheduleDate\}\)/,'open schedule cells route directly into the assignment composer');
+assert.match(appSource,/assignment-mark-off'[\s\S]*leaveAssignmentForDayTool\(openMarkOff\)/,'the assignment composer keeps a contextual mark-off action with a discard guard');
 assert.match(index,/app\.js\?v=20261016-voice2/,'cache version carries the bumped release marker (suffix changes per release)');
 // Live API against a real server boot.
 const root=fs.mkdtempSync(path.join(os.tmpdir(),'pdl-markoff-')),companyId='ccddccdd-ccdd-4cc4-8cc8-ccddccddeeff',ownerToken='synthetic-markoff-owner';

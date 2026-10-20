@@ -69,9 +69,10 @@ const { server } = require('./server');
     // Client contracts.
     const appJs = fs.readFileSync('app.js', 'utf8'), index = fs.readFileSync('index.html', 'utf8'), styles = fs.readFileSync('styles.css', 'utf8');
     for (const selector of ['id="event-modal"', 'id="event-project"', 'id="event-date"', 'id="event-type"', 'id="event-title"', 'id="event-notes"', 'id="save-event"', 'id="event-warning"']) assert.ok(index.includes(selector), 'event modal markup: ' + selector);
-    assert.ok(index.includes('id="day-action-event"'), 'day-action modal offers Add event');
+    assert.ok(index.includes('id="assignment-add-event"'), 'assignment composer offers Add event in the selected person/day context');
     assert.ok(index.includes('id="field-today-events"'), 'My Day has an events container');
-    assert.ok(appJs.includes("$('#day-action-event').onclick"), 'day-action wires the event button');
+    assert.ok(appJs.includes("$('#assignment-add-event').onclick"), 'assignment composer wires the event button');
+    assert.ok(appJs.includes('leaveAssignmentForDayTool(openEventModal)'), 'switching to an event protects typed assignment details');
     assert.ok(appJs.includes('function scheduleEventChips'), 'board chip renderer exists');
     assert.ok(appJs.includes('${scheduleEventChips(member,day.date)}'), 'week/day cells render event chips');
     assert.ok(appJs.includes('field-today-events'), 'renderMyDay fills the My Day events container');

@@ -13,6 +13,8 @@ assert.match(index,/id="repeat-week-list"/,'checkbox list exists');
 assert.match(appSource,/\$\('#repeat-week'\)\.onclick=openRepeatWeek/,'button wired');
 assert.match(appSource,/\$\('#repeat-week-confirm'\)\.onclick=confirmRepeatWeek/,'confirm wired');
 assert.match(appSource,/repeatWeekButton\.hidden=!canManageSchedule\(\)\|\|scheduleView==='month'/,'button hidden for field users and month view');
+assert.match(appSource,/const weekday=row\.date\?new Date/,'blank skipped-row dates never render as Invalid Date');
+assert.match(appSource,/reason=scheduleCopy\(row\.reason\|\|''\)/,'skipped-row reasons are translated before date and reason are composed');
 assert.match(index,/app\.js\?v=20261016-voice2/,'cache version carries the bumped release marker (suffix changes per release)');
 // Client helper (pure): the source window is the 7 days before the viewed week.
 const lines=appSource.split('\n');
@@ -87,9 +89,15 @@ try{
   assert.equal(midWeek.data.created,1,'a mid-week target date is re-anchored to its Sunday');
   assert.equal(midWeek.data.createdRows[0].date,targetDates[3],'the copied row lands on the matching weekday');
   const scoped=await call('POST','/api/schedule/repeat-week',{targetStart:today,assignmentIds:[2]},'synthetic-repeat-pm-scoped');
-  assert.equal(scoped.data.created,0);assert.equal(scoped.data.skipped.length,1);assert.equal(scoped.data.skipped[0].reason,'Outside your assigned projects and crews','scoped managers only copy inside their scope');
+  assert.equal(scoped.data.created,0);assert.equal(scoped.data.skipped.length,1);assert.equal(scoped.data.skipped[0].reason,'No longer available','scoped managers get no metadata about out-of-scope assignment ids');
+  assert.equal(scoped.data.skipped[0].date,'');assert.equal(scoped.data.skipped[0].crew,'Assignment #2');
   const inScope=await call('POST','/api/schedule/repeat-week',{targetStart:today,assignmentIds:[1,5]},'synthetic-repeat-pm-scoped');
   assert.equal(inScope.data.created,0,'in-scope selections still respect duplicate and leave checks');
   assert.ok(inScope.data.skipped.length>=1);
+  stored=reload();stored.projects.find(project=>project.id===102).archived=true;save(stored);
+  const nextTarget=new Date(sunday);nextTarget.setUTCDate(sunday.getUTCDate()+7);
+  const archived=await call('POST','/api/schedule/repeat-week',{targetStart:isoUTC(nextTarget),assignmentIds:[2]});
+  assert.equal(archived.data.created,0,'repeat week cannot create new work on an archived project');
+  assert.equal(archived.data.skipped[0].reason,'Project is archived');
   console.log('Repeat week passed: source window, markup contract, 400/403 gates, copy, duplicate skip, leave skip, re-anchor, PM scope, idempotence.');
 }finally{server.closeAllConnections();await new Promise(resolve=>server.close(resolve));fs.rmSync(root,{recursive:true,force:true})}})().catch(error=>{console.error(error);process.exitCode=1;server.close()});
