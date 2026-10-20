@@ -6,6 +6,7 @@
 - the transactional repository migration has a verified pre-migration backup and reconciliation report;
 - concurrent stale writes are rejected rather than silently overwriting data;
 - production health confirms database, email, billing-webhook, backup, and monitoring configuration without revealing secrets;
+- a controlled, privacy-scrubbed Sentry event reaches the production project and its alert reaches the named on-call person;
 - a restore drill has passed in an isolated environment;
 - dependency and secret scans have no unresolved critical or high findings;
 - `main` requires pull-request review and passing checks;

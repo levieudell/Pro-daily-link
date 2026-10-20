@@ -1,16 +1,19 @@
 'use strict';
 
-const Sentry = require('@sentry/node');
+const monitoring = require('../monitoring');
 
-async function main() {
-  if (!process.env.SENTRY_DSN) throw new Error('SENTRY_DSN is not configured. No monitoring event was sent.');
-  Sentry.init({ dsn: process.env.SENTRY_DSN, environment: process.env.NODE_ENV || 'verification', sendDefaultPii: false });
-  const eventId = Sentry.captureMessage('Pro Daily Link monitoring verification', 'info');
-  const delivered = await Sentry.flush(10_000);
-  if (!delivered) throw new Error('Sentry did not confirm delivery within 10 seconds.');
-  console.log(`Sentry verification event sent: ${eventId}`);
+async function main({ env = process.env, monitor = monitoring, log = console.log } = {}) {
+  if (!monitor.init(env)) throw new Error('SENTRY_DSN is missing or invalid. No monitoring event was queued.');
+  const eventId = monitor.captureVerification();
+  if (!eventId) throw new Error('The controlled monitoring event could not be created.');
+  const flushed = await monitor.flush(10_000);
+  if (!flushed) throw new Error('Sentry did not flush the queued verification event within 10 seconds.');
+  log(`Controlled monitoring verification event queued and flushed: ${eventId}`);
+  return eventId;
 }
 
-main().catch(error => { console.error(error.message); process.exitCode = 1; });
+if (require.main === module) main().catch(error => { console.error(error.message); process.exitCode = 1; });
+
+module.exports = { main };
 
 

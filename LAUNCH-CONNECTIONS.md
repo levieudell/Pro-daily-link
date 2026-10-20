@@ -64,7 +64,9 @@ Add `OPENAI_API_KEY` for Spanish translation and scanned-estimate extraction. Th
 
 ### Error monitoring
 
-Create a Sentry Node project and add `SENTRY_DSN`. The server integration is already installed and sends request IDs, request methods, and route names without customer field notes, photos, passwords, query strings, or personal data. Optional: set `SENTRY_TRACES_SAMPLE_RATE` (the default is `0.05`).
+Create a hosted Sentry Node project and add `SENTRY_DSN` privately in Render. Never paste the DSN into source control, support messages, or documentation. The server accepts only an HTTPS `*.sentry.io` DSN and reports monitoring active only after the SDK exposes the initialized hosted Sentry client. The server sends only a scrubbed stack location plus request ID, method, and a token-safe route name. Request bodies, headers, cookies, query strings, user data, breadcrumbs, local variables, AI inputs/outputs, database values, outbound HTTP instrumentation, and performance traces are disabled. Enabling tracing or outbound HTTP instrumentation requires a separate privacy and cost review.
+
+After Render restarts, confirm `/api/health` reports `services.monitoring: true`. Then run `npm run monitor:verify` once from a Render shell. The command confirms only that the controlled event was queued and the SDK flush completed; it does not prove delivery. Confirm through the Sentry UI or API that the tagged `MonitoringVerificationError` arrived in the intended project, inspect the event to verify that it contains no customer data or access tokens, configure a new-issue alert for the named on-call recipient, and confirm that person receives the alert. A `true` health flag proves only that a hosted Sentry client initialized; it does not prove event delivery or human notification. On `SIGTERM` or `SIGINT`, the server first drains active requests and then gives Sentry the remainder of a two-second hard deadline to flush before exiting, so in-flight failures are included without allowing Render deploys to hang indefinitely.
 
 ### Backup restoration
 
