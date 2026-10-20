@@ -77,6 +77,25 @@ function contrast(rgb1,rgb2){
     await page.click('#new-assignment');
     await page.waitForSelector('#assignment-modal[open]');
 
+    assert.equal(await page.$eval('#assignment-target-search',element=>element.value),'','assignee search resets every time the composer opens');
+    assert.equal(await page.evaluate(()=>normalizeAssignmentTargetSearch('  José   ÁLVAREZ ')===normalizeAssignmentTargetSearch('jose alvarez')),true,'assignee search ignores case, accents, and pasted whitespace');
+    assert.equal(await page.evaluate(()=>{const before=preferredLanguage;preferredLanguage='es';const label=assignmentPeopleCountLabel(2);preferredLanguage=before;return label}),'2 personas','dynamic crew counts follow the Spanish interface');
+    await page.type('#assignment-target-search','definitely-not-a-real-crew');
+    await page.waitForFunction(()=>/No matching crews or teammates/i.test(document.querySelector('#assignment-target-search-status').textContent));
+    assert.equal(await page.$eval('#assignment-target',element=>element.value),'','a no-result search never silently chooses an assignee');
+    const candidate=await page.evaluate(()=>{const member=team.find(row=>!isOfficeMember(row));return{id:Number(member.id),name:member.name,crew:member.crew||member.role||''}});
+    await page.click('#assignment-target-search-clear');
+    await page.type('#assignment-target-search',candidate.name.toUpperCase());
+    await page.waitForFunction(id=>[...document.querySelector('#assignment-target').options].some(option=>option.value===`member:${id}`),{},candidate.id);
+    assert.match(await page.$eval('#assignment-target-search-status',element=>element.textContent),/match/i,'search reports the filtered result count');
+    assert.equal(await page.$eval('#assignment-target',element=>element.value),'','searching alone does not make a selection');
+    await page.select('#assignment-target',`member:${candidate.id}`);
+    await page.$eval('#assignment-target-search',element=>{element.value='no-second-match';element.dispatchEvent(new Event('input',{bubbles:true}))});
+    assert.equal(await page.$eval('#assignment-target',element=>element.value),`member:${candidate.id}`,'filtering keeps an explicit assignee selected');
+    assert.match(await page.$eval('#assignment-target-search-status',element=>element.textContent),/current selection is kept/i,'the retained selection is explained');
+    await page.click('#assignment-target-search-clear');
+    assert.ok(await page.$eval('#assignment-target',element=>element.options.length)>2,'clearing search restores the full scoped chooser');
+
     await page.select('#assignment-target','member:1');
     await page.select('#assignment-project','1');
     await page.$eval('#assignment-activity',element=>{element.value='E2E layout and excavation';element.dispatchEvent(new Event('input',{bubbles:true}))});
@@ -95,6 +114,12 @@ function contrast(rgb1,rgb2){
     await page.waitForFunction(count=>!document.querySelector('#assignment-modal').open&&assignments.length===count+1,{},before);
     const createdId=await page.evaluate(()=>Math.max(...assignments.map(row=>Number(row.id))));
     await page.waitForSelector(`[data-assignment="${createdId}"]`);
+
+    await page.click('#new-assignment');
+    await page.waitForSelector('#assignment-modal[open]');
+    assert.deepEqual(await page.evaluate(()=>({target:document.querySelector('#assignment-target').value,search:document.querySelector('#assignment-target-search').value})),{target:'',search:''},'a fresh assignment never carries over the prior assignee or search');
+    await page.click('#assignment-modal .assignment-save-actions .secondary');
+    await page.waitForFunction(()=>!document.querySelector('#assignment-modal').open);
 
     const eventId=await page.evaluate(async assignmentId=>{const assignment=assignments.find(row=>Number(row.id)===Number(assignmentId)),created=await api(`/api/projects/${assignment.projectId}/events`,{method:'POST',body:JSON.stringify({date:assignment.date,type:'delivery',title:'E2E rebar delivery',notes:'Stage beside the east gate'})});projectEvents.push(created);renderSchedule();return Number(created.id)},createdId);
     await page.click(`.schedule-event[data-event="${eventId}"]`);
@@ -137,13 +162,17 @@ function contrast(rgb1,rgb2){
     await page.waitForSelector('#assignment-modal[open]');
     const colors=await page.evaluate(()=>{const nodes=['.schedule-command-bar','.assignment-step','#assignment-preview'].map(selector=>document.querySelector(selector));return nodes.map(element=>{const style=getComputedStyle(element);return{color:style.color,background:style.backgroundColor}})});
     for(const pair of colors)assert.ok(contrast(pair.color,pair.background)>=4.5,`dark schedule surface remains readable: ${JSON.stringify(pair)}`);
+    const assignmentSearchMobile=await page.evaluate(()=>({overflow:document.documentElement.scrollWidth-innerWidth,height:document.querySelector('#assignment-target-search').getBoundingClientRect().height,fontSize:parseFloat(getComputedStyle(document.querySelector('#assignment-target-search')).fontSize)}));
+    assert.ok(assignmentSearchMobile.overflow<=1,'searchable assignment composer does not overflow a 390px phone');
+    assert.ok(assignmentSearchMobile.height>=44,'assignee search has a glove-friendly touch height');
+    assert.ok(assignmentSearchMobile.fontSize>=16,'assignee search avoids mobile browser input zoom');
     assert.deepEqual(pageErrors,[],'schedule workflow has no browser runtime errors');
 
     const persisted=JSON.parse(fs.readFileSync(dbFile)).assignments.find(row=>Number(row.id)===createdId);
     assert.equal(persisted.activity,'E2E updated assignment','assignment edits persist through the server');
     const rosterPersisted=JSON.parse(fs.readFileSync(dbFile)).assignments.find(row=>Number(row.id)===rosterId);
     assert.deepEqual(rosterPersisted.memberIds,[1,2],'editing non-roster fields cannot silently change assigned people');
-    console.log('Schedule E2E passed: desktop and phone layout, safe defaults, exact validation, roster-safe editing, create/edit persistence, compact month, and dark-mode contrast.');
+    console.log('Schedule E2E passed: searchable assignees, desktop and phone layout, safe defaults, exact validation, roster-safe editing, create/edit persistence, compact month, and dark-mode contrast.');
   }finally{
     await browser?.close();child.kill();await new Promise(resolve=>child.exitCode!=null?resolve():child.once('exit',resolve));fs.rmSync(root,{recursive:true,force:true});
   }

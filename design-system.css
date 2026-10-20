@@ -397,6 +397,14 @@ table td,.activity-item,.schedule-cell{border-color:var(--border-default)}
 .assignment-step legend small{color:var(--text-tertiary);font-weight:600}
 .assignment-step>label{margin-top:12px}
 .assignment-step .input-help{margin:-7px 0 13px;color:var(--text-tertiary);font-size:11px}
+.assignment-target-search{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:7px 8px;margin-top:12px}
+.assignment-target-search label{grid-column:1/-1;margin:0;color:var(--text-primary);font-size:12px;font-weight:800}
+.assignment-target-search input{min-width:0;min-height:46px;margin:0;font-size:16px}
+.assignment-target-search button{min-height:46px;white-space:nowrap}
+.assignment-target-search button[hidden]{display:none!important}
+#assignment-target-label{margin-top:9px}
+.assignment-target-search-status{min-height:18px;margin:5px 0 8px;color:var(--text-secondary);font-size:11px}
+#assignment-who-help{margin:0 0 13px}
 .assignment-date-time-grid{display:grid;grid-template-columns:1.4fr 1fr 1fr;gap:10px;margin-top:12px}
 .assignment-date-time-grid label{min-width:0}
 .assignment-range-toggle{min-height:44px;margin:0 0 14px;padding:6px 0;border:0;background:transparent;color:var(--action-selection);font-size:12px;font-weight:800}

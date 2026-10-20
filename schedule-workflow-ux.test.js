@@ -36,6 +36,35 @@ contract('one assignee chooser replaces the crew/person two-step', () => {
     'the one chooser clearly contains both crews and individual people');
 });
 
+contract('the assignee chooser can be searched without changing its canonical selection', () => {
+  assert.match(index, /id="assignment-target-search"[^>]*type="search"[^>]*aria-controls="assignment-target"/,
+    'the assignment composer exposes a labeled search control tied to the native picker');
+  assert.match(index, /id="assignment-target-search-status"[^>]*role="status"[^>]*aria-live="polite"/,
+    'search result and empty-state feedback is announced');
+  const search = sourceBetween('let assignmentTargetChoices=[];', 'function assignmentWorkDates(');
+  assert.match(search, /normalize\(['"]NFD['"]\)[\s\S]{0,120}\\u0300-\\u036f/,
+    'search is case- and accent-insensitive');
+  assert.match(search, /toLocaleLowerCase\(\)\.trim\(\)\.replace\(\/\\s\+\/g,['"] ['"]\)/,
+    'search tolerates leading and repeated whitespace');
+  assert.match(search, /search:`\$\{member\.name\} \$\{member\.crew\|\|''\} \$\{member\.role\|\|''\}`/,
+    'teammates can be found by name, crew, or role without indexing private contact fields');
+  assert.match(search, /retained[\s\S]{0,300}Current selection/,
+    'filtering never silently discards an existing assignee or stored roster');
+  assert.match(search, /crewPeople=fieldPeople\.filter\(member=>!isOfficeMember\(member\)\)[\s\S]{0,900}crewPeople\.filter\(member=>member\.crew===crew\)\.length/,
+    'crew option counts use the same field-only roster that whole-crew scheduling sends');
+  assert.match(search, /function assignmentPeopleCountLabel\(count\)[\s\S]{0,180}personas/,
+    'dynamic crew counts use the selected interface language');
+  assert.doesNotMatch(search, /api\(/,
+    'search filters the already permission-scoped roster instead of querying a broader endpoint');
+  const state = sourceBetween('function assignmentFormState(', 'function repeatWeekSourceRows(');
+  assert.doesNotMatch(state, /assignment-target-search/,
+    'a search query is navigation, not an unsaved schedule change');
+  assert.match(styles, /\.assignment-target-search input\{[^}]*min-height:46px[^}]*font-size:16px/,
+    'the phone search target is large enough to tap and does not trigger iPhone zoom');
+  assert.match(i18n, /'Search crews or teammates':'Buscar cuadrillas o compañeros'/,
+    'the searchable assignment UI has Spanish copy');
+});
+
 contract('a new assignment never silently chooses the first project', () => {
   const open = sourceBetween('function openAssignment(', "$('#new-assignment').onclick");
   assert.match(open, /<option\s+value=["']{2}[^>]*>[^<]*(?:Choose|Select)[^<]*project/i,
