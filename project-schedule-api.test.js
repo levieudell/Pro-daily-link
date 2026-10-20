@@ -3,22 +3,26 @@
 // role gates (office writes; field reads only assigned projects), and
 // per-tenant isolation through the real server.
 const assert = require('node:assert/strict'), fs = require('node:fs'), os = require('node:os'), path = require('node:path'), crypto = require('node:crypto');
-const root = fs.mkdtempSync(path.join(os.tmpdir(), 'pdl-project-schedule-')), companyId = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb', ownerToken = 'synthetic-schedule-owner', fieldToken = 'synthetic-schedule-field', otherFieldToken = 'synthetic-schedule-other';
+const root = fs.mkdtempSync(path.join(os.tmpdir(), 'pdl-project-schedule-')), companyId = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb', ownerToken = 'synthetic-schedule-owner', fieldToken = 'synthetic-schedule-field', otherFieldToken = 'synthetic-schedule-other', managerToken = 'synthetic-schedule-manager', readOnlyManagerToken = 'synthetic-schedule-manager-readonly';
 const hash = token => crypto.createHash('sha256').update(token).digest('hex');
 const db = {
   company: { id: companyId, name: 'Synthetic schedule', demo: true, timezone: 'UTC' },
-  projects: [{ id: 101, name: 'North Ridge', customer: 'Test Customer', site: 'Site A', startDate: '2026-10-12', endDate: '2026-12-31', status: 'Active' }],
-  team: [{ id: 7, name: 'Chloe', crew: 'A' }, { id: 8, name: 'Andi', crew: 'A' }],
-  assignments: [], workdays: [], timeCards: [], timeOffRequests: [], reports: [], photos: [], auditLog: [], projectTasks: [], customers: [], changes: [], catalog: [],
+  projects: [{ id: 101, name: 'North Ridge', customer: 'Test Customer', site: 'Site A', startDate: '2026-10-12', endDate: '2026-12-31', status: 'Active' }, { id: 102, name: 'Hidden Job', customer: 'Test Customer', site: 'Site B', startDate: '2026-10-12', endDate: '2026-12-31', status: 'Active' }],
+  team: [{ id: 7, name: 'Chloe', crew: 'A' }, { id: 8, name: 'Andi', crew: 'A' }, { id: 9, name: 'Hidden Worker', crew: 'B' }],
+  assignments: [], workdays: [], timeCards: [], timeOffRequests: [], reports: [], photos: [], auditLog: [], projectTasks: [], customers: [], changes: [], catalog: [], crews: [{ id: 1, name: 'A' }],
   users: [
     { id: 1, name: 'Synthetic owner', role: 'owner', status: 'Active', companyId },
     { id: 2, name: 'Field Assigned', role: 'field', status: 'Active', companyId, memberId: 7 },
-    { id: 3, name: 'Field Other', role: 'field', status: 'Active', companyId, memberId: 8 }
+    { id: 3, name: 'Field Other', role: 'field', status: 'Active', companyId, memberId: 8 },
+    { id: 4, name: 'Scoped PM', role: 'project_manager', status: 'Active', companyId, projectIds: [101], assignedCrews: ['A'], permissions: { scheduleCrews: true } },
+    { id: 5, name: 'Read-only PM', role: 'project_manager', status: 'Active', companyId, projectIds: [101], assignedCrews: ['A'], permissions: { scheduleCrews: false } }
   ],
   sessions: [
     { companyId, userId: 1, tokenHash: hash(ownerToken), expiresAt: '2099-01-01' },
     { companyId, userId: 2, tokenHash: hash(fieldToken), expiresAt: '2099-01-01' },
-    { companyId, userId: 3, tokenHash: hash(otherFieldToken), expiresAt: '2099-01-01' }
+    { companyId, userId: 3, tokenHash: hash(otherFieldToken), expiresAt: '2099-01-01' },
+    { companyId, userId: 4, tokenHash: hash(managerToken), expiresAt: '2099-01-01' },
+    { companyId, userId: 5, tokenHash: hash(readOnlyManagerToken), expiresAt: '2099-01-01' }
   ]
 };
 const file = path.join(root, 'db.json'); fs.writeFileSync(file, JSON.stringify(db)); fs.writeFileSync(path.join(root, 'platform.json'), JSON.stringify({ users: [], sessions: [] }));
@@ -89,6 +93,100 @@ const { server } = require('./server');
     const fieldReadAllowed = await call('GET', '/api/projects/101/tasks', undefined, otherFieldToken);
     assert.equal(fieldReadAllowed.status, 200);
     assert.equal(fieldReadAllowed.data.length, 2);
+
+    // Project managers can read assigned projects, but task writes require the
+    // schedule permission and may target only their assigned project + crews.
+    assert.equal((await call('GET', '/api/projects/101/tasks', undefined, managerToken)).status, 200);
+    assert.equal((await call('GET', '/api/projects/102/tasks', undefined, managerToken)).status, 403, 'a guessed project id cannot expose another manager’s task schedule');
+    assert.equal((await call('GET', '/api/projects/101/tasks', undefined, readOnlyManagerToken)).status, 200, 'read-only PMs may inspect their assigned project plan');
+    assert.equal((await call('POST', '/api/projects/101/tasks', { name: 'No permission', durationDays: 1 }, readOnlyManagerToken)).status, 403);
+    assert.equal((await call('PATCH', '/api/project-tasks/1', { durationDays: 1 }, readOnlyManagerToken)).status, 403);
+    assert.equal((await call('DELETE', '/api/project-tasks/1', undefined, readOnlyManagerToken)).status, 403);
+    assert.equal((await call('POST', '/api/project-tasks/1/assign', { memberId: 7 }, readOnlyManagerToken)).status, 403);
+    assert.equal((await call('POST', '/api/projects/102/tasks', { name: 'Foreign project', durationDays: 1 }, managerToken)).status, 403);
+    assert.equal((await call('POST', '/api/projects/101/tasks', { name: 'Foreign crew', durationDays: 1, memberIds: [9], crew: 'B' }, managerToken)).status, 403);
+    const ownTask = await call('POST', '/api/projects/101/tasks', { name: 'PM task', durationDays: 1 }, managerToken);
+    assert.equal(ownTask.status, 201, 'a PM with schedule permission can add unassigned work to an assigned project');
+    const ownTaskId = ownTask.data.tasks.find(task => task.name === 'PM task').id;
+    assert.equal((await call('DELETE', `/api/project-tasks/${ownTaskId}`, undefined, managerToken)).status, 200);
+    const foreignCrewTask = await call('POST', '/api/projects/101/tasks', { name: 'Other crew task', durationDays: 1, memberIds: [9], crew: 'B' });
+    assert.equal(foreignCrewTask.status, 201);
+    const foreignCrewTaskId = foreignCrewTask.data.tasks.find(task => task.name === 'Other crew task').id;
+    assert.equal((await call('PATCH', `/api/project-tasks/${foreignCrewTaskId}`, { durationDays: 2 }, managerToken)).status, 403, 'a PM cannot mutate another crew’s task by id');
+    assert.equal((await call('DELETE', `/api/project-tasks/${foreignCrewTaskId}`, undefined, managerToken)).status, 403, 'a PM cannot delete another crew’s task by id');
+    assert.equal((await call('POST', `/api/project-tasks/${foreignCrewTaskId}/assign`, { memberId: 7 }, managerToken)).status, 403, 'a PM cannot take over another crew’s task by id');
+
+    // Renaming a crew preserves every PM scope and current scheduling record.
+    const scopedAssignment = await call('POST', '/api/assignments', { projectId: 101, memberIds: [7], crew: 'A', date: '2099-12-30', start: '07:00', end: '15:30', activity: 'Future scoped work' });
+    assert.equal(scopedAssignment.status, 201);
+    const archivedHistoryAssignment = await call('POST', '/api/assignments', { projectId: 102, memberIds: [7], crew: 'A', date: '2099-12-29', start: '07:00', end: '15:30', activity: 'Existing historical work' });
+    assert.equal(archivedHistoryAssignment.status, 201);
+    const hiddenProjectTask = await call('POST', '/api/projects/102/tasks', { name: 'Existing hidden-project task', durationDays: 1 });
+    assert.equal(hiddenProjectTask.status, 201);
+    const hiddenProjectTaskId = hiddenProjectTask.data.tasks.find(task => task.name === 'Existing hidden-project task').id;
+    const hiddenProjectEvent = await call('POST', '/api/projects/102/events', { date: '2026-10-20', type: 'inspection', title: 'Existing hidden-project inspection' });
+    assert.equal(hiddenProjectEvent.status, 201);
+    const renameCrew = await call('PATCH', '/api/crews/1', { name: 'Alpha', memberIds: [7, 8] });
+    assert.equal(renameCrew.status, 200);
+    const afterCrewRename = reload();
+    assert.deepEqual(afterCrewRename.users.find(user => user.id === 4).assignedCrews, ['Alpha'], 'schedule PM keeps the renamed crew in scope');
+    assert.deepEqual(afterCrewRename.users.find(user => user.id === 5).assignedCrews, ['Alpha'], 'read-only PM keeps the renamed crew in scope');
+    assert.equal(afterCrewRename.assignments.find(row => row.id === scopedAssignment.data.id).crew, 'Alpha', 'future assignment carries the renamed crew label');
+    assert.equal(afterCrewRename.projectTasks.find(row => row.id === 2).crew, 'Alpha', 'linked project task carries the renamed crew label');
+    assert.equal((await call('PATCH', '/api/project-tasks/2', { status: 'in-progress' }, managerToken)).status, 200, 'crew rename does not revoke PM scheduling access');
+    const mixedRoster = await call('POST', '/api/assignments', { projectId: 101, memberIds: [7, 9], crew: 'Mixed crew', date: '2099-12-27', start: '07:00', end: '15:30', activity: 'Shared-site work' });
+    assert.equal(mixedRoster.status, 201);
+    const managerState = await call('GET', '/api/state', undefined, managerToken);
+    assert.equal(managerState.status, 200);
+    const projectedMixedRoster = managerState.data.assignments.find(row => Number(row.id) === Number(mixedRoster.data.id));
+    assert.ok(projectedMixedRoster, 'a mixed-roster assignment remains visible to the PM responsible for one member');
+    assert.deepEqual(projectedMixedRoster.memberIds, [7], 'the PM receives only their own assigned crew member');
+    assert.deepEqual(Object.keys(projectedMixedRoster.notifications || {}), ['7'], 'delivery state for another crew is not exposed');
+    assert.deepEqual(Object.keys(projectedMixedRoster.acknowledgements || {}), [], 'acknowledgements for another crew are not exposed');
+    assert.ok(managerState.data.projectTasks.some(task => Number(task.id) === 1), 'unassigned project work remains available for the PM to staff');
+    assert.ok(managerState.data.projectTasks.some(task => Number(task.id) === 2), 'the PM receives work already assigned to their crew');
+    assert.equal(managerState.data.projectTasks.some(task => Number(task.id) === Number(foreignCrewTaskId)), false, 'another crew’s project task is not exposed in workspace state');
+    const managerTaskList = await call('GET', '/api/projects/101/tasks', undefined, managerToken);
+    assert.equal(managerTaskList.status, 200);
+    assert.equal(managerTaskList.data.some(task => Number(task.id) === Number(foreignCrewTaskId)), false, 'the direct project-task endpoint uses the same crew scope');
+
+    // Archived jobs remain readable historically but cannot receive new work or
+    // become the target of an assignment edit through a stale/direct client.
+    const archiveHidden = await call('PATCH', '/api/projects/102/archive', { archived: true });
+    assert.equal(archiveHidden.status, 200);
+    assert.equal(archiveHidden.data.archived, true);
+    const createOnArchived = await call('POST', '/api/assignments', { projectId: 102, memberIds: [7], crew: 'Alpha', date: '2099-12-31', start: '07:00', end: '15:30', activity: 'Must not schedule' });
+    assert.equal(createOnArchived.status, 409);
+    assert.match(createOnArchived.data.error, /restore this project/i);
+    const editArchivedHistory = await call('PATCH', `/api/assignments/${archivedHistoryAssignment.data.id}`, { edit: true, projectId: 102, memberIds: [7], crew: 'Alpha', date: '2099-12-29', start: '07:00', end: '15:30', activity: 'Corrected historical work' });
+    assert.equal(editArchivedHistory.status, 200, 'historical work may be corrected without moving it onto an archived project');
+    const rescheduleArchivedHistory = await call('PATCH', `/api/assignments/${archivedHistoryAssignment.data.id}`, { edit: true, projectId: 102, memberIds: [7], crew: 'Alpha', date: '2099-12-28', start: '07:00', end: '15:30', activity: 'Must not move' });
+    assert.equal(rescheduleArchivedHistory.status, 409, 'historical work on an archived project cannot be moved to a different day');
+    const dragArchivedHistory = await call('PATCH', `/api/assignments/${archivedHistoryAssignment.data.id}`, { memberId: 7, targetMemberId: 7, date: '2099-12-28' });
+    assert.equal(dragArchivedHistory.status, 409, 'dragging cannot bypass archived-project schedule protection');
+    const moveToArchived = await call('PATCH', `/api/assignments/${scopedAssignment.data.id}`, { edit: true, projectId: 102, memberIds: [7], crew: 'Alpha', date: '2099-12-30', start: '07:00', end: '15:30', activity: 'Must remain on active project' });
+    assert.equal(moveToArchived.status, 409);
+    assert.equal(reload().assignments.find(row => row.id === scopedAssignment.data.id).projectId, 101, 'rejected move leaves the stored assignment untouched');
+    assert.equal((await call('POST', '/api/projects/102/tasks', { name: 'Archived task', durationDays: 1 })).status, 409, 'archived projects reject new schedule tasks');
+    assert.equal((await call('POST', `/api/project-tasks/${hiddenProjectTaskId}/assign`, { memberId: 9 })).status, 409, 'tasks on archived projects cannot create assignments');
+    assert.equal((await call('PATCH', `/api/project-tasks/${hiddenProjectTaskId}`, { status: 'complete' })).status, 409, 'archived project tasks cannot be changed');
+    assert.equal((await call('DELETE', `/api/project-tasks/${hiddenProjectTaskId}`)).status, 409, 'archived project tasks cannot be erased');
+    assert.equal((await call('DELETE', `/api/project-events/${hiddenProjectEvent.data.id}`)).status, 409, 'archived project events cannot be erased');
+
+    // The same project boundary protects schedule-adjacent events and messages.
+    // These direct requests ensure a PM cannot bypass the UI with guessed ids.
+    const ownEvent = await call('POST', '/api/projects/101/events', { date: '2026-10-20', type: 'delivery', title: 'Forms delivery' }, managerToken);
+    assert.equal(ownEvent.status, 201, 'a scheduling PM can add an event to an assigned project');
+    assert.equal((await call('POST', '/api/projects/102/events', { date: '2026-10-20', type: 'delivery', title: 'Hidden delivery' }, managerToken)).status, 403, 'a PM cannot add events to another project');
+    assert.equal((await call('POST', '/api/projects/101/events', { date: '2026-10-20', type: 'delivery', title: 'No permission' }, readOnlyManagerToken)).status, 403, 'event changes require schedule permission');
+    const hiddenEvent = await call('POST', '/api/projects/102/events', { date: '2026-10-20', type: 'inspection', title: 'Owner-only inspection' });
+    assert.equal(hiddenEvent.status, 409, 'archived projects reject new schedule events');
+    assert.equal((await call('DELETE', `/api/project-events/${ownEvent.data.id}`, undefined, managerToken)).status, 200, 'a scheduling PM can remove an event from an assigned project');
+    assert.equal((await call('POST', '/api/projects/101/messages', { text: 'Crew update' }, managerToken)).status, 201, 'a PM can message an assigned project');
+    assert.equal((await call('POST', '/api/projects/102/messages', { text: 'Hidden crew update' }, managerToken)).status, 403, 'a PM cannot message another project');
+    assert.equal((await call('POST', '/api/projects/101/messages', { text: 'Read-only project update' }, readOnlyManagerToken)).status, 201, 'message access follows project scope rather than schedule-edit permission');
+    assert.equal((await call('POST', '/api/projects/102/messages/read', {}, managerToken)).status, 403, 'a PM cannot mark another project’s messages read');
+    assert.equal((await call('POST', '/api/projects/101/messages/read', {}, managerToken)).status, 200, 'a PM can mark assigned-project messages read');
 
     // Unknown project / task.
     assert.equal((await call('GET', '/api/projects/999/tasks')).status, 404);

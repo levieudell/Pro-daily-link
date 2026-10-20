@@ -331,3 +331,176 @@ table td,.activity-item,.schedule-cell{border-color:var(--border-default)}
 @media(prefers-reduced-motion:reduce){
   *,*::before,*::after{scroll-behavior:auto!important;animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important}
 }
+
+/* Schedule workspace: date, people, work — in that order. */
+#schedule-page{max-width:1600px}
+.schedule-heading{margin-bottom:16px}
+.schedule-heading-actions{display:flex;align-items:center;gap:8px}
+.schedule-more{position:relative}
+.schedule-more>summary{display:grid;place-items:center;min-height:44px;padding:9px 15px;list-style:none;cursor:pointer;font-weight:800}
+.schedule-more>summary::-webkit-details-marker{display:none}
+.schedule-more>div{position:absolute;right:0;top:50px;z-index:8;width:190px;padding:7px;border:1px solid var(--border-default);border-radius:var(--radius-md);background:var(--surface-panel);box-shadow:var(--shadow-2)}
+.schedule-more>div button{width:100%;text-align:left}
+.schedule-command-bar{display:flex;align-items:center;justify-content:space-between;gap:14px;margin-bottom:10px;padding:8px;border:1px solid var(--border-default);border-radius:var(--radius-md);background:var(--surface-panel);box-shadow:var(--shadow-1)}
+#schedule-page .schedule-toolbar{display:grid;grid-template-columns:44px minmax(220px,auto) 44px auto;align-items:center;gap:5px;margin:0}
+#schedule-page .schedule-toolbar button{min-height:44px;border:1px solid var(--border-default);border-radius:var(--radius-sm);background:var(--surface-raised);color:var(--text-primary)}
+#schedule-page #schedule-pick-date{min-width:220px;background:var(--surface-panel)}
+#schedule-page #schedule-pick-date small{color:var(--text-tertiary)}
+.schedule-command-actions{display:flex;align-items:center;gap:7px}
+#schedule-page .schedule-view-switcher{display:grid;grid-template-columns:repeat(3,minmax(64px,1fr));width:auto;margin:0;padding:3px;border-color:var(--border-default);background:var(--surface-subtle)}
+#schedule-page .schedule-view-switcher button{min-height:44px;padding:6px 13px;color:var(--text-secondary)}
+#schedule-page .schedule-view-switcher button.active{background:var(--action-selection);color:#fff;box-shadow:none}
+.schedule-filter-toggle{display:flex;align-items:center;gap:7px}
+.schedule-filter-toggle span{display:grid;place-items:center;min-width:20px;height:20px;padding:0 6px;border-radius:999px;background:var(--action-selection);color:#fff;font-size:10px}
+.schedule-filter-toggle.active{border-color:var(--action-selection);color:var(--action-selection)}
+#schedule-page .schedule-filters{display:grid;grid-template-columns:minmax(220px,320px) auto 1fr;align-items:end;gap:12px;margin:0 0 10px;padding:12px 14px;border:1px solid var(--border-default);border-radius:var(--radius-md);background:var(--surface-subtle)}
+#schedule-page .schedule-filters[hidden]{display:none!important}
+#schedule-page .schedule-filters label{margin:0}
+#schedule-page .schedule-filters small{align-self:center;justify-self:end;margin:0;color:var(--text-tertiary)}
+#schedule-page .schedule-summary{display:flex;align-items:stretch;gap:0;margin:0 0 10px;border:1px solid var(--border-default);border-radius:var(--radius-md);background:var(--surface-panel);overflow:hidden}
+#schedule-page .schedule-summary article{display:grid;grid-template-columns:auto auto;align-content:center;align-items:baseline;gap:1px 8px;min-width:170px;padding:10px 14px;border:0;border-right:1px solid var(--border-default);border-radius:0;background:transparent;box-shadow:none}
+#schedule-page .schedule-summary article small{grid-column:1/-1;color:var(--text-tertiary);font-size:9px}
+#schedule-page .schedule-summary article strong{margin:0;font:700 20px "Oswald",sans-serif}
+#schedule-page .schedule-summary article span{font-size:10px;color:var(--text-secondary)}
+#schedule-page .schedule-summary article span+span{display:none}
+#schedule-page .schedule-summary .needs-attention{border-color:var(--border-default);background:var(--state-warning-surface)}
+#schedule-page .schedule-summary>p{flex:1;align-self:center;margin:0;padding:8px 14px;color:var(--text-tertiary);font-size:10px;text-align:right}
+#schedule-page .schedule-board{border-radius:var(--radius-md);box-shadow:none}
+.schedule-cell{background:var(--surface-panel)}
+.schedule-cell.schedule-drop-zone[role="button"]{cursor:pointer}
+.schedule-cell.schedule-drop-zone[role="button"]:hover{background:var(--action-selection-soft)}
+.schedule-cell.schedule-drop-zone[role="button"]:focus-visible{position:relative;z-index:2;outline-offset:-3px}
+.assignment{border-left-color:var(--action-primary);background:color-mix(in srgb,var(--action-primary) 9%,var(--surface-panel))}
+.assignment .assignment-activity{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.schedule-month-day{border:0;border-right:1px solid var(--border-default);border-bottom:1px solid var(--border-default);background:var(--surface-panel);color:var(--text-primary)}
+.schedule-month-date{display:flex;align-items:center;justify-content:space-between;gap:6px;margin-bottom:7px}
+.schedule-month-date>strong{font-size:12px}
+.schedule-month-date button{display:grid;place-items:center;width:44px;height:44px;border:0;border-radius:var(--radius-sm);background:transparent;color:var(--action-selection);font-weight:900;opacity:.25}
+.schedule-month-day:hover .schedule-month-date button,.schedule-month-date button:focus-visible{opacity:1;background:var(--action-selection-soft)}
+.month-assignment{width:100%;border:0;border-left:3px solid var(--action-primary);border-radius:5px;background:color-mix(in srgb,var(--action-primary) 9%,var(--surface-panel));color:var(--text-primary);text-align:left}
+.month-assignment:hover{background:color-mix(in srgb,var(--action-primary) 15%,var(--surface-panel))}
+.schedule-unavailable-summary{padding:0;border:1px solid var(--state-warning);border-radius:var(--radius-sm);background:var(--state-warning-surface);color:var(--text-primary)}
+.schedule-unavailable-summary>summary{display:flex;align-items:center;justify-content:space-between;gap:12px;min-height:44px;padding:9px 12px;cursor:pointer;font-size:12px;font-weight:800;list-style:none}
+.schedule-unavailable-summary>summary::-webkit-details-marker{display:none}
+.schedule-unavailable-summary>summary:after{content:"⌄";color:var(--state-warning)}
+.schedule-unavailable-summary[open]>summary:after{content:"⌃"}
+.schedule-unavailable-summary>summary strong{margin-left:auto;color:var(--state-warning)}
+.schedule-unavailable-summary ul,.schedule-unavailable-summary>p{margin:0;padding:0 12px 10px}
+
+#assignment-modal{width:min(700px,calc(100% - 30px))}
+#assignment-modal form{padding:0}
+#assignment-modal .modal-header{padding:24px 26px 17px;margin:0;border-bottom:1px solid var(--border-default)}
+.assignment-intro{max-width:520px;margin:6px 0 0;color:var(--text-secondary);font-size:12px;line-height:1.45}
+.assignment-step{margin:0;padding:18px 26px 3px;border:0;border-bottom:1px solid var(--border-default)}
+.assignment-step legend{display:flex;align-items:center;gap:8px;padding:0;color:var(--text-primary);font-size:13px;font-weight:900}
+.assignment-step legend>span{display:grid;place-items:center;width:24px;height:24px;border-radius:50%;background:var(--action-primary);color:var(--text-on-accent);font-size:11px}
+.assignment-step legend small{color:var(--text-tertiary);font-weight:600}
+.assignment-step>label{margin-top:12px}
+.assignment-step .input-help{margin:-7px 0 13px;color:var(--text-tertiary);font-size:11px}
+.assignment-date-time-grid{display:grid;grid-template-columns:1.4fr 1fr 1fr;gap:10px;margin-top:12px}
+.assignment-date-time-grid label{min-width:0}
+.assignment-range-toggle{min-height:44px;margin:0 0 14px;padding:6px 0;border:0;background:transparent;color:var(--action-selection);font-size:12px;font-weight:800}
+.assignment-range-fields{display:grid;grid-template-columns:1fr 1.5fr;align-items:end;gap:12px;margin:0 0 14px;padding:13px;border:1px solid var(--border-default);border-radius:var(--radius-sm);background:var(--surface-subtle)}
+.assignment-range-fields[hidden]{display:none!important}
+.assignment-range-fields label{margin:0}
+.assignment-optional{border-bottom:0}
+.assignment-preview{display:grid;gap:4px;margin:14px 26px 0;padding:13px 15px;border:1px solid var(--border-default);border-left:4px solid var(--text-tertiary);border-radius:var(--radius-sm);background:var(--surface-subtle);font-size:12px;line-height:1.45}
+.assignment-preview strong{font-size:13px}.assignment-preview span,.assignment-preview small{color:var(--text-secondary)}
+.assignment-preview.ready{border-color:color-mix(in srgb,var(--state-success) 45%,var(--border-default));border-left-color:var(--state-success);background:var(--state-success-surface)}
+.assignment-preview.blocked{border-color:color-mix(in srgb,var(--state-danger) 45%,var(--border-default));border-left-color:var(--state-danger);background:var(--state-danger-surface)}
+.assignment-preview.blocked strong{color:var(--state-danger)}
+.assignment-day-tools{display:flex;align-items:center;gap:7px;margin:12px 26px 0;padding-top:10px;border-top:1px solid var(--border-default)}
+.assignment-day-tools[hidden]{display:none!important}.assignment-day-tools span{margin-right:auto;color:var(--text-tertiary);font-size:11px;font-weight:800}
+#assignment-modal .form-warning{margin:12px 26px 0}
+#assignment-modal .assignment-save-actions{position:sticky;bottom:0;z-index:2;margin:16px 0 0;padding:14px 26px calc(14px + env(safe-area-inset-bottom));border-top:1px solid var(--border-default);background:var(--surface-panel)}
+#assignment-modal .assignment-save-actions .primary{min-width:160px}
+.assignment-roster{margin-top:14px;border:1px solid var(--border-default);border-radius:var(--radius-sm);overflow:hidden}
+.assignment-roster h3{margin:0;padding:11px 13px;background:var(--surface-subtle);font-size:12px}
+.scheduled-roster{display:flex;align-items:center;justify-content:space-between;gap:14px;padding:10px 13px;border-top:1px solid var(--border-default)}
+.scheduled-roster span{display:grid}.scheduled-roster small{color:var(--text-secondary)}.scheduled-roster>b{font-size:11px;color:var(--state-warning)}.scheduled-roster>b.confirmed{color:var(--state-success)}
+.assignment-extend,.assignment-detail-more{margin-top:14px;border:1px solid var(--border-default);border-radius:var(--radius-sm);background:var(--surface-subtle)}
+.assignment-extend>summary,.assignment-detail-more>summary{min-height:44px;padding:11px 13px;cursor:pointer;font-size:12px;font-weight:800}
+.assignment-extend .add-schedule-day{margin:0;border:0;border-top:1px solid var(--border-default);border-radius:0;background:var(--surface-panel)}
+.assignment-detail-more>div{display:flex;flex-wrap:wrap;gap:8px;padding:0 13px 13px}
+.assignment-detail-actions{margin-top:16px}
+.schedule-mobile-month{display:grid;gap:2px;padding:12px 14px;border:1px solid var(--border-default);border-radius:var(--radius-sm);background:var(--surface-subtle)}
+.schedule-mobile-month span,.schedule-mobile-month-empty span{color:var(--text-secondary);font-size:11px}
+.schedule-mobile-month-empty{display:grid;gap:4px;padding:22px;text-align:center;border:1px dashed var(--border-default);border-radius:var(--radius-sm)}
+
+:root[data-theme="dark"] .schedule-command-bar,:root[data-theme="dark"] #schedule-page .schedule-summary,:root[data-theme="dark"] #schedule-page .schedule-filters,:root[data-theme="dark"] .schedule-more>div,:root[data-theme="dark"] .schedule-month-day,:root[data-theme="dark"] .assignment-step,:root[data-theme="dark"] #assignment-modal .assignment-save-actions{background:var(--surface-panel)!important;color:var(--text-primary)!important;border-color:var(--border-default)!important}
+:root[data-theme="dark"] .assignment,:root[data-theme="dark"] .month-assignment{background:color-mix(in srgb,var(--action-primary) 16%,var(--surface-panel))!important;color:var(--text-primary)!important}
+:root[data-theme="dark"] .schedule-unavailable-summary,:root[data-theme="dark"] .assignment-preview,:root[data-theme="dark"] .assignment-range-fields,:root[data-theme="dark"] .assignment-extend,:root[data-theme="dark"] .assignment-detail-more,:root[data-theme="dark"] .schedule-mobile-month{background:var(--surface-subtle)!important;color:var(--text-primary)!important;border-color:var(--border-default)!important}
+:root[data-theme="dark"] .assignment-preview.ready{background:var(--state-success-surface)!important;border-color:color-mix(in srgb,var(--state-success) 55%,var(--border-default))!important;border-left-color:var(--state-success)!important}
+:root[data-theme="dark"] .assignment-preview.blocked{background:var(--state-danger-surface)!important;border-color:color-mix(in srgb,var(--state-danger) 55%,var(--border-default))!important;border-left-color:var(--state-danger)!important}
+:root[data-theme="dark"] .schedule-time-off{background:var(--state-warning-surface)!important;border-color:var(--state-warning)!important;color:var(--text-primary)!important}
+:root[data-theme="dark"] .schedule-time-off strong,:root[data-theme="dark"] .schedule-time-off small{color:inherit!important}
+:root[data-theme="dark"] .schedule-leave-conflict{background:var(--state-danger-surface)!important;border-color:var(--state-danger)!important;color:var(--text-primary)!important}
+
+@media(pointer:coarse){
+  .schedule-month-date button{opacity:1}
+}
+
+@media(max-width:900px){
+  .schedule-command-bar{align-items:stretch;flex-direction:column}
+  .schedule-command-actions{justify-content:space-between}
+  #schedule-page .schedule-view-switcher{flex:1}
+}
+@media(max-width:760px){
+  #schedule-page{padding-top:20px}
+  #schedule-page .schedule-heading{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:10px;margin-bottom:12px}
+  #schedule-page .schedule-heading h1{font-size:27px}
+  #schedule-page .schedule-heading p:not(.eyebrow){display:none}
+  .schedule-heading-actions{gap:6px}
+  .schedule-more>summary{min-width:44px;padding:8px;font-size:0}
+  .schedule-more>summary:after{content:"•••";font-size:14px;letter-spacing:2px}
+  .schedule-more>div{right:-84px}
+  #schedule-page #new-assignment{max-width:none;min-height:44px;padding:8px 11px;font-size:12px}
+  .schedule-command-bar{gap:8px;margin-bottom:8px;padding:7px}
+  #schedule-page .schedule-toolbar{grid-template-columns:44px minmax(0,1fr) 44px auto;gap:4px;margin:0}
+  #schedule-page #schedule-pick-date{min-width:0;padding-inline:5px;font-size:11px}
+  #schedule-page #schedule-today{grid-column:auto;justify-self:auto;padding-inline:9px;font-size:11px}
+  .schedule-command-actions{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:5px}
+  #schedule-page .schedule-view-switcher button{min-width:0;min-height:44px;padding:5px 8px;font-size:12px}
+  .schedule-filter-toggle{min-height:44px;padding:7px 10px;font-size:11px}
+  #schedule-page .schedule-filters{grid-template-columns:1fr;align-items:stretch;gap:8px;padding:11px;margin-bottom:8px}
+  #schedule-page .schedule-filters small{justify-self:start}
+  #schedule-page .schedule-summary{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));margin-bottom:10px}
+  #schedule-page .schedule-summary article{display:block;min-width:0;padding:9px 8px;border-right:1px solid var(--border-default)}
+  #schedule-page .schedule-summary article:last-of-type{border-right:0}
+  #schedule-page .schedule-summary article strong{display:block;font-size:19px}
+  #schedule-page .schedule-summary article span{display:block;white-space:normal;overflow-wrap:anywhere}
+  #schedule-page .schedule-summary>p{display:none}
+  #schedule-page .schedule-board{border:0;background:transparent;overflow:visible}
+  #schedule-page .schedule-mobile-agenda{gap:12px}
+  .schedule-unavailable-summary{margin-bottom:2px}
+  .schedule-agenda-day{padding:12px;border:1px solid var(--border-default);border-radius:var(--radius-md);background:var(--surface-panel)}
+  .schedule-agenda-assignment{border-left-color:var(--action-primary)}
+  #assignment-modal{width:100%;max-width:none;height:100%;max-height:none;margin:0;border:0;border-radius:0}
+  #assignment-modal .modal-header{padding:18px 16px 14px}
+  .assignment-step{padding:15px 16px 2px}
+  .assignment-date-time-grid{grid-template-columns:1fr 1fr}
+  .assignment-date-time-grid label:first-child{grid-column:1/-1}
+  .assignment-range-fields{grid-template-columns:1fr;padding:11px}
+  .assignment-preview{margin:12px 16px 0}
+  .assignment-day-tools{display:grid;grid-template-columns:1fr 1fr;margin:12px 16px 0}
+  .assignment-day-tools span{grid-column:1/-1}
+  .assignment-day-tools button{width:100%}
+  #assignment-modal .form-warning{margin:12px 16px 0}
+  #assignment-modal .assignment-save-actions{display:grid;grid-template-columns:1fr 1.5fr;padding:12px 16px calc(12px + env(safe-area-inset-bottom))}
+  #assignment-modal .assignment-save-actions button{width:100%;min-width:0}
+  .scheduled-roster{align-items:flex-start;flex-direction:column;gap:5px}
+}
+@media(max-width:520px){
+  #schedule-page .schedule-heading{grid-template-columns:1fr}
+  #schedule-page .schedule-heading-actions{display:grid;grid-template-columns:minmax(0,1fr) 44px;width:100%}
+  #schedule-page #new-assignment{grid-column:1;grid-row:1;width:100%}
+  #schedule-page .schedule-more{grid-column:2;grid-row:1}
+  #schedule-page .schedule-more>div{right:0}
+}
+@media(max-width:390px){
+  #schedule-page .schedule-toolbar{grid-template-columns:44px minmax(0,1fr) 44px}
+  #schedule-page #schedule-today{grid-column:1/-1;min-height:44px}
+  .schedule-command-actions{grid-template-columns:1fr}
+  .schedule-filter-toggle{justify-content:center}
+  #schedule-page .schedule-summary article span{font-size:9px}
+}

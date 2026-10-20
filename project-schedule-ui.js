@@ -6,6 +6,13 @@
   let scheduleTabSequence = 0;
 let scheduleView = 'table';
 
+  function projectScheduleLocale(){
+    if (typeof interfaceLocale === 'function') return interfaceLocale() || 'en-US';
+    return typeof preferredLanguage !== 'undefined' && preferredLanguage === 'es' ? 'es-US' : 'en-US';
+  }
+  function projectScheduleCopy(value){
+    return typeof PDLLocale !== 'undefined' && PDLLocale && typeof PDLLocale.translate === 'function' ? PDLLocale.translate(value) : value;
+  }
   function canEditTasks(){ return typeof canManageSchedule === 'function' && canManageSchedule(); }
   function taskStatusLabel(status){ return status === 'done' ? 'Done' : status === 'in-progress' ? 'In progress' : 'Not started'; }
   function memberNames(ids){ return (ids || []).map(id => (team || []).find(m => Number(m.id) === Number(id))?.name).filter(Boolean); }
@@ -39,12 +46,12 @@ let scheduleView = 'table';
   }
   function progressMarkup(progress){
     if (!progress) return '';
-    const fmt = value => Number(value).toLocaleString('en-US', { maximumFractionDigits: 1 });
+    const fmt = value => Number(value).toLocaleString(projectScheduleLocale(), { maximumFractionDigits: 1 });
     return `<span class="project-schedule-progress" title="Approved daily-report quantities"><i><u style="width:${progress.pct}%"></u></i><b>${fmt(progress.done)} / ${fmt(progress.planned)} ${escapeHtml(progress.unit)}</b><small>${progress.pct}%</small></span>`;
   }
   function progressText(progress){
     if (!progress) return '';
-    const fmt = value => Number(value).toLocaleString('en-US', { maximumFractionDigits: 1 });
+    const fmt = value => Number(value).toLocaleString(projectScheduleLocale(), { maximumFractionDigits: 1 });
     return `${fmt(progress.done)} / ${fmt(progress.planned)} ${progress.unit} (${progress.pct}%)`;
   }
 
@@ -99,15 +106,16 @@ let scheduleView = 'table';
     const days = [];
     for (let t = start; t <= end; t += DAY) days.push(new Date(t));
     const isoOf = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-    const dayCells = days.map(d => `<i class="gantt-day${(d.getDay() === 0 || d.getDay() === 6) ? ' gantt-weekend' : ''}"><small>${'SMTWTFS'[d.getDay()]}</small><b>${d.getDate()}</b></i>`).join('');
+    const locale = projectScheduleLocale();
+    const dayCells = days.map(d => `<i class="gantt-day${(d.getDay() === 0 || d.getDay() === 6) ? ' gantt-weekend' : ''}"><small>${escapeHtml(d.toLocaleDateString(locale, { weekday: 'narrow' }).toUpperCase())}</small><b>${d.getDate()}</b></i>`).join('');
     const months = [];
     for (const d of days) {
       const key = `${d.getFullYear()}-${d.getMonth()}`;
       if (months.length && months[months.length - 1].key === key) months[months.length - 1].count++;
-      else months.push({ key, label: d.toLocaleDateString('en-US', { month: 'short' }), count: 1 });
+      else months.push({ key, label: d.toLocaleDateString(locale, { month: 'short' }), count: 1 });
     }
     const monthRow = months.map(m => `<span class="gantt-month" style="flex-grow:${m.count}">${escapeHtml(m.label)}</span>`).join('');
-    const todayIso = typeof localDateIso === 'function' ? localDateIso() : '';
+    const todayIso = typeof companyTodayIso === 'function' ? companyTodayIso() : (typeof localDateIso === 'function' ? localDateIso() : '');
     const todayLeft = todayIso && todayIso >= isoOf(days[0]) && todayIso <= isoOf(days[days.length - 1]) ? (Date.parse(todayIso + 'T12:00:00') - start) / span * 100 : null;
     const rows = sorted.map(task => {
       const statusClass = task.status === 'done' ? ' is-done' : task.status === 'in-progress' ? ' is-progress' : ' is-todo';
@@ -159,11 +167,11 @@ function renderSchedulePane(pane, project, tasks, editingId){
         <td class="project-schedule-actions">${editable ? `<select data-task-status="${Number(task.id)}" aria-label="Status for ${escapeHtml(task.name)}"><option value="not-started" ${task.status === 'not-started' ? 'selected' : ''}>Not started</option><option value="in-progress" ${task.status === 'in-progress' ? 'selected' : ''}>In progress</option><option value="done" ${task.status === 'done' ? 'selected' : ''}>Done</option></select><button type="button" class="secondary small" data-edit-task="${Number(task.id)}">Edit</button><button type="button" class="danger small" data-delete-task="${Number(task.id)}" aria-label="Delete ${escapeHtml(task.name)}">Delete</button>` : `<span class="status">${taskStatusLabel(task.status)}</span>`}</td>
       </tr>`)).join('');
     pane.innerHTML = `
-      <div class="project-schedule-head"><div><h3>Project schedule</h3><p>Linked tasks auto-schedule: a task starts the next working day after everything it waits for is done. Change one and the rest follow.</p></div><div class="project-schedule-view-toggle" role="tablist" aria-label="Schedule view"><button type="button" data-schedule-view="table" class="${scheduleView === 'table' ? 'active' : ''}">Table</button><button type="button" data-schedule-view="timeline" class="${scheduleView === 'timeline' ? 'active' : ''}">Timeline</button></div></div>
+      <div class="project-schedule-head"><div><h3>Project schedule</h3><p>Linked tasks auto-schedule: a task starts the next working day after everything it waits for is done. Change one and the rest follow.</p></div><div class="project-schedule-view-toggle" role="tablist" aria-label="Schedule view"><button type="button" role="tab" id="project-schedule-table-tab" aria-controls="project-schedule-view-panel" aria-selected="${scheduleView === 'table'}" tabindex="${scheduleView === 'table' ? '0' : '-1'}" data-schedule-view="table" class="${scheduleView === 'table' ? 'active' : ''}">Table</button><button type="button" role="tab" id="project-schedule-timeline-tab" aria-controls="project-schedule-view-panel" aria-selected="${scheduleView === 'timeline'}" tabindex="${scheduleView === 'timeline' ? '0' : '-1'}" data-schedule-view="timeline" class="${scheduleView === 'timeline' ? 'active' : ''}">Timeline</button></div></div>
       ${forecastBanner(project, sorted)}
-      ${editable ? `${!hasStart ? `<div data-schedule-needs-start style="display:flex;gap:8px 16px;align-items:baseline;flex-wrap:wrap;padding:12px 14px;margin-bottom:12px;border:1px solid #e5c97a;background:#fdf6e3;border-radius:12px;font-size:14px"><strong>No start date on this project yet.</strong><span style="color:#6b5d33">Set one below and every task will schedule itself from that day.</span></div>` : ''}
+      ${editable ? `${!hasStart ? `<div class="project-schedule-needs-start" data-schedule-needs-start><strong>No start date on this project yet.</strong><span>Set one below and every task will schedule itself from that day.</span></div>` : ''}
       <div class="project-schedule-add" data-project-dates-form>
-        <label style="display:grid;gap:4px;font-size:12px;font-weight:600;color:#64726c">Start date<input type="date" data-project-start-date value="${escapeHtml(String(project.startDate || (typeof localDateIso === 'function' ? localDateIso() : new Date().toISOString().slice(0, 10))))}"></label>
+        <label style="display:grid;gap:4px;font-size:12px;font-weight:600;color:#64726c">Start date<input type="date" data-project-start-date value="${escapeHtml(String(project.startDate || (typeof companyTodayIso === 'function' ? companyTodayIso() : (typeof localDateIso === 'function' ? localDateIso() : new Date().toISOString().slice(0, 10)))))}"></label>
         <label style="display:grid;gap:4px;font-size:12px;font-weight:600;color:#64726c">Target end <span style="font-weight:400">(optional)</span><input type="date" data-project-end-date value="${escapeHtml(String(project.endDate || ''))}"></label>
         <button type="button" class="secondary small" data-save-project-dates>Save dates</button>
         <span style="font-size:12px;color:#98a5a0;flex:1 1 180px">Tasks count working days from the start date. Change it any time and the dates follow.</span>
@@ -179,7 +187,7 @@ function renderSchedulePane(pane, project, tasks, editingId){
         </div>
         <div class="schedule-add-actions"><button type="button" class="primary" data-add-task>＋ Add task</button><span class="schedule-add-hint">Dates set themselves from the links — no calendar needed.</span></div>
       </div>` : ''}
-      ${sorted.length ? (scheduleView === 'timeline' ? ganttChart(project, sorted) : `<div class="project-schedule-table-wrap"><table class="project-schedule-table"><thead><tr><th>Task</th><th>Waits for</th><th>Length</th><th>Dates</th><th>Assigned</th><th>${editable ? 'Status / actions' : 'Status'}</th></tr></thead><tbody>${rows}</tbody></table></div>`) : `<div class="project-tab-empty"><strong>No scheduled tasks yet</strong><p>${editable ? 'Add the project’s phases or milestones above and link them so the dates keep themselves honest.' : 'Your office will add the project schedule here.'}</p></div>`}`;
+      <div id="project-schedule-view-panel" role="tabpanel" aria-labelledby="project-schedule-${scheduleView}-tab">${sorted.length ? (scheduleView === 'timeline' ? ganttChart(project, sorted) : `<div class="project-schedule-table-wrap"><table class="project-schedule-table"><thead><tr><th>Task</th><th>Waits for</th><th>Length</th><th>Dates</th><th>Assigned</th><th>${editable ? 'Status / actions' : 'Status'}</th></tr></thead><tbody>${rows}</tbody></table></div>`) : `<div class="project-tab-empty"><strong>No scheduled tasks yet</strong><p>${editable ? 'Add the project’s phases or milestones above and link them so the dates keep themselves honest.' : 'Your office will add the project schedule here.'}</p></div>`}</div>`;
     if (Number(editingId)) { const select = pane.querySelector(`[data-schedule-edit-row="${Number(editingId)}"] [data-edit-task-deps]`); if (select) { const editing = taskById(tasks, editingId); [...select.options].forEach(option => { option.selected = (editing?.predecessorIds || []).map(Number).includes(Number(option.value)); }); } }
     wireSchedulePane(pane, project, tasks, editingId);
   }
@@ -188,10 +196,25 @@ function renderSchedulePane(pane, project, tasks, editingId){
 
   function wireSchedulePane(pane, project, tasks){
     const editable = canEditTasks();
-    pane.querySelectorAll('[data-schedule-view]').forEach(button => button.onclick = () => {
-      if (scheduleView === button.dataset.scheduleView) return;
+    const viewTabs = [...pane.querySelectorAll('[data-schedule-view]')];
+    const activateView = (button, moveFocus) => {
+      if (!button || scheduleView === button.dataset.scheduleView) return;
       scheduleView = button.dataset.scheduleView;
       renderSchedulePane(pane, project, tasks, null);
+      if (moveFocus) pane.querySelector(`[data-schedule-view="${scheduleView}"]`)?.focus();
+    };
+    viewTabs.forEach((button, index) => {
+      button.onclick = () => activateView(button, true);
+      button.onkeydown = event => {
+        let nextIndex = null;
+        if (event.key === 'ArrowRight' || event.key === 'ArrowDown') nextIndex = (index + 1) % viewTabs.length;
+        else if (event.key === 'ArrowLeft' || event.key === 'ArrowUp') nextIndex = (index - 1 + viewTabs.length) % viewTabs.length;
+        else if (event.key === 'Home') nextIndex = 0;
+        else if (event.key === 'End') nextIndex = viewTabs.length - 1;
+        if (nextIndex == null) return;
+        event.preventDefault();
+        activateView(viewTabs[nextIndex], true);
+      };
     });
     pane.querySelectorAll('.schedule-chip').forEach(chip => chip.onclick = () => {
       const pick = chip.closest('.schedule-chip-pick'), select = pick && pick.querySelector('select');
@@ -238,7 +261,7 @@ function renderSchedulePane(pane, project, tasks, editingId){
     pane.querySelectorAll('[data-edit-task]').forEach(button => button.onclick = () => renderSchedulePane(pane, project, tasks, Number(button.dataset.editTask)));
     pane.querySelectorAll('[data-delete-task]').forEach(button => button.onclick = async () => {
       const task = taskById(tasks, button.dataset.deleteTask);
-      if (!task || !confirm(`Delete “${task.name}”? Linked tasks will move up to fill the gap.`)) return;
+      if (!task || !confirm(projectScheduleCopy(`Delete “${task.name}”? Linked tasks will move up to fill the gap.`))) return;
       try { const payload = await api(`/api/project-tasks/${task.id}`, { method: 'DELETE' }); refresh(payload); notifyChanged(payload); }
       catch (error) { notify(error.message); }
     });
@@ -291,7 +314,7 @@ function renderSchedulePane(pane, project, tasks, editingId){
   // on touch screens) and the server writes daily assignments for the rest of
   // the task. Chips intentionally carry no data-assignment attribute so the
   // board's assignment wiring never confuses a task with an assignment row.
-  let laneTasksCache = null, laneTasksFetchedAt = 0, laneSequence = 0, draggedTaskId = null, laneDropWired = false, laneTouchAttached = false, renderScheduleWithLane = null;
+  let laneTasksCache = null, laneTasksFetchedAt = 0, laneSequence = 0, draggedTaskId = null, laneDropWired = false, laneTouchAttached = false, renderScheduleWithLane = null, laneVisibleFirstDay = '';
 
   function canAssignTasks(){ return typeof canManageSchedule === 'function' && canManageSchedule(); }
 
@@ -307,6 +330,44 @@ function renderSchedulePane(pane, project, tasks, editingId){
     const crew = filter ? filter.value : 'all', includeOffice = showOffice ? showOffice.checked : false;
     return team.filter(member => (includeOffice || !isOfficeMember(member)) && (!crew || crew === 'all' || member.crew === crew));
   }
+
+  function laneAssignmentTargets(members){
+    const people = (members || []).filter(member => member && member.id != null);
+    const crews = [...new Set(people.filter(member => !isOfficeMember(member)).map(member => String(member.crew || '').trim()).filter(name => name && !/^(office|unassigned)$/i.test(name)))].sort((a, b) => a.localeCompare(b));
+    return {
+      crews: crews.map(crew => ({ value: `crew:${encodeURIComponent(crew)}`, label: `${crew} · ${people.filter(member => !isOfficeMember(member) && String(member.crew || '').trim() === crew).length} people` })),
+      people: people.slice().sort((a, b) => String(a.name || '').localeCompare(String(b.name || ''))).map(member => ({ value: `member:${Number(member.id)}`, label: `${member.name} · ${member.crew || member.role || 'Individual'}` }))
+    };
+  }
+
+  function laneAssignmentTarget(value){
+    const raw = String(value || '');
+    if (raw.startsWith('crew:')) {
+      let crew = '';
+      try { crew = decodeURIComponent(raw.slice(5)); } catch (error) { crew = raw.slice(5); }
+      return crew ? { crew } : null;
+    }
+    if (raw.startsWith('member:')) {
+      const memberId = Number(raw.slice(7));
+      return Number.isFinite(memberId) && memberId > 0 ? { memberId } : null;
+    }
+    return null;
+  }
+
+  function visibleLaneStart(days){
+    if (!(days || []).length) return '';
+    const today = typeof companyTodayIso === 'function' ? companyTodayIso() : days[0].date;
+    return ((days || []).find(day => day.date >= today) || days[0]).date;
+  }
+
+  function laneAssignmentDate(task, firstDay){
+    const start = String(task?.startDate || firstDay || ''), end = String(task?.endDate || start), visible = String(firstDay || start);
+    if (visible < start) return start;
+    if (visible > end) return end;
+    return visible;
+  }
+
+  function currentLaneDropDate(){ return laneVisibleFirstDay; }
 
   function unassignedLaneTasks(){
     const activeProjects = new Set((typeof projects !== 'undefined' ? projects : []).filter(project => !project.archived).map(project => Number(project.id)));
@@ -331,7 +392,7 @@ function renderSchedulePane(pane, project, tasks, editingId){
 
   function removeLane(){ document.querySelectorAll('.schedule-unassigned').forEach(element => element.remove()); }
 
-  function wireLaneChips(section, firstDay){
+  function wireLaneChips(section){
     if (canAssignTasks() && !laneDropWired) {
       laneDropWired = true;
       document.addEventListener('drop', event => {
@@ -344,7 +405,7 @@ function renderSchedulePane(pane, project, tasks, editingId){
         const taskId = draggedTaskId;
         draggedTaskId = null;
         if (cell) assignTaskTo(taskId, { memberId: Number(cell.dataset.scheduleMember) }, cell.dataset.scheduleDate);
-        else if (crewRow) assignTaskTo(taskId, { crew: crewRow.dataset.scheduleCrewDrop }, firstDay);
+        else if (crewRow) assignTaskTo(taskId, { crew: crewRow.dataset.scheduleCrewDrop }, currentLaneDropDate());
       }, true);
     }
     section.querySelectorAll('.schedule-task-chip').forEach(chip => {
@@ -363,10 +424,16 @@ function renderSchedulePane(pane, project, tasks, editingId){
       };
     });
     section.querySelectorAll('[data-task-assign-go]').forEach(button => button.onclick = () => {
-      const select = section.querySelector(`[data-task-assign-member="${button.dataset.taskAssignGo}"]`);
-      const memberId = Number(select && select.value);
-      if (!memberId) return notify('Pick a person first');
-      assignTaskTo(Number(button.dataset.taskAssignGo), { memberId }, firstDay);
+      const select = section.querySelector(`[data-task-assign-target="${button.dataset.taskAssignGo}"]`);
+      const dateInput = section.querySelector(`[data-task-assign-date="${button.dataset.taskAssignGo}"]`);
+      const target = laneAssignmentTarget(select && select.value);
+      if (!target) return notify('Choose a crew or person first');
+      if (!dateInput || !/^\d{4}-\d{2}-\d{2}$/.test(dateInput.value)) return notify('Choose a start date first');
+      if (dateInput.value < dateInput.min || dateInput.value > dateInput.max) {
+        dateInput.focus();
+        return notify(`Choose a start date between ${formatDate(dateInput.min)} and ${formatDate(dateInput.max)}`);
+      }
+      assignTaskTo(Number(button.dataset.taskAssignGo), target, dateInput.value);
     });
   }
 
@@ -375,23 +442,25 @@ function renderSchedulePane(pane, project, tasks, editingId){
     if (typeof currentRole !== 'undefined' && currentRole !== 'office') return;
     const board = document.getElementById('schedule-board'), days = laneVisibleDays();
     if (!board || !days.length) return;
-    const tasks = unassignedLaneTasks(), editable = canAssignTasks(), members = laneTeamOptions();
+    const tasks = unassignedLaneTasks(), editable = canAssignTasks(), members = laneTeamOptions(), targets = laneAssignmentTargets(members);
     if (!tasks.length && !editable) return;
-    const today = typeof localDateIso === 'function' ? localDateIso() : '';
-    const firstDay = (days.find(day => day.date >= today) || days[0]).date;
+    const firstDay = visibleLaneStart(days);
+    laneVisibleFirstDay = firstDay;
     const chip = task => {
       const project = (typeof projects !== 'undefined' ? projects : []).find(item => Number(item.id) === Number(task.projectId));
       const label = `${project && project.code ? project.code : 'JOB'} · ${project ? project.name : 'Project'} — ${task.name}`;
+      const assignDate = laneAssignmentDate(task, firstDay);
+      const targetOptions = `${targets.crews.length ? `<optgroup label="Crews">${targets.crews.map(option => `<option value="${escapeHtml(option.value)}">${escapeHtml(option.label)}</option>`).join('')}</optgroup>` : ''}${targets.people.length ? `<optgroup label="People">${targets.people.map(option => `<option value="${escapeHtml(option.value)}">${escapeHtml(option.label)}</option>`).join('')}</optgroup>` : ''}`;
       return `<div class="schedule-task-chip" draggable="${editable}" data-schedule-task="${Number(task.id)}" title="${escapeHtml(label)}">
         <div class="schedule-task-chip-main"><b>${escapeHtml(project && project.code ? project.code : 'JOB')}</b> <strong>${escapeHtml(task.name)}</strong><small>${escapeHtml(project ? project.name : '')} · ${escapeHtml(formatDate(task.startDate))} – ${escapeHtml(formatDate(task.endDate))} · ${Number(task.durationDays)}d</small></div>
-        ${editable && members.length ? `<div class="schedule-task-assign"><select data-task-assign-member="${Number(task.id)}" aria-label="Assign ${escapeHtml(task.name)} to"><option value="">Assign to…</option>${members.map(member => `<option value="${Number(member.id)}">${escapeHtml(member.name)}</option>`).join('')}</select><button type="button" class="secondary small" data-task-assign-go="${Number(task.id)}">Assign</button></div>` : ''}
+        ${editable && (targets.crews.length || targets.people.length) ? `<div class="schedule-task-assign"><select data-task-assign-target="${Number(task.id)}" aria-label="Assign ${escapeHtml(task.name)} to"><option value="">Choose a crew or person</option>${targetOptions}</select><label class="schedule-task-assign-date"><span>Start date</span><input type="date" data-task-assign-date="${Number(task.id)}" value="${escapeHtml(assignDate)}" min="${escapeHtml(task.startDate)}" max="${escapeHtml(task.endDate)}" aria-label="Start date"></label><button type="button" class="secondary small" data-task-assign-go="${Number(task.id)}">Assign</button></div>` : ''}
       </div>`;
     };
     board.insertAdjacentHTML('afterend', `<section class="schedule-unassigned" aria-label="Unassigned project work">
-      <div class="schedule-unassigned-head"><h3>Unassigned project work</h3><p>${tasks.length ? (editable ? 'Drag a task onto someone’s day — or pick a person right here.' : 'Waiting for the office to assign a crew.') : 'Every scheduled task has someone on it.'}</p></div>
+      <div class="schedule-unassigned-head"><h3>Unassigned project work</h3><p>${tasks.length ? (editable ? 'Drag a task onto someone’s day — or choose a crew or person here.' : 'Waiting for the office to assign a crew.') : 'Every scheduled task has someone on it.'}</p></div>
       <div class="schedule-unassigned-list">${tasks.length ? tasks.map(chip).join('') : '<p class="schedule-unassigned-empty">Nothing waiting for a crew.</p>'}</div>
     </section>`);
-    wireLaneChips(document.querySelector('.schedule-unassigned'), firstDay);
+    wireLaneChips(document.querySelector('.schedule-unassigned'));
   }
 
   function wrapRenderSchedule(){
@@ -417,9 +486,7 @@ function renderSchedulePane(pane, project, tasks, editingId){
     const task = (laneTasksCache || []).find(item => Number(item.id) === Number(taskId));
     try {
       const payload = await api(`/api/project-tasks/${taskId}/assign`, { method: 'POST', body: JSON.stringify(target.crew ? { crew: target.crew, fromDate } : { memberId: target.memberId, fromDate }) });
-      const state = await api('/api/state');
-      if (typeof assignments !== 'undefined') assignments = state.assignments || [];
-      laneTasksCache = state.projectTasks || [];
+      if (task && Array.isArray(payload.tasks)) laneTasksCache = [...(laneTasksCache || []).filter(item => Number(item.projectId) !== Number(task.projectId)), ...payload.tasks];
       laneTasksFetchedAt = Date.now();
       if (typeof renderSchedule === 'function') renderSchedule();
       if (typeof renderMyDay === 'function') renderMyDay();
@@ -428,6 +495,14 @@ function renderSchedulePane(pane, project, tasks, editingId){
       if (payload.skipped) notes.push(`${payload.skipped} skipped (time off or another job)`);
       const who = target.crew ? `Crew ${payload.crew} (${payload.members} ${Number(payload.members) === 1 ? 'person' : 'people'})` : payload.memberName;
       notify(`${who} is on “${task ? task.name : 'the task'}” — ${notes.join(', ')}`);
+      try {
+        const state = await api('/api/state');
+        if (typeof assignments !== 'undefined') assignments = state.assignments || assignments;
+        laneTasksCache = state.projectTasks || laneTasksCache;
+        laneTasksFetchedAt = Date.now();
+        if (typeof renderSchedule === 'function') renderSchedule();
+        if (typeof renderMyDay === 'function') renderMyDay();
+      } catch (error) { /* the assignment is committed; the next refresh reconciles full state */ }
     } catch (error) {
       notify(error.message);
     }
