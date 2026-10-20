@@ -41,6 +41,31 @@ function pinOpenPunch(file, minutes) {
   fs.writeFileSync(file, JSON.stringify(db));
 }
 
+async function pinOpenPunchAndRefresh(page, file, minutes) {
+  let last = [];
+  for (let attempt = 0; attempt < 5; attempt += 1) {
+    // The fixture writes behind the running server's back. Queue a read first so
+    // any earlier app request finishes before the fixture changes the JSON file.
+    await page.evaluate(async () => {
+      const response = await fetch('/api/time-cards', { credentials: 'include', cache: 'no-store' });
+      if (!response.ok) throw new Error('Time-card fixture barrier failed');
+      await response.json();
+    });
+    pinOpenPunch(file, minutes);
+    await page.evaluate(async () => {
+      if (typeof refreshTimeCards === 'function') await refreshTimeCards();
+    });
+    last = await page.evaluate(() => (typeof timeCards === 'undefined' ? [] : timeCards)
+      .filter(card => card && card.inAt && !card.outAt && !card.deletedAt)
+      .map(card => ({
+        id: card.id,
+        minutes: Math.floor((Date.now() - new Date(card.inAt).getTime()) / 60000)
+      })));
+    if (last.some(card => card.minutes >= minutes)) return;
+  }
+  throw new Error(`open punch is at least ${minutes} minutes: ${JSON.stringify(last)}`);
+}
+
 async function login(page, email, password) {
   await page.goto(`http://127.0.0.1:${page.__port}/login.html`, { waitUntil: 'domcontentloaded' });
   await page.waitForSelector('#email');
@@ -164,12 +189,7 @@ async function gateReport(page) {
       return { status: response.status, error: body.error || '', id: body.id || null };
     });
     assert.equal(restarted.status, 201, JSON.stringify(restarted));
-    pinOpenPunch(dbFile, OPEN_MINUTES);
-    await page.evaluate(async () => { if (typeof refreshTimeCards === 'function') await refreshTimeCards(); });
-    await waitUntil(page, () => {
-      const open = (typeof timeCards === 'undefined' ? [] : timeCards).filter(card => card && card.inAt && !card.outAt && !card.deletedAt);
-      return open.some(card => Math.floor((Date.now() - new Date(card.inAt).getTime()) / 60000) >= 5);
-    }, 'open punch is at least 5 minutes');
+    await pinOpenPunchAndRefresh(page, dbFile, OPEN_MINUTES);
     await page.evaluate(() => { if (typeof renderFieldReview === 'function') renderFieldReview(); });
     const review = await page.evaluate(() => ({
       warning: document.querySelector('.field-clock-warning')?.textContent || '',
