@@ -60,7 +60,7 @@ BEGIN
     RAISE EXCEPTION 'PDL_BACKFILL_LEGACY_SOURCE_MISSING' USING ERRCODE = '55000';
   END IF;
   IF source_snapshot IS DISTINCT FROM p_source_snapshot THEN
-    RAISE EXCEPTION 'PDL_BACKFILL_LEGACY_SOURCE_CHANGED' USING ERRCODE = '40001';
+    RAISE EXCEPTION 'PDL_BACKFILL_LEGACY_SOURCE_CHANGED' USING ERRCODE = 'PT409';
   END IF;
   IF jsonb_typeof(source_snapshot->'company') <> 'object' OR
      NULLIF(btrim(source_snapshot->'company'->>'id'), '') IS NULL OR

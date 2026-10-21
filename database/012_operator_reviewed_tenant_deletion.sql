@@ -213,7 +213,7 @@ BEGIN
 
   IF state.revision <> p_expected_revision THEN
     RAISE EXCEPTION 'PDL_REVISION_CONFLICT expected=% actual=%', p_expected_revision, state.revision
-      USING ERRCODE = '40001';
+      USING ERRCODE = 'PT409';
   END IF;
   company_data := state.scalar_data->'company';
   request_data := company_data->'deletionRequest';
@@ -388,7 +388,7 @@ BEGIN
   END IF;
   IF state.revision <> p_expected_revision THEN
     RAISE EXCEPTION 'PDL_REVISION_CONFLICT expected=% actual=%', p_expected_revision, state.revision
-      USING ERRCODE = '40001';
+      USING ERRCODE = 'PT409';
   END IF;
 
   company_data := state.scalar_data->'company';

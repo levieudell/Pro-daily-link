@@ -41,11 +41,25 @@ async function request(relativePath, options = {}) {
     headers: headers(options.headers)
   });
   if (!response.ok) {
-    const error = new Error(`Supabase request failed (${response.status}): ${(await response.text()).slice(0, 300)}`);
+    const responseText = (await response.text()).slice(0, 300);
+    let responseBody = null;
+    try { responseBody = JSON.parse(responseText); } catch {}
+    const error = new Error(`Supabase request failed (${response.status}): ${responseText}`);
     error.statusCode = response.status;
+    if (typeof responseBody?.code === 'string' && responseBody.code.length <= 32) error.code = responseBody.code;
     throw error;
   }
   return response;
+}
+
+function normalizeTenantRevisionConflict(error, expectedRevision) {
+  const message = String(error?.message || error || '');
+  const code = String(error?.code || '');
+  const knownConflictCode = code === 'PT409' || code === '40001' || code === 'PDL_REVISION_CONFLICT';
+  if (!/PDL_REVISION_CONFLICT/i.test(message) || (!knownConflictCode && Number(error?.statusCode) !== 409)) return error;
+  const actualMatch = /actual=(\d+)/i.exec(message);
+  const { RevisionConflictError } = require('./transactional-repository');
+  return new RevisionConflictError(Number(expectedRevision), actualMatch ? Number(actualMatch[1]) : -1);
 }
 
 function normalizeRpcResult(payload) {
@@ -281,11 +295,16 @@ async function saveTransactionalSnapshot(snapshot, expectedRevision = 0) {
   const companyId = databaseCompanyId(snapshot);
   const { scalarData, records } = splitSnapshot(snapshot);
   const payload = records.map(row => ({ collection: row.collection, record_key: row.recordKey, position: row.position, data: row.data }));
-  const response = await request('/rest/v1/rpc/replace_tenant_records', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ p_company_id: companyId, p_expected_revision: Number(expectedRevision), p_scalar_data: scalarData, p_content_hash: canonicalHash(snapshot), p_records: payload })
-  });
+  let response;
+  try {
+    response = await request('/rest/v1/rpc/replace_tenant_records', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ p_company_id: companyId, p_expected_revision: Number(expectedRevision), p_scalar_data: scalarData, p_content_hash: canonicalHash(snapshot), p_records: payload })
+    });
+  } catch (error) {
+    throw normalizeTenantRevisionConflict(error, expectedRevision);
+  }
   const [result] = await response.json();
   return { companyId, revision: Number(result.revision), records: Number(result.record_count), contentHash: canonicalHash(snapshot) };
 }

@@ -435,7 +435,7 @@ BEGIN
   IF before_state->>'preimageSha256'<>p_expected_preimage_sha256 OR
      before_state->>'preservedRowsSha256'<>p_expected_preserved_rows_sha256 OR
      before_state->>'archiveDataSha256'<>p_expected_archive_data_sha256 THEN
-    RAISE EXCEPTION 'PDL_ARTIFACT_PREIMAGE_CHANGED' USING ERRCODE = '40001';
+    RAISE EXCEPTION 'PDL_ARTIFACT_PREIMAGE_CHANGED' USING ERRCODE = 'PT409';
   END IF;
 
   archive_data := jsonb_build_object(
@@ -456,7 +456,7 @@ BEGIN
 
   IF pg_catalog.encode(extensions.digest(pg_catalog.convert_to(archive_data::text,'UTF8'),'sha256'),'hex')
        <> p_expected_archive_data_sha256 THEN
-    RAISE EXCEPTION 'PDL_ARTIFACT_ARCHIVE_PAYLOAD_CHANGED' USING ERRCODE = '40001';
+    RAISE EXCEPTION 'PDL_ARTIFACT_ARCHIVE_PAYLOAD_CHANGED' USING ERRCODE = 'PT409';
   END IF;
 
   UPDATE public.companies
@@ -464,7 +464,7 @@ BEGIN
   WHERE id=target_id AND data='{}'::jsonb;
   GET DIAGNOSTICS updated_count=ROW_COUNT;
   IF updated_count<>1 THEN
-    RAISE EXCEPTION 'PDL_ARTIFACT_COMPARE_AND_SWAP_FAILED' USING ERRCODE = '40001';
+    RAISE EXCEPTION 'PDL_ARTIFACT_COMPARE_AND_SWAP_FAILED' USING ERRCODE = 'PT409';
   END IF;
 
   after_state := private.pdl_legacy_normalized_artifact_state(p_archived_at);
@@ -472,7 +472,7 @@ BEGIN
      COALESCE((after_state->>'archiveSnapshotExact')::boolean,false)<>true OR
      after_state->>'preservedRowsSha256'<>p_expected_preserved_rows_sha256 OR
      after_state->>'archiveDataSha256'<>p_expected_archive_data_sha256 THEN
-    RAISE EXCEPTION 'PDL_ARTIFACT_POSTWRITE_VERIFICATION_FAILED' USING ERRCODE = '40001';
+    RAISE EXCEPTION 'PDL_ARTIFACT_POSTWRITE_VERIFICATION_FAILED' USING ERRCODE = 'PT409';
   END IF;
 
   RETURN jsonb_build_object(

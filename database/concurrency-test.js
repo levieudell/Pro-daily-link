@@ -9,7 +9,7 @@ const supabase = require('./supabase');
 supabase.loadLocalEnv(path.resolve(__dirname, '..'));
 
 function staleConflict(result) {
-  return result.status === 'rejected' && (result.reason?.code === 'PDL_REVISION_CONFLICT' || /PDL_REVISION_CONFLICT|40001/.test(String(result.reason?.message)));
+  return result.status === 'rejected' && (result.reason?.code === 'PDL_REVISION_CONFLICT' || /PDL_REVISION_CONFLICT/.test(String(result.reason?.message)));
 }
 
 async function assertConcurrentResult(results, load) {

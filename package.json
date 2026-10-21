@@ -32,7 +32,7 @@
     "test:transactional-backfill": "node --check database/transactional-backfill.js && node --check database/migrate-transactional.js && node transactional-migration.test.js && node database/transactional-backfill-sql.test.js && node database/transactional-backfill.test.js",
     "test:artifact-quarantine": "node database/legacy-normalized-artifact-quarantine-sql.test.js && node --test database/legacy-normalized-artifact-quarantine.test.js",
     "test:recovery-readiness": "node --check database/recovery-readiness.js && node --check database/recovery-readiness-publisher.js && node database/recovery-readiness.test.js && node database/recovery-readiness-publisher.test.js && node operational-health.test.js",
-    "test:release-safety": "npm run test:maintenance-fence && npm run test:database-indexes && npm run test:shadow-reconciliation && npm run test:transactional-backfill && npm run test:artifact-quarantine && npm run test:recovery-readiness",
+    "test:release-safety": "node revision-conflict-http.test.js && npm run test:maintenance-fence && npm run test:database-indexes && npm run test:shadow-reconciliation && npm run test:transactional-backfill && npm run test:artifact-quarantine && npm run test:recovery-readiness",
     "migrate:transactional:apply": "node database/migrate-transactional.js --all --apply",
     "quarantine:artifact": "node database/quarantine-malformed-tenant.js",
     "launch:check": "node database/launch-readiness.js",

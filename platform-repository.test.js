@@ -7,7 +7,8 @@ const {
   PLATFORM_NAMESPACE_ID,
   splitPlatformSnapshot,
   assemblePlatformSnapshot,
-  canonicalHash
+  canonicalHash,
+  parseConflict
 } = require('./database/platform-repository');
 
 const first = {
@@ -53,7 +54,8 @@ function mockTransport() {
       const actual = state?.revision ?? 0;
       if (input.p_expected_revision !== actual) {
         const error = new Error(`Supabase request failed (409): PDL_PLATFORM_REVISION_CONFLICT expected=${input.p_expected_revision} actual=${actual}`);
-        error.code = '40001';
+        error.code = 'PT409';
+        error.statusCode = 409;
         throw error;
       }
       state = {
@@ -113,6 +115,16 @@ function mockTransport() {
   assert.equal(rejection.expected, 1);
   assert.equal(rejection.actual, 2);
   assert.deepEqual((await repository.load()).snapshot, second);
+  assert.equal(transport.calls.filter(call => call.url.endsWith('/replace_platform_repository')).length, 3,
+    'a terminal PT409 conflict must make exactly one outbound save attempt');
+
+  const legacyConflict = Object.assign(new Error('PDL_PLATFORM_REVISION_CONFLICT expected=4 actual=5'), { code: '40001' });
+  assert.ok(parseConflict(legacyConflict, 4) instanceof PlatformRevisionConflictError,
+    'legacy 40001 responses remain recognizable during a rolling deployment');
+
+  const unrelatedConflict = Object.assign(new Error('A different application conflict'), { code: 'PT409', statusCode: 409 });
+  assert.equal(parseConflict(unrelatedConflict, 4), unrelatedConflict,
+    'an unrelated PT409 must not be mislabeled as a platform revision conflict');
 
   assert.ok(transport.calls.every(call => call.url.includes('/rest/v1/rpc/')));
   assert.ok(transport.calls.filter(call => call.url.endsWith('/replace_platform_repository')).every(call => {

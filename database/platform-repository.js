@@ -101,7 +101,9 @@ function requireRevision(value, label = 'expectedRevision') {
 
 function parseConflict(error, expectedRevision) {
   const message = String(error?.message || error || '');
-  if (!/PDL_PLATFORM_REVISION_CONFLICT/i.test(message) && error?.code !== '40001') return error;
+  const code = String(error?.code || '');
+  const knownConflictCode = code === 'PT409' || code === '40001' || code === 'PDL_PLATFORM_REVISION_CONFLICT';
+  if (!/PDL_PLATFORM_REVISION_CONFLICT/i.test(message) || (!knownConflictCode && Number(error?.statusCode) !== 409)) return error;
   const actualMatch = /actual=(\d+)/i.exec(message);
   return new PlatformRevisionConflictError(expectedRevision, actualMatch ? Number(actualMatch[1]) : null);
 }

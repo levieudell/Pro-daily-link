@@ -1953,7 +1953,7 @@ async function runAcceptance({ databaseUrl, args, env = process.env }) {
     };
 
     assert.equal((await deletionStatus(pool, primary)).status, 'not_started');
-    await expectDatabaseError(() => beginDeletion(pool, primary, { revision: primary.revision + 1 }), { code: '40001', pattern: /PDL_REVISION_CONFLICT/, label: 'revision mismatch' });
+    await expectDatabaseError(() => beginDeletion(pool, primary, { revision: primary.revision + 1 }), { code: 'PT409', pattern: /PDL_REVISION_CONFLICT/, label: 'revision mismatch' });
     await expectDatabaseError(() => beginDeletion(pool, primary, { requestId: crypto.randomUUID() }), { code: '42501', pattern: /identity mismatch/i, label: 'request mismatch' });
     assert.equal((await deletionStatus(pool, primary)).status, 'not_started');
 

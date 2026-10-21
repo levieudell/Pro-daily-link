@@ -152,7 +152,7 @@ BEGIN
     RETURN jsonb_build_object('locked',true,'companyId',p_company_id,'deletionRequestId',operation.deletion_request_id,'lockedRevision',operation.locked_revision,'startedAt',operation.started_at,'resumed',true);
   END IF;
   IF state.revision <> p_expected_revision THEN
-    RAISE EXCEPTION 'PDL_REVISION_CONFLICT expected=% actual=%',p_expected_revision,state.revision USING ERRCODE = '40001';
+    RAISE EXCEPTION 'PDL_REVISION_CONFLICT expected=% actual=%',p_expected_revision,state.revision USING ERRCODE = 'PT409';
   END IF;
   request_data := state.scalar_data->'company'->'deletionRequest';
   IF jsonb_typeof(request_data) <> 'object' OR request_data->>'status' <> 'Recovery hold' THEN
