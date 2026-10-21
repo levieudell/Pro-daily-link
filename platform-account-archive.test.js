@@ -19,17 +19,27 @@ process.env.PDL_DB_FILE = dbFile;
 process.env.PDL_PLATFORM_FILE = platformFile;
 process.env.PDL_SUPABASE_ENABLED = '0';
 process.env.PDL_EMAIL_DEV_MODE = '1';
-process.env.PDL_REQUIRE_AUTH = '0';
+process.env.NODE_ENV = 'production';
+process.env.PDL_REQUIRE_AUTH = '1';
+process.env.PDL_PLATFORM_DEV_BYPASS = '0';
+process.env.PDL_ALLOW_PLATFORM_KEY_AUTH = '0';
 process.env.PDL_PLATFORM_KEY = 'test-platform-key-32-characters-minimum';
 
 // A synthetic test tenant, the kind of account Levi wants to clean up.
 const tenantDir = path.join(tempDir, 'tenants');
 fs.mkdirSync(tenantDir, { recursive: true });
 const tenantId = '11111111-2222-3333-4444-555555555555';
+const tenantSessionToken = 'archived-tenant-session-token';
+const guestToken = 'a'.repeat(48);
+const changeToken = 'archived-change-token';
 fs.writeFileSync(path.join(tenantDir, `${tenantId}.json`), JSON.stringify({
   company: { id: tenantId, name: 'Test QA Company', trade: 'General contractor' },
-  users: [{ id: 1, name: 'Tester', email: 'tester@example.com', role: 'owner', status: 'Active' }],
-  projects: [], reports: []
+  users: [{ id: 1, name: 'Tester', email: 'tester@example.com', role: 'owner', status: 'Active', resetTokenHash: 'old-reset-verifier', resetExpiresAt: new Date(Date.now() + 3600000).toISOString() }],
+  sessions: [{ id: 'tenant-session', userId: 1, companyId: tenantId, tokenHash: crypto.createHash('sha256').update(tenantSessionToken).digest('hex'), expiresAt: new Date(Date.now() + 86400000).toISOString() }],
+  subcontractors: [{ id: 1, name: 'Guest Sub' }],
+  subcontractorLinks: [{ id: 1, subcontractorId: 1, projectId: 1, status: 'Active', tokenHash: crypto.createHash('sha256').update(guestToken).digest('hex'), expiresAt: new Date(Date.now() + 86400000).toISOString() }],
+  changes: [{ id: 1, projectId: 1, number: 'PC-001', title: 'Test change', status: 'Submitted', customerTokenHash: crypto.createHash('sha256').update(changeToken).digest('hex') }],
+  projects: [{ id: 1, name: 'Test Project', customer: 'Test Customer', site: 'Test Site' }], reports: []
 }));
 
 const db = JSON.parse(fs.readFileSync(dbFile, 'utf8'));
@@ -39,7 +49,13 @@ fs.writeFileSync(dbFile, JSON.stringify(db));
 
 const platform = JSON.parse(fs.readFileSync(platformFile, 'utf8'));
 const ownerToken = 'archive-owner-token';
-platform.sessions = [{ userId: platform.users[0].id, tokenHash: crypto.createHash('sha256').update(ownerToken).digest('hex'), expiresAt: new Date(Date.now() + 86400000).toISOString() }];
+const supportToken = 'archive-support-token';
+const supportUser = { id: 'archive-support', name: 'Archive Support', email: 'archive-support@example.invalid', role: 'support', status: 'Active', mustSetPassword: false };
+platform.users.push(supportUser);
+platform.sessions = [
+  { userId: platform.users[0].id, tokenHash: crypto.createHash('sha256').update(ownerToken).digest('hex'), expiresAt: new Date(Date.now() + 86400000).toISOString() },
+  { userId: supportUser.id, tokenHash: crypto.createHash('sha256').update(supportToken).digest('hex'), expiresAt: new Date(Date.now() + 86400000).toISOString() }
+];
 fs.writeFileSync(platformFile, JSON.stringify(platform));
 
 const { server } = require('./server');
@@ -49,11 +65,11 @@ const { server } = require('./server');
   const platformJs = fs.readFileSync(path.join(__dirname, 'platform.js'), 'utf8');
   assert.match(platformJs, /data-archive-account=/, 'account menu exposes the archive action');
   assert.match(platformJs, /Archive test account/);
-  assert.match(platformJs, /\/api\/platform\/companies\/\$\{encodeURIComponent\(e\.target\.dataset\.archiveAccount\)\}\/archive/);
+  assert.match(platformJs, /\/api\/platform\/companies\/\$\{encodeURIComponent\(button\.dataset\.archiveAccount\)\}\/archive/);
   const serverSrc = fs.readFileSync(path.join(__dirname, 'server.js'), 'utf8');
   assert.ok(serverSrc.includes("url.pathname.match(/^\\/api\\/platform\\/companies\\/([^/]+)\\/archive$/)"), 'archive route exists');
   assert.ok(serverSrc.includes("url.pathname.match(/^\\/api\\/platform\\/companies\\/([^/]+)\\/unarchive$/)"), 'unarchive route exists');
-  assert.match(serverSrc, /!tenant\.company\?\.archivedDuplicate&&\(tenant\.users\|\|\[\]\)\.some/, 'login email lookup skips archived tenants');
+  assert.match(serverSrc, /includeArchived\|\|!snapshot\.company\.archivedDuplicate/, 'tenant resolution fails closed for archived accounts');
   assert.match(serverSrc, /archived:Boolean\(company\.archivedDuplicate\)/, 'console payload flags archived accounts');
   const html = fs.readFileSync(path.join(__dirname, 'platform.html'), 'utf8');
   assert.match(html, /<option value="archived">Archived<\/option>/, 'scope filter exposes archived accounts');
@@ -66,7 +82,7 @@ server.listen(0, async () => {
     const port = server.address().port;
     const base = `http://127.0.0.1:${port}`;
     const call = async (route, { method = 'GET', token = ownerToken, body } = {}) => {
-      const headers = { 'Content-Type': 'application/json', 'x-pdl-platform-key': process.env.PDL_PLATFORM_KEY };
+      const headers = { 'Content-Type': 'application/json' };
       if (token) headers.Authorization = `Bearer ${token}`;
       const response = await fetch(base + route, { method, headers, body: body ? JSON.stringify(body) : undefined });
       return { response, data: await response.json() };
@@ -78,9 +94,12 @@ server.listen(0, async () => {
     assert.ok(overview.data.companies.some(c => c.name === 'Test QA Company'), 'test tenant listed before archiving');
     let lookup = await fetch(base + '/api/auth/company', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email: 'tester@example.com' }) }).then(r => r.json());
     assert.equal(lookup.companyId, tenantId, 'test tenant user resolves at login before archiving');
+    assert.equal((await fetch(base + '/api/state', { headers: { Authorization: `Bearer ${tenantSessionToken}`, 'X-PDL-Company': tenantId } })).status, 200, 'existing tenant session works before archive');
+    assert.equal((await fetch(`${base}/api/guest/${guestToken}?c=${tenantId}`)).status, 200, 'guest link works before archive');
+    assert.equal((await fetch(`${base}/api/change-order/${changeToken}?c=${tenantId}`)).status, 200, 'change-order link works before archive');
 
     // Non-owner cannot archive.
-    let result = await call(`/api/platform/companies/${tenantId}/archive`, { method: 'POST', body: {}, token: null });
+    let result = await call(`/api/platform/companies/${tenantId}/archive`, { method: 'POST', body: {}, token: supportToken });
     assert.equal(result.response.status, 403, JSON.stringify(result.data));
 
     // The primary account cannot be archived.
@@ -100,6 +119,11 @@ server.listen(0, async () => {
     const archived = JSON.parse(fs.readFileSync(path.join(tenantDir, `${tenantId}.json`), 'utf8'));
     assert.equal(archived.company.archivedDuplicate, true, 'archived flag persisted to the tenant file');
     assert.equal(archived.users[0].status, 'Active', 'user records are kept');
+    assert.deepEqual(archived.sessions, [], 'all signed-in tenant sessions are revoked');
+    assert.equal(archived.subcontractorLinks[0].status, 'Revoked');
+    assert.equal(archived.subcontractorLinks[0].tokenHash, undefined, 'guest token verifier is destroyed');
+    assert.equal(archived.changes[0].customerTokenHash, undefined, 'change-order token verifier is destroyed');
+    assert.equal(archived.users[0].resetTokenHash, undefined, 'password/setup verifier links are revoked');
 
     // Audit event recorded.
     const platformNow = JSON.parse(fs.readFileSync(platformFile, 'utf8'));
@@ -115,6 +139,9 @@ server.listen(0, async () => {
     assert.equal(activeRow.archived, false, 'active accounts are not flagged');
     lookup = await fetch(base + '/api/auth/company', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email: 'tester@example.com' }) }).then(r => r.json());
     assert.equal(lookup.companyId, null, 'archived tenant users cannot sign in');
+    assert.equal((await fetch(base + '/api/state', { headers: { Authorization: `Bearer ${tenantSessionToken}`, 'X-PDL-Company': tenantId } })).status, 404, 'pre-archive session cannot reach the tenant');
+    assert.equal((await fetch(`${base}/api/guest/${guestToken}?c=${tenantId}`)).status, 404, 'pre-archive guest link is denied');
+    assert.equal((await fetch(`${base}/api/change-order/${changeToken}?c=${tenantId}`)).status, 404, 'pre-archive change-order link is denied');
 
     // Unarchive restores access and clears the flag.
     result = await call(`/api/platform/companies/${tenantId}/unarchive`, { method: 'POST', body: {} });
@@ -126,6 +153,8 @@ server.listen(0, async () => {
     assert.equal(overview.data.companies.find(c => c.name === 'Test QA Company').archived, false);
     lookup = await fetch(base + '/api/auth/company', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email: 'tester@example.com' }) }).then(r => r.json());
     assert.equal(lookup.companyId, tenantId, 'unarchived users can sign in again');
+    assert.equal((await fetch(base + '/api/state', { headers: { Authorization: `Bearer ${tenantSessionToken}`, 'X-PDL-Company': tenantId } })).status, 401, 'unarchive never resurrects a revoked session');
+    assert.equal((await fetch(`${base}/api/guest/${guestToken}?c=${tenantId}`)).status, 404, 'unarchive never resurrects a revoked guest link');
     const platformAfterRestore = JSON.parse(fs.readFileSync(platformFile, 'utf8'));
     assert.ok((platformAfterRestore.auditEvents || []).some(e => e.action === 'company_unarchived'), 'unarchive is audited');
 

@@ -8,11 +8,12 @@ const source = {
   users: [{ id: 2, email: 'owner@example.com' }, { id: 4, email: 'field@example.com' }],
   reports: [{ id: 10, notes: 'Placed concrete' }],
   settings: { locale: 'en' },
+  photos: [],
   sessions: [{ tokenHash: 'abc', expiresAt: '2030-01-01T00:00:00.000Z' }]
 };
 
 const { scalarData, records } = splitSnapshot(source);
-assert.deepEqual(Object.keys(scalarData).sort(), ['company', 'settings']);
+assert.deepEqual(Object.keys(scalarData).sort(), ['company', 'photos', 'settings']);
 assert.equal(records.length, 4);
 assert.equal(records.find(row => row.collection === 'reports').recordKey, 'id:10');
 assert.equal(records.find(row => row.collection === 'sessions').recordKey, 'token:abc');

@@ -8,6 +8,8 @@ process.env.PDL_DB_FILE=path.join(temp,'db.json');
 process.env.PDL_PLATFORM_FILE=path.join(temp,'platform.json');
 process.env.PDL_SUPABASE_ENABLED='0';
 process.env.PDL_REQUIRE_AUTH='1';
+process.env.NODE_ENV='test';
+process.env.PDL_ALLOW_PLATFORM_KEY_AUTH='1';
 process.env.PDL_PLATFORM_KEY='blog-test-platform-key-32-characters';
 fs.copyFileSync(path.join(__dirname,'data','db.json'),process.env.PDL_DB_FILE);
 fs.copyFileSync(path.join(__dirname,'data','platform.json'),process.env.PDL_PLATFORM_FILE);

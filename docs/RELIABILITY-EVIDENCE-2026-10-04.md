@@ -15,7 +15,7 @@ The entries below retain earlier historical observations. The [reconciled roadma
 - Public production load test completed 90 requests at concurrency 10 with zero failures: p50 77 ms, p95 237 ms, p99 335 ms.
 - Every active production tenant snapshot (12 of 12) was backed up, downloaded, parsed, and compared byte-equivalently at the JSON data level.
 - Production Northstar restore artifact was independently downloaded and verified at 8,860 bytes with SHA-256 `b4ffecb2b7f536de083b3422f07119b6f05696a602da9fc19e65abf221853956`.
-- Data export, reversible account-closure request, 30-day hold, cancellation, and audit coverage are implemented and tested.
+- Data export and an operator-reviewed account-closure workflow are implemented and tested locally. A request is explicitly pending review, a reviewed hold revokes access without resurrecting credentials on cancellation, and permanent deletion fails closed until migration 012 plus primary transactional storage are active. This supersedes the earlier request record that merely implied automatic deletion after 30 days.
 - Security headers and safe rendering of support/audit data have regression tests.
 - GitHub protects `main`: changes require a pull request, conversations must be resolved, force pushes and deletion are blocked, and administrators cannot bypass the rule.
 - The reliability branch passed a local 200-request test at concurrency 20 with zero failures (p50 21 ms, p95 39 ms, p99 41 ms).
@@ -39,6 +39,7 @@ The entries below retain earlier historical observations. The [reconciled roadma
 - Shadow dual-write and per-tenant primary-read modes.
 - Stripe, Resend, Sentry, backup-freshness, and health verification scripts.
 - GitHub quality/security workflow and Dependabot configuration.
+- Operator-reviewed permanent tenant deletion remains disabled until `012_operator_reviewed_tenant_deletion.sql` is applied. Do not expose the completion control as operational evidence before that migration and an isolated disposable-tenant acceptance run pass.
 
 ## External gates still open
 

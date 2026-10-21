@@ -13,6 +13,8 @@ process.env.PDL_PLATFORM_FILE = platformFile;
 process.env.PDL_SUPABASE_ENABLED = '0';
 process.env.PDL_EMAIL_DEV_MODE = '1';
 process.env.PDL_REQUIRE_AUTH = '0';
+process.env.NODE_ENV = 'test';
+process.env.PDL_PLATFORM_DEV_BYPASS = '1';
 process.env.PDL_PLATFORM_KEY = 'test-platform-key-32-characters-minimum';
 
 const {server} = require('./server');

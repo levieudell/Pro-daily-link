@@ -4,15 +4,22 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
+const crypto = require('node:crypto');
 const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'pdl-demo-durability-'));
+const platformToken = 'synthetic-platform-owner-session-token';
+const platformOwnerId = 'synthetic-platform-owner';
+const expiresAt = new Date(Date.now() + 8 * 60 * 60 * 1000).toISOString();
 Object.assign(process.env, {
   PDL_DB_FILE: path.join(temp, 'db.json'), PDL_PLATFORM_FILE: path.join(temp, 'platform.json'),
-  PDL_REQUIRE_AUTH: '1', PDL_SUPABASE_ENABLED: '0', PDL_TRANSACTIONAL_DB: 'off',
-  PDL_PLATFORM_KEY: 'synthetic-platform-key-with-32-characters'
+  NODE_ENV: 'production', PDL_REQUIRE_AUTH: '1', PDL_SUPABASE_ENABLED: '0', PDL_TRANSACTIONAL_DB: 'off'
 });
 for (const key of ['SENTRY_DSN', 'STRIPE_SECRET_KEY', 'RESEND_API_KEY', 'OPENAI_API_KEY']) delete process.env[key];
 fs.copyFileSync(path.join(__dirname, 'data/db.json'), process.env.PDL_DB_FILE);
-fs.writeFileSync(process.env.PDL_PLATFORM_FILE, JSON.stringify({ users: [], notes: [], demoRequests: [] }));
+fs.writeFileSync(process.env.PDL_PLATFORM_FILE, JSON.stringify({
+  users: [{ id: platformOwnerId, name: 'Synthetic Platform Owner', email: '', role: 'platform_owner', status: 'Active', mustSetPassword: false }],
+  sessions: [{ id: crypto.randomUUID(), userId: platformOwnerId, tokenHash: crypto.createHash('sha256').update(platformToken).digest('hex'), createdAt: new Date().toISOString(), expiresAt }],
+  notes: [], demoRequests: []
+}));
 
 const supabase = require('./database/supabase');
 let cloudEnabled = false, failSave = false, savedSnapshot, saveCount = 0;
@@ -50,6 +57,7 @@ async function request(route, payload, headers = {}) {
 }
 const lead = { name: 'Synthetic Buyer', email: 'buyer@example.test', company: 'Synthetic Contractor',
   requestId: '11111111-1111-4111-8111-111111111111' };
+const platformHeaders = { Authorization: `Bearer ${platformToken}` };
 const localPlatform = () => JSON.parse(fs.readFileSync(process.env.PDL_PLATFORM_FILE, 'utf8'));
 async function until(predicate) {
   const deadline = Date.now() + 2000;
@@ -93,8 +101,7 @@ async function until(predicate) {
     assert.equal((await request('/api/demo-requests', { ...lead, website: 'bot-filled' })).status, 201);
     assert.equal(saveCount, beforeHoneypot, 'existing honeypot does not create a lead');
 
-    for (const mode of ['off', 'primary']) {
-      process.env.PDL_TRANSACTIONAL_DB = mode;
+    for (const mode of ['legacy-platform-snapshot']) {
       releaseSave = null; holdSave = true;
       let settled = false;
       const payload = { ...lead, requestId: `held-request-${mode}-12345678`, company: `${mode} synthetic contractor` };
@@ -113,31 +120,35 @@ async function until(predicate) {
       assert.equal((await held).status, 201);
       assert.ok(savedSnapshot.platform.demoRequests.some(row => row.requestId === payload.requestId));
     }
-    process.env.PDL_TRANSACTIONAL_DB = 'off';
-
-    // An existing background platform write must not land after a newer lead.
+    // An authenticated operator write and a newer lead share one platform
+    // serialization boundary. The lead must not acknowledge success or start a
+    // second cloud save while the older operator write is still pending.
     const older = localPlatform();
     older.notes.push({ id: 'synthetic-note', text: 'Preserve unrelated platform work' });
-    older.helpItems = older.helpItems.filter(item => item.id !== 'pdl-help-01');
     fs.writeFileSync(process.env.PDL_PLATFORM_FILE, JSON.stringify(older));
     releaseSave = null; holdSave = true;
-    await request('/api/help'); // The existing help seeding path calls writePlatform without await.
+    const olderWrite = fetch(base + '/api/platform/demo-requests/' + originalId, {
+      method: 'PATCH', headers: { 'Content-Type': 'application/json', ...platformHeaders }, body: JSON.stringify({ status: 'Contacted' })
+    });
     await until(() => releaseSave);
     const beforeQueued = saveCount;
     const latest = { ...lead, requestId: 'queued-request-12345678', company: 'Queued synthetic contractor' };
     let queuedSettled = false;
     const queued = request('/api/demo-requests', latest).then(value => { queuedSettled = true; return value; });
-    await until(() => localPlatform().demoRequests.some(row => row.requestId === latest.requestId));
-    assert.equal(saveCount, beforeQueued, 'newer cloud snapshot waits for the older one');
+    await new Promise(resolve => setTimeout(resolve, 30));
+    assert.equal(saveCount, beforeQueued, 'newer cloud snapshot waits for the older authenticated write');
     assert.equal(queuedSettled, false);
+    assert.equal(localPlatform().demoRequests.some(row => row.requestId === latest.requestId), false, 'queued request has not mutated local state early');
     releaseSave();
+    assert.equal((await olderWrite).status, 200);
     assert.equal((await queued).status, 201);
     assert.equal(maximumActiveSaves, 1, 'platform cloud saves are serialized');
     assert.ok(savedSnapshot.platform.demoRequests.some(row => row.requestId === latest.requestId));
     assert.ok(savedSnapshot.platform.notes.some(row => row.id === 'synthetic-note'));
-    assert.equal(savedSnapshot.platform.demoRequests.length, 4);
+    assert.equal(savedSnapshot.platform.demoRequests.length, 3);
 
-    // Async company lookups must not later replace the platform with a stale copy.
+    // Slow authenticated work holds the platform queue. A concurrent public
+    // lead waits, then applies to the freshly committed operator state.
     const companyId = JSON.parse(fs.readFileSync(process.env.PDL_DB_FILE, 'utf8')).company.id;
     for (const [route, details] of [
       ['onboarding', { owner: 'Synthetic Operator' }],
@@ -146,20 +157,24 @@ async function until(predicate) {
     ]) {
       let releaseLookup;
       supabase.listCompanySnapshots = () => new Promise(resolve => { releaseLookup = () => resolve([]); });
-      const work = request(`/api/platform/${route}`, { companyId, ...details }, { 'x-pdl-platform-key': process.env.PDL_PLATFORM_KEY });
+      const work = request(`/api/platform/${route}`, { companyId, ...details }, platformHeaders);
       await until(() => releaseLookup);
       const concurrentLead = { ...lead, requestId: `during-${route}-123456789`, company: `Synthetic ${route} lead` };
-      const accepted = await request('/api/demo-requests', concurrentLead);
-      assert.equal(accepted.status, 201);
+      let leadSettled = false;
+      const acceptedRequest = request('/api/demo-requests', concurrentLead).then(result => { leadSettled = true; return result; });
+      await new Promise(resolve => setTimeout(resolve, 30));
+      assert.equal(leadSettled, false, `${route}: concurrent lead waits for the authenticated write`);
       releaseLookup();
       assert.equal((await work).status, 201);
+      const accepted = await acceptedRequest;
+      assert.equal(accepted.status, 201);
       await until(() => activeSaves === 0);
       assert.ok(localPlatform().demoRequests.some(row => row.id === accepted.data.id), `${route} preserves the newer local lead`);
       assert.ok(savedSnapshot.platform.demoRequests.some(row => row.id === accepted.data.id), `${route} preserves the newer cloud lead`);
     }
     supabase.listCompanySnapshots = async () => [];
-    assert.equal(localPlatform().demoRequests.length, 7);
-    assert.equal(localPlatform().auditEvents.filter(row => row.action === 'demo_requested').length, 7);
+    assert.equal(localPlatform().demoRequests.length, 6);
+    assert.equal(localPlatform().auditEvents.filter(row => row.action === 'demo_requested').length, 6);
 
     // Failed reset-email rollback must reload current platform work and never
     // clear a newer reset intent. The email adapter is entirely synthetic.
@@ -171,19 +186,23 @@ async function until(predicate) {
       releaseEmail = null;
       const reset = request('/api/platform/auth/forgot', { email: 'operator@example.test' });
       await until(() => releaseEmail);
-      const accepted = await request('/api/demo-requests', { ...lead, requestId: `during-email-${newerReset}-123456789` });
-      assert.equal(accepted.status, 201);
+      let leadSettled = false;
+      const acceptedRequest = request('/api/demo-requests', { ...lead, requestId: `during-email-${newerReset}-123456789` }).then(result => { leadSettled = true; return result; });
+      await new Promise(resolve => setTimeout(resolve, 30));
+      assert.equal(leadSettled, false, 'the platform queue remains held until reset-email rollback is complete');
       if (newerReset) {
         const newer = localPlatform();
-        newer.users[0].resetTokenHash = 'newer-synthetic-reset-hash';
+        newer.users.find(user => user.id === 'synthetic-operator').resetTokenHash = 'newer-synthetic-reset-hash';
         fs.writeFileSync(process.env.PDL_PLATFORM_FILE, JSON.stringify(newer));
       }
       releaseEmail();
       assert.equal((await reset).status, 502);
+      const accepted = await acceptedRequest;
+      assert.equal(accepted.status, 201);
       await until(() => activeSaves === 0);
       assert.ok(localPlatform().demoRequests.some(row => row.id === accepted.data.id));
       assert.ok(savedSnapshot.platform.demoRequests.some(row => row.id === accepted.data.id));
-      assert.equal(localPlatform().users[0].resetTokenHash, newerReset ? 'newer-synthetic-reset-hash' : undefined);
+      assert.equal(localPlatform().users.find(user => user.id === 'synthetic-operator').resetTokenHash, newerReset ? 'newer-synthetic-reset-hash' : undefined);
     }
     delete process.env.RESEND_API_KEY;
 
@@ -193,7 +212,7 @@ async function until(predicate) {
     const legacy = { ...lead, requestId: undefined, company: 'Legacy synthetic contractor' };
     assert.equal((await request('/api/demo-requests', legacy)).status, 201);
     assert.equal(saveCount, beforeLocal);
-    assert.equal(localPlatform().demoRequests.length, 10);
+    assert.equal(localPlatform().demoRequests.length, 9);
     const timed = { ...lead, requestId: 'timed-synthetic-123456789', preferredTime: '2026-10-12T09:30', preferredTimeZone: 'America/Chicago', preferredTimeUtc: '2026-10-12T14:30:00.000Z' };
     const acceptedTime = await request('/api/demo-requests', timed);
     assert.equal(acceptedTime.status, 201);
@@ -207,7 +226,7 @@ async function until(predicate) {
       { preferredTimeUtc: '' }
     ]) assert.equal((await request('/api/demo-requests', { ...timed, ...wrong })).status, 400);
     const changeStatus = () => fetch(base + '/api/platform/demo-requests/' + acceptedTime.data.id, {
-      method: 'PATCH', headers: { 'Content-Type': 'application/json', 'x-pdl-platform-key': process.env.PDL_PLATFORM_KEY }, body: JSON.stringify({ status: 'Contacted' })
+      method: 'PATCH', headers: { 'Content-Type': 'application/json', ...platformHeaders }, body: JSON.stringify({ status: 'Contacted' })
     });
     cloudEnabled = true; failSave = true;
     assert.equal((await changeStatus()).status, 503, 'operator updates must acknowledge cloud failure');

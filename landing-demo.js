@@ -55,6 +55,17 @@ if(finalCta){
 const demoForm=document.querySelector('#demo-request-form');
 const demoStatus=document.querySelector('#demo-form-status');
 const demoTimeZone=Intl.DateTimeFormat().resolvedOptions().timeZone;
+const landingAttribution=(()=>{
+  const query=new URLSearchParams(location.search);
+  const clean=value=>String(value||'').trim().slice(0,160);
+  return{
+    utmSource:clean(query.get('utm_source')),
+    utmMedium:clean(query.get('utm_medium')),
+    utmCampaign:clean(query.get('utm_campaign')),
+    referrer:String(document.referrer||'').slice(0,2048),
+    landingPage:`${location.pathname}${location.search}`.slice(0,2048)
+  };
+})();
 const demoTimeHelp=document.querySelector('#demo-time-zone');
 if(demoTimeHelp)demoTimeHelp.textContent=`Your time zone: ${demoTimeZone}. We'll confirm availability with you.`;
 const workflowButton=document.querySelector('#workflow-example-next');
@@ -96,6 +107,7 @@ demoForm?.addEventListener('submit',async event=>{
   const button=demoForm.querySelector('button[type="submit"]');
   if(button.disabled)return;
   const payload=Object.fromEntries(new FormData(demoForm).entries());
+  Object.assign(payload,landingAttribution);
   if(payload.preferredTime){
     const preferred=new Date(payload.preferredTime);
     const local=Number.isNaN(preferred.getTime())?'':`${preferred.getFullYear()}-${String(preferred.getMonth()+1).padStart(2,'0')}-${String(preferred.getDate()).padStart(2,'0')}T${String(preferred.getHours()).padStart(2,'0')}:${String(preferred.getMinutes()).padStart(2,'0')}`;

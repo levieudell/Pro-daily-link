@@ -52,7 +52,8 @@ To enable genuine AI report extraction, copy `.env.example` to `.env`, provide a
 
 ## API
 
-- `GET /api/health` — service and AI status
+- `GET /api/health/live` — process liveness for Render and browser wake-up
+- `GET /api/health` — fail-closed production operational readiness (database, repositories, billing webhook, email, monitoring, and verified backup)
 - `GET /api/state` — company workspace
 - `POST /api/ai/extract` — structured field-note conversion
 - `POST /api/reports` — persist a daily report

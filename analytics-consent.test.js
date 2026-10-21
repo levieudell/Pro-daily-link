@@ -25,8 +25,21 @@ assert.equal(isPublicFile(process.cwd(), path.join(process.cwd(), 'analytics.js'
 // Private surfaces never load the tracker; public pages keep it (gated).
 for (const file of ['index.html', 'guest.html'])
   assert.ok(!read(file).includes('analytics.js'), `${file} must not load the tracker`);
-for (const file of ['landing.html', 'login.html', 'signup.html', 'privacy.html', 'blog.html', 'about.html', 'support.html', 'terms.html', 'forgot-password.html', 'reset-password.html', 'verify-email.html'])
+for (const file of ['landing.html', 'login.html', 'signup.html', 'privacy.html', 'blog.html', 'about.html', 'support.html', 'terms.html', 'forgot-password.html'])
   assert.ok(read(file).includes('/analytics.js'), `${file} keeps the consent-gated loader`);
+
+// Token-bearing account recovery pages never load third-party code and remove
+// credentials from browser history immediately after reading them.
+for (const [htmlFile, scriptFile] of [['reset-password.html', 'reset-password.js'], ['verify-email.html', 'verify-email.js']]) {
+  assert.ok(!read(htmlFile).includes('analytics.js'), `${htmlFile} must not load analytics beside a credential`);
+  assert.ok(read(scriptFile).includes("history.replaceState(null,'',`${location.pathname}${location.hash}`)"), `${scriptFile} scrubs the credential URL`);
+}
+const platformReset = read('platform-reset-password.html');
+assert.ok(!platformReset.includes('analytics.js'), 'platform reset must not load analytics beside its credential');
+const platformTokenRead = platformReset.indexOf("token=params.get('token')||''");
+const platformTokenScrub = platformReset.indexOf("history.replaceState(null,'',`${location.pathname}${location.hash}`)");
+assert.ok(platformTokenRead >= 0 && platformTokenScrub > platformTokenRead, 'platform reset captures then immediately scrubs its credential URL');
+assert.ok(platformTokenScrub < platformReset.indexOf("$('#reset').onsubmit"), 'platform token is scrubbed before user interaction');
 
 // The signed-in app no longer carries any analytics plumbing.
 assert.ok(!/PDLAnalytics|setIdentity|resetIdentity|identifyAnalyticsUser/.test(app), 'app.js has no analytics identity plumbing');

@@ -121,9 +121,9 @@ async function captureFetch(status = 200) {
   const demoStart = server.indexOf('async function handleDemoRequest');
   const demoAlert = server.indexOf('demoRequestAlert');
   const demoPersist = server.indexOf('await writePlatform(platform)}catch{return json(res,503,{error:\'We could not confirm your demo request was saved');
-  assert.ok(demoAlert > demoStart && demoPersist > demoAlert, 'demo requests alert before the handler persists');
-  const signupStart = server.indexOf("url.pathname==='/api/signup'");
-  const trialAlert = server.indexOf('trialSignupAlert');
+  assert.ok(demoPersist > demoStart && demoAlert > demoPersist, 'demo requests persist before the non-blocking alert');
+  const signupStart = server.indexOf('async function handleSignup');
+  const trialAlert = server.indexOf('trialSignupAlert', signupStart);
   assert.ok(trialAlert > signupStart, 'trial signups alert from the signup handler');
   assert.ok(server.indexOf('wasNotActive=db.company.subscriptionStatus') < server.indexOf('subscriptionActivatedAlert'), 'Active transition is captured before the alert');
   assert.ok(server.indexOf("subscription.status==='trialing')db.company.subscriptionStatus='Incomplete'") < server.indexOf('subscriptionActivatedAlert'), 'paying alert fires after the founder-trialing adjustment, so founder trials do not false-positive');

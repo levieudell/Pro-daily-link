@@ -62,6 +62,7 @@ const SAFE_STATIC_ROUTES = new Set([
   '/api/exceptions',
   '/api/founder-offer',
   '/api/health',
+  '/api/health/live',
   '/api/help',
   '/api/insights',
   '/api/pay-periods',

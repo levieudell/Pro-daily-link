@@ -56,15 +56,38 @@ AS $$
 DECLARE
   current_revision bigint;
   next_revision bigint;
+  company_data jsonb;
+  company_name text;
+  company_has_name boolean;
 BEGIN
+  company_data := CASE
+    WHEN jsonb_typeof(p_scalar_data->'company') = 'object' THEN p_scalar_data->'company'
+    ELSE '{}'::jsonb
+  END;
+  company_has_name := NULLIF(btrim(company_data->>'name'), '') IS NOT NULL;
+  company_name := left(COALESCE(NULLIF(btrim(company_data->>'name'), ''), 'Company'), 200);
+
+  -- tenant_revisions has a real foreign key to companies. A brand-new
+  -- signup has no parent row yet, so create that parent in this same database
+  -- transaction before materializing revision zero. Keeping this inside the
+  -- RPC prevents both an FK failure and a stranded parent when a later step
+  -- rolls back.
+  INSERT INTO public.companies(id, slug, name)
+  VALUES(p_company_id, 'company-' || p_company_id::text, company_name)
+  ON CONFLICT(id) DO UPDATE SET
+    name = CASE
+      WHEN company_has_name THEN EXCLUDED.name
+      ELSE public.companies.name
+    END;
+
   -- Materialize revision zero before locking it. A SELECT ... FOR UPDATE on a
   -- missing row locks nothing and would let two first writers both proceed.
-  INSERT INTO tenant_revisions(company_id, revision, scalar_data, content_hash, updated_at)
+  INSERT INTO public.tenant_revisions(company_id, revision, scalar_data, content_hash, updated_at)
   VALUES(p_company_id, 0, '{}'::jsonb, '', now())
   ON CONFLICT(company_id) DO NOTHING;
 
   SELECT tr.revision INTO current_revision
-  FROM tenant_revisions tr
+  FROM public.tenant_revisions tr
   WHERE tr.company_id = p_company_id
   FOR UPDATE;
 
@@ -73,7 +96,7 @@ BEGIN
   END IF;
   next_revision := current_revision + 1;
 
-  INSERT INTO tenant_revisions(company_id, revision, scalar_data, content_hash, updated_at)
+  INSERT INTO public.tenant_revisions(company_id, revision, scalar_data, content_hash, updated_at)
   VALUES(p_company_id, next_revision, COALESCE(p_scalar_data, '{}'::jsonb), p_content_hash, now())
   ON CONFLICT(company_id) DO UPDATE SET
     revision = EXCLUDED.revision,
@@ -81,8 +104,8 @@ BEGIN
     content_hash = EXCLUDED.content_hash,
     updated_at = now();
 
-  DELETE FROM tenant_records WHERE company_id = p_company_id;
-  INSERT INTO tenant_records(company_id, collection, record_key, position, data)
+  DELETE FROM public.tenant_records WHERE company_id = p_company_id;
+  INSERT INTO public.tenant_records(company_id, collection, record_key, position, data)
   SELECT p_company_id, item.collection, item.record_key, item.position, item.data
   FROM jsonb_to_recordset(COALESCE(p_records, '[]'::jsonb))
     AS item(collection text, record_key text, position integer, data jsonb);

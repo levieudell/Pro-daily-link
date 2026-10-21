@@ -11,17 +11,5 @@
 </main>
 <dialog id="setup-modal" aria-labelledby="setup-title"><div class="modal-card"><button id="close-setup" class="modal-close" type="button" aria-label="Close password setup">×</button><div class="modal-heading"><p class="eyebrow">FIRST-TIME SETUP</p><h2 id="setup-title">Create your password</h2><p>Temporary password accepted. Choose the password you’ll use from now on.</p></div><form id="claim"><input id="code" type="hidden"><label>Create password<span class="password-control"><input id="new-password" type="password" minlength="12" autocomplete="new-password" placeholder="At least 12 characters" required><span class="password-field-icons"><button class="field-action" type="button" data-show-password="new-password" aria-label="Show password" title="Show password"><svg class="icon-show" viewBox="0 0 24 24" aria-hidden="true"><path d="M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6S2 12 2 12Z"/><circle cx="12" cy="12" r="2.2"/></svg><svg class="icon-hide" viewBox="0 0 24 24" aria-hidden="true" hidden><path d="M3 3l18 18"/><path d="M9.9 5.6A10.8 10.8 0 0 1 12 5.5c6.5 0 10 6.5 10 6.5a18.4 18.4 0 0 1-3.4 4.1"/><path d="M6.1 6.8C3.6 8.7 2 12 2 12s3.5 6.5 10 6.5c1.6 0 3-.3 4.2-.9"/><path d="M9.9 9.9a3 3 0 0 0 4.2 4.2"/></svg></button></span></span></label><button class="primary" type="submit">Save password and sign in</button><button id="cancel-setup" class="secondary" type="button">Cancel</button><p id="claim-message" class="form-message" role="alert"></p></form></div></dialog>
 <script src="login.js?v=20261014-forms"></script>
-<script>
-fetch('/api/config',{credentials:'include',cache:'no-store'}).then(response=>response.json()).then(config=>{
-  if(!config.staging)return;
-  const style=document.createElement('style');
-  style.textContent='.staging-banner{position:sticky;top:0;z-index:2000;width:100%;box-sizing:border-box;flex:0 0 auto;background:#ef6c19;color:#111416;text-align:center;font:800 13px/1.2 "DM Sans",sans-serif;letter-spacing:.12em;padding:8px 12px}';
-  document.head.appendChild(style);
-  const bar=document.createElement('div');
-  bar.className='staging-banner';
-  bar.setAttribute('role','status');
-  bar.textContent='STAGING';
-  document.body.prepend(bar);
-}).catch(()=>{});
-</script>
+<script src="staging-banner.js"></script>
 </body></html>

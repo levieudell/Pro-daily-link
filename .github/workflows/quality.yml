@@ -17,18 +17,19 @@ jobs:
   test:
     name: Test application
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: '22'
           cache: npm
       - run: npm ci
       - name: Install the field browser driver
         run: npm install --no-save --no-package-lock puppeteer-core@25.14.0
       - name: Prepare field browser screenshots
         run: sudo mkdir -p /opt/cursor/artifacts/screenshots && sudo chmod -R a+rwx /opt/cursor
+      - run: npm run check
       - run: npm test
       - run: npm audit --omit=dev --audit-level=high
       - run: npm run security:scan

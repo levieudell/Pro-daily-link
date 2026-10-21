@@ -2,7 +2,7 @@
 // Change orders step 4 — CO document + customer approve-by-link (spec C).
 // The office submits a change through POST /api/changes/:id/submit (status →
 // Submitted, foreman emailed, signed customer link issued); the customer opens
-// /change-order.html?c=…&t=… with no login, reviews the document, and signs
+// /change-order.html?c=…&t=…&tenant=… with no login, reviews the document, and signs
 // approve/decline. Only the token hash is stored; decisions are idempotent.
 const assert = require('node:assert/strict'), fs = require('node:fs'), os = require('node:os'), path = require('node:path'), crypto = require('node:crypto');
 const root = fs.mkdtempSync(path.join(os.tmpdir(), 'pdl-co-doc-')), companyId = '66556655-6655-4665-b665-665566556655', ownerToken = 'synthetic-codoc-owner', samToken = 'synthetic-codoc-sam';
@@ -54,8 +54,10 @@ async function callPublic(method, route, body) {
     const submitted = await call('POST', '/api/changes/1/submit');
     assert.equal(submitted.status, 200);
     assert.equal(submitted.data.status, 'Submitted');
-    assert.ok(/^\/change-order\.html\?c=1&t=[A-Za-z0-9_-]+$/.test(submitted.data.url), 'signed customer link issued');
-    const rawToken = submitted.data.url.split('t=')[1];
+    assert.ok(/^\/change-order\.html\?c=1&t=[A-Za-z0-9_-]+&tenant=/.test(submitted.data.url), 'customer link carries an explicit tenant scope');
+    const issued = new URL(submitted.data.url, 'https://app.prodailylink.com');
+    const rawToken = issued.searchParams.get('t');
+    assert.equal(issued.searchParams.get('tenant'), companyId);
     const stored = JSON.parse(fs.readFileSync(file, 'utf8'));
     const storedOne = stored.changes.find(change => change.id === 1);
     assert.equal(storedOne.customerTokenHash, crypto.createHash('sha256').update(rawToken).digest('hex'), 'only the hash is stored');
@@ -106,6 +108,9 @@ async function callPublic(method, route, body) {
     assert.ok(!guest.includes('change-order.html'), 'guest pages never load the CO route');
     assert.ok(app.includes('data-generate-co'), 'office cards expose Generate change order');
     assert.ok(app.includes("api(`/api/changes/${button.dataset.generateCo}/submit`"), 'the button calls the submit endpoint');
+    const client = fs.readFileSync('change-order.js', 'utf8');
+    assert.match(client, /x-pdl-company/);
+    assert.match(client, /params\.get\('tenant'\)/);
     const policy = require('./public-file-policy');
     assert.ok(policy.PUBLIC_FILES.has('change-order.html') && policy.PUBLIC_FILES.has('change-order.js'), 'the document page is a served public file');
 

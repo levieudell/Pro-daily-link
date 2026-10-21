@@ -43,7 +43,15 @@ function createUsageStore(file) {
     fs.mkdirSync(path.dirname(file), { recursive: true });
     const tmp = file + '.tmp';
     fs.writeFileSync(tmp, JSON.stringify(value));
-    fs.renameSync(tmp, file);
+    try { fs.renameSync(tmp, file); }
+    catch (error) {
+      // Windows does not consistently replace an existing destination with
+      // renameSync. Preserve the already-written temp file as the source and
+      // use copyFileSync's replace semantics as the platform-safe fallback.
+      if (!['EEXIST', 'EPERM', 'EACCES'].includes(error.code)) throw error;
+      fs.copyFileSync(tmp, file);
+      fs.unlinkSync(tmp);
+    }
   }
   return {
     // record is fire-and-forget safe: callers wrap it in try/catch and it

@@ -1,7 +1,7 @@
 'use strict';
 const assert=require('node:assert/strict'),fs=require('node:fs'),os=require('node:os'),path=require('node:path');
 const {fixture,companyA,companyB,token}=require('./fixtures/project-assistant');
-const {splitSnapshot,assembleSnapshot}=require('./database/transactional-repository');
+const {splitSnapshot,assembleSnapshot,canonicalHash}=require('./database/transactional-repository');
 const temp=fs.mkdtempSync(path.join(os.tmpdir(),'pdl-timezone-cloud-')),dbFile=path.join(temp,'db.json'),tenantFile=path.join(temp,'tenants',companyA+'.json');
 fs.writeFileSync(dbFile,JSON.stringify(fixture(companyB)));fs.writeFileSync(path.join(temp,'platform.json'),JSON.stringify({users:[],sessions:[]}));
 Object.assign(process.env,{PDL_DB_FILE:dbFile,PDL_PLATFORM_FILE:path.join(temp,'platform.json'),PDL_REQUIRE_AUTH:'1',PDL_SUPABASE_ENABLED:'1',SUPABASE_URL:'https://timezone-fixture.invalid',SUPABASE_SECRET_KEY:'synthetic-not-a-real-key',PDL_TRANSACTIONAL_DB:'off',PDL_ASSISTANT_AI_ENABLED:'0',OPENAI_API_KEY:'',PDL_EMAIL_DEV_MODE:'1'});
@@ -12,8 +12,10 @@ global.fetch=async(url,options={})=>{
   assert.equal(options.headers.Authorization,'Bearer synthetic-not-a-real-key');
   if(parsed.pathname==='/rest/v1/companies'&&options.method==='POST'){const [row]=JSON.parse(options.body);assert.equal(row.id,companyA);cloud=structuredClone(row.data);cloudWrites++;return new Response('',{status:200});}
   if(parsed.pathname==='/rest/v1/companies')return Response.json([{id:companyA,data:structuredClone(cloud)}]);
-  if(parsed.pathname==='/rest/v1/tenant_revisions')return Response.json([{revision,scalar_data:splitSnapshot(cloud).scalarData,content_hash:'synthetic'}]);
-  if(parsed.pathname==='/rest/v1/tenant_records')return Response.json(splitSnapshot(cloud).records.map(row=>({collection:row.collection,data:row.data})));
+  if(parsed.pathname==='/rest/v1/rpc/load_tenant_repository'){
+    assert.equal(options.method,'POST');const input=JSON.parse(options.body),parts=splitSnapshot(cloud);assert.deepEqual(input,{p_company_id:companyA});
+    return Response.json({companyId:companyA,revision,scalarData:parts.scalarData,contentHash:canonicalHash(cloud),records:parts.records});
+  }
   if(parsed.pathname==='/rest/v1/rpc/replace_tenant_records'){const input=JSON.parse(options.body);assert.equal(input.p_company_id,companyA);assert.equal(input.p_expected_revision,revision);cloud=assembleSnapshot(input.p_scalar_data,input.p_records);cloudWrites++;return Response.json([{revision:++revision,record_count:input.p_records.length}]);}
   throw Error('Unexpected mock cloud path '+parsed.pathname);
 };

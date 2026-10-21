@@ -1177,3 +1177,13 @@ small{font-size:12px}
 :root[data-theme="dark"] #reports-page .status.report-status-missing{background:#4a2918;color:#fed7aa}
 :root[data-theme="dark"] #reports-page .status.report-status-correction{background:#482724;color:#fecaca}
 :root[data-theme="dark"] #reports-page .status.report-status-submitted{background:#35254e;color:#ddd6fe}
+.workspace-loader{position:fixed;inset:0;z-index:1000;display:flex;align-items:center;justify-content:center;background:#f4f2ec;color:#17382d;font-family:"DM Sans",sans-serif}
+html.workspace-ready .workspace-loader{display:none}
+html.workspace-authenticated:not(.workspace-ready) .app-shell{visibility:hidden}
+.workspace-loader-card{display:grid;justify-items:center;gap:12px;text-align:center;padding:28px}
+.workspace-loader-card img{width:66px;height:66px;object-fit:contain}
+.workspace-loader-card strong{font:700 18px "Oswald",sans-serif;letter-spacing:.04em;text-transform:uppercase}
+.workspace-loader-card span{font-size:13px;color:#64726c}
+.workspace-loader-bar{width:150px;height:4px;overflow:hidden;border-radius:99px;background:#dfe5e1}
+.workspace-loader-bar::after{content:"";display:block;width:55%;height:100%;border-radius:inherit;background:#ef6c19;animation:workspace-loading 1s ease-in-out infinite alternate}
+@keyframes workspace-loading{from{transform:translateX(-80%)}to{transform:translateX(160%)}}

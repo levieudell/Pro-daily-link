@@ -1,5 +1,12 @@
 const $=selector=>document.querySelector(selector);
 const params=new URLSearchParams(location.search),requestedPlan=params.get('plan');
+const signupAttribution={
+  utmSource:String(params.get('utm_source')||'').trim().slice(0,160),
+  utmMedium:String(params.get('utm_medium')||'').trim().slice(0,160),
+  utmCampaign:String(params.get('utm_campaign')||'').trim().slice(0,160),
+  referrer:String(document.referrer||'').slice(0,2048),
+  landingPage:`${location.pathname}${location.search}`.slice(0,2048)
+};
 let currentStep=1,planWasRequested=['starter','growth','pro'].includes(requestedPlan);
 
 function showStep(step){
@@ -94,7 +101,8 @@ $('#signup').onsubmit=async event=>{
         assistedSetup:$('#assisted-setup').checked,
         legalAccepted:$('#legal-acceptance').checked,
         legalVersion:'2026-09-17',
-        timezone:Intl.DateTimeFormat().resolvedOptions().timeZone
+        timezone:Intl.DateTimeFormat().resolvedOptions().timeZone,
+        ...signupAttribution
       })
     });
     const data=await response.json();

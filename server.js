@@ -5,8 +5,11 @@ const crypto = require('node:crypto');
 const zlib = require('node:zlib');
 const { AsyncLocalStorage } = require('node:async_hooks');
 const supabase = require('./database/supabase');
+const { PlatformRepository, PlatformRevisionConflictError } = require('./database/platform-repository');
+const { PlatformStateStore } = require('./database/platform-state-store');
 const backupVerification = require('./database/backup-verification');
 const { stableUuid } = require('./database/migrate-json');
+const { databaseCompanyId } = require('./database/transactional-repository');
 const monitoring = require('./monitoring');
 const stripeWebhook = require('./stripe-webhook');
 const founderAlerts = require('./founder-alerts');
@@ -15,6 +18,7 @@ const subscriptionCheckout = require('./subscription-checkout');
 const safeCsvCell = require('./csv-cell');
 const csvCell = value => safeCsvCell(value, { quoteAll: false });
 const { isPublicFile } = require('./public-file-policy');
+const { contentSecurityPolicy } = require('./content-security-policy');
 const { mergeTenantSnapshots } = require('./tenant-merge');
 const PDLProjectSchedule = require('./project-schedule');
 const { demoRequestTime } = require('./demo-request-time');
@@ -34,12 +38,21 @@ const { createAIHandler, legacyFallback, normalAIAvailable } = require('./projec
 const { createAssignmentRows } = require('./assignment-records');
 const { createRevenueReporter } = require('./revenue-reporting');
 const { loadRevenueCompanies } = require('./revenue-companies');
+const growthDomain = require('./growth-domain');
+const platformSecurity = require('./platform-security');
 const { createSalesDemoHandler, ROUTE: salesDemoRoute } = require('./sales-demo-route');
+const {
+  PLATFORM_ROLES,
+  CAPABILITIES: PLATFORM_CAPABILITIES,
+  canPlatformUser,
+  platformUserDto
+} = require('./platform-capabilities');
 const platformRevenueReport = createRevenueReporter();
 const { estimateActuals } = require('./mcp/estimate');
 
 const { blockStagingRecovery } = require('./staging-recovery');
 const ROOT = __dirname;
+const CONTENT_SECURITY_POLICY = contentSecurityPolicy(ROOT);
 supabase.loadLocalEnv(ROOT);
 monitoring.init(process.env);
 const DB_FILE = process.env.PDL_DB_FILE || path.join(ROOT, 'data', 'db.json');
@@ -58,6 +71,9 @@ if(process.env.PDL_STAGING==='1'){
 // Non-secret release readback after mode overrides; never emit credential values.
 if(require.main===module)console.info('Runtime configuration: staging='+String(process.env.PDL_STAGING==='1')+' auth_required='+String(process.env.PDL_REQUIRE_AUTH==='1')+' ai='+String(Boolean(process.env.OPENAI_API_KEY))+' cloud='+String(supabase.configured()));
 const PLATFORM_FILE = process.env.PDL_PLATFORM_FILE || path.join(path.dirname(DB_FILE),'platform.json');
+const PLATFORM_REVISION=Symbol('platformRevision');
+const PLATFORM_REPOSITORY_MODE=['off','shadow','primary'].includes(process.env.PDL_PLATFORM_TRANSACTIONAL_DB)?process.env.PDL_PLATFORM_TRANSACTIONAL_DB:'off';
+let platformStateStore=null;
 const AI_USAGE_FILE=path.join(path.dirname(PLATFORM_FILE),'ai-usage.json');
 const aiUsage=require('./ai-usage');
 const aiUsageStore=aiUsage.createUsageStore(AI_USAGE_FILE);
@@ -91,13 +107,12 @@ async function mirrorBackupReceipt(companyId){
     await supabase.upload('tenant-backups',receiptObjectKey(companyId),Buffer.from(fs.readFileSync(file)),'application/json',true);
   }catch(error){console.error('Backup receipt mirror failed',error.message)}
 }
-const DEMO_SEED=JSON.parse(fs.readFileSync(DB_FILE,'utf8'));
 const PLATFORM_CLOUD_ID=stableUuid('platform','pro-daily-link-operations');
 const PORT = Number(process.env.PORT || 4173);
 const MIME = {'.html':'text/html; charset=utf-8','.css':'text/css; charset=utf-8','.js':'text/javascript; charset=utf-8','.json':'application/json; charset=utf-8','.txt':'text/plain; charset=utf-8','.md':'text/markdown; charset=utf-8','.xml':'application/xml; charset=utf-8','.webmanifest':'application/manifest+json; charset=utf-8','.svg':'image/svg+xml','.pdf':'application/pdf','.jpg':'image/jpeg','.jpeg':'image/jpeg','.png':'image/png','.webp':'image/webp'};
 const BILLING_PLANS={starter:{name:'Starter',price:99,annualPrice:990,maxUsers:10,maxProjects:5,priceEnv:'STRIPE_PRICE_STARTER',annualPriceEnv:'STRIPE_PRICE_STARTER_ANNUAL'},growth:{name:'Growth',price:199,annualPrice:1990,maxUsers:30,maxProjects:25,priceEnv:'STRIPE_PRICE_GROWTH',annualPriceEnv:'STRIPE_PRICE_GROWTH_ANNUAL'},pro:{name:'Pro',price:399,annualPrice:3990,maxUsers:75,maxProjects:null,priceEnv:'STRIPE_PRICE_PRO',annualPriceEnv:'STRIPE_PRICE_PRO_ANNUAL'}};
 const requestBuckets=new Map();
-function clientAddress(req){return String(req.headers['x-forwarded-for']||req.socket.remoteAddress||'unknown').split(',')[0].trim()}
+function clientAddress(req){return platformSecurity.clientAddress(req)}
 function authFailMax(){const limit=Number(process.env.PDL_AUTH_FAIL_LIMIT);return Number.isFinite(limit)&&limit>0?Math.floor(limit):20}
 function isCredentialAttempt(req,url){return req.method==='POST'&&/^\/api\/(?:auth\/(?:login|claim|reset)|platform\/auth\/(?:login|claim|reset))$/.test(url.pathname)}
 function failedAuthBucket(req){const now=Date.now(),key=`${clientAddress(req)}:failed-auth`,current=requestBuckets.get(key),bucket=!current||current.resetAt<=now?{count:0,resetAt:now+15*60000}:current;requestBuckets.set(key,bucket);return bucket}
@@ -116,28 +131,47 @@ function rateLimit(req,res,url){
   if(bucket.count<=max)return true;res.setHeader('Retry-After',String(Math.ceil((bucket.resetAt-now)/1000)));json(res,429,{error:'Too many requests. Please wait and try again.'});return false
 }
 function stagingBlocksOutbound(){return process.env.PDL_STAGING==='1'}
-function secureHeaders(res){res.setHeader('X-Content-Type-Options','nosniff');res.setHeader('X-Frame-Options','DENY');res.setHeader('Referrer-Policy','strict-origin-when-cross-origin');res.setHeader('Permissions-Policy','camera=(self), geolocation=(self), microphone=(self)');res.setHeader('Cross-Origin-Resource-Policy','same-origin');res.setHeader('Strict-Transport-Security','max-age=31536000; includeSubDomains');if(stagingBlocksOutbound())res.setHeader('X-Robots-Tag','noindex, nofollow')}
+function secureHeaders(res){res.setHeader('X-Content-Type-Options','nosniff');res.setHeader('X-Frame-Options','DENY');res.setHeader('Referrer-Policy','strict-origin-when-cross-origin');res.setHeader('Permissions-Policy','camera=(self), geolocation=(self), microphone=(self)');res.setHeader('Cross-Origin-Resource-Policy','same-origin');res.setHeader('Strict-Transport-Security','max-age=31536000; includeSubDomains');res.setHeader('Content-Security-Policy',CONTENT_SECURITY_POLICY);if(stagingBlocksOutbound())res.setHeader('X-Robots-Tag','noindex, nofollow')}
 
 const dbContext=new AsyncLocalStorage();
 const tenantQueues=new Map();
 function transactionalMode(){const mode=String(process.env.PDL_TRANSACTIONAL_DB||'off').toLowerCase();return['shadow','primary'].includes(mode)?mode:'off'}
 function withTenantQueue(companyId,task){const prior=tenantQueues.get(companyId)||Promise.resolve(),run=prior.catch(()=>{}).then(task),tracked=run.catch(()=>{}).finally(()=>{if(tenantQueues.get(companyId)===tracked)tenantQueues.delete(companyId)});tenantQueues.set(companyId,tracked);return run}
+function withPlatformQueue(task){return withTenantQueue(PLATFORM_CLOUD_ID,async()=>{if(PLATFORM_REPOSITORY_MODE==='primary'&&platformStateStore)await platformStateStore.refresh();return task()})}
 function activeDbFile(){return dbContext.getStore()?.file||DB_FILE}
 function rekeyDuplicateAssignments(db){const rows=db?.assignments;if(!Array.isArray(rows))return false;const seen=new Set();let next=rows.reduce((max,row)=>Math.max(max,Number(row.id)||0),0)+1,changed=false;for(const row of rows){const id=Number(row.id);if(!seen.has(id)){seen.add(id);continue}row.id=next++;changed=true}return changed}
 function readDb(){const context=dbContext.getStore(),db=context?.db||JSON.parse(fs.readFileSync(activeDbFile(),'utf8'));if(rekeyDuplicateAssignments(db)||collapseStoredTimeCards(db))writeDb(db);return db}
 function syncStoredTimeCardFlag(db){if(!db?.company)return;const file=activeDbFile();if(!fs.existsSync(file))return;let disk;try{disk=JSON.parse(fs.readFileSync(file,'utf8')).company?.features||{}}catch{return}for(const key of ['timeCards','templates']){if(typeof disk[key]!=='boolean'||db.company.features?.[key]===disk[key])continue;db.company.features={...(db.company.features||{}),[key]:disk[key]}}}
+function mirrorTenantFile(file,snapshot){const tmp=file+'.tmp';fs.mkdirSync(path.dirname(file),{recursive:true});fs.writeFileSync(tmp,JSON.stringify(snapshot,null,2));fs.renameSync(tmp,file)}
+function reportMirrorFailure(label,error){console.error(`${label} failed after the authoritative database commit`,error.message);monitoring.captureRequestException(error,{method:'INTERNAL',route:'/internal/persistence-mirror'})}
 function writeDb(db){
-  collapseStoredTimeCards(db);syncStoredTimeCardFlag(db);
-  const context=dbContext.getStore(),now=new Date();
+  const context=dbContext.getStore();collapseStoredTimeCards(db);if(transactionalMode()!=='primary'&&!context?.authoritativeFeatureMutation)syncStoredTimeCardFlag(db);
+  const now=new Date();
   // Legacy lastBackupAt recorded an attempt, even when verification failed. Never promote it.
   db.company.persistence={...(db.company.persistence||{}),revision:Number(db.company.persistence?.revision||0)+1,updatedAt:now.toISOString()};
   if(context)context.db=db;
-  const file=activeDbFile(),tmp=file+'.tmp';
-  fs.mkdirSync(path.dirname(file),{recursive:true});fs.writeFileSync(tmp,JSON.stringify(db,null,2));fs.renameSync(tmp,file);
+  const file=activeDbFile();
+  if(context&&supabase.configured()&&transactionalMode()==='primary'){
+    const snapshot=structuredClone(db),prior=context.transactionalPending||Promise.resolve();
+    const transactional=prior.then(()=>supabase.saveTransactionalSnapshot(snapshot,context.transactionalRevision??0)).then(async result=>{
+      context.transactionalRevision=result.revision;
+      try{mirrorTenantFile(file,snapshot)}catch(error){reportMirrorFailure('Tenant local mirror',error)}
+      try{await supabase.saveCompanySnapshot(snapshot)}catch(error){reportMirrorFailure('Tenant legacy cloud mirror',error)}
+      return result;
+    });
+    context.transactionalPending=transactional;context.pending ||= [];context.pending.push(transactional);context.deferResponse=true;
+    if(!context.backupPending&&backupVerification.backupDue(BACKUP_RECEIPT_DIRECTORY,db.company.id)){
+      context.backupPending=transactional.then(result=>backupVerification.createAndRecordVerification(snapshot,{directory:BACKUP_RECEIPT_DIRECTORY,createBackup:supabase.createVerifiedBackup,sourceRevision:result.revision,sourceContentHash:result.contentHash}))
+        .then(result=>{context.backup=result;mirrorBackupReceipt(db.company.id);return result}).catch(()=>{console.error('Verified backup failed; a later write will retry.');return null});
+      context.pending.push(context.backupPending);
+    }
+    return;
+  }
+  mirrorTenantFile(file,db);
   if(context&&supabase.configured()){
     const snapshot=structuredClone(db),save=/^[0-9a-f]{8}-[0-9a-f-]{27}$/i.test(String(db.company.id))?supabase.saveCompanySnapshot(snapshot):supabase.saveSnapshot(stableUuid('legacy-company',db.company.id),db.company.name,snapshot);
     context.pending.push(save);
-    if(transactionalMode()!=='off'){
+    if(transactionalMode()==='shadow'){
       const transactional=(context.transactionalPending||Promise.resolve()).then(()=>supabase.saveTransactionalSnapshot(snapshot,context.transactionalRevision||0)).then(result=>{context.transactionalRevision=result.revision;return result});
       context.transactionalPending=transactional;context.pending.push(transactional);
     }
@@ -149,9 +183,36 @@ function writeDb(db){
   }
 }
 async function loadPrimaryCloud(){if(!supabase.configured())return;try{const local=JSON.parse(fs.readFileSync(DB_FILE,'utf8')),snapshot=await supabase.loadSnapshot(stableUuid('legacy-company',local.company.id));if(snapshot?.company?.id===local.company.id){const tmp=DB_FILE+'.tmp';fs.writeFileSync(tmp,JSON.stringify(snapshot,null,2));fs.renameSync(tmp,DB_FILE)}}catch(error){console.error('Primary cloud load failed',error.message)}}
-async function startBackupSelfHeal(){try{for(const tenant of tenantDatabases())await restoreBackupReceipt(tenant.company.id);for(const tenant of tenantDatabases()){const companyId=tenant.company?.id;if(!companyId||!supabase.configured()||!backupVerification.backupDue(BACKUP_RECEIPT_DIRECTORY,companyId))continue;const result=await backupVerification.createAndRecordVerification(tenant,{directory:BACKUP_RECEIPT_DIRECTORY,createBackup:supabase.createVerifiedBackup});await mirrorBackupReceipt(companyId);console.log(`Startup verified backup for ${companyId}: ${result?.objectKey||'ok'}`)}}catch(error){console.error('Startup backup self-heal failed',error.message)}}
+async function backupAuthorityStates(){
+  if(transactionalMode()!=='primary')return tenantDatabases().map(snapshot=>({snapshot,revision:Number(snapshot.company?.persistence?.revision||0),contentHash:null}));
+  if(!supabase.configured())throw new Error('Primary backup verification requires Supabase');
+  const summaries=await supabase.listTransactionalTenantSummaries(),states=[];
+  for(const summary of summaries){const loaded=await supabase.loadTransactionalSnapshot(summary.companyId);if(!loaded)throw new Error(`Authoritative tenant ${summary.companyId} disappeared during backup discovery`);states.push(loaded)}
+  return states;
+}
+async function startBackupSelfHeal(){try{const states=await backupAuthorityStates();for(const state of states)await restoreBackupReceipt(state.snapshot.company.id);for(const state of states){const tenant=state.snapshot,companyId=tenant.company?.id;if(!companyId||!backupVerification.backupDue(BACKUP_RECEIPT_DIRECTORY,companyId))continue;const result=await backupVerification.createAndRecordVerification(tenant,{directory:BACKUP_RECEIPT_DIRECTORY,createBackup:supabase.createVerifiedBackup,sourceRevision:state.revision,sourceContentHash:state.contentHash||''});await mirrorBackupReceipt(companyId);console.log(`Startup verified backup for ${companyId}: ${result?.objectKey||'ok'}`)}}catch(error){console.error('Startup backup self-heal failed',error.message)}}
 function cookie(req,name){return String(req.headers.cookie||'').split(';').map(value=>value.trim()).find(value=>value.startsWith(`${name}=`))?.slice(name.length+1)||''}
-async function requestDatabase(req){const companyId=String(req.headers['x-pdl-company']||cookie(req,'pdl_company')||'').trim();if(!companyId)return{file:DB_FILE,db:null};const primary=JSON.parse(fs.readFileSync(DB_FILE,'utf8')),file=companyId===String(primary.company.id)?DB_FILE:path.join(path.dirname(DB_FILE),'tenants',`${companyId}.json`);if(companyId!==String(primary.company.id)&&!/^[0-9a-f]{8}-[0-9a-f-]{27}$/i.test(companyId))return null;if(supabase.configured()&&transactionalMode()!=='off'){const transactional=await supabase.loadTransactionalSnapshot(companyId);if(transactional?.snapshot?.company?.id===companyId)return{file,db:transactionalMode()==='primary'?transactional.snapshot:null,transactionalRevision:transactional.revision,source:transactionalMode()==='primary'?'transactional':'snapshot'}}if(companyId===String(primary.company.id))return{file:DB_FILE,db:null};if(supabase.configured()){const snapshot=await supabase.loadCompanySnapshot(companyId);if(snapshot?.company?.id===companyId)return{file,db:snapshot}}return fs.existsSync(file)?{file,db:null}:null}
+async function requestDatabase(req,{includeArchived=false}={}){
+  const companyId=String(req.headers['x-pdl-company']||cookie(req,'pdl_company')||'').trim();
+  if(!companyId)return{file:DB_FILE,db:null};
+  const primary=JSON.parse(fs.readFileSync(DB_FILE,'utf8')),file=companyId===String(primary.company.id)?DB_FILE:path.join(path.dirname(DB_FILE),'tenants',`${companyId}.json`);
+  if(companyId!==String(primary.company.id)&&!/^[0-9a-f]{8}-[0-9a-f-]{27}$/i.test(companyId))return null;
+  const allowed=snapshot=>snapshot?.company?.id===companyId&&(includeArchived||!snapshot.company.archivedDuplicate);
+  if(supabase.configured()&&transactionalMode()!=='off'){
+    const transactional=await supabase.loadTransactionalSnapshot(companyId);
+    if(allowed(transactional?.snapshot))return{file,db:transactionalMode()==='primary'?transactional.snapshot:null,transactionalRevision:transactional.revision,source:transactionalMode()==='primary'?'transactional':'snapshot'};
+    if(transactional?.snapshot?.company?.archivedDuplicate&&!includeArchived)return null;
+  }
+  if(companyId===String(primary.company.id))return allowed(primary)?{file:DB_FILE,db:null}:null;
+  if(supabase.configured()){
+    const snapshot=await supabase.loadCompanySnapshot(companyId);
+    if(allowed(snapshot))return{file,db:snapshot};
+    if(snapshot?.company?.archivedDuplicate&&!includeArchived)return null;
+  }
+  if(!fs.existsSync(file))return null;
+  const local=readStoredSnapshot(file);
+  return allowed(local)?{file,db:null}:null;
+}
 function tenantHasSession(tenant,tokenHash){return Boolean(tokenHash&&(tenant?.sessions||[]).some(row=>row.tokenHash===tokenHash&&new Date(row.expiresAt)>new Date()))}
 async function authenticatedRequestDatabase(req){
   const hinted=await requestDatabase(req),token=bearer(req)||cookie(req,'pdl_session');
@@ -163,7 +224,7 @@ async function authenticatedRequestDatabase(req){
   const local=tenantDatabases().find(tenant=>tenantHasSession(tenant,tokenHash));
   if(local)return requestDatabase({headers:{'x-pdl-company':String(local.company.id)}});
   if(supabase.configured()){
-    const remote=(await supabase.listCompanySnapshots()).find(tenant=>tenantHasSession(tenant,tokenHash));
+    const remote=(await operationalTenantSnapshots()).find(tenant=>tenantHasSession(tenant,tokenHash));
     if(remote)return requestDatabase({headers:{'x-pdl-company':String(remote.company.id)}});
   }
   return hinted;
@@ -171,29 +232,145 @@ async function authenticatedRequestDatabase(req){
 function persistenceRevision(snapshot){return Number(snapshot?.company?.persistence?.revision||0)}
 function readStoredSnapshot(file){try{return file&&fs.existsSync(file)?JSON.parse(fs.readFileSync(file,'utf8')):null}catch{return null}}
 function freshestTenantSnapshot(database){if(database.source==='transactional'&&database.db)return database.db;const stored=readStoredSnapshot(database.file),loaded=database.db;if(stored&&loaded)return persistenceRevision(stored)>=persistenceRevision(loaded)?stored:loaded;return stored||loaded}
+async function platformTenantDatabase(companyId){
+  const id=String(companyId||'').trim();if(!id)return null;
+  const primary=readStoredSnapshot(DB_FILE),tenantFile=path.join(path.dirname(DB_FILE),'tenants',`${id}.json`);
+  if(String(primary?.company?.id)===id||/^[0-9a-f]{8}-[0-9a-f-]{27}$/i.test(id))return requestDatabase({headers:{'x-pdl-company':id}},{includeArchived:true});
+  return fs.existsSync(tenantFile)?{file:tenantFile,db:null}:null;
+}
+async function readPlatformTenant(companyId){
+  const database=await platformTenantDatabase(companyId);return database?freshestTenantSnapshot(database):null;
+}
+async function mutatePlatformTenant(companyId,mutator){
+  const id=String(companyId||'').trim();if(!id)return null;
+  return withTenantQueue(id,async()=>{
+    const database=await platformTenantDatabase(id);if(!database)return null;
+    database.db=freshestTenantSnapshot(database);if(!database.db)return null;
+    const context={...database,pending:[],backup:null,deferResponse:false,authoritativeFeatureMutation:true};
+    return dbContext.run(context,async()=>{
+      const tenant=readDb(),outcome=await mutator(tenant);
+      if(outcome?.changed!==false)writeDb(tenant);
+      await Promise.all(context.pending);
+      return{tenant,outcome:outcome||{}};
+    });
+  });
+}
 function tenantOwnsGuestToken(tenant,tokenHash){return(tenant?.subcontractorLinks||[]).some(row=>row.tokenHash===tokenHash)}
 function tenantOwnsChangeToken(tenant,tokenHash){return(tenant?.changes||[]).some(row=>row.customerTokenHash===tokenHash)}
-async function changeOrderRequestDatabase(req,url,token){const hinted=String(req.headers['x-pdl-company']||cookie(req,'pdl_company')||url.searchParams.get('c')||'').trim(),tokenHash=crypto.createHash('sha256').update(token).digest('hex');if(hinted){const database=await requestDatabase({headers:{'x-pdl-company':hinted}});if(!database)return null;const tenant=database.db||JSON.parse(fs.readFileSync(database.file,'utf8'));return tenantOwnsChangeToken(tenant,tokenHash)?database:null}const local=tenantDatabases().find(tenant=>tenantOwnsChangeToken(tenant,tokenHash));if(local)return requestDatabase({headers:{'x-pdl-company':String(local.company.id)}});if(!supabase.configured())return null;const remote=(await supabase.listCompanySnapshots()).find(tenant=>tenantOwnsChangeToken(tenant,tokenHash));return remote?requestDatabase({headers:{'x-pdl-company':String(remote.company.id)}}):null}
-async function guestRequestDatabase(req,url,token){const hinted=String(req.headers['x-pdl-company']||cookie(req,'pdl_company')||url.searchParams.get('c')||'').trim(),tokenHash=crypto.createHash('sha256').update(token).digest('hex');if(hinted){const database=await requestDatabase({headers:{'x-pdl-company':hinted}});if(!database)return null;const tenant=database.db||JSON.parse(fs.readFileSync(database.file,'utf8'));return tenantOwnsGuestToken(tenant,tokenHash)?database:null}const local=tenantDatabases().find(tenant=>tenantOwnsGuestToken(tenant,tokenHash));if(local)return requestDatabase({headers:{'x-pdl-company':String(local.company.id)}});if(!supabase.configured())return null;const remote=(await supabase.listCompanySnapshots()).find(tenant=>tenantOwnsGuestToken(tenant,tokenHash));return remote?requestDatabase({headers:{'x-pdl-company':String(remote.company.id)}}):null}
+async function publicTokenRequestDatabase(req,url,token,kind,ownsToken){
+  const hinted=String(req.headers['x-pdl-company']||url.searchParams.get('tenant')||url.searchParams.get('c')||'').trim();
+  const tokenHash=crypto.createHash('sha256').update(token).digest('hex');
+  const verify=async companyId=>{
+    const database=await requestDatabase({headers:{'x-pdl-company':companyId}});
+    if(!database)return null;
+    const tenant=freshestTenantSnapshot(database);
+    return ownsToken(tenant,tokenHash)?{...database,db:tenant}:null;
+  };
+  // A supplied tenant is a strict scope, not a lookup hint. Never fall back
+  // when it is wrong: doing so would turn a tampered public URL into a tenant
+  // enumeration oracle.
+  if(hinted)return verify(hinted);
+  if(transactionalMode()==='primary'){
+    if(!supabase.configured())return null;
+    try{
+      const companyId=await supabase.findTransactionalCompanyIdByPublicToken(kind,tokenHash);
+      return companyId?verify(companyId):null;
+    }catch(error){
+      console.error('Public link tenant lookup failed closed',error.message);
+      monitoring.captureRequestException(error,{method:'INTERNAL',route:'/internal/public-link-tenant-lookup',kind});
+      return null;
+    }
+  }
+  // Local/demo repositories are bounded developer fixtures. Production
+  // primary mode uses the indexed token directory above and never downloads
+  // or scans all tenant snapshots for an unauthenticated credential.
+  const local=tenantDatabases().find(tenant=>ownsToken(tenant,tokenHash));
+  return local?verify(String(local.company.id)):null;
+}
+function changeOrderRequestDatabase(req,url,token){return publicTokenRequestDatabase(req,url,token,'change_order',tenantOwnsChangeToken)}
+function guestRequestDatabase(req,url,token){return publicTokenRequestDatabase(req,url,token,'guest',tenantOwnsGuestToken)}
 const DEFAULT_HELP_ITEMS=[
   {id:'fe704d65-1c47-4fd8-af7a-b7cb9e535dc1',title:'Start and end your workday',type:'article',audience:'field',category:'Field workflow',summary:'Clock in your crew, document the work, and finish the daily report.',content:'Open My Day and tap Start your day. Confirm the project and crew members who are present. At the end of the shift, tap End day, add work notes and photos, then review production and labor before submitting to the office.',url:'',status:'Published',order:1},
   {id:'107f1844-ad8c-4a94-ab42-c70d45d8bb79',title:'Review and approve a daily report',type:'article',audience:'office',category:'Daily reports',summary:'Verify field quantities, labor, exceptions, and next steps before approval.',content:'Open Daily Reports and select a report marked Needs review. Check crew hours against allocated line-item labor, verify installed quantities, resolve any unplanned-work exception, and approve. Only approved reports update project production totals.',url:'',status:'Published',order:2},
   {id:'27778455-f6ac-4780-8732-ed777174c1e8',title:'What does quantity pending mean?',type:'faq',audience:'all',category:'Production tracking',summary:'Labor can be recorded now and installed quantity entered after it is measured.',content:'Quantity pending means the crew worked on the estimate line and recorded labor, but the installed amount has not been measured yet. Labor is preserved while completion remains unchanged until quantity is added and approved.',url:'',status:'Published',order:3},
   {id:'fe59d91a-2c34-4f16-becd-4d4052a3cd51',title:'Add Pro Daily Link to your phone’s Home Screen',type:'article',audience:'all',category:'Mobile setup',summary:'Open Pro Daily Link like an app from an icon on an iPhone, iPad, or Android device.',content:'iPhone or iPad: Open Pro Daily Link in Safari. Tap Share, choose Add to Home Screen, confirm the name, and tap Add. Android: Open Pro Daily Link in Chrome. Tap the three-dot menu, choose Add to Home screen or Install app, confirm the name, and tap Add or Install. Keep the browser signed in only on a device you trust.',url:'',status:'Published',order:4}
 ];
-function readPlatform(){const platform=fs.existsSync(PLATFORM_FILE)?JSON.parse(fs.readFileSync(PLATFORM_FILE,'utf8')):{users:[],notes:[]};if(!Array.isArray(platform.helpItems)||!platform.helpItems.length)platform.helpItems=DEFAULT_HELP_ITEMS.map(item=>({...item,createdAt:'2026-09-16T00:00:00.000Z',updatedAt:'2026-09-16T00:00:00.000Z'}));return platform}
+function basePlatformSnapshot(){const platform=fs.existsSync(PLATFORM_FILE)?JSON.parse(fs.readFileSync(PLATFORM_FILE,'utf8')):{users:[],notes:[]};if(!Array.isArray(platform.helpItems)||!platform.helpItems.length)platform.helpItems=DEFAULT_HELP_ITEMS.map(item=>({...item,createdAt:'2026-09-16T00:00:00.000Z',updatedAt:'2026-09-16T00:00:00.000Z'}));return platform}
+function readPlatform(){
+  if(PLATFORM_REPOSITORY_MODE==='primary'){
+    if(!platformStateStore)throw Object.assign(new Error('Platform repository is not initialized'),{statusCode:503});
+    const state=platformStateStore.readState(),platform=state.snapshot;
+    Object.defineProperty(platform,PLATFORM_REVISION,{value:state.revision,enumerable:false});
+    return platform;
+  }
+  return basePlatformSnapshot();
+}
 let platformCloudWrites=Promise.resolve();
-function writePlatform(data){
-  const tmp=PLATFORM_FILE+'.tmp';fs.writeFileSync(tmp,JSON.stringify(data,null,2));fs.renameSync(tmp,PLATFORM_FILE);
-  if(!supabase.configured())return Promise.resolve();
+function mirrorPlatformFile(data){const tmp=PLATFORM_FILE+'.tmp';fs.writeFileSync(tmp,JSON.stringify(data,null,2));fs.renameSync(tmp,PLATFORM_FILE)}
+async function writePlatform(data,{changedBy='platform-server'}={}){
+  const context=dbContext.getStore();
+  if(context?.platformMutation){
+    const req=context.platformRequest,url=context.platformUrl,access=platformAllowed(req)&&platformRouteAccess(req,url);
+    if(!access||access===false||!platformCan(req,access.capability,access.context)){
+      const error=new Error('Your back-office session or permissions changed. Sign in again and retry.');
+      error.statusCode=403;error.publicMessage=error.message;throw error;
+    }
+  }
+  const snapshot=structuredClone(data);
+  if(PLATFORM_REPOSITORY_MODE==='primary'){
+    if(!platformStateStore)throw Object.assign(new Error('Platform repository is not initialized'),{statusCode:503});
+    const expected=data[PLATFORM_REVISION];
+    if(!Number.isSafeInteger(expected))throw new PlatformRevisionConflictError(-1,platformStateStore.readState().revision);
+    const pending=platformStateStore.update(()=>{
+      const current=platformStateStore.readState().revision;
+      if(current!==expected)throw new PlatformRevisionConflictError(expected,current);
+      return snapshot;
+    },{changedBy}).then(saved=>{
+      // The repository commit is authoritative. A full/ephemeral Render disk
+      // must not turn a successful non-idempotent create into a client-visible
+      // failure that invites a duplicate retry.
+      try{mirrorPlatformFile(saved.snapshot)}catch(error){reportMirrorFailure('Platform local mirror',error)}
+      return saved;
+    });
+    platformCloudWrites=pending;
+    // Every platform mutation awaits writePlatform before building its response.
+    // Keep response buffering enabled, but do not retain rejected CAS attempts in
+    // context.pending: a retry that succeeds must not be poisoned by an earlier,
+    // already-handled revision conflict.
+    if(context)context.deferResponse=true;
+    return pending;
+  }
+  mirrorPlatformFile(snapshot);
+  if(!supabase.configured())return null;
   // Platform snapshots must reach the cloud in local-write order. An older,
   // slower save must never overwrite an already acknowledged demo request.
-  const snapshot={company:{id:PLATFORM_CLOUD_ID,name:'Pro Daily Link Platform Operations'},platform:structuredClone(data)};
-  const pending=platformCloudWrites.catch(()=>{}).then(()=>supabase.saveCompanySnapshot(snapshot));
+  const legacySnapshot={company:{id:PLATFORM_CLOUD_ID,name:'Pro Daily Link Platform Operations'},platform:snapshot};
+  const pending=platformCloudWrites.catch(()=>{}).then(async()=>{
+    await supabase.saveCompanySnapshot(legacySnapshot);
+    if(PLATFORM_REPOSITORY_MODE==='shadow'&&platformStateStore)await platformStateStore.update(()=>snapshot,{changedBy});
+  });
   platformCloudWrites=pending;
-  // Existing background callers remain handled; callers needing durability can await.
   pending.catch(error=>console.error('Platform cloud save failed',error.message));
   return pending;
+}
+async function persistFounderAlertAudit(source){
+  return withPlatformQueue(async()=>{
+    await platformCloudWrites.catch(()=>{});
+    const platform=readPlatform(),existing=new Set((platform.auditEvents||[]).map(row=>row.id));
+    const additions=(source.auditEvents||[]).filter(row=>!existing.has(row.id));
+    if(!additions.length)return;
+    platform.auditEvents ||= [];platform.auditEvents.push(...additions);
+    await writePlatform(platform,{changedBy:'founder-alert'});
+  });
+}
+function demoAttribution(input){
+  const text=(value,max=160)=>String(value||'').replace(/[\u0000-\u001f\u007f]/g,'').trim().slice(0,max)||null;
+  const safeUrl=(value,{relative=false}={})=>{
+    const candidate=text(value,2048);if(!candidate)return null;
+    if(relative&&/^\/(?!\/)/.test(candidate))return candidate;
+    try{const parsed=new URL(candidate);return['http:','https:'].includes(parsed.protocol)&&!parsed.username&&!parsed.password?parsed.toString():null}catch{return null}
+  };
+  return{source:text(input.utmSource)||'landing-page',medium:text(input.utmMedium)||'web',campaign:text(input.utmCampaign),referrer:safeUrl(input.referrer),landingPage:safeUrl(input.landingPage,{relative:true})||'/'};
 }
 async function handleDemoRequest(req,res){
     const input=await body(req);
@@ -206,30 +383,414 @@ async function handleDemoRequest(req,res){
     const time=demoRequestTime(input);if(time.error)return json(res,400,{error:time.error});
     const requestId=String(input.requestId||'');
     if(requestId&&!/^[a-zA-Z0-9_-]{16,128}$/.test(requestId))return json(res,400,{error:'Invalid demo request ID'});
-    const details={name:name.slice(0,120),email:email.slice(0,180),company:company.slice(0,160),phone:String(input.phone||'').trim().slice(0,40),companySize,preferredTime:preferredTime.slice(0,30),notes:String(input.notes||'').trim().slice(0,1500),...time.fields};
+    const phone=String(input.phone||'').trim().slice(0,40),phoneDigits=phone.replace(/\D/g,'');
+    if(phone&&(phoneDigits.length<7||phoneDigits.length>15))return json(res,400,{error:'Enter a valid phone number'});
+    const attribution=demoAttribution(input),details={name:name.slice(0,120),email:email.slice(0,180),company:company.slice(0,160),phone,companySize,preferredTime:preferredTime.slice(0,30),notes:String(input.notes||'').trim().slice(0,1500),attribution,...time.fields};
     const requestHash=crypto.createHash('sha256').update(JSON.stringify(details)).digest('hex');
     const platform=readPlatform(),now=new Date().toISOString();
     platform.demoRequests ||= [];
     let row=requestId&&platform.demoRequests.find(item=>item.requestId===requestId);
     if(row&&row.requestHash!==requestHash)return json(res,409,{error:'This demo request changed. Please refresh and submit it again.'});
+    if(row&&PLATFORM_REPOSITORY_MODE==='primary')return json(res,201,{ok:true,id:row.id,alreadyReceived:true});
     if(!row){
       row={id:crypto.randomUUID(),...details,...(requestId?{requestId,requestHash}:{}),status:'New',source:'Landing page',createdAt:now,updatedAt:now};
       platform.demoRequests.unshift(row);platform.auditEvents ||= [];platform.auditEvents.push({id:crypto.randomUUID(),action:'demo_requested',actorName:row.name,reason:`${row.company} · ${row.email}`,companyId:null,at:now});
-      founderAlerts.demoRequestAlert({platform,row,persist:writePlatform}).catch(error=>console.error('Founder alert failed',error.message));
+      platform.growthOpportunities ||= [];
+      const lead=growthDomain.createOpportunity(platform.growthOpportunities,{companyName:row.company,contactName:row.name,email:row.email,phone:row.phone||undefined,source:attribution.source,medium:attribution.medium,campaign:attribution.campaign||undefined,referrer:attribution.referrer||undefined,landingPage:attribution.landingPage,plan:null,expectedMrrMinor:null,currency:null,nextAction:'Contact the demo requester',nextActionDueAt:new Date(Date.now()+86400000).toISOString(),note:row.notes||null},{actorUserId:null,idempotencyKey:requestId?`demo:${requestId}`:`demo-row:${row.id}`});
+      const opportunity=lead.opportunity||platform.growthOpportunities.find(item=>item.id===lead.duplicates?.[0]?.id)||null;
+      if(lead.created)platform.growthOpportunities.unshift(lead.opportunity);
+      if(opportunity)row.growthOpportunityId=opportunity.id;
     }
     try{await writePlatform(platform)}catch{return json(res,503,{error:'We could not confirm your demo request was saved. Please try again.'})}
+    if(!requestId||row.createdAt===now)founderAlerts.demoRequestAlert({platform:readPlatform(),row,persist:persistFounderAlertAudit}).catch(error=>console.error('Founder alert failed',error.message));
     return json(res,201,{ok:true,id:row.id});
   }
+async function recordSignupGrowth({tenant,input,plan,billingCycle,founder}){
+  const platform=readPlatform(),email=String(input.email||'').trim().toLowerCase(),now=new Date().toISOString();
+  platform.growthOpportunities ||= [];
+  const companyId=String(tenant.company.id),signupAuditExists=(platform.auditEvents||[]).some(row=>row.action==='growth_signup_linked'&&String(row.companyId||'')===companyId);
+  let index=platform.growthOpportunities.findIndex(row=>!growthDomain.CLOSED_STAGES.includes(row.stage)&&(String(row.linkedCompanyId||'')===companyId||String(row.email||'').toLowerCase()===email));
+  const planPrice=founder?founderBilling.PRICES[plan][billingCycle]:(billingCycle==='annual'?BILLING_PLANS[plan].annualPrice:BILLING_PLANS[plan].price);
+  const expectedMrrMinor=Math.round((billingCycle==='annual'?planPrice/12:planPrice)*100),note=`Created a ${plan} ${billingCycle} workspace and started onboarding.`;
+  if(index<0){
+    const attribution=demoAttribution({...input,utmSource:input.utmSource||'signup',utmMedium:input.utmMedium||'web'}),created=growthDomain.createOpportunity(platform.growthOpportunities,{companyName:tenant.company.name,contactName:String(input.ownerName||'').trim(),email,phone:null,source:attribution.source,medium:attribution.medium,campaign:attribution.campaign||undefined,referrer:attribution.referrer||undefined,landingPage:attribution.landingPage,plan,expectedMrrMinor,currency:'usd',linkedCompanyId:String(tenant.company.id),nextAction:'Help the new trial reach its first approved daily',nextActionDueAt:new Date(Date.now()+2*86400000).toISOString(),note},{actorUserId:null,idempotencyKey:`signup:${tenant.company.id}`,now});
+    if(created.created)platform.growthOpportunities.unshift(created.opportunity);
+  }else{
+    let opportunity=platform.growthOpportunities[index];
+    const changes={};
+    if(opportunity.linkedCompanyId!==String(tenant.company.id))changes.linkedCompanyId=String(tenant.company.id);
+    if(opportunity.plan!==plan)changes.plan=plan;
+    if(opportunity.expectedMrrMinor==null){changes.expectedMrrMinor=expectedMrrMinor;changes.currency='usd'}
+    if(Object.keys(changes).length)opportunity=growthDomain.updateOpportunity(opportunity,changes,{actorUserId:null,expectedVersion:opportunity.version,now});
+    if(!(opportunity.notes||[]).some(row=>row.text===note))opportunity=growthDomain.addNote(opportunity,note,{actorUserId:null,expectedVersion:opportunity.version,now:new Date(Math.max(Date.now(),Date.parse(opportunity.updatedAt)+1)).toISOString()});
+    platform.growthOpportunities[index]=opportunity;
+  }
+  if(input.onboardingPreference!=='self'&&!founder?.assistedSetup){
+    const packageName=input.onboardingPreference==='in_person'?'In-person training':'Virtual onboarding';
+    platform.onboardingOrders ||= [];
+    const onboardingId=stableUuid('signup-onboarding',companyId),onboardingNote=`Requested during signup by ${String(input.ownerName||'').trim()} (${email}).`;
+    if(!platform.onboardingOrders.some(row=>row.id===onboardingId||String(row.companyId||'')===companyId&&row.notes===onboardingNote)){
+      platform.onboardingOrders.push({id:onboardingId,companyId:tenant.company.id,companyName:tenant.company.name,package:packageName,owner:'Unassigned',dueDate:'',status:'Requested',notes:onboardingNote,tasks:[{name:'Confirm scope and pricing',done:false},{name:'Schedule kickoff',done:false},{name:'Production catalog',done:false},{name:'Team accounts',done:false},{name:'Field training',done:false}],createdAt:now,updatedAt:now});
+      platformAudit(platform,{requestId:null,platformAuth:{user:{id:null,name:'Signup',role:'system'}}},'onboarding_requested',packageName,tenant.company.id);
+    }
+  }
+  if(!signupAuditExists)platformAudit(platform,{requestId:null,platformAuth:{user:{id:null,name:'Signup',role:'system'}}},'growth_signup_linked',`${tenant.company.name} · ${plan} ${billingCycle}`,tenant.company.id);
+  await writePlatform(platform,{changedBy:'signup'});
+}
+function signupGrowthInput(tenant){
+  const owner=(tenant.users||[]).find(user=>user.role==='owner')||(tenant.users||[])[0],sync=tenant.company?.platformGrowthSync||{},attribution=sync.attribution||{};
+  return{ownerName:String(owner?.name||''),email:String(owner?.email||'').trim().toLowerCase(),onboardingPreference:tenant.company?.onboarding?.preference||'self',utmSource:attribution.source||'signup',utmMedium:attribution.medium||'web',utmCampaign:attribution.campaign||'',referrer:attribution.referrer||'',landingPage:attribution.landingPage||'/signup.html'};
+}
+function tenantFileForCompany(companyId){
+  const primary=JSON.parse(fs.readFileSync(DB_FILE,'utf8'));
+  return String(primary.company.id)===String(companyId)?DB_FILE:path.join(path.dirname(DB_FILE),'tenants',`${companyId}.json`);
+}
+function mirrorTenantSnapshot(tenant){
+  const file=tenantFileForCompany(tenant.company.id),tmp=file+'.tmp';fs.mkdirSync(path.dirname(file),{recursive:true});fs.writeFileSync(tmp,JSON.stringify(tenant,null,2));fs.renameSync(tmp,file);return file;
+}
+function removeUncommittedSignupTenant(file,tenant){
+  try{
+    const tenantRoot=path.resolve(path.dirname(DB_FILE),'tenants'),target=path.resolve(file);
+    if(!target.startsWith(tenantRoot+path.sep)||!fs.existsSync(target))return false;
+    const stored=JSON.parse(fs.readFileSync(target,'utf8'));
+    if(String(stored.company?.id)!==String(tenant.company.id)||stored.company?.createdAt!==tenant.company.createdAt)return false;
+    fs.unlinkSync(target);return true;
+  }catch{return false}
+}
+async function markSignupGrowthSynced(tenant,database=null){
+  const synced=structuredClone(tenant),prior=synced.company.platformGrowthSync||{},syncedAt=new Date().toISOString();
+  synced.company.platformGrowthSync={status:'synced',requestedAt:prior.requestedAt||synced.company.createdAt,syncedAt};
+  synced.company.persistence={...(synced.company.persistence||{}),revision:Number(synced.company.persistence?.revision||0)+1,updatedAt:syncedAt};
+  // Commit every configured cloud source of truth before changing the local
+  // pending marker. A failed cloud write therefore remains safely retryable.
+  if(supabase.configured()){
+    if(transactionalMode()!=='off'){
+      let expectedRevision=database?.transactionalRevision;
+      if(!Number.isSafeInteger(expectedRevision))expectedRevision=Number((await supabase.loadTransactionalSnapshot(synced.company.id))?.revision||0);
+      await supabase.saveTransactionalSnapshot(synced,expectedRevision);
+      try{await supabase.saveCompanySnapshot(synced)}catch(error){reportMirrorFailure('Signup legacy cloud mirror',error)}
+    }else{
+      await supabase.saveCompanySnapshot(synced);
+    }
+  }
+  mirrorTenantSnapshot(synced);
+  return synced;
+}
+let signupGrowthRetryRunning=false;
+async function retryPendingSignupGrowth(){
+  if(signupGrowthRetryRunning)return{retried:0,synced:0};
+  signupGrowthRetryRunning=true;
+  let retried=0,synced=0;
+  try{
+    const tenants=await operationalTenantSnapshots();
+    for(const candidate of tenants){
+      const companyId=String(candidate?.company?.id||'');
+      if(!companyId||candidate.company?.platformGrowthSync?.status!=='pending')continue;
+      retried++;
+      await withPlatformQueue(()=>withTenantQueue(companyId,async()=>{
+        const database=await requestDatabase({headers:{'x-pdl-company':companyId}}),tenant=database&&freshestTenantSnapshot(database);
+        if(!tenant)return;
+        try{
+          if(tenant.company?.platformGrowthSync?.status!=='pending'){
+            // A prior attempt may have committed the transactional marker but
+            // failed while refreshing a legacy/local mirror. Heal those mirrors
+            // so the pending candidate does not recur after another restart.
+            if(candidate.company?.platformGrowthSync?.status==='pending'&&tenant.company?.platformGrowthSync?.status==='synced'){
+              if(supabase.configured())await supabase.saveCompanySnapshot(tenant);
+              mirrorTenantSnapshot(tenant);synced++;
+            }
+            return;
+          }
+          await recordSignupGrowth({tenant,input:signupGrowthInput(tenant),plan:tenant.company.plan,billingCycle:tenant.company.billingCycle||'monthly',founder:tenant.company.founder||null});
+          await markSignupGrowthSynced(tenant,database);synced++;
+        }catch(error){console.error('Signup growth retry failed',companyId,error.message)}
+      }));
+    }
+    return{retried,synced};
+  }finally{signupGrowthRetryRunning=false}
+}
+function signupInputValidation(input){
+  const companyName=String(input?.companyName||'').trim(),ownerName=String(input?.ownerName||'').trim(),email=String(input?.email||'').trim().toLowerCase();
+  if(!companyName||!ownerName||!/^\S+@\S+\.\S+$/.test(email))return{status:400,error:'Company name, owner name, and valid email are required'};
+  if(String(input?.password||'').length<10)return{status:400,error:'Password must be at least 10 characters'};
+  if(input?.legalAccepted!==true)return{status:400,error:'Accept the Terms of Service and Privacy Policy to continue'};
+  return null;
+}
+function signupEmailConflict(error){
+  return /(?:PDL_EMAIL_CONFLICT|tenant_active_user_email_owner_unique|duplicate key value[^\n]*normalized_email)/i.test(String(error?.message||error||''));
+}
+async function handleSignup(req,res){
+  const input=await body(req),plans=BILLING_PLANS;
+  const companyName=String(input.companyName||'').trim(),ownerName=String(input.ownerName||'').trim(),email=String(input.email||'').trim().toLowerCase();
+  const validation=signupInputValidation(input);if(validation)return json(res,validation.status,{error:validation.error});
+  if(await companyIdForEmail(email))return json(res,409,{error:'An account already exists for this email. Sign in or reset the password instead.',code:'account_exists'});
+  const employeeCount=Math.max(1,Number(input.employeeCount)||1),projectCount=Math.max(1,Number(input.projectCount)||1);
+  const recommended=employeeCount<=10&&projectCount<=5?'starter':employeeCount<=30&&projectCount<=25?'growth':'pro';
+  const plan=plans[input.plan]?input.plan:recommended,billingCycle=input.billingCycle==='annual'?'annual':'monthly';
+  const onboardingPreference=['self','virtual','in_person'].includes(input.onboardingPreference)?input.onboardingPreference:'self';
+  let founder;try{founder=founderBilling.enroll(input)}catch(error){return json(res,error.statusCode||400,{error:error.message})}
+  const tenantId=crypto.randomUUID(),password=credentialHash(input.password),token=crypto.randomBytes(32).toString('base64url'),tokenHash=crypto.createHash('sha256').update(token).digest('hex'),now=new Date().toISOString(),sessionSeconds=30*86400;
+  const signupAttribution=demoAttribution({...input,utmSource:input.utmSource||'signup',utmMedium:input.utmMedium||'web'}),tenant={
+    company:{id:tenantId,name:companyName,trade:String(input.trade||'General contractor').trim(),timezone:['America/Los_Angeles','America/Denver','America/Chicago','America/New_York'].includes(input.timezone)?input.timezone:'America/Los_Angeles',plan,billingCycle,accountType:'standard',billingExempt:false,cohort:'',discountPercent:0,commercialNote:'',planPrice:billingCycle==='annual'?plans[plan].annualPrice:plans[plan].price,trialEndsAt:founder?null:new Date(Date.now()+14*86400000).toISOString(),...(founder?{founder,subscriptionStatus:'Incomplete',cohort:'founder-pending',planPrice:founderBilling.PRICES[plan][billingCycle]}:{}),onboarding:{employeeCount,projectCount,preference:onboardingPreference,completedSteps:['company','plan'],recommendedPlan:recommended},platformGrowthSync:{status:'pending',requestedAt:now,attribution:signupAttribution},legalAcceptance:{acceptedAt:now,version:String(input.legalVersion||'2026-09-17').slice(0,30),email},createdAt:now},
+    users:[{id:1,companyId:tenantId,name:ownerName,email,role:'owner',status:'Active',projectIds:[],memberId:null,mustSetPassword:false,passwordHash:password.hash,passwordSalt:password.salt,createdAt:now}],
+    customers:[],projects:[],team:[],subcontractors:[],assignments:[],reports:[],photos:[],workdays:[],changes:[],subcontractorLinks:[],catalog:[],sessions:[{id:crypto.randomUUID(),tokenHash,userId:1,companyId:tenantId,createdAt:now,expiresAt:new Date(Date.now()+sessionSeconds*1000).toISOString()}]
+  };
+  const tenantDir=path.join(path.dirname(DB_FILE),'tenants'),tenantFile=path.join(tenantDir,`${tenantId}.json`);fs.mkdirSync(tenantDir,{recursive:true});fs.writeFileSync(tenantFile,JSON.stringify(tenant,null,2),{flag:'wx'});
+  let transactionalRevision=null;
+  try{
+    if(supabase.configured()){
+      if(transactionalMode()!=='off'){
+        // The transactional RPC owns first-write ordering: it creates the
+        // public.companies parent and tenant repository children atomically.
+        // Do not move the legacy mirror ahead of this commit; a two-step
+        // signup can strand a parent row or fail its child foreign key.
+        const committed=await supabase.saveTransactionalSnapshot(tenant,0);
+        transactionalRevision=committed.revision;
+        try{await supabase.saveCompanySnapshot(tenant)}catch(error){reportMirrorFailure('Signup legacy cloud mirror',error)}
+      }else await supabase.saveCompanySnapshot(tenant);
+    }
+  }catch(error){
+    const removed=removeUncommittedSignupTenant(tenantFile,tenant);
+    console.error('Signup tenant persistence failed',error.message,removed?'local tenant removed':'local tenant cleanup failed');
+    if(signupEmailConflict(error))return json(res,409,{error:'An account already exists for this email. Sign in or reset the password instead.',code:'account_exists'});
+    return json(res,503,{error:'We could not confirm the new workspace was saved. Please contact support before trying again.',code:'signup_persistence_failed'});
+  }
+  try{
+    await recordSignupGrowth({tenant,input:{...input,onboardingPreference},plan,billingCycle,founder});
+    await markSignupGrowthSynced(tenant,Number.isSafeInteger(transactionalRevision)?{transactionalRevision}:null);
+  }catch(error){
+    // The customer workspace is already durable. CRM linkage must never turn a
+    // successful signup into a stranded account; the pending tenant marker is
+    // idempotently retried by the startup worker.
+    console.error('Signup growth linkage deferred',tenantId,error.message);
+  }
+  founderAlerts.trialSignupAlert({platform:readPlatform(),company:{name:tenant.company.name,plan,billingCycle,ownerName,email,employeeCount,projectCount,founder:Boolean(founder)},persist:persistFounderAlertAudit}).catch(error=>console.error('Founder alert failed',error.message));
+  const secure=process.env.NODE_ENV==='production'?'; Secure':'';
+  res.writeHead(201,{'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store','Set-Cookie':[`pdl_session=${token}; HttpOnly; SameSite=Strict; Path=/; Max-Age=${sessionSeconds}${secure}`,`pdl_company=${tenantId}; SameSite=Strict; Path=/; Max-Age=${sessionSeconds}${secure}`]});
+  return res.end(JSON.stringify({company:{id:tenantId,name:tenant.company.name,plan,trialEndsAt:tenant.company.trialEndsAt,onboardingPreference,founder:Boolean(founder)},owner:{name:ownerName,email},recommendedPlan:recommended,next:`/app?tenant=${tenantId}`}));
+}
 function blogSlug(value){return String(value||'').toLowerCase().normalize('NFKD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'').slice(0,90)}
+function growthDomainFailure(res,error){
+  if(error instanceof growthDomain.GrowthDomainError)return json(res,error.statusCode||400,{error:error.message,code:error.code,details:error.details});
+  throw error;
+}
+function growthPeriod(url){
+  const asOf=new Date().toISOString(),today=asOf.slice(0,10),toInput=String(url.searchParams.get('to')||url.searchParams.get('end')||today),fromInput=String(url.searchParams.get('from')||url.searchParams.get('start')||`${today.slice(0,8)}01`);
+  const parseDate=(value,endOfDay,label)=>{
+    if(!/^\d{4}-\d{2}-\d{2}$/.test(value))throw new growthDomain.GrowthDomainError('invalid_period',`${label} must be a valid date`);
+    const parsed=new Date(`${value}T${endOfDay?'23:59:59.999':'00:00:00.000'}Z`);
+    if(Number.isNaN(parsed.getTime())||parsed.toISOString().slice(0,10)!==value)throw new growthDomain.GrowthDomainError('invalid_period',`${label} must be a valid date`);
+    return parsed.toISOString();
+  };
+  if(toInput>today)throw new growthDomain.GrowthDomainError('invalid_period','To date cannot be in the future');
+  const requestedTo=parseDate(toInput,true,'To date'),to=Date.parse(requestedTo)>Date.parse(asOf)?asOf:requestedTo,from=parseDate(fromInput,false,'From date');
+  if(Date.parse(from)>Date.parse(to))throw new growthDomain.GrowthDomainError('invalid_period','From date must be on or before the to date');
+  if((Date.parse(`${toInput}T00:00:00.000Z`)-Date.parse(`${fromInput}T00:00:00.000Z`))/86400000+1>366)throw new growthDomain.GrowthDomainError('invalid_period','Choose a date range of 366 days or fewer');
+  return{from,to,asOf,startDate:fromInput,endDate:toInput,timezone:'UTC'};
+}
+function growthOpportunityDto(row){
+  return{
+    id:String(row.id),version:row.version,companyName:row.companyName??null,contactName:row.contactName??null,email:row.email??null,phone:row.phone??null,
+    ownerUserId:row.ownerUserId==null?null:String(row.ownerUserId),stage:row.stage,
+    attribution:{source:row.attribution?.source??null,medium:row.attribution?.medium??null,campaign:row.attribution?.campaign??null,referrer:row.attribution?.referrer??null,landingPage:row.attribution?.landingPage??null},
+    plan:row.plan??null,expectedMrrMinor:row.expectedMrrMinor??null,currency:row.currency??null,nextAction:row.nextAction??null,nextActionDueAt:row.nextActionDueAt??null,linkedCompanyId:row.linkedCompanyId==null?null:String(row.linkedCompanyId)
+  };
+}
+async function validateGrowthReferences(platform,input){
+  if(Object.hasOwn(input,'ownerUserId')&&input.ownerUserId!=null&&input.ownerUserId!==''){
+    const owner=(platform.users||[]).find(user=>String(user.id)===String(input.ownerUserId));
+    if(!owner||owner.status!=='Active'||!['platform_owner','sales','customer_success'].includes(owner.role))throw new growthDomain.GrowthDomainError('invalid_owner','Choose an active sales or customer-success owner');
+  }
+  if(Object.hasOwn(input,'linkedCompanyId')&&input.linkedCompanyId!=null&&input.linkedCompanyId!==''){
+    const companies=await platformCompanies(platform);
+    if(!companies.some(company=>String(company.id)===String(input.linkedCompanyId)&&!company.archived))throw new growthDomain.GrowthDomainError('invalid_company','Choose an active customer account');
+  }
+}
 function blogPayload(input,existing={}){const title=String(input.title??existing.title??'').trim().slice(0,140),excerpt=String(input.excerpt??existing.excerpt??'').trim().slice(0,400),content=String(input.content??existing.content??'').trim().slice(0,30000),category=String(input.category??existing.category??'Field operations').trim().slice(0,60),author=String(input.author??existing.author??'Pro Daily Link').trim().slice(0,100),slug=blogSlug(input.slug??existing.slug??title),status=input.status==='Published'?'Published':'Draft';if(!title||!slug||!excerpt||!content)return{error:'Title, excerpt, and article content are required'};return{title,slug,excerpt,content,category:category||'Field operations',author:author||'Pro Daily Link',status}}
 function publicBlogPost(row){return{id:row.id,title:row.title,slug:row.slug,excerpt:row.excerpt,content:row.content,category:row.category,author:row.author,publishedAt:row.publishedAt,updatedAt:row.updatedAt}}
-async function loadPlatformCloud(){if(!supabase.configured())return;try{const snapshot=await supabase.loadCompanySnapshot(PLATFORM_CLOUD_ID);if(snapshot?.platform){const tmp=PLATFORM_FILE+'.tmp';fs.writeFileSync(tmp,JSON.stringify(snapshot.platform,null,2));fs.renameSync(tmp,PLATFORM_FILE)}}catch(error){console.error('Platform cloud load failed',error.message)}}
+async function loadLegacyPlatformCloud(){if(!supabase.configured())return;try{const snapshot=await supabase.loadCompanySnapshot(PLATFORM_CLOUD_ID);if(snapshot?.platform)mirrorPlatformFile(snapshot.platform)}catch(error){console.error('Platform cloud load failed',error.message)}}
+async function initializePlatformPersistence(){
+  if(require.main===module&&supabase.configured())await supabase.verifyManagedPrivateBuckets();
+  if(PLATFORM_REPOSITORY_MODE==='off')return loadLegacyPlatformCloud();
+  if(!supabase.configured())throw new Error('PDL_PLATFORM_TRANSACTIONAL_DB requires Supabase configuration');
+  if(PLATFORM_REPOSITORY_MODE==='shadow')await loadLegacyPlatformCloud();
+  const repository=new PlatformRepository({request:supabase.request});platformStateStore=new PlatformStateStore(repository);
+  // Shadow mode is the explicit bootstrap/cutover phase. Once primary mode is
+  // enabled, a missing repository is a configuration or recovery incident and
+  // must fail closed instead of resurrecting a possibly stale local snapshot.
+  await platformStateStore.initialize(PLATFORM_REPOSITORY_MODE==='shadow'?basePlatformSnapshot():null,'platform-cutover');
+  if(PLATFORM_REPOSITORY_MODE==='primary')try{mirrorPlatformFile(platformStateStore.read())}catch(error){reportMirrorFailure('Platform startup mirror',error)}
+}
+async function platformRepositoryHealth(){
+  const base={mode:PLATFORM_REPOSITORY_MODE,configured:PLATFORM_REPOSITORY_MODE!=='off'};
+  if(PLATFORM_REPOSITORY_MODE==='off')return{...base,ready:true};
+  if(!supabase.configured()||!platformStateStore)return{...base,ready:false};
+  let timer;
+  try{
+    const loaded=await Promise.race([
+      platformStateStore.repository.load(),
+      new Promise((_,reject)=>{timer=setTimeout(()=>reject(new Error('platform repository health timeout')),3000);timer.unref?.()})
+    ]);
+    return{...base,ready:Boolean(loaded),revision:Number.isSafeInteger(loaded?.revision)?loaded.revision:null,updatedAt:loaded?.updatedAt||null};
+  }catch{return{...base,ready:false}}
+  finally{if(timer)clearTimeout(timer)}
+}
+async function tenantRepositoryHealth(){
+  const mode=transactionalMode(),base={mode,configured:mode!=='off'};
+  if(mode==='off')return{...base,ready:true};
+  if(!supabase.configured())return{...base,ready:false};
+  let timer;
+  try{
+    const result=await Promise.race([
+      supabase.transactionalHealth(),
+      new Promise((_,reject)=>{timer=setTimeout(()=>reject(new Error('tenant repository health timeout')),3000);timer.unref?.()})
+    ]);
+    return{...base,ready:Boolean(result?.reachable)};
+  }catch{return{...base,ready:false}}
+  finally{if(timer)clearTimeout(timer)}
+}
+function operationalHealthRequirements({cloud,services,production=process.env.NODE_ENV==='production'}){
+  const database=production?Boolean(cloud?.configured&&cloud?.reachable):Boolean(!cloud?.configured||cloud?.reachable);
+  const tenantRepository=production
+    ?services?.tenantRepository?.mode==='primary'&&services.tenantRepository.configured===true&&services.tenantRepository.ready===true
+    :services?.tenantRepository?.mode!=='primary'||services.tenantRepository.ready===true;
+  const platformRepository=production
+    ?services?.platformRepository?.mode==='primary'&&services.platformRepository.configured===true&&services.platformRepository.ready===true
+    :services?.platformRepository?.mode!=='primary'||services.platformRepository.ready===true;
+  const requirements={
+    database,
+    tenantRepository:Boolean(tenantRepository),
+    platformRepository:Boolean(platformRepository),
+    email:production?services?.email===true:true,
+    billingWebhook:production?services?.billing===true:true,
+    monitoring:production?services?.monitoring===true:true,
+    verifiedBackup:production?services?.backup?.fresh===true:true
+  };
+  return{ok:Object.values(requirements).every(Boolean),requirements};
+}
 function tenantDatabases(){const primary=JSON.parse(fs.readFileSync(DB_FILE,'utf8')),tenantDir=path.join(path.dirname(DB_FILE),'tenants'),files=fs.existsSync(tenantDir)?fs.readdirSync(tenantDir).filter(file=>file.endsWith('.json')):[];return[primary,...files.map(file=>JSON.parse(fs.readFileSync(path.join(tenantDir,file),'utf8')))]}
-async function companyIdForEmail(email){const normalized=String(email||'').trim().toLowerCase();if(!normalized)return null;const local=tenantDatabases().find(tenant=>!tenant.company?.archivedDuplicate&&(tenant.users||[]).some(user=>user.status==='Active'&&String(user.email||'').trim().toLowerCase()===normalized));if(local)return local.company.id;return supabase.findCompanyByUserEmail(normalized)}
-async function platformCompanies(platform){const local=tenantDatabases(),remote=supabase.configured()?await supabase.listCompanySnapshots():[],byIdValues=mergeTenantSnapshots(local,remote,PLATFORM_CLOUD_ID);return byIdValues.map(tenant=>{const company=tenant.company||{},reports=tenant.reports||[],lastReport=reports.map(row=>row.createdAt||row.dateIso).filter(Boolean).sort().at(-1)||null,trialDays=company.trialEndsAt?Math.ceil((new Date(company.trialEndsAt)-new Date())/86400000):null,openTickets=(platform.supportTickets||[]).filter(row=>row.companyId===company.id&&!['Resolved','Closed'].includes(row.status)).length,onboarding=(platform.onboardingOrders||[]).find(row=>row.companyId===company.id&&!['Complete','Cancelled'].includes(row.status)),alerts=[],access=accountAccess(company),accountType=['standard','early_adopter','legacy'].includes(company.accountType)?company.accountType:'standard',accountAgeDays=Number.isFinite(Date.parse(company.createdAt||''))?Math.floor((Date.now()-Date.parse(company.createdAt))/86400000):null,silentDays=lastReport?Math.floor((Date.now()-new Date(lastReport))/86400000):null;if(trialDays!=null&&trialDays<=3&&trialDays>=0)alerts.push(`Trial ends in ${trialDays} day${trialDays===1?'':'s'}`);if(trialDays!=null&&trialDays<0&&!['Demo','Complimentary','Legacy'].includes(access.status))alerts.push('Trial ended — choose a plan');if(['Past due','Paused','Cancelled'].includes(access.status))alerts.push(`Subscription ${access.status.toLowerCase()}`);if(!(tenant.projects||[]).length&&(accountAgeDays===null||accountAgeDays>3))alerts.push('No project created');if(!reports.length&&(accountAgeDays===null||accountAgeDays>3))alerts.push('No daily reports submitted');if(silentDays!=null&&silentDays>21)alerts.push(`No daily report in ${silentDays} days`);if(onboarding&&onboarding.status==='Blocked')alerts.push('Onboarding blocked');if(openTickets)alerts.push(`${openTickets} open support ticket${openTickets===1?'':'s'}`);const score=Math.max(0,100-alerts.length*20),demo=Boolean(company.demo||company.id==='northstar');return{id:company.id,name:company.name,archived:Boolean(company.archivedDuplicate),demo,demoResetAvailable:demo&&String(company.id)===String(local[0]?.company?.id),timeCards:company.features?.timeCards===true,templates:company.features?.templates===true,trade:company.trade||'',plan:company.plan||'pilot',planPrice:Number(company.planPrice)||0,subscriptionStatus:access.status,accountType,billingExempt:Boolean(company.billingExempt),cohort:String(company.cohort||''),discountPercent:Math.min(100,Math.max(0,Number(company.discountPercent)||0)),commercialNote:String(company.commercialNote||''),trialEndsAt:company.trialEndsAt||null,nextBillingAt:company.nextBillingAt||null,users:(tenant.users||[]).length,projects:(tenant.projects||[]).length,reports:reports.length,lastReport,onboarding:company.onboarding||null,createdAt:company.createdAt||null,health:{score,status:score>80?'Healthy':score>=50?'Watch':'At risk',alerts},summary:`${company.name} has ${(tenant.projects||[]).length} project${(tenant.projects||[]).length===1?'':'s'}, ${(tenant.users||[]).length} user${(tenant.users||[]).length===1?'':'s'}, and ${reports.length} daily report${reports.length===1?'':'s'}. ${alerts.length?`Attention: ${alerts.join('; ')}.`:'Account activity looks healthy.'}`}})}
-function platformAudit(platform,req,action,reason,companyId){platform.auditEvents ||= [];platform.auditEvents.push({id:crypto.randomUUID(),action,actorName:req.platformAuth?.user.name||'Platform owner',reason,companyId:companyId||null,at:new Date().toISOString()})}
+async function operationalTenantSnapshots(){
+  if(supabase.configured()&&transactionalMode()==='primary'){
+    return(await supabase.listTransactionalSnapshots()).map(state=>state.snapshot).filter(tenant=>tenant?.company?.id&&String(tenant.company.id)!==PLATFORM_CLOUD_ID);
+  }
+  const local=tenantDatabases(),remote=supabase.configured()?await supabase.listCompanySnapshots():[];
+  return mergeTenantSnapshots(local,remote,PLATFORM_CLOUD_ID);
+}
+async function companyIdForEmail(email){
+  const normalized=String(email||'').trim().toLowerCase();
+  if(!normalized)return null;
+  if(supabase.configured()&&transactionalMode()==='primary')return supabase.findTransactionalCompanyIdByUserEmail(normalized);
+  const tenant=(await operationalTenantSnapshots()).find(row=>!row.company?.archivedDuplicate&&(row.users||[]).some(user=>user.status==='Active'&&String(user.email||'').trim().toLowerCase()===normalized));
+  return tenant?.company?.id||null;
+}
+async function platformCompanies(platform){
+  const primaryDirectory=supabase.configured()&&transactionalMode()==='primary'
+    ?await supabase.listTransactionalTenantSummaries()
+    :null;
+  const tenants=primaryDirectory||await operationalTenantSnapshots();
+  const localPrimary=readStoredSnapshot(DB_FILE);
+  return tenants.map(tenant=>{
+    const compact=primaryDirectory!==null;
+    const company=tenant.company||{};
+    const reports=compact?Number(tenant.reports)||0:(tenant.reports||[]).length;
+    const projects=compact?Number(tenant.projects)||0:(tenant.projects||[]).length;
+    const users=compact?Number(tenant.users)||0:(tenant.users||[]).length;
+    const lastReport=compact?(tenant.lastReport||null):(tenant.reports||[]).map(row=>row.createdAt||row.dateIso).filter(Boolean).sort().at(-1)||null;
+    const trialDays=company.trialEndsAt?Math.ceil((new Date(company.trialEndsAt)-new Date())/86400000):null;
+    const openTickets=(platform.supportTickets||[]).filter(row=>row.companyId===company.id&&!['Resolved','Closed'].includes(row.status)).length;
+    const onboarding=(platform.onboardingOrders||[]).find(row=>row.companyId===company.id&&!['Complete','Cancelled'].includes(row.status));
+    const alerts=[],access=accountAccess(company),accountType=['standard','early_adopter','legacy'].includes(company.accountType)?company.accountType:'standard';
+    const accountAgeDays=Number.isFinite(Date.parse(company.createdAt||''))?Math.floor((Date.now()-Date.parse(company.createdAt))/86400000):null;
+    const silentDays=lastReport?Math.floor((Date.now()-new Date(lastReport))/86400000):null;
+    if(trialDays!=null&&trialDays<=3&&trialDays>=0)alerts.push(`Trial ends in ${trialDays} day${trialDays===1?'':'s'}`);
+    if(trialDays!=null&&trialDays<0&&!['Demo','Complimentary','Legacy'].includes(access.status))alerts.push('Trial ended — choose a plan');
+    if(['Past due','Paused','Cancelled'].includes(access.status))alerts.push(`Subscription ${access.status.toLowerCase()}`);
+    if(!projects&&(accountAgeDays===null||accountAgeDays>3))alerts.push('No project created');
+    if(!reports&&(accountAgeDays===null||accountAgeDays>3))alerts.push('No daily reports submitted');
+    if(silentDays!=null&&silentDays>21)alerts.push(`No daily report in ${silentDays} days`);
+    if(onboarding&&onboarding.status==='Blocked')alerts.push('Onboarding blocked');
+    if(openTickets)alerts.push(`${openTickets} open support ticket${openTickets===1?'':'s'}`);
+    const deletionRequest=deletionRequestDto(company.deletionRequest);
+    if(deletionRequest&&deletionRequest.status==='Awaiting operator review')alerts.push('Account closure request needs review');
+    if(deletionRequest&&deletionRequest.status==='Recovery hold')alerts.push(`Account closure hold${deletionRequest.holdEndsAt?` through ${String(deletionRequest.holdEndsAt).slice(0,10)}`:''}`);
+    const score=Math.max(0,100-alerts.length*20),demo=Boolean(company.demo||company.id==='northstar');
+    return{id:company.id,name:company.name,archived:Boolean(company.archivedDuplicate),demo,demoResetAvailable:demo&&String(company.id)===String(localPrimary?.company?.id),timeCards:company.features?.timeCards===true,templates:company.features?.templates===true,trade:company.trade||'',plan:company.plan||'pilot',planPrice:Number(company.planPrice)||0,subscriptionStatus:access.status,accountType,billingExempt:Boolean(company.billingExempt),cohort:String(company.cohort||''),discountPercent:Math.min(100,Math.max(0,Number(company.discountPercent)||0)),commercialNote:String(company.commercialNote||''),trialEndsAt:company.trialEndsAt||null,nextBillingAt:company.nextBillingAt||null,users,projects,reports,lastReport,onboarding:company.onboarding||null,createdAt:company.createdAt||null,deletionRequest,health:{score,status:score>80?'Healthy':score>=50?'Watch':'At risk',alerts},summary:`${company.name} has ${projects} project${projects===1?'':'s'}, ${users} user${users===1?'':'s'}, and ${reports} daily report${reports===1?'':'s'}. ${alerts.length?`Attention: ${alerts.join('; ')}.`:'Account activity looks healthy.'}`};
+  });
+}
+function platformAuditEvent(req,action,reason,companyId,details={}){
+  const actor=req.platformAuth?.user;
+  return{
+    id:crypto.randomUUID(),
+    action,
+    actorUserId:actor?.id??null,
+    actorName:actor?.name||'System',
+    actorRole:actor?.role||'system',
+    reason,
+    companyId:companyId||null,
+    requestId:req.requestId||null,
+    at:new Date().toISOString(),
+    ...details
+  };
+}
+function platformAudit(platform,req,action,reason,companyId,details={}){
+  const event=platformAuditEvent(req,action,reason,companyId,details);
+  platform.auditEvents ||= [];
+  platform.auditEvents.push(event);
+  return event;
+}
+function queueTenantPlatformAudit(tenant,req,action,reason,companyId,details={}){
+  const event=platformAuditEvent(req,action,reason,companyId,details);
+  tenant.platformAuditOutbox ||= [];
+  if(!tenant.platformAuditOutbox.some(row=>row.id===event.id))tenant.platformAuditOutbox.push(event);
+  return event;
+}
+async function persistPlatformAuditEvent(event,{changedBy='platform-audit-outbox'}={}){
+  let lastConflict=null;
+  for(let attempt=0;attempt<4;attempt++){
+    const platform=readPlatform();
+    platform.auditEvents ||= [];
+    if(platform.auditEvents.some(row=>row.id===event.id))return true;
+    platform.auditEvents.push(structuredClone(event));
+    try{await writePlatform(platform,{changedBy});return true}
+    catch(error){
+      if(error instanceof PlatformRevisionConflictError||error.code==='PDL_PLATFORM_REVISION_CONFLICT'){lastConflict=error;continue}
+      throw error;
+    }
+  }
+  throw lastConflict||new Error('Platform audit could not be persisted after retries');
+}
+async function flushTenantPlatformAuditOutbox(companyId,{changedBy='platform-audit-outbox'}={}){
+  return mutatePlatformTenant(companyId,async tenant=>{
+    const pending=Array.isArray(tenant.platformAuditOutbox)?tenant.platformAuditOutbox.filter(row=>row&&row.id):[];
+    if(!pending.length)return{changed:false,delivered:0};
+    const delivered=new Set();
+    for(const event of pending){await persistPlatformAuditEvent(event,{changedBy});delivered.add(event.id)}
+    tenant.platformAuditOutbox=pending.filter(event=>!delivered.has(event.id));
+    if(!tenant.platformAuditOutbox.length)delete tenant.platformAuditOutbox;
+    return{delivered:delivered.size};
+  });
+}
+async function flushTenantPlatformAuditOutboxSafely(companyId,options={}){
+  try{return await flushTenantPlatformAuditOutbox(companyId,options)}
+  catch(error){console.error('Platform tenant audit delivery deferred',String(companyId),error.message);return null}
+}
+async function retryPendingPlatformAudits(){
+  return withPlatformQueue(async()=>{
+    const tenants=await operationalTenantSnapshots();let delivered=0,failed=0;
+    for(const tenant of tenants){
+      const pending=Array.isArray(tenant?.platformAuditOutbox)?tenant.platformAuditOutbox.length:0;
+      if(!pending)continue;
+      const result=await flushTenantPlatformAuditOutboxSafely(tenant.company?.id,{changedBy:'platform-audit-recovery'});
+      if(result)delivered+=Number(result.outcome?.delivered||0);else failed+=pending;
+    }
+    return{delivered,failed};
+  });
+}
 function jsonHeaders(res,status,data,headers={}){const responseHeaders={'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store',...headers},context=dbContext.getStore();res.statusCode=status;if(context?.deferResponse&&!res.headersSent){context.response={status,data,headers:responseHeaders};return data}res.writeHead(status,responseHeaders);res.end(JSON.stringify(data));return data}
-function json(res,status,data){return jsonHeaders(res,status,data)}
+function json(res,status,data){
+  if(status===409&&data?.error==='Unexpected server error')data={error:'This back-office record changed while you were saving. Nothing was overwritten. Refresh and try again.',code:'STALE_PLATFORM_WRITE',requestId:data.requestId};
+  return jsonHeaders(res,status,data);
+}
 function flushDeferredResponse(res,context){if(!context.response||res.headersSent)return;const{status,data,headers}=context.response;res.writeHead(status,headers);res.end(JSON.stringify(data))}
 function body(req){if(req.parsedBodyPromise)return req.parsedBodyPromise;req.parsedBodyPromise=new Promise((resolve,reject)=>{let raw='',settled=false;req.on('data',c=>{if(settled)return;raw+=c;if(Buffer.byteLength(raw)>16_000_000){settled=true;const error=new Error('Request too large');error.statusCode=413;reject(error);req.resume()}});req.on('end',()=>{if(settled)return;try{resolve(raw?JSON.parse(raw):{})}catch(error){error.statusCode=400;reject(error)}});req.on('error',reject)});return req.parsedBodyPromise}
 function nextId(rows){return rows.reduce((max,row)=>Math.max(max,Number(row.id)||0),0)+1}
@@ -237,7 +798,24 @@ function reportDateLabel(report){const iso=String(report?.dateIso||'');if(/^\d{4
 function presentCompanyLogo(logo){return logo&&(logo.url||logo.objectKey)?{url:'/api/company/logo',contentType:logo.contentType||'',updatedAt:logo.updatedAt||null}:null}
 function publicCompanyLogo(company){if(!company)return company;const safe={...company},shown=presentCompanyLogo(safe.logo);if(shown)safe.logo=shown;else delete safe.logo;return safe}
 function companyForField(company){const safe=publicCompanyLogo(company)||{};delete safe.planPrice;delete safe.discountPercent;delete safe.commercialNote;return safe}
-function customerDataExport(db){const copy=structuredClone(db),secretKeys=new Set(['passwordHash','passwordSalt','setupHash','setupSalt','tokenHash','stripeCustomerId','stripeSubscriptionId','stripeCheckoutSessionId']);const clean=value=>{if(Array.isArray(value))return value.map(clean);if(!value||typeof value!=='object')return value;const result={};for(const[key,item]of Object.entries(value))if(!secretKeys.has(key))result[key]=clean(item);return result};const safe=clean(copy);delete safe.sessions;delete safe.passwordResets;safe.exportMetadata={format:'pro-daily-link-company-export',version:1,exportedAt:new Date().toISOString(),companyId:db.company.id,companyName:db.company.name};return safe}
+function customerDataExport(db){
+  const copy=structuredClone(db);
+  const vendorKeys=new Set(['stripeCustomerId','stripeSubscriptionId','stripeCheckoutSessionId','retiredStripeSubscriptionIds','stripeFreePeriod','pendingCheckout']);
+  const businessSettingKeys=new Set(['pricingAccess']);
+  const sensitiveCredentialKey=key=>vendorKeys.has(key)||/(?:password|token|secret|salt|verifier|authorization|setup|reset|emailVerification|oauth|access|refresh|challenge|clientSecret)(?:Hash|Salt|Token|Secret|Verifier|ExpiresAt|RequestedAt|UsedAt|$)/i.test(key);
+  const clean=value=>{
+    if(Array.isArray(value))return value.map(clean);
+    if(!value||typeof value!=='object')return value;
+    const result={};
+    for(const[key,item]of Object.entries(value))if(businessSettingKeys.has(key)||!sensitiveCredentialKey(key))result[key]=clean(item);
+    return result;
+  };
+  const safe=clean(copy);
+  delete safe.sessions;
+  delete safe.passwordResets;
+  safe.exportMetadata={format:'pro-daily-link-company-export',version:1,exportedAt:new Date().toISOString(),companyId:db.company.id,companyName:db.company.name};
+  return safe;
+}
 function nonNegativeNumber(value){if(typeof value==='string'&&value.trim()==='')return null;const number=typeof value==='number'?value:Number(String(value).trim());if(!Number.isFinite(number)||number<0)return null;return Math.round(number*100)/100}
 function importBudgetHours(line,catalogItem){if(!line||!Object.hasOwn(line,'budgetHours'))return catalogItem?Math.round(Number(line.quantity)*Number(catalogItem.targetHoursPerUnit)*100)/100:0;if(line.budgetHours==null||(typeof line.budgetHours==='string'&&line.budgetHours.trim()===''))return null;return nonNegativeNumber(line.budgetHours)??NaN}
 function companyDateIso(company,date=new Date()){const timezone=company?.timezone||'America/Los_Angeles',parts=new Intl.DateTimeFormat('en-US',{timeZone:timezone,year:'numeric',month:'2-digit',day:'2-digit'}).formatToParts(date),value=type=>parts.find(part=>part.type===type)?.value;return `${value('year')}-${value('month')}-${value('day')}`}
@@ -253,12 +831,48 @@ function digestOffsetMinutes(date){const part=new Intl.DateTimeFormat('en-US',{t
 function weeklyDigestSlotForWeekOf(date){const wall=digestWallClock(date),daysSinceMonday=(wall.weekday+6)%7,mondayProbe=new Date(date.getTime()-daysSinceMonday*86400000),mondayWall=digestWallClock(mondayProbe);return new Date(Date.UTC(mondayWall.year,mondayWall.month-1,mondayWall.day,8,0)-digestOffsetMinutes(mondayProbe)*60000)}
 function nextWeeklyDigestDue(from=new Date()){const slot=weeklyDigestSlotForWeekOf(from);return new Date(from.getTime()<=slot.getTime()?slot.getTime():slot.getTime()+7*86400000)}
 function relativeDigestDay(value){const days=Math.floor((Date.now()-new Date(value).getTime())/86400000);return days<=0?'today':days===1?'yesterday':`${days} days ago`}
-async function digestBackupSummary(){const local=tenantDatabases(),remote=supabase.configured()?await supabase.listCompanySnapshots():[],byId=new Map();for(const tenant of [...local,...remote]){const id=String(tenant?.company?.id||'');if(id&&!byId.has(id)&&!tenant.mcpOauth&&tenant.company?.mcpConnector!==true)byId.set(id,tenant)}return[...byId.values()].map(tenant=>{const id=String(tenant.company.id),status=backupVerification.publicStatus(BACKUP_RECEIPT_DIRECTORY,id);return{name:String(tenant.company.name||id),lastVerifiedAt:status.lastVerifiedAt,fresh:status.fresh,lastAttemptStatus:status.lastAttemptStatus}})}
+async function digestBackupSummary(){const byId=new Map();for(const tenant of await operationalTenantSnapshots()){const id=String(tenant?.company?.id||'');if(id&&!byId.has(id)&&!tenant.mcpOauth&&tenant.company?.mcpConnector!==true)byId.set(id,tenant)}return[...byId.values()].map(tenant=>{const id=String(tenant.company.id),status=backupVerification.publicStatus(BACKUP_RECEIPT_DIRECTORY,id);return{name:String(tenant.company.name||id),lastVerifiedAt:status.lastVerifiedAt,fresh:status.fresh,lastAttemptStatus:status.lastAttemptStatus}})}
 async function weeklyHealthDigestModel(){const companies=await platformCompanies(readPlatform()),real=companies.filter(c=>!digestInternalAccount(c)),flagged=real.filter(c=>c.health.alerts.length).sort((a,b)=>a.health.score-b.health.score);return{generatedAt:new Date().toISOString(),total:real.length,healthyCount:real.length-flagged.length,flagged:flagged.map(c=>({name:c.name,plan:c.plan,subscriptionStatus:c.subscriptionStatus,healthStatus:c.health.status,score:c.health.score,alerts:c.health.alerts,lastReport:c.lastReport,trialEndsAt:c.trialEndsAt})),backups:await digestBackupSummary()}}
 function backupSectionHtml(model){const rows=model.backups.map(b=>{const state=b.lastVerifiedAt?(b.fresh?`Verified ${relativeDigestDay(b.lastVerifiedAt)}`:`Stale - last verified ${relativeDigestDay(b.lastVerifiedAt)}`):b.lastAttemptStatus==='failed'?'Last attempt failed':'Never verified';return `<tr><td style="padding:8px 12px;border-top:1px solid #eee"><strong>${escapeHtml(b.name)}</strong></td><td style="padding:8px 12px;border-top:1px solid #eee;color:${b.lastVerifiedAt&&b.fresh?'#197346':'#b3261e'}">${state}</td></tr>`}).join('');return `<h2 style="font-size:16px;margin:24px 0 4px">Backups</h2><p style="margin:0 0 8px;color:#66717a;font-size:12px">Upload-download-hash verified copies of each workspace. Anything red needs investigation.</p><table style="width:100%;border-collapse:collapse;font-size:13px"><tbody>${rows}</tbody></table>`}
 function renderWeeklyHealthDigestEmail(model){const rows=model.flagged.map(c=>`<tr><td style="padding:10px 12px;border-top:1px solid #eee"><strong>${escapeHtml(c.name)}</strong><br><small style="color:#66717a">${escapeHtml(c.plan)} · ${escapeHtml(c.subscriptionStatus)} · latest daily ${c.lastReport?relativeDigestDay(c.lastReport):'never'}</small></td><td style="padding:10px 12px;border-top:1px solid #eee;white-space:nowrap"><strong>${c.score}</strong> ${escapeHtml(c.healthStatus)}</td><td style="padding:10px 12px;border-top:1px solid #eee">${c.alerts.map(alert=>`<span style="display:inline-block;background:#fff1e8;color:#b3541e;border-radius:12px;padding:3px 9px;font-size:11px;margin:2px">${escapeHtml(alert)}</span>`).join('')}</td></tr>`).join(''),summary=model.flagged.length===0?`<p>All ${model.total} customer account${model.total===1?'':'s'} look healthy this week. Nothing needs attention.</p>`:model.flagged.length===model.total?`<p>All ${model.total} customer account${model.total===1?'':'s'} need attention this week.</p>`:`<p>${model.flagged.length} of ${model.total} customer accounts need attention this week. The other ${model.healthyCount} look healthy.</p>`;return `<div style="font-family:Arial,sans-serif;max-width:640px;margin:auto;color:#111416"><h1 style="font-size:22px">Weekly customer health</h1>${summary}${model.flagged.length?`<table style="width:100%;border-collapse:collapse;font-size:13px"><thead><tr><th align="left" style="padding:6px 12px;color:#66717a;font-size:11px;text-transform:uppercase">Account</th><th align="left" style="padding:6px 12px;color:#66717a;font-size:11px;text-transform:uppercase">Health</th><th align="left" style="padding:6px 12px;color:#66717a;font-size:11px;text-transform:uppercase">Why</th></tr></thead><tbody>${rows}</tbody></table>`:''}${model.backups?.length?backupSectionHtml(model):''}<p style="color:#68716d;font-size:12px">Generated ${new Date(model.generatedAt).toLocaleString('en-US',{timeZone:WEEKLY_DIGEST_TIMEZONE})} · Pro Daily Link Platform Operations</p></div>`}
 async function deliverWeeklyHealthDigest(recipients,model){if(stagingBlocksOutbound())throw Error('Outbound email is disabled in staging');if(!process.env.RESEND_API_KEY)throw Error('Email is not configured');const response=await fetch('https://api.resend.com/emails',{method:'POST',headers:{Authorization:`Bearer ${process.env.RESEND_API_KEY}`,'Content-Type':'application/json','User-Agent':'ProDailyLink/1.0'},body:JSON.stringify({from:process.env.RESEND_FROM||'Pro Daily Link <support@prodailylink.com>',reply_to:resendReplyTo(),to:recipients,subject:`Customer health · ${model.flagged.length} account${model.flagged.length===1?'':'s'} need attention`,html:renderWeeklyHealthDigestEmail(model)})});if(!response.ok)throw Error(`Email provider rejected the health digest (${response.status})`)}
-async function maybeSendWeeklyHealthDigest({now=new Date(),force=false,sendEmailFn=null}={}){if(stagingBlocksOutbound())return{sent:false,reason:'staging'};if(process.env.PDL_WEEKLY_DIGEST==='0')return{sent:false,reason:'disabled'};const platform=readPlatform(),lastSentAt=platform.weeklyDigest?.lastSentAt?Date.parse(platform.weeklyDigest.lastSentAt):0,slotThisWeek=weeklyDigestSlotForWeekOf(now);if(!force&&now.getTime()<slotThisWeek.getTime())return{sent:false,reason:'not-due-yet'};if(!force&&lastSentAt>=slotThisWeek.getTime())return{sent:false,reason:'already-sent'};const recipients=(platform.users||[]).filter(user=>user.role==='platform_owner'&&user.status==='Active'&&user.email).map(user=>user.email);if(!recipients.length)return{sent:false,reason:'no-recipients'};const model=await weeklyHealthDigestModel();if(sendEmailFn||process.env.PDL_EMAIL_DEV_MODE!=='1'||process.env.RESEND_API_KEY){try{await(sendEmailFn||deliverWeeklyHealthDigest)(recipients,model)}catch(error){console.error('Weekly health digest failed',error.message);return{sent:false,reason:'send-failed'}}}const latest=readPlatform();latest.weeklyDigest={lastSentAt:now.toISOString(),recipientCount:recipients.length,flaggedCount:model.flagged.length};platformAudit(latest,{platformAuth:{user:{name:'Weekly digest'}}},'weekly_health_digest_sent',`${model.flagged.length} of ${model.total} accounts flagged`);writePlatform(latest);return{sent:true,recipients,model}}
+async function maybeSendWeeklyHealthDigest({now=new Date(),force=false,sendEmailFn=null}={}){
+  if(stagingBlocksOutbound())return{sent:false,reason:'staging'};
+  if(process.env.PDL_WEEKLY_DIGEST==='0')return{sent:false,reason:'disabled'};
+  return withPlatformQueue(async()=>{
+    const platform=readPlatform(),lastSentAt=platform.weeklyDigest?.lastSentAt?Date.parse(platform.weeklyDigest.lastSentAt):0,slotThisWeek=weeklyDigestSlotForWeekOf(now),slotKey=slotThisWeek.toISOString();
+    if(!force&&now.getTime()<slotThisWeek.getTime())return{sent:false,reason:'not-due-yet'};
+    if(!force&&lastSentAt>=slotThisWeek.getTime())return{sent:false,reason:'already-sent'};
+    const pendingAt=Date.parse(platform.weeklyDigest?.pendingAt||''),pendingFresh=platform.weeklyDigest?.pendingSlot===slotKey&&Number.isFinite(pendingAt)&&now.getTime()-pendingAt<30*60000;
+    if(!force&&pendingFresh)return{sent:false,reason:'already-sending'};
+    const recipients=(platform.users||[]).filter(user=>user.role==='platform_owner'&&user.status==='Active'&&user.email).map(user=>user.email);
+    if(!recipients.length)return{sent:false,reason:'no-recipients'};
+    const leaseId=crypto.randomUUID();
+    platform.weeklyDigest={...(platform.weeklyDigest||{}),pendingSlot:slotKey,pendingAt:now.toISOString(),pendingBy:leaseId};
+    try{await writePlatform(platform,{changedBy:'weekly-digest-lease'})}catch(error){if(error instanceof PlatformRevisionConflictError||error.code==='PDL_PLATFORM_REVISION_CONFLICT')return{sent:false,reason:'already-sending'};throw error}
+    const finishLease=async mutator=>{
+      for(let attempt=0;attempt<2;attempt++){
+        if(PLATFORM_REPOSITORY_MODE==='primary'&&platformStateStore)await platformStateStore.refresh();
+        const latest=readPlatform();
+        if(latest.weeklyDigest?.pendingBy!==leaseId)return false;
+        mutator(latest);
+        try{await writePlatform(latest,{changedBy:'weekly-digest'});return true}catch(error){if(!(error instanceof PlatformRevisionConflictError)&&error.code!=='PDL_PLATFORM_REVISION_CONFLICT')throw error}
+      }
+      return false;
+    };
+    const model=await weeklyHealthDigestModel();
+    if(sendEmailFn||process.env.PDL_EMAIL_DEV_MODE!=='1'||process.env.RESEND_API_KEY){
+      try{await(sendEmailFn||deliverWeeklyHealthDigest)(recipients,model)}catch(error){
+        console.error('Weekly health digest failed',error.message);
+        await finishLease(latest=>{delete latest.weeklyDigest.pendingSlot;delete latest.weeklyDigest.pendingAt;delete latest.weeklyDigest.pendingBy;latest.weeklyDigest.lastFailureAt=now.toISOString()});
+        return{sent:false,reason:'send-failed'};
+      }
+    }
+    const recorded=await finishLease(latest=>{latest.weeklyDigest={lastSentAt:now.toISOString(),recipientCount:recipients.length,flaggedCount:model.flagged.length};platformAudit(latest,{platformAuth:{user:{name:'Weekly digest',role:'system'}}},'weekly_health_digest_sent',`${model.flagged.length} of ${model.total} accounts flagged`)});
+    if(!recorded)return{sent:false,reason:'state-conflict'};
+    return{sent:true,recipients,model};
+  });
+}
 function billingSummary(db){
   const base=billingPlan(db.company),access=accountAccess(db.company),founder=founderBilling.isFounder(db.company);
   const planId=BILLING_PLANS[db.company.plan]?db.company.plan:'pro',protectedPrice=founder&&(!db.company.founder.protectedUntil||new Date(db.company.founder.protectedUntil)>new Date());
@@ -283,18 +897,92 @@ async function applyStripeSubscription(db,subscription){
   const freeEnd=info.founder?null:subscriptionCheckout.anchoredFreePeriod(subscription,db.company);
   if(freeEnd)db.company.stripeFreePeriod={subscriptionId:subscription.id,end:freeEnd};else delete db.company.stripeFreePeriod;
   if(info.founder && subscription.status==='trialing')db.company.subscriptionStatus='Incomplete';
-  if(wasNotActive&&db.company.subscriptionStatus==='Active'){founderAlerts.subscriptionActivatedAlert({platform:readPlatform(),company:{name:db.company.name,plan:db.company.plan,billingCycle:db.company.billingCycle,planPrice:db.company.planPrice},persist:writePlatform}).catch(error=>console.error('Founder alert failed',error.message))}
+  if(wasNotActive&&db.company.subscriptionStatus==='Active'){founderAlerts.subscriptionActivatedAlert({platform:readPlatform(),company:{name:db.company.name,plan:db.company.plan,billingCycle:db.company.billingCycle,planPrice:db.company.planPrice},persist:persistFounderAlertAudit}).catch(error=>console.error('Founder alert failed',error.message))}
   db.company.nextBillingAt=(subscription.current_period_end||subscription.items?.data?.[0]?.current_period_end)?new Date((subscription.current_period_end||subscription.items.data[0].current_period_end)*1000).toISOString():null;
   if(freeEnd&&subscription.status==='active')db.company.nextBillingAt=new Date(freeEnd*1000).toISOString();
   if(info.founder && subscription.status==='active' && db.company.founder.assistedSetup){
-    const platform=readPlatform();platform.onboardingOrders ||= [];
-    const id='assisted-setup-'+subscription.id;
-    if(!platform.onboardingOrders.some(row=>row.id===id)){
-      platform.onboardingOrders.push({id,companyId:db.company.id,companyName:db.company.name,package:'Assisted Setup',status:'Paid — scheduling needed',owner:'Unassigned',dueDate:'',notes:'$499 paid with founder checkout. Includes one 90-minute remote session for one project/crew and a 30-minute follow-up within 14 days. No travel or extensive data entry.',tasks:[{name:'Schedule setup session',done:false},{name:'Complete setup and training',done:false},{name:'Complete follow-up',done:false}],createdAt:new Date().toISOString()});
-      writePlatform(platform);
+    const prior=db.company.platformAssistedSetupSync||{},sameSubscription=prior.subscriptionId===subscription.id;
+    if(prior.status!=='synced'||!sameSubscription){
+      db.company.platformAssistedSetupSync={status:'pending',subscriptionId:subscription.id,requestedAt:sameSubscription&&prior.requestedAt?prior.requestedAt:new Date().toISOString()};
     }
+    scheduleAssistedSetupSync();
   }
   return subscription;
+}
+
+function assistedSetupOrderId(subscriptionId){return'assisted-setup-'+String(subscriptionId||'').trim()}
+async function recordPaidAssistedSetup(tenant,subscriptionId){
+  const platform=readPlatform();platform.onboardingOrders ||= [];
+  const id=assistedSetupOrderId(subscriptionId);
+  if(!platform.onboardingOrders.some(row=>row.id===id)){
+    const now=new Date().toISOString();
+    platform.onboardingOrders.push({id,companyId:tenant.company.id,companyName:tenant.company.name,package:'Assisted Setup',status:'Paid — scheduling needed',owner:'Unassigned',dueDate:'',notes:'$499 paid with founder checkout. Includes one 90-minute remote session for one project/crew and a 30-minute follow-up within 14 days. No travel or extensive data entry.',tasks:[{name:'Schedule setup session',done:false},{name:'Complete setup and training',done:false},{name:'Complete follow-up',done:false}],createdAt:now,updatedAt:now});
+    platformAudit(platform,{requestId:null,platformAuth:{user:{id:null,name:'Stripe',role:'system'}}},'assisted_setup_paid',`${tenant.company.name} · scheduling needed`,tenant.company.id);
+    await writePlatform(platform,{changedBy:'stripe-subscription'});
+  }
+}
+async function markAssistedSetupSynced(tenant,database=null){
+  const synced=structuredClone(tenant),prior=synced.company.platformAssistedSetupSync||{},syncedAt=new Date().toISOString();
+  synced.company.platformAssistedSetupSync={...prior,status:'synced',syncedAt};
+  synced.company.persistence={...(synced.company.persistence||{}),revision:Number(synced.company.persistence?.revision||0)+1,updatedAt:syncedAt};
+  // Commit every configured cloud source of truth before replacing the local
+  // pending marker. If either write fails, the idempotent platform order stays
+  // in place and the pending marker is retried instead of being lost.
+  if(supabase.configured()){
+    if(transactionalMode()!=='off'){
+      let expectedRevision=database?.transactionalRevision;
+      if(!Number.isSafeInteger(expectedRevision))expectedRevision=Number((await supabase.loadTransactionalSnapshot(synced.company.id))?.revision||0);
+      await supabase.saveTransactionalSnapshot(synced,expectedRevision);
+    }
+    await supabase.saveCompanySnapshot(synced);
+  }
+  mirrorTenantSnapshot(synced);
+  return synced;
+}
+let assistedSetupRetryRunning=false,assistedSetupRetryScheduled=false;
+function scheduleAssistedSetupSync(){
+  if(assistedSetupRetryScheduled)return;
+  assistedSetupRetryScheduled=true;
+  const timer=setImmediate(()=>{
+    assistedSetupRetryScheduled=false;
+    // setImmediate inherits AsyncLocalStorage. Clear it so a background
+    // platform write can never attach itself to a completed tenant request.
+    dbContext.run(null,()=>retryPendingAssistedSetup().catch(error=>console.error('Assisted setup retry check failed',error.message)));
+  });
+  timer.unref?.();
+}
+async function retryPendingAssistedSetup(){
+  if(assistedSetupRetryRunning)return{retried:0,synced:0};
+  assistedSetupRetryRunning=true;
+  let retried=0,synced=0;
+  try{
+    const tenants=await operationalTenantSnapshots();
+    for(const candidate of tenants){
+      const companyId=String(candidate?.company?.id||''),candidateSync=candidate?.company?.platformAssistedSetupSync;
+      if(!companyId||candidateSync?.status!=='pending'||!candidateSync.subscriptionId)continue;
+      retried++;
+      // Global lock order is always platform -> tenant. Customer billing only
+      // records a durable pending marker and never waits for the platform lock.
+      await withPlatformQueue(()=>withTenantQueue(companyId,async()=>{
+        const database=await platformTenantDatabase(companyId),tenant=database&&freshestTenantSnapshot(database);
+        if(!tenant)return;
+        const sync=tenant.company?.platformAssistedSetupSync;
+        try{
+          if(sync?.status!=='pending'){
+            if(candidateSync.status==='pending'&&sync?.status==='synced'){
+              if(supabase.configured())await supabase.saveCompanySnapshot(tenant);
+              mirrorTenantSnapshot(tenant);synced++;
+            }
+            return;
+          }
+          if(!sync.subscriptionId)return;
+          await recordPaidAssistedSetup(tenant,sync.subscriptionId);
+          await markAssistedSetupSynced(tenant,database);synced++;
+        }catch(error){console.error('Assisted setup retry failed',companyId,error.message)}
+      }));
+    }
+    return{retried,synced};
+  }finally{assistedSetupRetryRunning=false}
 }
 async function syncStripeSubscription(db,subscriptionId){const subscription=await stripeRequest(`/subscriptions/${encodeURIComponent(subscriptionId)}`,null,'GET');await applyStripeSubscription(db,subscription);writeDb(db);return subscription}
 async function handleStripeWebhook(req,res){
@@ -429,6 +1117,7 @@ async function readCompanyLogo(db){const logo=db.company?.logo;if(!logo)return n
 async function removeStoredCompanyLogo(db,logo){if(!logo)return;if(logo.bucket&&logo.objectKey){if(String(logo.objectKey).startsWith(`${tenantUuid(db)}/`)&&supabase.configured())await supabase.remove(logo.bucket,logo.objectKey);return}const file=companyLogoFile(logo);if(file&&fs.existsSync(file))fs.unlinkSync(file)}
 async function saveAsset(db,bucket,filename,bytes,contentType,localDirectory='uploads'){
   if(supabase.configured())return supabase.upload(bucket,`${tenantUuid(db)}/${Date.now()}-${crypto.randomUUID()}-${filename.replace(/[^a-zA-Z0-9._-]/g,'_')}`,bytes,contentType);
+  if(transactionalMode()==='primary'||process.env.PDL_DURABLE_STORAGE_REQUIRED==='1')throw Error('Private file storage is temporarily unavailable. Nothing was saved; try again when storage is healthy.');
   const directory=path.join(ROOT,localDirectory);fs.mkdirSync(directory,{recursive:true});const localName=`${Date.now()}-${crypto.randomUUID()}-${filename.replace(/[^a-zA-Z0-9._-]/g,'_')}`;fs.writeFileSync(path.join(directory,localName),bytes);return{bucket:null,objectKey:null,url:`/${localDirectory.replaceAll('\\','/')}/${localName}`};
 }
 function credentialHash(value,salt=crypto.randomBytes(16).toString('hex')){return{salt,hash:crypto.scryptSync(value,salt,64).toString('hex')}}
@@ -454,11 +1143,321 @@ async function aiTicketDraft(files,onUsage=null){
 }
 function ticketDuplicate(db,projectId,ticket,ignoreId=null){const vendor=String(ticket.vendor||'').trim().toLowerCase(),number=String(ticket.ticketNumber||'').trim().toLowerCase(),date=String(ticket.ticketDate||'').slice(0,10);if(!number)return null;return(db.projectTickets||[]).find(row=>row.id!==ignoreId&&!row.deletedAt&&Number(row.projectId)===Number(projectId)&&String(row.vendor||'').trim().toLowerCase()===vendor&&String(row.ticketNumber||'').trim().toLowerCase()===number&&String(row.ticketDate||'').slice(0,10)===date)}
 function cleanTicketLines(ticket){const source=Array.isArray(ticket.lines)?ticket.lines:[{material:ticket.material,quantity:ticket.quantity,unit:ticket.unit,amount:ticket.amount}];return source.slice(0,50).map(line=>({material:String(line.material||'').trim().slice(0,250),quantity:Number(line.quantity)||0,unit:String(line.unit||'').trim().slice(0,40),amount:Number(line.amount)||0})).filter(line=>line.material||line.quantity||line.unit||line.amount)}
-async function purgeExpiredTicketFiles(db,now=new Date()){let changed=false;for(const ticket of db.projectTickets||[]){if(!ticket.deletedAt||ticket.purgedAt||!ticket.retainedUntil||new Date(ticket.retainedUntil)>now)continue;try{if(ticket.bucket&&ticket.objectKey&&supabase.configured())await supabase.remove(ticket.bucket,ticket.objectKey);else if(String(ticket.url||'').startsWith('/uploads/project-tickets/')){const file=path.resolve(ROOT,String(ticket.url).slice(1)),root=path.resolve(ROOT,'uploads','project-tickets');if(file.startsWith(root+path.sep)&&fs.existsSync(file))fs.unlinkSync(file)}ticket.purgedAt=now.toISOString();ticket.url=null;ticket.bucket=null;ticket.objectKey=null;ticket.history ||= [];ticket.history.push({action:'Source file permanently purged after 90-day retention',by:'System',at:ticket.purgedAt});changed=true}catch(error){console.error('Ticket retention purge failed',ticket.id,error.message)}}return changed}
+function ticketLocalSourceFile(ticket,root=ROOT){
+  const value=String(ticket?.url||'');
+  if(!value.startsWith('/uploads/project-tickets/'))return null;
+  const file=path.resolve(root,value.slice(1)),directory=path.resolve(root,'uploads','project-tickets');
+  return file.startsWith(directory+path.sep)?file:null;
+}
+async function purgeExpiredTicketFiles(db,now=new Date(),{storage=supabase,root=ROOT}={}){
+  let changed=false;
+  for(const ticket of db.projectTickets||[]){
+    if(!ticket.deletedAt||ticket.purgedAt||!ticket.retainedUntil||new Date(ticket.retainedUntil)>now)continue;
+    try{
+      const hasCloudPointer=Boolean(ticket.bucket||ticket.objectKey),hasLocalPointer=Boolean(ticket.url);
+      if(hasCloudPointer){
+        if(!ticket.bucket||!ticket.objectKey)throw new Error('Incomplete cloud storage pointer');
+        if(!storage?.configured?.())throw new Error('Cloud storage is not configured');
+        const removed=await storage.remove(ticket.bucket,ticket.objectKey);
+        if(removed!==true)throw new Error('Cloud storage did not confirm deletion');
+      }else if(hasLocalPointer){
+        const file=ticketLocalSourceFile(ticket,root);
+        if(!file)throw new Error('Unsafe local storage pointer');
+        if(fs.existsSync(file))fs.unlinkSync(file);
+        // A verified path that is already absent is an idempotent success.
+      }
+      const purgedAt=now.toISOString();
+      ticket.purgedAt=purgedAt;ticket.url=null;ticket.bucket=null;ticket.objectKey=null;delete ticket.purgeRetry;
+      ticket.history ||= [];ticket.history.push({action:'Source file permanently purged after 90-day retention',by:'System',at:purgedAt});changed=true;
+    }catch(error){
+      const attemptedAt=now.toISOString(),attempts=Math.max(0,Number(ticket.purgeRetry?.attempts)||0)+1,previousReason=ticket.purgeRetry?.reason,reason=String(error.message||'Storage deletion failed').slice(0,200);
+      ticket.purgeRetry={attemptedAt,attempts,status:'Retry required',reason};
+      if(previousReason!==reason){ticket.history ||= [];ticket.history.push({action:'Source file retention purge will retry',by:'System',detail:reason,at:attemptedAt})}
+      changed=true;console.error('Ticket retention purge failed',ticket.id,error.message);
+    }
+  }
+  return changed;
+}
+async function sweepTenantRetention(now=new Date(),{listTenants=operationalTenantSnapshots,mutateTenant=mutatePlatformTenant,storage=supabase,root=ROOT}={}){
+  const tenants=await listTenants(),results=[];
+  for(const tenant of tenants){
+    const companyId=String(tenant?.company?.id||'');
+    if(!companyId)continue;
+    const due=(tenant.projectTickets||[]).some(ticket=>ticket.deletedAt&&!ticket.purgedAt&&ticket.retainedUntil&&new Date(ticket.retainedUntil)<=now);
+    if(!due)continue;
+    try{
+      const saved=await mutateTenant(companyId,async current=>({changed:await purgeExpiredTicketFiles(current,now,{storage,root})}));
+      results.push({companyId,status:saved?'processed':'missing'});
+    }catch(error){
+      results.push({companyId,status:'retry_required',error:String(error.message||'Retention sweep failed').slice(0,200)});
+      console.error('Tenant retention sweep failed',companyId,error.message);
+    }
+  }
+  return results;
+}
+function deletionRequestDto(request){
+  if(!request||typeof request!=='object')return null;
+  return{id:String(request.id||''),status:String(request.status||''),requestedAt:request.requestedAt||null,requestedBy:String(request.requestedBy||''),reviewedAt:request.reviewedAt||null,reviewedBy:String(request.reviewedBy||''),holdEndsAt:request.holdEndsAt||null,billingDisposition:String(request.billingDisposition||''),exportDisposition:String(request.exportDisposition||''),legalHold:Boolean(request.legalHold),lastAttemptAt:request.lastAttemptAt||null,lastAttemptStatus:String(request.lastAttemptStatus||'')};
+}
+function revokeTenantAccessForClosure(tenant,actor,at){
+  const counts={sessions:(tenant.sessions||[]).length,guestLinks:0,changeLinks:0,credentialLinks:0};tenant.sessions=[];
+  for(const link of tenant.subcontractorLinks||[]){if(link.tokenHash){delete link.tokenHash;counts.guestLinks++}link.status='Revoked';link.revokedAt=at;link.revokedBy=actor}
+  for(const change of tenant.changes||[])if(change.customerTokenHash){delete change.customerTokenHash;change.customerLinkRevokedAt=at;counts.changeLinks++}
+  for(const user of tenant.users||[])for(const key of ['resetTokenHash','resetExpiresAt','resetRequestedAt','setupHash','setupSalt','setupExpiresAt','emailVerificationTokenHash','emailVerificationExpiresAt'])if(Object.hasOwn(user,key)){delete user[key];counts.credentialLinks++}
+  return counts;
+}
+function tenantStorageAssets(snapshot){
+  const values=[],add=(asset,source)=>{if(asset&&typeof asset==='object')values.push({asset,source})};add(snapshot.company?.logo,'company.logo');for(const row of snapshot.photos||[])add(row,`photos:${row.id}`);for(const row of snapshot.projectPlans||[])add(row,`projectPlans:${row.id}`);for(const row of snapshot.projectTickets||[])add(row,`projectTickets:${row.id}`);for(const row of snapshot.estimateImports||[])add(row,`estimateImports:${row.id}`);for(const project of snapshot.projects||[])for(const proposal of project.estimateProposals||[])add(proposal.sourceFile,`projects:${project.id}:estimateProposals:${proposal.id}`);return values;
+}
+function localTenantStorageFiles(snapshot,root=ROOT){
+  const values=[],add=(value,source)=>{const url=String(value||'');if(!url||url.startsWith('data:'))return;if(!url.startsWith('/uploads/'))throw new Error(`Unsafe or unmanaged local storage pointer in ${source}`);const file=path.resolve(root,url.slice(1)),uploads=path.resolve(root,'uploads');if(!file.startsWith(uploads+path.sep))throw new Error(`Unsafe local storage pointer in ${source}`);values.push(file)};
+  for(const {asset,source} of tenantStorageAssets(snapshot)){const bucket=asset.storageBucket??asset.bucket,objectKey=asset.storageKey??asset.objectKey;if(!bucket&&!objectKey)add(asset.url||asset.dataUrl||asset.downloadUrl,source)}
+  return[...new Set(values)];
+}
+async function removeTenantStoredObjects(snapshot,{storage=supabase,root=ROOT}={}){
+  const companyId=databaseCompanyId(snapshot.company?.id),cloudByKey=new Map();
+  for(const {asset,source} of tenantStorageAssets(snapshot)){const bucket=asset.storageBucket??asset.bucket,rawKey=asset.storageKey??asset.objectKey;if(!bucket&&!rawKey)continue;if(!bucket||!rawKey)throw new Error(`Incomplete private storage reference in ${source}`);const objectKey=String(rawKey).replaceAll('\\','/').replace(/^\/+/, '');if(!objectKey||objectKey.includes('../')||objectKey.split('/').includes('..')||!objectKey.startsWith(`${companyId}/`))throw new Error(`Unsafe or cross-tenant storage key in ${source}`);cloudByKey.set(`${bucket}/${objectKey}`,{bucket:String(bucket),objectKey})}
+  const managedBuckets=new Set([...Object.keys(supabase.MANAGED_PRIVATE_BUCKETS||{}),...[...cloudByKey.values()].map(row=>row.bucket)]);
+  if(managedBuckets.size&&!storage?.configured?.())throw new Error('Cloud storage is not configured; no customer data was deleted');
+  if(typeof storage.listByPrefix!=='function')throw new Error('Cloud storage cannot prove tenant-prefix deletion; no customer data was deleted');
+  for(const bucket of managedBuckets){for(const object of await storage.listByPrefix(bucket,companyId)){if(!String(object.objectKey||'').startsWith(`${companyId}/`))throw new Error('Cloud storage returned a cross-tenant object');cloudByKey.set(`${bucket}/${object.objectKey}`,{bucket,objectKey:object.objectKey})}}
+  const cloud=[...cloudByKey.values()],local=localTenantStorageFiles(snapshot,root);
+  let removed=0,alreadyAbsent=0;
+  for(const object of cloud){try{if(await storage.remove(object.bucket,object.objectKey)!==true)throw new Error('Storage provider did not confirm deletion');removed++}catch(error){if(Number(error?.statusCode)===404){alreadyAbsent++;continue}throw error}}
+  for(const bucket of managedBuckets){const remaining=await storage.listByPrefix(bucket,companyId);if(remaining.length)throw new Error(`Cloud storage still contains ${remaining.length} tenant object${remaining.length===1?'':'s'} in ${bucket}; database purge was stopped`)}
+  for(const file of local){if(fs.existsSync(file)){fs.unlinkSync(file);removed++}else alreadyAbsent++}
+  return{removed,alreadyAbsent,total:cloud.length+local.length};
+}
+function tenantMirrorFile(companyId,{dbFile=DB_FILE}={}){
+  const id=String(companyId||'');
+  if(!/^[A-Za-z0-9_-]{1,128}$/.test(id))throw new Error('Tenant mirror company ID is invalid');
+  const directory=path.resolve(path.dirname(dbFile),'tenants'),file=path.resolve(directory,`${id}.json`);
+  if(!file.startsWith(directory+path.sep))throw new Error('Tenant mirror path escaped its managed directory');
+  return file;
+}
+function removeTenantMirror(companyId,{fileSystem=fs,dbFile=DB_FILE}={}){
+  const file=tenantMirrorFile(companyId,{dbFile}),existed=fileSystem.existsSync(file);
+  if(existed)fileSystem.unlinkSync(file);
+  if(fileSystem.existsSync(file))throw new Error('Local tenant mirror still exists after deletion');
+  return{removed:existed,verifiedAbsent:true};
+}
+function tenantDeletionCleanupJobId(companyId,deletionRequestId){return`${String(companyId)}:${String(deletionRequestId)}`}
+function scrubTenantPlatformPii(platform,companyId){
+  const id=String(companyId),removedByCollection={};let removed=0;
+  const linked=value=>value&&typeof value==='object'&&!Array.isArray(value)&&(String(value.companyId||'')===id||String(value.linkedCompanyId||'')===id);
+  const scrub=(value,collection)=>{
+    if(Array.isArray(value))return value.flatMap(item=>{if(linked(item)){removed++;removedByCollection[collection]=(removedByCollection[collection]||0)+1;return[]}return[scrub(item,collection)]});
+    if(!value||typeof value!=='object')return value;
+    const clean={};for(const[key,item]of Object.entries(value)){if(key===id){removed++;removedByCollection[collection]=(removedByCollection[collection]||0)+1;continue}clean[key]=scrub(item,collection)}return clean;
+  };
+  for(const[key,value]of Object.entries(platform)){
+    if(key==='tenantDeletionCleanupJobs'||key==='auditEvents')continue;
+    platform[key]=scrub(value,key);
+  }
+  platform.tenantDeletionCleanupJobs=(platform.tenantDeletionCleanupJobs||[]).map(job=>{
+    if(String(job?.companyId||'')!==id)return job;
+    const storage=job.storage&&typeof job.storage==='object'?{removed:Number(job.storage.removed)||0,alreadyAbsent:Number(job.storage.alreadyAbsent)||0,total:Number(job.storage.total)||0}:undefined;
+    return{id:String(job.id||tenantDeletionCleanupJobId(id,job.deletionRequestId)),companyId:id,deletionRequestId:String(job.deletionRequestId||''),terminalRevision:Number(job.terminalRevision)||0,status:String(job.status||'cleanup_pending'),platformRecordsRemoved:Number(job.platformRecordsRemoved)||0,startedAt:job.startedAt||null,updatedAt:job.updatedAt||null,...(job.completedAt?{completedAt:job.completedAt}:{}),...(storage?{storage}:{}),...(job.lastErrorCode?{lastErrorCode:'cleanup_retry_required'}:{})};
+  });
+  platform.auditEvents=(platform.auditEvents||[]).map(event=>{
+    if(String(event?.companyId||'')!==id)return event;
+    const safeDetails={};for(const[key,value]of Object.entries(event.details||{}))if(/(?:^|_)(?:count|removed|absent|total)$/i.test(key)&&Number.isFinite(Number(value)))safeDetails[key]=Number(value);else if(key==='deletionRequestId')safeDetails[key]=String(value);
+    return{id:event.id,action:String(event.action||'tenant_lifecycle_event'),companyId:id,actorUserId:event.actorUserId??null,at:event.at||null,status:'retained_after_tenant_deletion',...(Object.keys(safeDetails).length?{details:safeDetails}:{})};
+  });
+  return{removed,removedByCollection};
+}
+function tenantPlatformPiiReferences(platform,companyId){
+  const id=String(companyId),references=[];
+  const visit=(value,pathName)=>{
+    if(Array.isArray(value)){value.forEach((item,index)=>visit(item,`${pathName}[${index}]`));return}
+    if(!value||typeof value!=='object')return;
+    if(String(value.companyId||'')===id||String(value.linkedCompanyId||'')===id)references.push(pathName);
+    for(const[key,item]of Object.entries(value))visit(item,`${pathName}.${key}`);
+  };
+  for(const[key,value]of Object.entries(platform))if(!['tenantDeletionCleanupJobs','auditEvents'].includes(key))visit(value,key);
+  for(const[eventIndex,event]of (platform.auditEvents||[]).entries())if(String(event?.companyId||'')===id&&('reason'in event||'actorName'in event||Object.keys(event.details||{}).some(key=>key!=='deletionRequestId'&&!/(?:^|_)(?:count|removed|absent|total)$/i.test(key))))references.push(`auditEvents[${eventIndex}]`);
+  return references;
+}
+async function persistTenantDeletionCleanupJob({companyId,deletionRequestId,terminalRevision,status,error=null,storage=null},{read=readPlatform,write=writePlatform,refresh=async()=>{if(PLATFORM_REPOSITORY_MODE==='primary'&&platformStateStore)await platformStateStore.refresh()},changedBy='tenant-deletion'}={}){
+  const platform=read(),id=tenantDeletionCleanupJobId(companyId,deletionRequestId),now=new Date().toISOString();
+  const platformCleanup=scrubTenantPlatformPii(platform,companyId),references=tenantPlatformPiiReferences(platform,companyId);
+  if(references.length)throw new Error(`Tenant-linked platform data remains in ${references.slice(0,5).join(', ')}`);
+  platform.tenantDeletionCleanupJobs ||= [];
+  const index=platform.tenantDeletionCleanupJobs.findIndex(job=>job.id===id),prior=index>=0?platform.tenantDeletionCleanupJobs[index]:null;
+  const job={...prior,id,companyId:String(companyId),deletionRequestId:String(deletionRequestId),terminalRevision:Number(terminalRevision),status,platformRecordsRemoved:Number(prior?.platformRecordsRemoved||0)+platformCleanup.removed,startedAt:prior?.startedAt||now,updatedAt:now};
+  if(storage)job.storage={removed:Number(storage.removed)||0,alreadyAbsent:Number(storage.alreadyAbsent)||0,total:Number(storage.total)||0};
+  if(error)job.lastErrorCode='cleanup_retry_required';else delete job.lastErrorCode;
+  delete job.lastError;
+  if(status==='complete')job.completedAt=now;
+  if(index>=0)platform.tenantDeletionCleanupJobs[index]=job;else platform.tenantDeletionCleanupJobs.push(job);
+  try{await write(platform,{changedBy})}catch(writeError){
+    try{await refresh();const verified=read(),saved=(verified.tenantDeletionCleanupJobs||[]).find(candidate=>candidate.id===id&&candidate.status===status);if(saved&&!tenantPlatformPiiReferences(verified,companyId).length)return saved}catch{}
+    throw writeError;
+  }
+  return job;
+}
+function tenantDeletionIdentityMatches(value,companyId,deletionRequestId){
+  return Boolean(value)&&String(value.companyId||'').toLowerCase()===String(companyId).toLowerCase()&&String(value.deletionRequestId||'').toLowerCase()===String(deletionRequestId).toLowerCase();
+}
+function tenantDeletionLockMatches(value,companyId,deletionRequestId,revision){
+  return value?.locked===true&&tenantDeletionIdentityMatches(value,companyId,deletionRequestId)&&Number(value.lockedRevision)===Number(revision);
+}
+function tenantDeletionReceiptMatches(value,companyId,deletionRequestId,revision){
+  const deleted=value?.deleted===true||value?.status==='deleted',deletedAt=Date.parse(String(value?.deletedAt||''));
+  return deleted&&tenantDeletionIdentityMatches(value,companyId,deletionRequestId)&&Number(value.terminalRevision)===Number(revision)&&Number.isSafeInteger(Number(value.tombstoneVersion))&&Number(value.tombstoneVersion)>=1&&Number.isFinite(deletedAt);
+}
+async function executePermanentTenantDeletion({companyId,authority,request},{
+  begin=supabase.beginTransactionalTenantDeletion,
+  removeStorage=removeTenantStoredObjects,
+  removeMirror=removeTenantMirror,
+  prepareCleanupJob=details=>persistTenantDeletionCleanupJob({...details,status:'external_cleanup_verified'}),
+  markCleanupPending=details=>persistTenantDeletionCleanupJob({...details,status:'cleanup_pending'}),
+  markCleanupComplete=details=>persistTenantDeletionCleanupJob({...details,status:'complete'}),
+  finalize=supabase.purgeTransactionalTenant,
+  deletionStatus=supabase.transactionalTenantDeletionStatus,
+  captureException=(error,context)=>monitoring.captureException?.(error,context)
+}={}){
+  const revision=Number(authority.revision),databaseId=authority.databaseCompanyId||databaseCompanyId(companyId),common={companyId,deletionRequestId:request.id,terminalRevision:revision};
+  const expectedRequestId=String(request.id).toLowerCase();let lock,receipt,recoveredCommit=false,alreadyDeleted=false;
+  try{lock=await begin(databaseId,revision,request.id)}catch(error){
+    let status;
+    try{status=await deletionStatus(databaseId)}catch(statusError){error.deletionPhase='lock_unconfirmed';error.statusCheckError=statusError;throw error}
+    if(status.status==='locked'&&tenantDeletionIdentityMatches(status,databaseId,expectedRequestId)&&Number(status.lockedRevision)===revision)lock={locked:true,companyId:databaseId,deletionRequestId:expectedRequestId,lockedRevision:revision,resumed:true};
+    else if(tenantDeletionReceiptMatches(status,databaseId,expectedRequestId,revision)){receipt={deleted:true,companyId:databaseId,deletionRequestId:expectedRequestId,deletedAt:status.deletedAt,tombstoneVersion:status.tombstoneVersion,terminalRevision:status.terminalRevision};recoveredCommit=true;alreadyDeleted=true;}
+    else{error.deletionPhase=status.status==='not_started'&&String(status.companyId||'').toLowerCase()===String(databaseId).toLowerCase()?'lock':'lock_mismatch';error.deletionStatus=status;throw error}
+  }
+  if(!alreadyDeleted&&!tenantDeletionLockMatches(lock,databaseId,expectedRequestId,revision)){
+    const error=new Error('The durable deletion lock did not match this company, request, and revision');error.deletionPhase='lock_mismatch';throw error;
+  }
+  let storage={removed:0,alreadyAbsent:0,total:0};
+  if(!alreadyDeleted){
+    try{
+      storage=await removeStorage(authority.snapshot);
+      await removeMirror(companyId);
+      await prepareCleanupJob({...common,storage});
+    }catch(error){error.deletionPhase='external_cleanup';error.deletionLocked=true;throw error}
+    try{
+      receipt=await finalize(databaseId,lock.lockedRevision,request.id);
+      if(!tenantDeletionReceiptMatches(receipt,databaseId,expectedRequestId,lock.lockedRevision))throw new Error('The permanent deletion receipt did not match this company, request, and revision');
+    }catch(error){
+      let status;
+      try{status=await deletionStatus(databaseId)}catch(statusError){error.deletionPhase='authority_unconfirmed';error.deletionLocked=true;error.statusCheckError=statusError;throw error}
+      if(!tenantDeletionReceiptMatches(status,databaseId,expectedRequestId,lock.lockedRevision)){error.deletionPhase='authority_finalize';error.deletionLocked=status.status==='locked';error.deletionStatus=status;throw error}
+      receipt={deleted:true,companyId:databaseId,deletionRequestId:expectedRequestId,deletedAt:status.deletedAt,tombstoneVersion:status.tombstoneVersion,terminalRevision:status.terminalRevision};recoveredCommit=true;
+    }
+  }
+  let cleanupStatus='complete',cleanupError=null;
+  try{
+    await removeMirror(companyId);
+    await markCleanupComplete({...common,storage});
+  }catch(error){
+    cleanupStatus='pending';cleanupError=error;
+    try{await markCleanupPending({...common,storage,error})}catch(recordError){captureException(recordError,{companyId,operation:'tenant_deletion_cleanup_queue'})}
+    captureException(error,{companyId,operation:'tenant_deletion_local_cleanup'});
+  }
+  return{deleted:true,companyId,deletionRequestId:request.id,storage,receipt,cleanupStatus,cleanupError,recoveredCommit};
+}
+async function retryPendingTenantDeletionCleanup({
+  read=readPlatform,
+  write=writePlatform,
+  deletionStatus=supabase.transactionalTenantDeletionStatus,
+  removeMirror=removeTenantMirror
+}={}){
+  const platform=read(),jobs=Array.isArray(platform.tenantDeletionCleanupJobs)?platform.tenantDeletionCleanupJobs:[],results=[],now=new Date().toISOString();let changed=false;
+  for(const job of jobs){
+    if(!['external_cleanup_verified','cleanup_pending'].includes(job.status))continue;
+    try{
+      const status=await deletionStatus(job.companyId);
+      if(status.status!=='deleted'||status.deletionRequestId!==String(job.deletionRequestId).toLowerCase()){results.push({id:job.id,status:'waiting'});continue}
+      await removeMirror(job.companyId);job.status='complete';job.completedAt=now;job.updatedAt=now;delete job.lastError;delete job.lastErrorCode;changed=true;results.push({id:job.id,status:'complete'});
+    }catch(error){job.status='cleanup_pending';job.updatedAt=now;delete job.lastError;job.lastErrorCode='cleanup_retry_required';changed=true;results.push({id:job.id,status:'retry_required'});}
+  }
+  if(changed)await write(platform,{changedBy:'tenant-deletion-cleanup-retry'});
+  return results;
+}
 function verifyCredential(value,salt,expected){if(!value||!salt||!expected)return false;const actual=crypto.scryptSync(value,salt,64),stored=Buffer.from(expected,'hex');return actual.length===stored.length&&crypto.timingSafeEqual(actual,stored)}
 function bearer(req){const header=String(req.headers.authorization||'');return header.startsWith('Bearer ')?header.slice(7):null}
 function platformKeyMatches(req){const supplied=Buffer.from(String(req.headers['x-pdl-platform-key']||'')),expected=Buffer.from(String(process.env.PDL_PLATFORM_KEY||''));return expected.length>=32&&supplied.length===expected.length&&crypto.timingSafeEqual(supplied,expected)}
-function platformAllowed(req){if(process.env.PDL_REQUIRE_AUTH!=='1')return true;if(platformKeyMatches(req))return true;const cookieToken=String(req.headers.cookie||'').split(';').map(value=>value.trim()).find(value=>value.startsWith('pdl_platform='))?.slice(13),platform=readPlatform(),token=bearer(req)||cookieToken,tokenHash=token&&crypto.createHash('sha256').update(token).digest('hex'),session=(platform.sessions||[]).find(row=>row.tokenHash===tokenHash&&new Date(row.expiresAt)>new Date()),user=session&&(platform.users||[]).find(row=>row.id===session.userId&&row.status==='Active');if(session&&user){req.platformAuth={session,user};return true}return false}
+function platformAuthRequired(){return platformSecurity.platformAuthRequired()}
+function platformAllowed(req){
+  if(!platformAuthRequired()){
+    req.platformAuth={session:{id:'development-session'},user:{id:'development-owner',name:'Development owner',email:'',role:'platform_owner',status:'Active',mustSetPassword:false}};
+    return true;
+  }
+  const legacyKeyAllowed=process.env.NODE_ENV!=='production'&&process.env.PDL_ALLOW_PLATFORM_KEY_AUTH==='1';
+  if(legacyKeyAllowed&&platformKeyMatches(req)){
+    req.platformAuth={session:{id:'development-key-session'},user:{id:'development-key-owner',name:'Development key',email:'',role:'platform_owner',status:'Active',mustSetPassword:false}};
+    return true;
+  }
+  const cookieToken=String(req.headers.cookie||'').split(';').map(value=>value.trim()).find(value=>value.startsWith('pdl_platform='))?.slice(13),platform=readPlatform(),token=bearer(req)||cookieToken,tokenHash=token&&crypto.createHash('sha256').update(token).digest('hex'),session=(platform.sessions||[]).find(row=>row.tokenHash===tokenHash&&new Date(row.expiresAt)>new Date()),user=session&&(platform.users||[]).find(row=>row.id===session.userId&&row.status==='Active'&&!row.mustSetPassword);
+  if(session&&user){req.platformAuth={session,user};return true}
+  return false
+}
+function platformCan(req,capability,context={}){return canPlatformUser(req.platformAuth?.user,capability,context)}
+function platformCompanyDto(req,company){
+  const dto=structuredClone(company),canReadSubscription=platformCan(req,PLATFORM_CAPABILITIES.SUBSCRIPTION_READ),canReadRevenue=platformCan(req,PLATFORM_CAPABILITIES.REVENUE_READ);
+  if(!platformCan(req,PLATFORM_CAPABILITIES.DATA_LIFECYCLE_MANAGE)){
+    delete dto.deletionRequest;
+    const alerts=(dto.health?.alerts||[]).filter(alert=>!/^Account closure\b/i.test(String(alert))),score=Math.max(0,100-alerts.length*20);
+    dto.health={...dto.health,alerts,score,status:score>80?'Healthy':score>=50?'Watch':'At risk'};
+    dto.summary=`${dto.name} has ${dto.projects} project${dto.projects===1?'':'s'}, ${dto.users} user${dto.users===1?'':'s'}, and ${dto.reports} daily report${dto.reports===1?'':'s'}. ${alerts.length?`Attention: ${alerts.join('; ')}.`:'Account activity looks healthy.'}`;
+  }
+  if(!canReadSubscription){
+    for(const key of ['plan','subscriptionStatus','accountType','trialEndsAt','nextBillingAt'])delete dto[key];
+    const alerts=(dto.health?.alerts||[]).filter(alert=>!/^Trial\b|^Subscription\b/i.test(String(alert)));
+    const score=Math.max(0,100-alerts.length*20);
+    dto.health={...dto.health,alerts,score,status:score>80?'Healthy':score>=50?'Watch':'At risk'};
+    dto.summary=`${dto.name} has ${dto.projects} project${dto.projects===1?'':'s'}, ${dto.users} user${dto.users===1?'':'s'}, and ${dto.reports} daily report${dto.reports===1?'':'s'}. ${alerts.length?`Attention: ${alerts.join('; ')}.`:'Account activity looks healthy.'}`;
+  }
+  if(!canReadRevenue)for(const key of ['planPrice','billingExempt','cohort','discountPercent','commercialNote'])delete dto[key];
+  return dto;
+}
+function requirePlatform(req,res,capability,context={}){if(platformCan(req,capability,context))return true;json(res,403,{error:'This back-office role is not allowed to perform that action.',code:'platform_forbidden'});return false}
+function platformStaffDto(user){
+  return{
+    id:user?.id??null,
+    name:String(user?.name||''),
+    email:String(user?.email||''),
+    role:PLATFORM_ROLES.includes(user?.role)?user.role:null,
+    status:user?.status==='Active'?'Active':'Inactive',
+    setupPending:Boolean(user?.mustSetPassword||user?.setupHash),
+    createdAt:user?.createdAt||null,
+    updatedAt:user?.updatedAt||null,
+    lastLoginAt:user?.lastLoginAt||null
+  };
+}
+function platformRouteAccess(req,url){
+  const pathname=url.pathname,method=req.method;
+  if(pathname.startsWith('/api/platform/auth/'))return null;
+  if(pathname==='/api/platform/overview'&&method==='GET')return{capability:PLATFORM_CAPABILITIES.OVERVIEW_READ};
+  if(pathname==='/api/platform/demo-requests')return{capability:method==='GET'?PLATFORM_CAPABILITIES.GROWTH_READ:PLATFORM_CAPABILITIES.GROWTH_WRITE};
+  if(/^\/api\/platform\/demo-requests\/[a-f0-9-]+$/.test(pathname))return{capability:PLATFORM_CAPABILITIES.GROWTH_WRITE};
+  if(pathname==='/api/platform/growth'&&method==='GET')return{capability:PLATFORM_CAPABILITIES.GROWTH_READ};
+  if(pathname==='/api/platform/growth'&&method==='POST')return{capability:PLATFORM_CAPABILITIES.GROWTH_WRITE};
+  if(/^\/api\/platform\/growth\/[a-f0-9-]+$/.test(pathname)&&method==='PATCH')return{capability:PLATFORM_CAPABILITIES.GROWTH_WRITE};
+  if(pathname==='/api/platform/growth/opportunities'&&method==='POST')return{capability:PLATFORM_CAPABILITIES.GROWTH_WRITE};
+  if(/^\/api\/platform\/growth\/opportunities\/[^/]+$/.test(pathname)&&method==='PATCH')return{capability:PLATFORM_CAPABILITIES.GROWTH_WRITE};
+  if(/^\/api\/platform\/growth\/opportunities\/[^/]+\/(?:stage|next-action|next-action\/complete|next-action\/cancel|notes)$/.test(pathname)&&method==='POST')return{capability:PLATFORM_CAPABILITIES.GROWTH_WRITE};
+  if(/^\/api\/platform\/companies\/[^/]+\/features$/.test(pathname))return{capability:PLATFORM_CAPABILITIES.FEATURE_WRITE};
+  if(/^\/api\/platform\/companies\/[^/]+\/owner-reset$/.test(pathname))return{capability:PLATFORM_CAPABILITIES.CUSTOMER_OWNER_RESET};
+  if(/^\/api\/platform\/companies\/[^/]+\/(?:archive|unarchive|demo-reset)$/.test(pathname))return{capability:PLATFORM_CAPABILITIES.DEMO_RESET};
+  if(/^\/api\/platform\/companies\/[^/]+\/deletion-(?:hold|cancel|complete)$/.test(pathname))return{capability:PLATFORM_CAPABILITIES.DATA_LIFECYCLE_MANAGE};
+  if(/^\/api\/platform\/companies\/[^/]+\/subscription$/.test(pathname))return{capability:PLATFORM_CAPABILITIES.SUBSCRIPTION_WRITE};
+  if(pathname==='/api/platform/ai-usage')return{capability:PLATFORM_CAPABILITIES.AI_USAGE_READ};
+  if(pathname==='/api/platform/tenant-email-conflicts'&&['GET','POST'].includes(method))return{capability:PLATFORM_CAPABILITIES.DATA_LIFECYCLE_MANAGE};
+  if(pathname==='/api/platform/onboarding' || /^\/api\/platform\/onboarding\/[a-f0-9-]+$/.test(pathname))return{capability:method==='GET'?PLATFORM_CAPABILITIES.ONBOARDING_READ:PLATFORM_CAPABILITIES.ONBOARDING_WRITE};
+  if(pathname==='/api/platform/tickets' || /^\/api\/platform\/tickets\/[a-f0-9-]+$/.test(pathname) || pathname==='/api/platform/follow-ups' || /^\/api\/platform\/follow-ups\/[a-f0-9-]+$/.test(pathname))return{capability:method==='GET'?PLATFORM_CAPABILITIES.SUPPORT_READ:PLATFORM_CAPABILITIES.SUPPORT_WRITE};
+  if(pathname==='/api/platform/blog'||/^\/api\/platform\/blog\/[a-f0-9-]+$/.test(pathname)||pathname==='/api/platform/help'||/^\/api\/platform\/help\/[a-f0-9-]+$/.test(pathname))return{capability:method==='GET'?PLATFORM_CAPABILITIES.CONTENT_READ:PLATFORM_CAPABILITIES.HELP_CONTENT_WRITE};
+  if(pathname==='/api/platform/users'||/^\/api\/platform\/users\/[^/]+$/.test(pathname))return{capability:PLATFORM_CAPABILITIES.STAFF_MANAGE};
+  if(pathname==='/api/platform/support-access'){
+    const actorUserId=req.platformAuth?.user?.id;
+    return{capability:method==='GET'?PLATFORM_CAPABILITIES.SUPPORT_GRANT_READ:PLATFORM_CAPABILITIES.SUPPORT_GRANT_CREATE,context:{actorUserId}};
+  }
+  const supportGrantRoute=pathname.match(/^\/api\/platform\/support-access\/([a-f0-9-]+)$/);
+  if(supportGrantRoute){const grant=(readPlatform().supportGrants||[]).find(row=>row.id===supportGrantRoute[1]);return{capability:PLATFORM_CAPABILITIES.SUPPORT_GRANT_REVOKE,context:{grantActorUserId:grant?.actorUserId}}}
+  if(pathname==='/api/platform/audit')return{capability:PLATFORM_CAPABILITIES.AUDIT_READ};
+  return false;
+}
 // Financial reporting never inherits the demo-mode or bootstrap-key bypass.
 function platformRevenueOwner(req){
   const platform=readStoredSnapshot(PLATFORM_FILE),token=bearer(req)||cookie(req,'pdl_platform');
@@ -468,18 +1467,53 @@ function platformRevenueOwner(req){
   return session&&(platform.users||[]).find(row=>row.id===session.userId&&row.role==='platform_owner'&&row.status==='Active'&&!row.mustSetPassword)||null;
 }
 async function platformRevenueCompanies({signal}={}){
+  if(supabase.configured()&&transactionalMode()==='primary'){
+    const directory=await supabase.listTransactionalTenantSummaries();
+    const authoritative=directory.map(row=>({
+      ...row.company,
+      persistence:{
+        ...(row.company?.persistence||{}),
+        revision:row.revision,
+        updatedAt:row.updatedAt||null
+      }
+    }));
+    // Primary mode has exactly one authority. Passing an intentionally
+    // disabled remote adapter lets the existing minimizer/validator sanitize
+    // the authoritative directory without falling back to legacy companies.
+    return loadRevenueCompanies({
+      localCompanies:authoritative,
+      supabase:{configured:()=>false},
+      signal,
+      excludeCompanyId:PLATFORM_CLOUD_ID
+    });
+  }
   return loadRevenueCompanies({localCompanies:tenantDatabases().map(tenant=>tenant.company).filter(company=>company&&company.mcpConnector!==true),supabase,signal,excludeCompanyId:PLATFORM_CLOUD_ID});
 }
+async function platformRevenueAuthorization(req,expected=null){
+  return withPlatformQueue(()=>{
+    delete req.platformAuth;
+    if(!platformAllowed(req))return{status:401};
+    if(!platformCan(req,PLATFORM_CAPABILITIES.REVENUE_READ))return{status:403};
+    const identity={userId:String(req.platformAuth.user.id),sessionId:String(req.platformAuth.session.id)};
+    if(expected&&(identity.userId!==expected.userId||identity.sessionId!==expected.sessionId))return{status:403};
+    return{status:200,identity};
+  });
+}
 async function handlePlatformRevenue(req,res,url){
-  if(!platformRevenueOwner(req))return json(res,403,{status:'error',code:'forbidden',message:'Sign in as the platform owner to view Stripe reporting.'});
+  const authorization=await platformRevenueAuthorization(req);
+  if(authorization.status===401)return json(res,401,{status:'error',code:'authentication_required',message:'Sign in to view Stripe reporting.'});
+  if(authorization.status!==200)return json(res,403,{status:'error',code:'forbidden',message:'Your back-office role cannot view revenue reporting.'});
   if(req.method!=='GET'){res.setHeader('Allow','GET');return json(res,405,{status:'error',code:'method_not_allowed',message:'Stripe reporting is read-only.'})}
   try{
+    // The provider read can take seconds. Never retain the global platform
+    // mutation queue while waiting on Stripe or on the tenant directory.
     const result=await platformRevenueReport({start:url.searchParams.get('start'),end:url.searchParams.get('end')},platformRevenueCompanies);
-    if(!platformRevenueOwner(req))return json(res,403,{status:'error',code:'forbidden',message:'Your platform-owner session is no longer active.'});
+    const stillAuthorized=await platformRevenueAuthorization(req,authorization.identity);
+    if(stillAuthorized.status!==200)return json(res,403,{status:'error',code:'forbidden',message:'Your revenue-reporting access is no longer active.'});
     return json(res,result.status!=='error'?200:result.code==='invalid_period'?400:result.code==='busy'?429:502,result);
   }catch{return json(res,502,{status:'error',code:'unavailable',message:'Stripe reporting could not be loaded. No payment totals are available.'})}
 }
-function platformContentAllowed(req){return !req.platformAuth||['platform_owner','customer_success'].includes(req.platformAuth.user.role)}
+function platformContentAllowed(req){return platformCan(req,PLATFORM_CAPABILITIES.HELP_CONTENT_WRITE)}
 
 function localExtract(notes){
   const workers=notes.match(/(\d+)\s*(?:person|people|worker|workers|man|men|person crew)/i);
@@ -556,6 +1590,10 @@ function canReadStoredAsset(db,user,asset){
   const ids=new Set();
   for(const photo of db.photos||[])if(matches(photo)&&db.projects?.[Number(photo.project)])ids.add(Number(db.projects[Number(photo.project)].id));
   for(const row of [...(db.projectPlans||[]),...(db.projectTickets||[])])if(matches(row)&&!row.deletedAt)ids.add(Number(row.projectId));
+  let unassignedEstimateImport=false;
+  for(const row of db.estimateImports||[])if(matches(row)){if(row.projectId)ids.add(Number(row.projectId));else if(Number(row.createdByUserId)===Number(user?.id)||['owner','admin'].includes(user?.role))unassignedEstimateImport=true}
+  for(const project of db.projects||[])for(const proposal of project.estimateProposals||[])if(matches(proposal.sourceFile))ids.add(Number(project.id));
+  if(unassignedEstimateImport)return true;
   if(!ids.size)return false;
   if(process.env.PDL_REQUIRE_AUTH!=='1'||['owner','admin'].includes(user?.role))return true;
   const allowed=user?.role==='project_manager'?managerScope(db,user).projectIds:fieldRole(user)?fieldProjectIds(db,(db.team||[]).find(member=>Number(member.id)===Number(user.memberId))||{id:-1}).allowedIds:new Set();
@@ -1083,6 +2121,7 @@ const handleSalesDemo=createSalesDemoHandler({
 });
 
 async function api(req,res,url){
+  req.requestId ||= String(res.getHeader('X-Request-Id')||'')||null;
   const subcontractorCreate=req.method==='POST'&&url.pathname==='/api/subcontractors';
   const subcontractorUpdate=req.method==='PATCH'&&/^\/api\/subcontractors\/\d+$/.test(url.pathname);
   const subcontractorProfile=req.method==='PATCH'&&/^\/api\/subcontractors\/\d+\/profile$/.test(url.pathname);
@@ -1090,26 +2129,92 @@ async function api(req,res,url){
   const subcontractorArchive=req.method==='PATCH'&&/^\/api\/subcontractors\/\d+\/archive$/.test(url.pathname);
   const subcontractorLinkCreate=req.method==='POST'&&/^\/api\/subcontractors\/\d+\/links$/.test(url.pathname);
   const subcontractorLinkRevoke=req.method==='DELETE'&&/^\/api\/subcontractor-links\/\d+$/.test(url.pathname);
-  if(req.method==='GET'&&url.pathname==='/api/health'){const cloud=await supabase.health(),db=readDb(),backup=backupVerification.publicStatus(BACKUP_RECEIPT_DIRECTORY,db.company.id);return json(res,cloud.configured&&!cloud.reachable?503:200,{ok:!cloud.configured||cloud.reachable,services:{ai:Boolean(process.env.OPENAI_API_KEY),email:Boolean(process.env.RESEND_API_KEY&&process.env.RESEND_FROM),billing:Boolean(process.env.STRIPE_SECRET_KEY&&process.env.STRIPE_WEBHOOK_SECRET),monitoring:monitoring.active(),transactionalDatabase:transactionalMode(),backup},cloud,time:new Date().toISOString()})}
+  if(req.method==='GET'&&url.pathname==='/api/health'){
+    const [cloud,platformRepository,tenantRepository]=await Promise.all([supabase.health(),platformRepositoryHealth(),tenantRepositoryHealth()]);
+    const db=readDb();let backupAuthority=null;
+    if(transactionalMode()==='primary'&&supabase.configured()){const authoritative=await supabase.loadTransactionalSnapshot(db.company.id);if(authoritative)backupAuthority={revision:authoritative.revision,contentHash:authoritative.contentHash}}
+    const backup=backupVerification.publicStatus(BACKUP_RECEIPT_DIRECTORY,db.company.id,Date.now(),backupAuthority);
+    const services={ai:Boolean(process.env.OPENAI_API_KEY),email:Boolean(process.env.RESEND_API_KEY&&process.env.RESEND_FROM),billing:Boolean(process.env.STRIPE_SECRET_KEY&&process.env.STRIPE_WEBHOOK_SECRET),monitoring:monitoring.active(),transactionalDatabase:transactionalMode(),tenantRepository,platformRepository,backup};
+    const readiness=operationalHealthRequirements({cloud,services});
+    return json(res,readiness.ok?200:503,{ok:readiness.ok,kind:'operational-readiness',requirements:readiness.requirements,services,cloud:{configured:Boolean(cloud.configured),reachable:Boolean(cloud.reachable)},time:new Date().toISOString()});
+  }
   if(req.method==='GET'&&url.pathname==='/api/config')return json(res,200,{authRequired:process.env.PDL_REQUIRE_AUTH==='1',staging:process.env.PDL_STAGING==='1'});
   if(req.method==='GET'&&url.pathname==='/api/help'){const platform=readPlatform(),role=String(url.searchParams.get('role')||'all');return json(res,200,(platform.helpItems||[]).filter(item=>item.status==='Published'&&(item.audience==='all'||item.audience===role)).sort((a,b)=>(a.order||0)-(b.order||0)))}
   if(req.method==='GET'&&url.pathname==='/api/blog'){const platform=readPlatform(),limit=Math.min(50,Math.max(1,Number(url.searchParams.get('limit'))||50)),posts=(platform.blogPosts||[]).filter(post=>post.status==='Published').sort((a,b)=>String(b.publishedAt||b.updatedAt).localeCompare(String(a.publishedAt||a.updatedAt))).slice(0,limit).map(publicBlogPost);return json(res,200,posts)}
   const publicBlogRoute=url.pathname.match(/^\/api\/blog\/([a-z0-9-]+)$/);if(req.method==='GET'&&publicBlogRoute){const platform=readPlatform(),post=(platform.blogPosts||[]).find(row=>row.status==='Published'&&row.slug===publicBlogRoute[1]);if(!post)return json(res,404,{error:'Field Note not found'});return json(res,200,publicBlogPost(post))}
   if(url.pathname.startsWith('/api/platform/')&&!url.pathname.startsWith('/api/platform/auth/')&&!platformAllowed(req))return json(res,401,{error:'Platform authentication required'});
-  if(req.method==='POST'&&url.pathname==='/api/platform/auth/bootstrap'){const platform=readPlatform(),owner=(platform.users||[]).find(user=>user.role==='platform_owner'&&user.status==='Active');if(!owner||owner.passwordHash||owner.setupHash)return json(res,409,{error:'Platform Owner setup has already been initialized'});if(!platformKeyMatches(req))return json(res,401,{error:'Platform bootstrap authorization required'});const setupCode=crypto.randomBytes(8).toString('base64url'),credential=credentialHash(setupCode);owner.setupHash=credential.hash;owner.setupSalt=credential.salt;owner.setupExpiresAt=new Date(Date.now()+30*60000).toISOString();owner.mustSetPassword=true;writePlatform(platform);return json(res,200,{email:owner.email,setupCode,expiresAt:owner.setupExpiresAt})}
-  if(req.method==='POST'&&url.pathname==='/api/platform/auth/forgot'){const input=await body(req),platform=readPlatform(),email=String(input.email||'').trim().toLowerCase(),user=(platform.users||[]).find(row=>row.email.toLowerCase()===email&&row.status==='Active');if(!user)return json(res,200,{ok:true});const token=crypto.randomBytes(32).toString('base64url');user.resetTokenHash=crypto.createHash('sha256').update(token).digest('hex');user.resetExpiresAt=new Date(Date.now()+30*60000).toISOString();user.resetRequestedAt=new Date().toISOString();writePlatform(platform);const publicUrl=String(process.env.PDL_PUBLIC_URL||'http://localhost:4173').replace(/\/$/,'');try{await sendPasswordResetEmail({to:user.email,name:user.name,companyName:'Pro Daily Link Platform Operations',resetUrl:`${publicUrl}/platform-reset-password.html?token=${encodeURIComponent(token)}`})}catch(error){const latest=readPlatform(),current=(latest.users||[]).find(row=>row.id===user.id);if(current?.resetTokenHash===user.resetTokenHash){delete current.resetTokenHash;delete current.resetExpiresAt;delete current.resetRequestedAt;writePlatform(latest)}console.error('Platform password reset email failed',error.message);return json(res,502,{error:'We could not send the reset email. Please try again shortly.'})}return json(res,200,{ok:true})}
-  if(req.method==='POST'&&url.pathname==='/api/platform/auth/reset'){const input=await body(req),platform=readPlatform(),tokenHash=crypto.createHash('sha256').update(String(input.token||'')).digest('hex'),user=(platform.users||[]).find(row=>row.status==='Active'&&row.resetTokenHash===tokenHash&&new Date(row.resetExpiresAt)>new Date());if(!user)return json(res,401,{error:'This password reset link is invalid or expired'});if(String(input.password||'').length<12)return json(res,400,{error:'Platform password must be at least 12 characters'});const credential=credentialHash(input.password);user.passwordHash=credential.hash;user.passwordSalt=credential.salt;user.mustSetPassword=false;delete user.resetTokenHash;delete user.resetExpiresAt;delete user.resetRequestedAt;platform.sessions=(platform.sessions||[]).filter(row=>row.userId!==user.id);writePlatform(platform);return json(res,200,{ok:true})}
-  if(req.method==='POST'&&url.pathname==='/api/platform/auth/claim'){const input=await body(req),platform=readPlatform(),user=(platform.users||[]).find(row=>row.email.toLowerCase()===String(input.email||'').toLowerCase()&&row.status==='Active');if(!user||!user.setupHash||new Date(user.setupExpiresAt)<new Date()||!verifyCredential(input.setupCode,user.setupSalt,user.setupHash))return json(res,401,{error:'Invalid or expired platform setup code'});if(String(input.password||'').length<12)return json(res,400,{error:'Platform password must be at least 12 characters'});const credential=credentialHash(input.password);user.passwordHash=credential.hash;user.passwordSalt=credential.salt;user.mustSetPassword=false;delete user.setupHash;delete user.setupSalt;delete user.setupExpiresAt;writePlatform(platform);return json(res,200,{ok:true})}
-  if(req.method==='POST'&&url.pathname==='/api/platform/auth/login'){const input=await body(req),platform=readPlatform(),user=(platform.users||[]).find(row=>row.email.toLowerCase()===String(input.email||'').toLowerCase()&&row.status==='Active');if(!user||user.mustSetPassword||!verifyCredential(input.password,user.passwordSalt,user.passwordHash))return json(res,401,{error:'Invalid platform email or password'});const token=crypto.randomBytes(32).toString('base64url');platform.sessions ||= [];platform.sessions.push({id:crypto.randomUUID(),userId:user.id,tokenHash:crypto.createHash('sha256').update(token).digest('hex'),createdAt:new Date().toISOString(),expiresAt:new Date(Date.now()+8*3600000).toISOString()});writePlatform(platform);res.writeHead(200,{'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store','Set-Cookie':`pdl_platform=${token}; HttpOnly; SameSite=Strict; Path=/; Max-Age=28800${process.env.NODE_ENV==='production'?'; Secure':''}`});return res.end(JSON.stringify({token,expiresIn:28800,user:{id:user.id,name:user.name,email:user.email,role:user.role}}))}
-  if(req.method==='GET'&&url.pathname==='/api/platform/auth/me'){if(!platformAllowed(req))return json(res,401,{error:'Platform authentication required'});return json(res,200,{id:req.platformAuth?.user.id||null,name:req.platformAuth?.user.name||'Platform key',email:req.platformAuth?.user.email||null,role:req.platformAuth?.user.role||'platform_owner',revenueAccess:Boolean(platformRevenueOwner(req))})}
+  if(url.pathname.startsWith('/api/platform/')&&!url.pathname.startsWith('/api/platform/auth/')){
+    const access=platformRouteAccess(req,url);
+    if(access===false)return json(res,403,{error:'This back-office route has no authorization policy.',code:'platform_policy_missing'});
+    if(access&&!requirePlatform(req,res,access.capability,access.context))return;
+  }
+  if(req.method==='POST'&&url.pathname==='/api/platform/auth/bootstrap'){const platform=readPlatform(),owner=(platform.users||[]).find(user=>user.role==='platform_owner'&&user.status==='Active');if(!owner||owner.passwordHash||owner.setupHash)return json(res,409,{error:'Platform Owner setup has already been initialized'});if(!platformKeyMatches(req))return json(res,401,{error:'Platform bootstrap authorization required'});const setupCode=crypto.randomBytes(8).toString('base64url'),credential=credentialHash(setupCode);owner.setupHash=credential.hash;owner.setupSalt=credential.salt;owner.setupExpiresAt=new Date(Date.now()+30*60000).toISOString();owner.mustSetPassword=true;await writePlatform(platform,{changedBy:'platform-bootstrap'});return json(res,200,{email:owner.email,setupCode,expiresAt:owner.setupExpiresAt})}
+  if(req.method==='POST'&&url.pathname==='/api/platform/auth/forgot'){const input=await body(req),platform=readPlatform(),email=String(input.email||'').trim().toLowerCase(),user=(platform.users||[]).find(row=>row.email.toLowerCase()===email&&row.status==='Active');if(!user)return json(res,200,{ok:true});const lastRequest=Date.parse(user.resetRequestedAt||'');if(Number.isFinite(lastRequest)&&Date.now()-lastRequest<60000)return json(res,200,{ok:true});const token=crypto.randomBytes(32).toString('base64url');user.resetTokenHash=crypto.createHash('sha256').update(token).digest('hex');user.resetExpiresAt=new Date(Date.now()+30*60000).toISOString();user.resetRequestedAt=new Date().toISOString();await writePlatform(platform);const publicUrl=String(process.env.PDL_PUBLIC_URL||'http://localhost:4173').replace(/\/$/,'');try{await sendPasswordResetEmail({to:user.email,name:user.name,companyName:'Pro Daily Link Platform Operations',resetUrl:`${publicUrl}/platform-reset-password.html?token=${encodeURIComponent(token)}`})}catch(error){const latest=readPlatform(),current=(latest.users||[]).find(row=>row.id===user.id);if(current?.resetTokenHash===user.resetTokenHash){delete current.resetTokenHash;delete current.resetExpiresAt;delete current.resetRequestedAt;await writePlatform(latest)}console.error('Platform password reset email failed',error.message);return json(res,502,{error:'We could not send the reset email. Please try again shortly.'})}return json(res,200,{ok:true})}
+  if(req.method==='POST'&&url.pathname==='/api/platform/auth/reset'){const input=await body(req),platform=readPlatform(),tokenHash=crypto.createHash('sha256').update(String(input.token||'')).digest('hex'),user=(platform.users||[]).find(row=>row.status==='Active'&&row.resetTokenHash===tokenHash&&new Date(row.resetExpiresAt)>new Date());if(!user)return json(res,401,{error:'This password reset link is invalid or expired'});if(String(input.password||'').length<12)return json(res,400,{error:'Platform password must be at least 12 characters'});const credential=credentialHash(input.password);user.passwordHash=credential.hash;user.passwordSalt=credential.salt;user.mustSetPassword=false;delete user.resetTokenHash;delete user.resetExpiresAt;delete user.resetRequestedAt;platform.sessions=(platform.sessions||[]).filter(row=>row.userId!==user.id);await writePlatform(platform);return json(res,200,{ok:true})}
+  if(req.method==='POST'&&url.pathname==='/api/platform/auth/claim'){const input=await body(req),platform=readPlatform(),user=(platform.users||[]).find(row=>row.email.toLowerCase()===String(input.email||'').toLowerCase()&&row.status==='Active');if(!user||!user.setupHash||new Date(user.setupExpiresAt)<new Date()||!verifyCredential(input.setupCode,user.setupSalt,user.setupHash))return json(res,401,{error:'Invalid or expired platform setup code'});if(String(input.password||'').length<12)return json(res,400,{error:'Platform password must be at least 12 characters'});const credential=credentialHash(input.password);user.passwordHash=credential.hash;user.passwordSalt=credential.salt;user.mustSetPassword=false;delete user.setupHash;delete user.setupSalt;delete user.setupExpiresAt;await writePlatform(platform);return json(res,200,{ok:true})}
+  if(req.method==='POST'&&url.pathname==='/api/platform/auth/login'){const input=await body(req),platform=readPlatform(),user=(platform.users||[]).find(row=>row.email.toLowerCase()===String(input.email||'').toLowerCase()&&row.status==='Active');if(!user||user.mustSetPassword||!verifyCredential(input.password,user.passwordSalt,user.passwordHash))return json(res,401,{error:'Invalid platform email or password'});const token=crypto.randomBytes(32).toString('base64url'),production=process.env.NODE_ENV==='production',now=new Date().toISOString();user.lastLoginAt=now;platform.sessions ||= [];platform.sessions=platform.sessions.filter(row=>new Date(row.expiresAt)>new Date());platform.sessions.push({id:crypto.randomUUID(),userId:user.id,tokenHash:crypto.createHash('sha256').update(token).digest('hex'),createdAt:now,expiresAt:new Date(Date.now()+8*3600000).toISOString()});await writePlatform(platform);res.writeHead(200,{'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store','Set-Cookie':`pdl_platform=${token}; HttpOnly; SameSite=Strict; Path=/; Max-Age=28800${production?'; Secure':''}`});return res.end(JSON.stringify({...(production?{}:{token}),expiresIn:28800,user:platformUserDto(user)}))}
+  if(req.method==='GET'&&url.pathname==='/api/platform/auth/me'){if(!platformAllowed(req))return json(res,401,{error:'Platform authentication required'});const user=platformUserDto(req.platformAuth.user);return json(res,200,{...user,revenueAccess:platformCan(req,PLATFORM_CAPABILITIES.REVENUE_READ)})}
   if(req.method==='GET'&&url.pathname==='/api/platform/demo-requests'){const platform=readPlatform();return json(res,200,platform.demoRequests||[])}
   const demoRequestRoute=url.pathname.match(/^\/api\/platform\/demo-requests\/([a-f0-9-]+)$/);if(req.method==='PATCH'&&demoRequestRoute){const input=await body(req),platform=readPlatform(),row=(platform.demoRequests||[]).find(item=>item.id===demoRequestRoute[1]);if(!row)return json(res,404,{error:'Demo request not found'});if(input.status&&['New','Contacted','Scheduled','Completed','Closed'].includes(input.status))row.status=input.status;row.updatedAt=new Date().toISOString();platformAudit(platform,req,'demo_request_updated',`${row.company}: ${row.status}`);try{await writePlatform(platform)}catch{return json(res,503,{error:'We could not confirm the demo request status was saved. Refresh and try again.'})}return json(res,200,row)}
-  if(req.method==='POST'&&url.pathname==='/api/platform/auth/logout'){const platform=readPlatform(),token=bearer(req)||cookie(req,'pdl_platform'),tokenHash=token&&crypto.createHash('sha256').update(token).digest('hex');platform.sessions=(platform.sessions||[]).filter(row=>row.tokenHash!==tokenHash);writePlatform(platform);res.writeHead(200,{'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store','Set-Cookie':`pdl_platform=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0${process.env.NODE_ENV==='production'?'; Secure':''}`});return res.end(JSON.stringify({ok:true}))}
+  if(req.method==='GET'&&url.pathname==='/api/platform/growth'){
+    const platform=readPlatform(),records=platform.growthOpportunities||[];
+    try{
+      const period=growthPeriod(url),activeStages=growthDomain.STAGES.filter(stage=>!growthDomain.CLOSED_STAGES.includes(stage));
+      const list=growthDomain.listOpportunities(records,{stages:activeStages,sort:'updated_desc',limit:200,offset:0,asOf:period.asOf});
+      const metrics=growthDomain.growthMetrics(records,{from:period.from,to:period.to,asOf:period.asOf});
+      const owners=(platform.users||[]).filter(user=>user.status==='Active'&&['platform_owner','sales','customer_success'].includes(user.role)).map(user=>({id:String(user.id),name:String(user.name||'').trim(),role:user.role})).filter(user=>user.name);
+      return json(res,200,{status:'ready',period:{startDate:period.startDate,endDate:period.endDate,timezone:period.timezone},asOf:period.asOf,metrics,opportunities:list.items.map(growthOpportunityDto),opportunityTotal:list.total,owners});
+    }catch(error){return growthDomainFailure(res,error)}
+  }
+  if(req.method==='POST'&&['/api/platform/growth','/api/platform/growth/opportunities'].includes(url.pathname)){
+    const input=await body(req),platform=readPlatform();platform.growthOpportunities ||= [];
+    try{
+      await validateGrowthReferences(platform,input);
+      const result=growthDomain.createOpportunity(platform.growthOpportunities,input,{actorUserId:String(req.platformAuth.user.id),idempotencyKey:req.headers['idempotency-key']||null});
+      if(result.created){platform.growthOpportunities.unshift(result.opportunity);platformAudit(platform,req,'growth_opportunity_created',result.opportunity.companyName||result.opportunity.contactName||result.opportunity.email);await writePlatform(platform)}
+      const response={status:result.status,created:result.created,opportunity:result.opportunity?growthOpportunityDto(result.opportunity):null,duplicates:result.duplicates};
+      if(result.status==='duplicate')response.code='duplicate_opportunity';
+      return json(res,result.created?201:result.status==='duplicate'?409:200,response);
+    }catch(error){return growthDomainFailure(res,error)}
+  }
+  const growthRoute=url.pathname.match(/^\/api\/platform\/growth\/([a-f0-9-]+)$/),growthOpportunityRoute=url.pathname.match(/^\/api\/platform\/growth\/opportunities\/([^/]+)(?:\/(stage|next-action|next-action\/complete|next-action\/cancel|notes))?$/);
+  if((req.method==='PATCH'&&growthRoute)||(growthOpportunityRoute&&(req.method==='PATCH'||req.method==='POST'))){
+    let opportunityId;
+    try{opportunityId=decodeURIComponent((growthOpportunityRoute||growthRoute)[1])}catch{return json(res,400,{error:'Growth opportunity ID is invalid',code:'invalid_identifier'})}
+    const input=await body(req),platform=readPlatform(),index=(platform.growthOpportunities||[]).findIndex(row=>row.id===opportunityId);
+    if(index<0)return json(res,404,{error:'Growth opportunity not found'});
+    const canonicalAction=growthOpportunityRoute?.[2]||'update',legacyAction=String(input.action||'update');
+    const action=growthRoute?legacyAction:({stage:'stage','next-action':'next_action','next-action/complete':'complete_next_action','next-action/cancel':'cancel_next_action',notes:'note'}[canonicalAction]||'update');
+    const row=platform.growthOpportunities[index],context={actorUserId:String(req.platformAuth.user.id),expectedVersion:Number(input.expectedVersion),reason:input.reason,lossReason:input.lossReason};
+    if(!Number.isSafeInteger(context.expectedVersion)||context.expectedVersion<1)return json(res,400,{error:'A valid opportunity version is required',code:'revision_required'});
+    try{
+      let updated;
+      if(action==='update'){
+        const changes=growthRoute?(input.changes||{}):Object.fromEntries(Object.entries(input).filter(([key])=>key!=='expectedVersion'));
+        await validateGrowthReferences(platform,changes);
+        updated=growthDomain.updateOpportunity(row,changes,context);
+      }
+      else if(action==='stage')updated=growthDomain.transitionOpportunity(row,String(input.stage||''),context);
+      else if(action==='note')updated=growthDomain.addNote(row,growthRoute?input.note:input.text,context);
+      else if(action==='next_action')updated=growthDomain.setNextAction(row,growthRoute?(input.nextAction||{}):{description:input.description,dueAt:input.dueAt,replaceReason:input.replaceReason},context);
+      else if(action==='complete_next_action')updated=growthDomain.completeNextAction(row,context);
+      else if(action==='cancel_next_action')updated=growthDomain.cancelNextAction(row,{...context,reason:input.reason});
+      else return json(res,400,{error:'Choose a valid growth action',code:'invalid_action'});
+      platform.growthOpportunities[index]=updated;platformAudit(platform,req,'growth_opportunity_updated',`${updated.companyName||updated.contactName||updated.email} · ${action}`);await writePlatform(platform);return json(res,200,{status:'updated',opportunity:growthOpportunityDto(updated)});
+    }catch(error){return growthDomainFailure(res,error)}
+  }
+  if(req.method==='POST'&&url.pathname==='/api/platform/auth/logout'){const platform=readPlatform(),token=bearer(req)||cookie(req,'pdl_platform'),tokenHash=token&&crypto.createHash('sha256').update(token).digest('hex');platform.sessions=(platform.sessions||[]).filter(row=>row.tokenHash!==tokenHash);await writePlatform(platform);res.writeHead(200,{'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store','Set-Cookie':`pdl_platform=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0${process.env.NODE_ENV==='production'?'; Secure':''}`});return res.end(JSON.stringify({ok:true}))}
   if(req.method==='GET'&&url.pathname==='/api/founder-offer')return json(res,200,founderBilling.offer());
-  if(req.method==='POST'&&url.pathname==='/api/signup'){const input=await body(req),plans=BILLING_PLANS,employeeCount=Math.max(1,Number(input.employeeCount)||1),projectCount=Math.max(1,Number(input.projectCount)||1),recommended=employeeCount<=10&&projectCount<=5?'starter':employeeCount<=30&&projectCount<=25?'growth':'pro',plan=plans[input.plan]?input.plan:recommended,billingCycle=input.billingCycle==='annual'?'annual':'monthly',onboardingPreference=['self','virtual','in_person'].includes(input.onboardingPreference)?input.onboardingPreference:'self';if(!input.companyName?.trim()||!input.ownerName?.trim()||!/^\S+@\S+\.\S+$/.test(String(input.email||'')))return json(res,400,{error:'Company name, owner name, and valid email are required'});if(String(input.password||'').length<10)return json(res,400,{error:'Password must be at least 10 characters'});if(input.legalAccepted!==true)return json(res,400,{error:'Accept the Terms of Service and Privacy Policy to continue'});let founder;try{founder=founderBilling.enroll(input)}catch(error){return json(res,error.statusCode||400,{error:error.message})}const tenantId=crypto.randomUUID(),password=credentialHash(input.password),token=crypto.randomBytes(32).toString('base64url'),tokenHash=crypto.createHash('sha256').update(token).digest('hex'),now=new Date().toISOString(),sessionSeconds=30*86400,tenant={company:{id:tenantId,name:input.companyName.trim(),trade:String(input.trade||'General contractor').trim(),timezone:['America/Los_Angeles','America/Denver','America/Chicago','America/New_York'].includes(input.timezone)?input.timezone:'America/Los_Angeles',plan,billingCycle,accountType:'standard',billingExempt:false,cohort:'',discountPercent:0,commercialNote:'',planPrice:billingCycle==='annual'?plans[plan].annualPrice:plans[plan].price,trialEndsAt:founder?null:new Date(Date.now()+14*86400000).toISOString(),...(founder?{founder,subscriptionStatus:'Incomplete',cohort:'founder-pending',planPrice:founderBilling.PRICES[plan][billingCycle]}:{}),onboarding:{employeeCount,projectCount,preference:onboardingPreference,completedSteps:['company','plan'],recommendedPlan:recommended},legalAcceptance:{acceptedAt:now,version:String(input.legalVersion||'2026-09-17').slice(0,30),email:input.email.trim().toLowerCase()},createdAt:now},users:[{id:1,companyId:tenantId,name:input.ownerName.trim(),email:input.email.trim().toLowerCase(),role:'owner',status:'Active',projectIds:[],memberId:null,mustSetPassword:false,passwordHash:password.hash,passwordSalt:password.salt,createdAt:now}],customers:[],projects:[],team:[],subcontractors:[],assignments:[],reports:[],photos:[],workdays:[],changes:[],subcontractorLinks:[],catalog:[],sessions:[{id:crypto.randomUUID(),tokenHash,userId:1,companyId:tenantId,createdAt:now,expiresAt:new Date(Date.now()+sessionSeconds*1000).toISOString()}]},tenantDir=path.join(path.dirname(DB_FILE),'tenants');fs.mkdirSync(tenantDir,{recursive:true});fs.writeFileSync(path.join(tenantDir,`${tenantId}.json`),JSON.stringify(tenant,null,2),{flag:'wx'});if(supabase.configured())await supabase.saveCompanySnapshot(tenant);if(onboardingPreference!=='self'&&!founder?.assistedSetup){const platform=readPlatform(),packageName=onboardingPreference==='in_person'?'In-person training':'Virtual onboarding',order={id:crypto.randomUUID(),companyId:tenantId,companyName:tenant.company.name,package:packageName,owner:'Unassigned',dueDate:'',status:'Requested',notes:`Requested during signup by ${input.ownerName.trim()} (${input.email.trim().toLowerCase()}).`,tasks:[{name:'Confirm scope and pricing',done:false},{name:'Schedule kickoff',done:false},{name:'Production catalog',done:false},{name:'Team accounts',done:false},{name:'Field training',done:false}],createdAt:now,updatedAt:now};platform.onboardingOrders ||= [];platform.onboardingOrders.push(order);platform.auditEvents ||= [];platform.auditEvents.push({id:crypto.randomUUID(),action:'onboarding_requested',actorName:input.ownerName.trim(),reason:packageName,companyId:tenantId,at:now});writePlatform(platform)}founderAlerts.trialSignupAlert({platform:readPlatform(),company:{name:tenant.company.name,plan,billingCycle,ownerName:input.ownerName.trim(),email:input.email.trim().toLowerCase(),employeeCount,projectCount,founder:Boolean(founder)},persist:writePlatform}).catch(error=>console.error('Founder alert failed',error.message));const secure=process.env.NODE_ENV==='production'?'; Secure':'';res.writeHead(201,{'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store','Set-Cookie':[`pdl_session=${token}; HttpOnly; SameSite=Strict; Path=/; Max-Age=${sessionSeconds}${secure}`,`pdl_company=${tenantId}; SameSite=Strict; Path=/; Max-Age=${sessionSeconds}${secure}`]});return res.end(JSON.stringify({company:{id:tenantId,name:tenant.company.name,plan,trialEndsAt:tenant.company.trialEndsAt,onboardingPreference,founder:Boolean(founder)},owner:{name:input.ownerName.trim(),email:input.email.trim().toLowerCase()},recommendedPlan:recommended,next:`/app?tenant=${tenantId}`}))}
-  const platformFeatures=url.pathname.match(/^\/api\/platform\/companies\/([^/]+)\/features$/);if(req.method==='PATCH'&&platformFeatures){const input=await body(req),companyId=decodeURIComponent(platformFeatures[1]),tenant=tenantDatabases().find(row=>String(row.company.id)===companyId);if(!tenant)return json(res,404,{error:'Company not found'});const hasTimeCards=typeof input.timeCards==='boolean',hasTemplates=typeof input.templates==='boolean';if(!hasTimeCards&&!hasTemplates)return json(res,400,{error:'Choose a feature switch'});tenant.company.features={...(tenant.company.features||{})};if(hasTimeCards)tenant.company.features.timeCards=input.timeCards;if(hasTemplates)tenant.company.features.templates=input.templates;const primary=JSON.parse(fs.readFileSync(DB_FILE,'utf8')),file=String(primary.company.id)===companyId?DB_FILE:path.join(path.dirname(DB_FILE),'tenants',`${companyId}.json`),tmp=file+'.tmp';fs.writeFileSync(tmp,JSON.stringify(tenant,null,2));fs.renameSync(tmp,file);if(supabase.configured()){if(/^[0-9a-f]{8}-[0-9a-f-]{27}$/i.test(companyId))await supabase.saveCompanySnapshot(tenant);else await supabase.saveSnapshot(stableUuid('legacy-company',companyId),tenant.company.name,tenant)}const platform=readPlatform();if(hasTimeCards)platformAudit(platform,req,input.timeCards?'time_cards_enabled':'time_cards_disabled',tenant.company.name,companyId);if(hasTemplates)platformAudit(platform,req,input.templates?'templates_enabled':'templates_disabled',tenant.company.name,companyId);writePlatform(platform);return json(res,200,{id:tenant.company.id,timeCards:tenant.company.features.timeCards===true,templates:tenant.company.features.templates===true})}
+  if(req.method==='POST'&&url.pathname==='/api/signup')return handleSignup(req,res);
+  const platformFeatures=url.pathname.match(/^\/api\/platform\/companies\/([^/]+)\/features$/);if(req.method==='PATCH'&&platformFeatures){
+    const input=await body(req),companyId=decodeURIComponent(platformFeatures[1]),hasTimeCards=typeof input.timeCards==='boolean',hasTemplates=typeof input.templates==='boolean';
+    if(!hasTimeCards&&!hasTemplates)return json(res,400,{error:'Choose a feature switch'});
+    const saved=await mutatePlatformTenant(companyId,tenant=>{tenant.company.features={...(tenant.company.features||{})};if(hasTimeCards){tenant.company.features.timeCards=input.timeCards;queueTenantPlatformAudit(tenant,req,input.timeCards?'time_cards_enabled':'time_cards_disabled',tenant.company.name,companyId)}if(hasTemplates){tenant.company.features.templates=input.templates;queueTenantPlatformAudit(tenant,req,input.templates?'templates_enabled':'templates_disabled',tenant.company.name,companyId)}});
+    if(!saved)return json(res,404,{error:'Company not found'});
+    const tenant=saved.tenant;await flushTenantPlatformAuditOutboxSafely(companyId,{changedBy:String(req.platformAuth.user.id)});
+    return json(res,200,{id:tenant.company.id,timeCards:tenant.company.features.timeCards===true,templates:tenant.company.features.templates===true});
+  }
   if(req.method==='GET'&&url.pathname==='/api/platform/ai-usage'){
-    if(!platformRevenueOwner(req))return json(res,403,{error:'Active platform owner permission required'});
     const features=aiUsageStore.summarize();
     let companies=[];try{companies=await platformCompanies(readPlatform())}catch(_){companies=[]}
     const nameFor=id=>String(id)==='unknown'?'Unknown account':(companies.find(c=>String(c.id)===String(id))?.name||'Deleted account');
@@ -1118,28 +2223,244 @@ async function api(req,res,url){
     try{const snapshot=await require('./project-assistant-budget').createSharedStore(supabase).load();assistant=aiUsage.summarizeAssistantLedger(snapshot.ledger,nameFor)}catch(_){assistant=null}
     return json(res,200,{model:aiUsage.defaultModel(),price:aiUsage.PRICE,features,assistant});
   }
-  if(req.method==='GET'&&url.pathname==='/api/platform/overview'){const platform=readPlatform(),companies=await platformCompanies(platform);return json(res,200,{companies,staff:(platform.users||[]).map(({setupHash,setupSalt,passwordHash,passwordSalt,...user})=>user),metrics:{companies:companies.length,trials:companies.filter(row=>row.subscriptionStatus==='Trial'&&row.trialEndsAt&&new Date(row.trialEndsAt)>new Date()).length,configuredPlanTotal:companies.filter(row=>row.subscriptionStatus==='Active'&&!row.billingExempt).reduce((sum,row)=>sum+row.planPrice,0),users:companies.reduce((sum,row)=>sum+row.users,0),atRisk:companies.filter(row=>row.health.status==='At risk').length,openTickets:(platform.supportTickets||[]).filter(row=>!['Resolved','Closed'].includes(row.status)).length},onboardingOrders:platform.onboardingOrders||[],supportTickets:platform.supportTickets||[],followUps:platform.followUps||[]})}
-  const platformOwnerReset=url.pathname.match(/^\/api\/platform\/companies\/([^/]+)\/owner-reset$/);if(req.method==='POST'&&platformOwnerReset){const companyId=decodeURIComponent(platformOwnerReset[1]),tenant=tenantDatabases().find(row=>String(row.company.id)===companyId),owner=tenant&&(tenant.users||[]).find(row=>row.role==='owner'&&row.status==='Active');if(!tenant||!owner)return json(res,404,{error:'Active company owner not found'});const setupCode=crypto.randomBytes(6).toString('base64url'),credential=credentialHash(setupCode);owner.setupHash=credential.hash;owner.setupSalt=credential.salt;owner.setupExpiresAt=new Date(Date.now()+72*3600000).toISOString();owner.mustSetPassword=true;delete owner.passwordHash;delete owner.passwordSalt;const primary=JSON.parse(fs.readFileSync(DB_FILE,'utf8')),file=String(primary.company.id)===companyId?DB_FILE:path.join(path.dirname(DB_FILE),'tenants',`${companyId}.json`),tmp=file+'.tmp';fs.writeFileSync(tmp,JSON.stringify(tenant,null,2));fs.renameSync(tmp,file);if(supabase.configured()){if(/^[0-9a-f]{8}-[0-9a-f-]{27}$/i.test(companyId))await supabase.saveCompanySnapshot(tenant);else await supabase.saveSnapshot(stableUuid('legacy-company',companyId),tenant.company.name,tenant)}const platform=readPlatform();platformAudit(platform,req,'company_owner_reset',owner.email,companyId);writePlatform(platform);return json(res,200,{companyId,email:owner.email,setupCode,expiresAt:owner.setupExpiresAt})}
-  const companyArchive=url.pathname.match(/^\/api\/platform\/companies\/([^/]+)\/archive$/);if(req.method==='POST'&&companyArchive){if(!platformRevenueOwner(req))return json(res,403,{error:'Active platform owner permission required'});const companyId=decodeURIComponent(companyArchive[1]),primary=JSON.parse(fs.readFileSync(DB_FILE,'utf8'));if(companyId===String(primary.company.id))return json(res,400,{error:'The primary account cannot be archived'});const tenant=tenantDatabases().find(row=>String(row.company.id)===companyId);if(!tenant)return json(res,404,{error:'Company not found'});if(tenant.company.archivedDuplicate)return json(res,200,{id:tenant.company.id,name:tenant.company.name,alreadyArchived:true});tenant.company.archivedDuplicate=true;tenant.company.archivedAt=new Date().toISOString();const tenantFile=path.join(path.dirname(DB_FILE),'tenants',`${tenant.company.id}.json`);if(fs.existsSync(tenantFile)){const tmp=tenantFile+'.tmp';fs.writeFileSync(tmp,JSON.stringify(tenant));fs.renameSync(tmp,tenantFile)}if(supabase.configured()){if(/^[0-9a-f]{8}-[0-9a-f-]{27}$/i.test(companyId))await supabase.saveCompanySnapshot(tenant);else await supabase.saveSnapshot(stableUuid('legacy-company',companyId),tenant.company.name,tenant)}const platform=readPlatform();platformAudit(platform,req,'company_archived',tenant.company.name,companyId);writePlatform(platform);return json(res,200,{id:tenant.company.id,name:tenant.company.name,archived:true})}const companyUnarchive=url.pathname.match(/^\/api\/platform\/companies\/([^/]+)\/unarchive$/);if(req.method==='POST'&&companyUnarchive){if(!platformRevenueOwner(req))return json(res,403,{error:'Active platform owner permission required'});const companyId=decodeURIComponent(companyUnarchive[1]);const tenant=tenantDatabases().find(row=>String(row.company.id)===companyId);if(!tenant)return json(res,404,{error:'Company not found'});if(!tenant.company.archivedDuplicate)return json(res,200,{id:tenant.company.id,name:tenant.company.name,alreadyActive:true});tenant.company.archivedDuplicate=false;delete tenant.company.archivedAt;delete tenant.company.archivedReason;const tenantFile=path.join(path.dirname(DB_FILE),'tenants',`${tenant.company.id}.json`);if(fs.existsSync(tenantFile)){const tmp=tenantFile+'.tmp';fs.writeFileSync(tmp,JSON.stringify(tenant));fs.renameSync(tmp,tenantFile)}if(supabase.configured()){if(/^[0-9a-f]{8}-[0-9a-f-]{27}$/i.test(companyId))await supabase.saveCompanySnapshot(tenant);else await supabase.saveSnapshot(stableUuid('legacy-company',companyId),tenant.company.name,tenant)}const platform=readPlatform();platformAudit(platform,req,'company_unarchived',tenant.company.name,companyId);writePlatform(platform);return json(res,200,{id:tenant.company.id,name:tenant.company.name,unarchived:true})}const platformDemoReset=url.pathname.match(/^\/api\/platform\/companies\/([^/]+)\/demo-reset$/);if(req.method==='POST'&&platformDemoReset){const companyId=decodeURIComponent(platformDemoReset[1]),primary=JSON.parse(fs.readFileSync(DB_FILE,'utf8'));if((companyId!=='northstar'&&companyId!==String(primary.company.id))||!(primary.company.demo||primary.company.id==='northstar'))return json(res,404,{error:'Demo company not found'});const preserved={company:{...primary.company,demo:true},users:primary.users||[],sessions:primary.sessions||[]},reset={...structuredClone(DEMO_SEED),...preserved};reset.company={...structuredClone(DEMO_SEED.company),...preserved.company,id:primary.company.id,name:primary.company.name};const tmp=DB_FILE+'.tmp';fs.writeFileSync(tmp,JSON.stringify(reset,null,2));fs.renameSync(tmp,DB_FILE);if(supabase.configured())await supabase.saveSnapshot(stableUuid('legacy-company',reset.company.id),reset.company.name,reset);const platform=readPlatform();platformAudit(platform,req,'demo_company_reset','Restored polished sales-demo data',reset.company.id);writePlatform(platform);return json(res,200,{ok:true,companyId:reset.company.id,projects:(reset.projects||[]).length,reports:(reset.reports||[]).length})}
-  if(req.method==='POST'&&url.pathname==='/api/platform/onboarding'){const input=await body(req),company=(await platformCompanies(readPlatform())).find(row=>row.id===input.companyId),platform=readPlatform();if(!company||!String(input.owner||'').trim())return json(res,400,{error:'Company and onboarding owner are required'});const now=new Date().toISOString(),row={id:crypto.randomUUID(),companyId:company.id,companyName:company.name,package:['Guided setup','Full implementation','Self-serve'].includes(input.package)?input.package:'Guided setup',owner:String(input.owner).trim().slice(0,120),dueDate:String(input.dueDate||'').slice(0,10),status:'Not started',notes:String(input.notes||'').trim().slice(0,2000),tasks:[{name:'Company profile',done:false},{name:'Production catalog',done:false},{name:'Team accounts',done:false},{name:'First project',done:false},{name:'Field training',done:false}],createdAt:now,updatedAt:now};platform.onboardingOrders ||= [];platform.onboardingOrders.push(row);platformAudit(platform,req,'onboarding_created',`${row.package} assigned to ${row.owner}`,company.id);writePlatform(platform);return json(res,201,row)}
-  const onboardingRoute=url.pathname.match(/^\/api\/platform\/onboarding\/([a-f0-9-]+)$/);if(req.method==='PATCH'&&onboardingRoute){const input=await body(req),platform=readPlatform(),row=(platform.onboardingOrders||[]).find(item=>item.id===onboardingRoute[1]);if(!row)return json(res,404,{error:'Onboarding work order not found'});if(input.status&&['Not started','In progress','Blocked','Complete','Cancelled'].includes(input.status))row.status=input.status;if(Array.isArray(input.tasks))row.tasks=row.tasks.map((task,index)=>({...task,done:Boolean(input.tasks[index]?.done)}));if(input.notes!=null)row.notes=String(input.notes).trim().slice(0,2000);row.updatedAt=new Date().toISOString();platformAudit(platform,req,'onboarding_updated',`${row.companyName}: ${row.status}`,row.companyId);writePlatform(platform);return json(res,200,row)}
-  if(req.method==='POST'&&url.pathname==='/api/platform/tickets'){const input=await body(req),company=(await platformCompanies(readPlatform())).find(row=>row.id===input.companyId),platform=readPlatform(),subject=String(input.subject||'').trim();if(!company||!subject)return json(res,400,{error:'Company and subject are required'});const now=new Date().toISOString(),row={id:crypto.randomUUID(),companyId:company.id,companyName:company.name,subject:subject.slice(0,180),priority:['Low','Normal','High','Urgent'].includes(input.priority)?input.priority:'Normal',status:'Open',assignee:String(input.assignee||'Unassigned').trim().slice(0,120),details:String(input.details||'').trim().slice(0,4000),createdAt:now,updatedAt:now};platform.supportTickets ||= [];platform.supportTickets.push(row);platformAudit(platform,req,'support_ticket_created',row.subject,company.id);writePlatform(platform);return json(res,201,row)}
-  const ticketRoute=url.pathname.match(/^\/api\/platform\/tickets\/([a-f0-9-]+)$/);if(req.method==='PATCH'&&ticketRoute){const input=await body(req),platform=readPlatform(),row=(platform.supportTickets||[]).find(item=>item.id===ticketRoute[1]);if(!row)return json(res,404,{error:'Support ticket not found'});if(input.status&&['Open','In progress','Waiting on customer','Resolved','Closed'].includes(input.status))row.status=input.status;if(input.assignee!=null)row.assignee=String(input.assignee).trim().slice(0,120);row.updatedAt=new Date().toISOString();platformAudit(platform,req,'support_ticket_updated',`${row.subject}: ${row.status}`,row.companyId);writePlatform(platform);return json(res,200,row)}
-  if(req.method==='POST'&&url.pathname==='/api/platform/follow-ups'){const input=await body(req),company=(await platformCompanies(readPlatform())).find(row=>row.id===input.companyId),platform=readPlatform(),title=String(input.title||'').trim();if(!company||!title)return json(res,400,{error:'Company and follow-up are required'});const now=new Date().toISOString(),row={id:crypto.randomUUID(),companyId:company.id,companyName:company.name,title:title.slice(0,180),owner:String(input.owner||req.auth?.user?.name||'Unassigned').trim().slice(0,120),dueDate:String(input.dueDate||'').slice(0,10),status:'Open',draft:String(input.draft||company.summary).trim().slice(0,2000),createdAt:now,updatedAt:now};platform.followUps ||= [];platform.followUps.push(row);platformAudit(platform,req,'follow_up_created',row.title,company.id);writePlatform(platform);return json(res,201,row)}
-  const followRoute=url.pathname.match(/^\/api\/platform\/follow-ups\/([a-f0-9-]+)$/);if(req.method==='PATCH'&&followRoute){const input=await body(req),platform=readPlatform(),row=(platform.followUps||[]).find(item=>item.id===followRoute[1]);if(!row)return json(res,404,{error:'Follow-up not found'});if(input.status&&['Open','Complete'].includes(input.status))row.status=input.status;row.updatedAt=new Date().toISOString();platformAudit(platform,req,'follow_up_updated',`${row.title}: ${row.status}`,row.companyId);writePlatform(platform);return json(res,200,row)}
-  const subscriptionRoute=url.pathname.match(/^\/api\/platform\/companies\/([^/]+)\/subscription$/);if(req.method==='PATCH'&&subscriptionRoute){const input=await body(req),companyId=decodeURIComponent(subscriptionRoute[1]),localTenant=tenantDatabases().find(row=>String(row.company.id)===companyId),tenant=localTenant||(supabase.configured()?await supabase.loadCompanySnapshot(companyId):null);if(!tenant)return json(res,404,{error:'Company not found'});if(input.plan)tenant.company.plan=String(input.plan).slice(0,40);if(input.planPrice!=null)tenant.company.planPrice=Math.max(0,Number(input.planPrice)||0);if(input.status&&['Trial','Active','Past due','Paused','Cancelled'].includes(input.status))tenant.company.subscriptionStatus=input.status;if(input.nextBillingAt!=null)tenant.company.nextBillingAt=String(input.nextBillingAt).slice(0,10);if(['standard','early_adopter','legacy'].includes(input.accountType))tenant.company.accountType=input.accountType;if(input.billingExempt!=null)tenant.company.billingExempt=Boolean(input.billingExempt);if(input.cohort!=null)tenant.company.cohort=String(input.cohort).trim().slice(0,80);if(input.discountPercent!=null)tenant.company.discountPercent=Math.min(100,Math.max(0,Number(input.discountPercent)||0));if(input.commercialNote!=null)tenant.company.commercialNote=String(input.commercialNote).trim().slice(0,500);if(localTenant){const primary=JSON.parse(fs.readFileSync(DB_FILE,'utf8')),file=String(tenant.company.id)===String(primary.company.id)?DB_FILE:path.join(path.dirname(DB_FILE),'tenants',`${tenant.company.id}.json`),tmp=file+'.tmp';fs.writeFileSync(tmp,JSON.stringify(tenant,null,2));fs.renameSync(tmp,file)}if(supabase.configured()){if(/^[0-9a-f]{8}-[0-9a-f-]{27}$/i.test(companyId))await supabase.saveCompanySnapshot(tenant);else await supabase.saveSnapshot(stableUuid('legacy-company',companyId),tenant.company.name,tenant)}const platform=readPlatform();platformAudit(platform,req,'subscription_updated',`${tenant.company.accountType||'standard'} · ${tenant.company.subscriptionStatus}${tenant.company.billingExempt?' · exempt':''}`,tenant.company.id);writePlatform(platform);return json(res,200,{id:tenant.company.id,plan:tenant.company.plan,planPrice:tenant.company.planPrice,status:accountAccess(tenant.company).status,accountType:tenant.company.accountType||'standard',billingExempt:Boolean(tenant.company.billingExempt),cohort:tenant.company.cohort||'',discountPercent:Number(tenant.company.discountPercent)||0,nextBillingAt:tenant.company.nextBillingAt||null})}
+  if(req.method==='GET'&&url.pathname==='/api/platform/tenant-email-conflicts'){
+    if(transactionalMode()!=='primary'||!supabase.configured())return json(res,503,{error:'Email conflict review requires the primary transactional repository.'});
+    const limit=Math.min(500,Math.max(1,Number(url.searchParams.get('limit'))||100));
+    return json(res,200,{conflicts:await supabase.listTenantEmailConflicts(limit)});
+  }
+  if(req.method==='POST'&&url.pathname==='/api/platform/tenant-email-conflicts'){
+    if(transactionalMode()!=='primary'||!supabase.configured())return json(res,503,{error:'Email conflict review requires the primary transactional repository.'});
+    const input=await body(req),email=String(input.email||'').trim().toLowerCase(),authorizedCompanyId=String(input.authorizedCompanyId||'').trim(),note=String(input.note||'').trim();
+    if(!email||!authorizedCompanyId||note.length<8)return json(res,400,{error:'Email, authorized company, and an operator note are required.'});
+    const result=await supabase.resolveTenantEmailConflict({email,authorizedCompanyId,resolvedBy:`${req.platformAuth.user.name} (${req.platformAuth.user.id})`,resolutionNote:note});
+    let auditStatus='complete';
+    try{const platform=readPlatform();platformAudit(platform,req,'tenant_email_conflict_resolved',`Authorized company ${result.authorizedCompanyId}; ${note.slice(0,500)}`,result.authorizedCompanyId,{affectedConflicts:result.affectedConflicts});await writePlatform(platform,{changedBy:String(req.platformAuth.user.id)})}
+    catch(error){auditStatus='completion_event_pending';console.error('Email conflict resolution audit failed',error.message);monitoring.captureException?.(error,{operation:'tenant_email_conflict_resolution_audit',companyId:result.authorizedCompanyId})}
+    return json(res,200,{...result,auditStatus});
+  }
+  if(req.method==='GET'&&url.pathname==='/api/platform/overview'){
+    const platform=readPlatform(),companies=await platformCompanies(platform),can=capability=>platformCan(req,capability);
+    const response={
+      companies:can(PLATFORM_CAPABILITIES.CUSTOMER_READ)?companies.map(company=>platformCompanyDto(req,company)):[],
+      metrics:{
+        companies:companies.length,
+        trials:companies.filter(row=>row.subscriptionStatus==='Trial'&&row.trialEndsAt&&new Date(row.trialEndsAt)>new Date()).length,
+        users:companies.reduce((sum,row)=>sum+row.users,0),
+        atRisk:companies.filter(row=>row.health.status==='At risk').length,
+        openTickets:can(PLATFORM_CAPABILITIES.SUPPORT_READ)?(platform.supportTickets||[]).filter(row=>!['Resolved','Closed'].includes(row.status)).length:null,
+        configuredPlanTotal:can(PLATFORM_CAPABILITIES.REVENUE_READ)?companies.filter(row=>row.subscriptionStatus==='Active'&&!row.billingExempt).reduce((sum,row)=>sum+row.planPrice,0):null
+      },
+      staff:can(PLATFORM_CAPABILITIES.STAFF_MANAGE)?(platform.users||[]).map(platformStaffDto):[],
+      onboardingOrders:can(PLATFORM_CAPABILITIES.ONBOARDING_READ)?platform.onboardingOrders||[]:[],
+      supportTickets:can(PLATFORM_CAPABILITIES.SUPPORT_READ)?platform.supportTickets||[]:[],
+      followUps:can(PLATFORM_CAPABILITIES.SUPPORT_READ)?platform.followUps||[]:[],
+      generatedAt:new Date().toISOString()
+    };
+    return json(res,200,response);
+  }
+  const platformOwnerReset=url.pathname.match(/^\/api\/platform\/companies\/([^/]+)\/owner-reset$/);
+  if(req.method==='POST'&&platformOwnerReset){
+    if(!process.env.RESEND_API_KEY&&process.env.PDL_EMAIL_DEV_MODE!=='1')return json(res,503,{error:'Password reset email is not configured yet'});
+    const publicUrl=String(process.env.PDL_PUBLIC_URL||'').replace(/\/$/,'');if(process.env.PDL_EMAIL_DEV_MODE!=='1'&&!publicUrl)return json(res,503,{error:'Password reset email is not configured yet'});
+    const companyId=decodeURIComponent(platformOwnerReset[1]),token=crypto.randomBytes(32).toString('base64url'),tokenHash=crypto.createHash('sha256').update(token).digest('hex'),now=new Date().toISOString(),expiresAt=new Date(Date.now()+30*60000).toISOString();
+    let throttled=false;
+    const saved=await mutatePlatformTenant(companyId,tenant=>{
+      const owner=(tenant.users||[]).find(row=>row.role==='owner'&&row.status==='Active');if(!owner)return{changed:false,owner:null};
+      const lastRequest=Date.parse(owner.resetRequestedAt||'');if(Number.isFinite(lastRequest)&&Date.now()-lastRequest<60000){throttled=true;return{changed:false,owner:null}}
+      owner.resetTokenHash=tokenHash;owner.resetExpiresAt=expiresAt;owner.resetRequestedAt=now;
+      const auditEvent=queueTenantPlatformAudit(tenant,req,'company_owner_reset_requested',owner.email,companyId,{deliveryStatus:process.env.PDL_EMAIL_DEV_MODE==='1'?'preview':'pending'});
+      return{owner:{email:owner.email,name:owner.name,companyName:tenant.company.name},auditEventId:auditEvent.id};
+    });
+    if(!saved||!saved.outcome.owner){if(throttled)return json(res,429,{error:'A reset email was just sent. Wait one minute before trying again.'});return json(res,404,{error:'Active company owner not found'})}
+    const owner=saved.outcome.owner;
+    if(process.env.PDL_EMAIL_DEV_MODE==='1'){
+      await flushTenantPlatformAuditOutboxSafely(companyId,{changedBy:String(req.platformAuth.user.id)});
+      return json(res,200,{companyId,email:owner.email,sent:false,previewToken:token,expiresAt});
+    }
+    try{await sendPasswordResetEmail({to:owner.email,name:owner.name,companyName:owner.companyName,resetUrl:`${publicUrl}/reset-password.html?tenant=${encodeURIComponent(companyId)}&email=${encodeURIComponent(owner.email)}&token=${encodeURIComponent(token)}`})}
+    catch(error){
+      try{await mutatePlatformTenant(companyId,tenant=>{const current=(tenant.users||[]).find(row=>row.role==='owner'&&row.status==='Active');if(!current||current.resetTokenHash!==tokenHash)return{changed:false};delete current.resetTokenHash;delete current.resetExpiresAt;delete current.resetRequestedAt;tenant.platformAuditOutbox=(tenant.platformAuditOutbox||[]).filter(row=>row.id!==saved.outcome.auditEventId);if(!tenant.platformAuditOutbox.length)delete tenant.platformAuditOutbox})}catch(rollbackError){console.error('Company owner reset rollback failed',rollbackError.message)}
+      console.error('Company owner password reset email failed',error.message);return json(res,502,{error:'We could not send the reset email. Try again shortly.'});
+    }
+    await flushTenantPlatformAuditOutboxSafely(companyId,{changedBy:String(req.platformAuth.user.id)});
+    return json(res,200,{companyId,email:owner.email,sent:true,expiresAt});
+  }
+  const deletionHold=url.pathname.match(/^\/api\/platform\/companies\/([^/]+)\/deletion-hold$/);if(req.method==='POST'&&deletionHold){
+    const input=await body(req),companyId=decodeURIComponent(deletionHold[1]),primary=readStoredSnapshot(DB_FILE);if(companyId===String(primary?.company?.id))return json(res,409,{error:'Move the operational primary account into an ordinary tenant before starting its deletion hold.'});
+    const billingDispositions=new Set(['no_subscription','cancelled_in_stripe','retained_for_legal_hold']),exportDispositions=new Set(['downloaded','declined']);
+    if(!billingDispositions.has(input.billingDisposition))return json(res,400,{error:'Confirm how billing was stopped before disabling the account.'});
+    if(!exportDispositions.has(input.exportDisposition))return json(res,400,{error:'Record whether the owner downloaded or declined the final export.'});
+    const notes=String(input.notes||'').trim();if(notes.length<8)return json(res,400,{error:'Add an operator note describing the verification.'});
+    let phrase='';const saved=await mutatePlatformTenant(companyId,tenant=>{
+      phrase=`BEGIN DELETE ${tenant.company.name}`;if(String(input.confirmation||'').trim()!==phrase)return{changed:false,error:`Type ${phrase} exactly to begin the recovery hold`};
+      const request=tenant.company.deletionRequest;if(!request||request.status!=='Awaiting operator review')return{changed:false,error:'This account does not have a closure request awaiting review'};
+      const now=new Date(),at=now.toISOString(),actor=req.platformAuth?.user?.name||'Platform owner',counts=revokeTenantAccessForClosure(tenant,actor,at);
+      tenant.company.archivedDuplicate=true;tenant.company.closureHold=true;tenant.company.deletionRequest={...request,status:'Recovery hold',reviewedAt:at,reviewedBy:actor,holdEndsAt:new Date(now.getTime()+30*86400000).toISOString(),billingDisposition:input.billingDisposition,exportDisposition:input.exportDisposition,legalHold:input.billingDisposition==='retained_for_legal_hold',operatorNotes:notes.slice(0,1000),accessRevocation:counts};
+      queueTenantPlatformAudit(tenant,req,'account_deletion_hold_started',`30-day recovery hold · billing ${input.billingDisposition} · export ${input.exportDisposition}`,companyId,counts);return{request:deletionRequestDto(tenant.company.deletionRequest)};
+    });
+    if(!saved)return json(res,404,{error:'Company not found'});if(saved.outcome.error)return json(res,409,{error:saved.outcome.error});await flushTenantPlatformAuditOutboxSafely(companyId,{changedBy:String(req.platformAuth.user.id)});return json(res,200,saved.outcome.request);
+  }
+  const deletionCancel=url.pathname.match(/^\/api\/platform\/companies\/([^/]+)\/deletion-cancel$/);if(req.method==='POST'&&deletionCancel){
+    const input=await body(req),companyId=decodeURIComponent(deletionCancel[1]);
+    const saved=await mutatePlatformTenant(companyId,tenant=>{
+      const phrase=`CANCEL DELETE ${tenant.company.name}`;if(String(input.confirmation||'').trim()!==phrase)return{changed:false,error:`Type ${phrase} exactly to cancel the closure`};const request=tenant.company.deletionRequest;if(!request||!['Awaiting operator review','Recovery hold'].includes(request.status))return{changed:false,error:'No active account closure is available to cancel'};
+      const at=new Date().toISOString(),actor=req.platformAuth?.user?.name||'Platform owner';tenant.company.deletionRequest={...request,status:'Cancelled',cancelledAt:at,cancelledBy:actor,cancelReason:String(input.reason||'Operator cancelled after owner confirmation').trim().slice(0,500)};tenant.company.archivedDuplicate=false;tenant.company.closureHold=false;queueTenantPlatformAudit(tenant,req,'account_deletion_cancelled',tenant.company.deletionRequest.cancelReason,companyId);return{request:deletionRequestDto(tenant.company.deletionRequest)};
+    });
+    if(!saved)return json(res,404,{error:'Company not found'});if(saved.outcome.error)return json(res,409,{error:saved.outcome.error});await flushTenantPlatformAuditOutboxSafely(companyId,{changedBy:String(req.platformAuth.user.id)});return json(res,200,saved.outcome.request);
+  }
+  const deletionComplete=url.pathname.match(/^\/api\/platform\/companies\/([^/]+)\/deletion-complete$/);if(req.method==='POST'&&deletionComplete){
+    const input=await body(req),companyId=decodeURIComponent(deletionComplete[1]),primary=readStoredSnapshot(DB_FILE);if(companyId===String(primary?.company?.id))return json(res,409,{error:'The operational primary account cannot be deleted through this workflow.'});
+    if(transactionalMode()!=='primary'||!supabase.configured())return json(res,503,{error:'Permanent deletion requires the primary transactional repository and verified private storage.'});
+    let priorStatus;try{priorStatus=await supabase.transactionalTenantDeletionStatus(companyId)}catch(error){console.error('Tenant deletion status check failed',companyId,error.message);return json(res,503,{error:'Permanent deletion status could not be verified. No new cleanup was started; retry when the database is available.',code:'DELETION_STATUS_UNAVAILABLE'})}
+    if(priorStatus.status==='deleted'){
+      let cleanupStatus='complete';try{removeTenantMirror(companyId);await persistTenantDeletionCleanupJob({companyId,deletionRequestId:priorStatus.deletionRequestId,terminalRevision:priorStatus.terminalRevision,status:'complete'})}catch(error){cleanupStatus='pending';try{await persistTenantDeletionCleanupJob({companyId,deletionRequestId:priorStatus.deletionRequestId,terminalRevision:priorStatus.terminalRevision,status:'cleanup_pending',error})}catch(recordError){monitoring.captureException?.(recordError,{companyId,operation:'tenant_deletion_cleanup_queue'})}monitoring.captureException?.(error,{companyId,operation:'tenant_deletion_local_cleanup'})}
+      return json(res,cleanupStatus==='complete'?200:202,{deleted:true,companyId,deletionRequestId:priorStatus.deletionRequestId,deletedAt:priorStatus.deletedAt,cleanupStatus,idempotent:true});
+    }
+    const authority=await supabase.loadTransactionalSnapshot(companyId);if(!authority)return json(res,priorStatus.status==='locked'?503:404,{error:priorStatus.status==='locked'?'Permanent deletion is locked but its tenant snapshot is temporarily unavailable. Retry to resume cleanup.':'Company not found',code:priorStatus.status==='locked'?'DELETION_LOCKED_RETRY':undefined});const tenant=authority.snapshot,request=tenant.company?.deletionRequest,phrase=`PERMANENTLY DELETE ${tenant.company?.name||''}`;
+    if(String(input.confirmation||'').trim()!==phrase)return json(res,400,{error:`Type ${phrase} exactly to permanently delete the account`});
+    if(!request||request.status!=='Recovery hold')return json(res,409,{error:'The account is not in a recovery hold'});if(request.legalHold)return json(res,409,{error:'Remove the legal hold before permanent deletion'});if(!request.holdEndsAt||Date.parse(request.holdEndsAt)>Date.now())return json(res,409,{error:'The 30-day recovery hold has not elapsed'});
+    const attemptedAt=new Date().toISOString(),platformBefore=readPlatform();platformAudit(platformBefore,req,'account_deletion_started','Permanent deletion authorized after operator review and elapsed recovery hold',companyId,{deletionRequestId:request.id});await writePlatform(platformBefore,{changedBy:String(req.platformAuth.user.id)});
+    let result;
+    try{result=await executePermanentTenantDeletion({companyId,authority,request})}catch(error){
+      const phase=error.deletionPhase||'unknown',revisionConflict=phase==='lock'&&/PDL_REVISION_CONFLICT|revision conflict/i.test(String(error.message||''));
+      try{const platform=readPlatform();platformAudit(platform,req,revisionConflict?'account_deletion_lock_conflict':'account_deletion_attempt_pending',String(error.message||'Deletion cleanup needs attention').slice(0,300),companyId,{deletionRequestId:request.id,phase,attemptedAt});await writePlatform(platform,{changedBy:String(req.platformAuth.user.id)})}catch(recordError){console.error('Account deletion attempt could not be recorded',companyId,recordError.message)}
+      console.error('Account deletion completion paused',companyId,phase,error.message);
+      if(revisionConflict)return json(res,409,{error:'The company changed before permanent deletion was locked. No storage objects were removed. Refresh and review the account before trying again.',code:'DELETION_REVISION_CONFLICT'});
+      if(phase==='lock')return json(res,503,{error:'Permanent deletion did not start, and no storage cleanup was performed. Retry after the database lock is available.',code:'DELETION_LOCK_UNAVAILABLE'});
+      if(phase==='lock_mismatch')return json(res,409,{error:'A different permanent-deletion lock or receipt exists for this company. No cleanup was started by this request; operator review is required.',code:'DELETION_LOCK_MISMATCH'});
+      if(phase==='lock_unconfirmed'||phase==='authority_unconfirmed')return json(res,503,{error:'The database deletion state could not be confirmed. No unverified cleanup will start; retrying will check the durable lock or tombstone receipt first.',code:'DELETION_STATUS_UNCONFIRMED'});
+      return json(res,503,{error:'Permanent deletion is locked, but cleanup is not complete. The account remains disabled and retrying will resume the same deletion safely.',code:'DELETION_LOCKED_RETRY'});
+    }
+    let auditStatus='complete';try{const platform=readPlatform();platformAudit(platform,req,'account_deletion_completed','Customer content removed after operator review and elapsed recovery hold',companyId,{deletionRequestId:request.id,storageObjectsRemoved:result.storage.removed,storageObjectsAlreadyAbsent:result.storage.alreadyAbsent,recoveredCommit:result.recoveredCommit});scrubTenantPlatformPii(platform,companyId);if(tenantPlatformPiiReferences(platform,companyId).length)throw new Error('Tenant-linked platform data remained after completion audit');await writePlatform(platform,{changedBy:String(req.platformAuth.user.id)})}catch(error){auditStatus='completion_event_pending';console.error('Account deletion completion audit failed',companyId,error.message);monitoring.captureException?.(error,{companyId,operation:'account_deletion_completion_audit'})}
+    return json(res,result.cleanupStatus==='complete'?200:202,{deleted:true,companyId,deletionRequestId:request.id,deletedAt:result.receipt.deletedAt||new Date().toISOString(),storage:result.storage,auditStatus,cleanupStatus:result.cleanupStatus});
+  }
+  const companyArchive=url.pathname.match(/^\/api\/platform\/companies\/([^/]+)\/archive$/);if(req.method==='POST'&&companyArchive){
+    if(!requirePlatform(req,res,PLATFORM_CAPABILITIES.DEMO_RESET))return;
+    const companyId=decodeURIComponent(companyArchive[1]),primary=readStoredSnapshot(DB_FILE);if(companyId===String(primary?.company?.id))return json(res,400,{error:'The primary account cannot be archived'});
+    const saved=await mutatePlatformTenant(companyId,tenant=>{
+      if(tenant.company.archivedDuplicate)return{changed:false,alreadyArchived:true};
+      const now=new Date().toISOString(),revokedSessions=(tenant.sessions||[]).length;
+      tenant.sessions=[];
+      let revokedGuestLinks=0,revokedChangeLinks=0,revokedCredentialLinks=0;
+      for(const link of tenant.subcontractorLinks||[]){
+        if(link.tokenHash){revokedGuestLinks++;delete link.tokenHash}
+        if(link.status!=='Revoked'){link.status='Revoked';link.revokedAt=now;link.revokedBy=req.platformAuth?.user?.name||'Platform operations'}
+      }
+      for(const change of tenant.changes||[])if(change.customerTokenHash){delete change.customerTokenHash;change.customerLinkRevokedAt=now;revokedChangeLinks++}
+      for(const user of tenant.users||[]){
+        for(const key of ['resetTokenHash','resetExpiresAt','resetRequestedAt','setupHash','setupSalt','setupExpiresAt','emailVerificationTokenHash','emailVerificationExpiresAt']){
+          if(Object.hasOwn(user,key)){delete user[key];revokedCredentialLinks++}
+        }
+      }
+      tenant.company.archivedDuplicate=true;tenant.company.archivedAt=now;
+      queueTenantPlatformAudit(tenant,req,'company_archived',tenant.company.name,companyId,{revokedSessions,revokedGuestLinks,revokedChangeLinks,revokedCredentialLinks});
+      return{alreadyArchived:false,revokedSessions,revokedGuestLinks,revokedChangeLinks};
+    });
+    if(!saved)return json(res,404,{error:'Company not found'});const tenant=saved.tenant;
+    if(saved.outcome.alreadyArchived)return json(res,200,{id:tenant.company.id,name:tenant.company.name,alreadyArchived:true});
+    await flushTenantPlatformAuditOutboxSafely(companyId,{changedBy:String(req.platformAuth.user.id)});return json(res,200,{id:tenant.company.id,name:tenant.company.name,archived:true});
+  }
+  const companyUnarchive=url.pathname.match(/^\/api\/platform\/companies\/([^/]+)\/unarchive$/);if(req.method==='POST'&&companyUnarchive){
+    if(!requirePlatform(req,res,PLATFORM_CAPABILITIES.DEMO_RESET))return;
+    const companyId=decodeURIComponent(companyUnarchive[1]);
+    let saved;
+    try{
+      const archived=await readPlatformTenant(companyId);
+      if(!archived)return json(res,404,{error:'Company not found'});
+      if(archived.company.archivedDuplicate&&supabase.configured()&&transactionalMode()==='primary'){
+        for(const user of archived.users||[]){
+          if(user.status!=='Active'||!String(user.email||'').trim())continue;
+          const owner=await supabase.findTransactionalCompanyIdByUserEmail(user.email);
+          if(owner&&String(owner)!==String(companyId))return json(res,409,{error:'This company cannot be restored because an active account now uses one of its login emails.',code:'email_in_use'});
+        }
+      }
+      saved=await mutatePlatformTenant(companyId,tenant=>{if(!tenant.company.archivedDuplicate)return{changed:false,alreadyActive:true};tenant.company.archivedDuplicate=false;delete tenant.company.archivedAt;delete tenant.company.archivedReason;queueTenantPlatformAudit(tenant,req,'company_unarchived',tenant.company.name,companyId);return{alreadyActive:false}});
+    }catch(error){
+      if(signupEmailConflict(error))return json(res,409,{error:'This company cannot be restored because an active account now uses one of its login emails.',code:'email_in_use'});
+      throw error;
+    }
+    if(!saved)return json(res,404,{error:'Company not found'});const tenant=saved.tenant;
+    if(saved.outcome.alreadyActive)return json(res,200,{id:tenant.company.id,name:tenant.company.name,alreadyActive:true});
+    await flushTenantPlatformAuditOutboxSafely(companyId,{changedBy:String(req.platformAuth.user.id)});return json(res,200,{id:tenant.company.id,name:tenant.company.name,unarchived:true});
+  }
+  const platformDemoReset=url.pathname.match(/^\/api\/platform\/companies\/([^/]+)\/demo-reset$/);if(req.method==='POST'&&platformDemoReset)return json(res,410,{error:'Destructive demo resets were retired. Prepare a separate empty sales-demo account instead.',code:'demo_reset_retired'});
+  if(req.method==='POST'&&url.pathname==='/api/platform/onboarding'){const input=await body(req),company=(await platformCompanies(readPlatform())).find(row=>row.id===input.companyId),platform=readPlatform();if(!company||!String(input.owner||'').trim())return json(res,400,{error:'Company and onboarding owner are required'});const now=new Date().toISOString(),row={id:crypto.randomUUID(),companyId:company.id,companyName:company.name,package:['Guided setup','Full implementation','Self-serve'].includes(input.package)?input.package:'Guided setup',owner:String(input.owner).trim().slice(0,120),dueDate:String(input.dueDate||'').slice(0,10),status:'Not started',notes:String(input.notes||'').trim().slice(0,2000),tasks:[{name:'Company profile',done:false},{name:'Production catalog',done:false},{name:'Team accounts',done:false},{name:'First project',done:false},{name:'Field training',done:false}],createdAt:now,updatedAt:now};platform.onboardingOrders ||= [];platform.onboardingOrders.push(row);platformAudit(platform,req,'onboarding_created',`${row.package} assigned to ${row.owner}`,company.id);await writePlatform(platform,{changedBy:String(req.platformAuth.user.id)});return json(res,201,row)}
+  const onboardingRoute=url.pathname.match(/^\/api\/platform\/onboarding\/([a-f0-9-]+)$/);if(req.method==='PATCH'&&onboardingRoute){const input=await body(req),platform=readPlatform(),row=(platform.onboardingOrders||[]).find(item=>item.id===onboardingRoute[1]);if(!row)return json(res,404,{error:'Onboarding work order not found'});if(input.status&&['Not started','In progress','Blocked','Complete','Cancelled'].includes(input.status))row.status=input.status;if(Array.isArray(input.tasks))row.tasks=row.tasks.map((task,index)=>({...task,done:Boolean(input.tasks[index]?.done)}));if(input.notes!=null)row.notes=String(input.notes).trim().slice(0,2000);row.updatedAt=new Date().toISOString();platformAudit(platform,req,'onboarding_updated',`${row.companyName}: ${row.status}`,row.companyId);await writePlatform(platform,{changedBy:String(req.platformAuth.user.id)});return json(res,200,row)}
+  if(req.method==='POST'&&url.pathname==='/api/platform/tickets'){const input=await body(req),company=(await platformCompanies(readPlatform())).find(row=>row.id===input.companyId),platform=readPlatform(),subject=String(input.subject||'').trim();if(!company||!subject)return json(res,400,{error:'Company and subject are required'});const now=new Date().toISOString(),row={id:crypto.randomUUID(),companyId:company.id,companyName:company.name,subject:subject.slice(0,180),priority:['Low','Normal','High','Urgent'].includes(input.priority)?input.priority:'Normal',status:'Open',assignee:String(input.assignee||'Unassigned').trim().slice(0,120),details:String(input.details||'').trim().slice(0,4000),createdAt:now,updatedAt:now};platform.supportTickets ||= [];platform.supportTickets.push(row);platformAudit(platform,req,'support_ticket_created',row.subject,company.id);await writePlatform(platform,{changedBy:String(req.platformAuth.user.id)});return json(res,201,row)}
+  const ticketRoute=url.pathname.match(/^\/api\/platform\/tickets\/([a-f0-9-]+)$/);if(req.method==='PATCH'&&ticketRoute){const input=await body(req),platform=readPlatform(),row=(platform.supportTickets||[]).find(item=>item.id===ticketRoute[1]);if(!row)return json(res,404,{error:'Support ticket not found'});if(input.status&&['Open','In progress','Waiting on customer','Resolved','Closed'].includes(input.status))row.status=input.status;if(input.assignee!=null)row.assignee=String(input.assignee).trim().slice(0,120);row.updatedAt=new Date().toISOString();platformAudit(platform,req,'support_ticket_updated',`${row.subject}: ${row.status}`,row.companyId);await writePlatform(platform,{changedBy:String(req.platformAuth.user.id)});return json(res,200,row)}
+  if(req.method==='POST'&&url.pathname==='/api/platform/follow-ups'){const input=await body(req),company=(await platformCompanies(readPlatform())).find(row=>row.id===input.companyId),platform=readPlatform(),title=String(input.title||'').trim();if(!company||!title)return json(res,400,{error:'Company and follow-up are required'});const now=new Date().toISOString(),row={id:crypto.randomUUID(),companyId:company.id,companyName:company.name,title:title.slice(0,180),owner:String(input.owner||req.platformAuth?.user?.name||'Unassigned').trim().slice(0,120),dueDate:String(input.dueDate||'').slice(0,10),status:'Open',draft:String(input.draft||company.summary).trim().slice(0,2000),createdAt:now,updatedAt:now};platform.followUps ||= [];platform.followUps.push(row);platformAudit(platform,req,'follow_up_created',row.title,company.id);await writePlatform(platform,{changedBy:String(req.platformAuth.user.id)});return json(res,201,row)}
+  const followRoute=url.pathname.match(/^\/api\/platform\/follow-ups\/([a-f0-9-]+)$/);if(req.method==='PATCH'&&followRoute){const input=await body(req),platform=readPlatform(),row=(platform.followUps||[]).find(item=>item.id===followRoute[1]);if(!row)return json(res,404,{error:'Follow-up not found'});if(input.status&&['Open','Complete'].includes(input.status))row.status=input.status;row.updatedAt=new Date().toISOString();platformAudit(platform,req,'follow_up_updated',`${row.title}: ${row.status}`,row.companyId);await writePlatform(platform,{changedBy:String(req.platformAuth.user.id)});return json(res,200,row)}
+  const subscriptionRoute=url.pathname.match(/^\/api\/platform\/companies\/([^/]+)\/subscription$/);if(req.method==='PATCH'&&subscriptionRoute){
+    const input=await body(req),companyId=decodeURIComponent(subscriptionRoute[1]);
+    const saved=await mutatePlatformTenant(companyId,tenant=>{
+      if(input.plan)tenant.company.plan=String(input.plan).slice(0,40);
+      if(input.planPrice!=null)tenant.company.planPrice=Math.max(0,Number(input.planPrice)||0);
+      if(input.status&&['Trial','Active','Past due','Paused','Cancelled'].includes(input.status))tenant.company.subscriptionStatus=input.status;
+      if(input.nextBillingAt!=null)tenant.company.nextBillingAt=String(input.nextBillingAt).slice(0,10);
+      if(['standard','early_adopter','legacy'].includes(input.accountType))tenant.company.accountType=input.accountType;
+      if(input.billingExempt!=null)tenant.company.billingExempt=Boolean(input.billingExempt);
+      if(input.cohort!=null)tenant.company.cohort=String(input.cohort).trim().slice(0,80);
+      if(input.discountPercent!=null)tenant.company.discountPercent=Math.min(100,Math.max(0,Number(input.discountPercent)||0));
+      if(input.commercialNote!=null)tenant.company.commercialNote=String(input.commercialNote).trim().slice(0,500);
+      queueTenantPlatformAudit(tenant,req,'subscription_updated',`${tenant.company.accountType||'standard'} · ${tenant.company.subscriptionStatus}${tenant.company.billingExempt?' · exempt':''}`,tenant.company.id);
+    });
+    if(!saved)return json(res,404,{error:'Company not found'});const tenant=saved.tenant;await flushTenantPlatformAuditOutboxSafely(companyId,{changedBy:String(req.platformAuth.user.id)});
+    return json(res,200,{id:tenant.company.id,plan:tenant.company.plan,planPrice:tenant.company.planPrice,status:accountAccess(tenant.company).status,accountType:tenant.company.accountType||'standard',billingExempt:Boolean(tenant.company.billingExempt),cohort:tenant.company.cohort||'',discountPercent:Number(tenant.company.discountPercent)||0,nextBillingAt:tenant.company.nextBillingAt||null});
+  }
   if(req.method==='GET'&&url.pathname==='/api/platform/blog'){const platform=readPlatform();return json(res,200,(platform.blogPosts||[]).slice().sort((a,b)=>String(b.updatedAt).localeCompare(String(a.updatedAt))))}
-  if(req.method==='POST'&&url.pathname==='/api/platform/blog'){if(!platformContentAllowed(req))return json(res,403,{error:'Content publishing permission required'});const input=await body(req),platform=readPlatform(),payload=blogPayload(input);if(payload.error)return json(res,400,{error:payload.error});platform.blogPosts ||= [];if(platform.blogPosts.some(post=>post.slug===payload.slug))return json(res,409,{error:'Use a different title or URL slug'});const now=new Date().toISOString(),row={id:crypto.randomUUID(),...payload,createdAt:now,updatedAt:now,publishedAt:payload.status==='Published'?now:null,createdBy:req.platformAuth?.user?.name||'Platform owner'};platform.blogPosts.unshift(row);platformAudit(platform,req,'blog_post_created',`${row.title} · ${row.status}`);writePlatform(platform);return json(res,201,row)}
-  const blogAdminRoute=url.pathname.match(/^\/api\/platform\/blog\/([a-f0-9-]+)$/);if(blogAdminRoute&&req.method==='PATCH'){if(!platformContentAllowed(req))return json(res,403,{error:'Content publishing permission required'});const input=await body(req),platform=readPlatform(),row=(platform.blogPosts||[]).find(post=>post.id===blogAdminRoute[1]);if(!row)return json(res,404,{error:'Blog post not found'});const payload=blogPayload(input,row);if(payload.error)return json(res,400,{error:payload.error});if((platform.blogPosts||[]).some(post=>post.id!==row.id&&post.slug===payload.slug))return json(res,409,{error:'Use a different title or URL slug'});const wasPublished=row.status==='Published',now=new Date().toISOString();Object.assign(row,payload,{updatedAt:now});if(payload.status==='Published'&&!wasPublished)row.publishedAt=now;if(payload.status==='Draft')row.publishedAt=null;platformAudit(platform,req,'blog_post_updated',`${row.title} · ${row.status}`);writePlatform(platform);return json(res,200,row)}
-  if(blogAdminRoute&&req.method==='DELETE'){if(!platformContentAllowed(req))return json(res,403,{error:'Content publishing permission required'});const platform=readPlatform(),index=(platform.blogPosts||[]).findIndex(post=>post.id===blogAdminRoute[1]);if(index<0)return json(res,404,{error:'Blog post not found'});const [row]=platform.blogPosts.splice(index,1);platformAudit(platform,req,'blog_post_deleted',row.title);writePlatform(platform);return json(res,200,{ok:true})}
+  if(req.method==='POST'&&url.pathname==='/api/platform/blog'){if(!platformContentAllowed(req))return json(res,403,{error:'Content publishing permission required'});const input=await body(req),platform=readPlatform(),payload=blogPayload(input);if(payload.error)return json(res,400,{error:payload.error});platform.blogPosts ||= [];if(platform.blogPosts.some(post=>post.slug===payload.slug))return json(res,409,{error:'Use a different title or URL slug'});const now=new Date().toISOString(),row={id:crypto.randomUUID(),...payload,createdAt:now,updatedAt:now,publishedAt:payload.status==='Published'?now:null,createdBy:req.platformAuth?.user?.name||'Platform owner'};platform.blogPosts.unshift(row);platformAudit(platform,req,'blog_post_created',`${row.title} · ${row.status}`);await writePlatform(platform,{changedBy:String(req.platformAuth.user.id)});return json(res,201,row)}
+  const blogAdminRoute=url.pathname.match(/^\/api\/platform\/blog\/([a-f0-9-]+)$/);if(blogAdminRoute&&req.method==='PATCH'){if(!platformContentAllowed(req))return json(res,403,{error:'Content publishing permission required'});const input=await body(req),platform=readPlatform(),row=(platform.blogPosts||[]).find(post=>post.id===blogAdminRoute[1]);if(!row)return json(res,404,{error:'Blog post not found'});const payload=blogPayload(input,row);if(payload.error)return json(res,400,{error:payload.error});if((platform.blogPosts||[]).some(post=>post.id!==row.id&&post.slug===payload.slug))return json(res,409,{error:'Use a different title or URL slug'});const wasPublished=row.status==='Published',now=new Date().toISOString();Object.assign(row,payload,{updatedAt:now});if(payload.status==='Published'&&!wasPublished)row.publishedAt=now;if(payload.status==='Draft')row.publishedAt=null;platformAudit(platform,req,'blog_post_updated',`${row.title} · ${row.status}`);await writePlatform(platform,{changedBy:String(req.platformAuth.user.id)});return json(res,200,row)}
+  if(blogAdminRoute&&req.method==='DELETE'){if(!platformContentAllowed(req))return json(res,403,{error:'Content publishing permission required'});const platform=readPlatform(),index=(platform.blogPosts||[]).findIndex(post=>post.id===blogAdminRoute[1]);if(index<0)return json(res,404,{error:'Blog post not found'});const [row]=platform.blogPosts.splice(index,1);platformAudit(platform,req,'blog_post_deleted',row.title);await writePlatform(platform,{changedBy:String(req.platformAuth.user.id)});return json(res,200,{ok:true})}
   if(req.method==='GET'&&url.pathname==='/api/platform/help'){const platform=readPlatform();return json(res,200,(platform.helpItems||[]).slice().sort((a,b)=>(a.order||0)-(b.order||0)))}
-  if(req.method==='POST'&&url.pathname==='/api/platform/help'){const input=await body(req),platform=readPlatform(),types=['article','video','document','faq'],audiences=['all','office','field'];if(!input.title?.trim()||!types.includes(input.type)||!audiences.includes(input.audience))return json(res,400,{error:'Title, content type, and audience are required'});platform.helpItems ||= [];const row={id:crypto.randomUUID(),title:input.title.trim().slice(0,140),type:input.type,audience:input.audience,category:String(input.category||'Getting started').trim().slice(0,80),summary:String(input.summary||'').trim().slice(0,500),content:String(input.content||'').trim().slice(0,8000),url:String(input.url||'').trim().slice(0,1000),status:input.status==='Draft'?'Draft':'Published',order:Number(input.order)||platform.helpItems.length+1,createdAt:new Date().toISOString(),updatedAt:new Date().toISOString()};platform.helpItems.push(row);platform.auditEvents ||= [];platform.auditEvents.push({id:crypto.randomUUID(),action:'help_content_created',actorName:req.platformAuth?.user.name||'Platform owner',reason:row.title,at:row.createdAt});writePlatform(platform);return json(res,201,row)}
-  const helpUpdate=url.pathname.match(/^\/api\/platform\/help\/([a-f0-9-]+)$/);if(helpUpdate&&req.method==='PATCH'){const input=await body(req),platform=readPlatform(),row=(platform.helpItems||[]).find(item=>item.id===helpUpdate[1]);if(!row)return json(res,404,{error:'Help item not found'});for(const key of ['title','category','summary','content','url'])if(input[key]!==undefined)row[key]=String(input[key]).trim();if(['article','video','document','faq'].includes(input.type))row.type=input.type;if(['all','office','field'].includes(input.audience))row.audience=input.audience;if(['Draft','Published'].includes(input.status))row.status=input.status;if(Number.isFinite(Number(input.order)))row.order=Number(input.order);row.updatedAt=new Date().toISOString();writePlatform(platform);return json(res,200,row)}
-  if(req.method==='POST'&&url.pathname==='/api/platform/users'){if(!platformRevenueOwner(req))return json(res,403,{error:'Active platform owner permission required'});const input=await body(req);if(!platformRevenueOwner(req))return json(res,403,{error:'Active platform owner permission required'});const roles=['platform_owner','customer_success','onboarding','support','billing','engineering'],platform=readPlatform();platform.users ||= [];if(!input.name?.trim()||!/^\S+@\S+\.\S+$/.test(String(input.email||''))||!roles.includes(input.role))return json(res,400,{error:'Name, valid email, and platform role are required'});if(platform.users.some(user=>user.email.toLowerCase()===input.email.toLowerCase()))return json(res,409,{error:'Platform user already exists'});const setupCode=crypto.randomBytes(6).toString('base64url'),credential=credentialHash(setupCode),row={id:nextId(platform.users),name:input.name.trim(),email:input.email.trim().toLowerCase(),role:input.role,status:'Active',setupHash:credential.hash,setupSalt:credential.salt,setupExpiresAt:new Date(Date.now()+72*3600000).toISOString(),createdAt:new Date().toISOString()};platform.users.push(row);writePlatform(platform);const{setupHash,setupSalt,...safe}=row;return json(res,201,{...safe,setupCode})}
-  if(req.method==='POST'&&url.pathname==='/api/platform/support-access'){const input=await body(req),platform=readPlatform(),primary=readDb(),tenantDir=path.join(path.dirname(DB_FILE),'tenants'),tenantFiles=fs.existsSync(tenantDir)?fs.readdirSync(tenantDir).filter(file=>file.endsWith('.json')):[],tenants=[primary,...tenantFiles.map(file=>JSON.parse(fs.readFileSync(path.join(tenantDir,file),'utf8')))],tenant=tenants.find(row=>row.company.id===input.companyId),actor=(platform.users||[]).find(row=>row.id===Number(input.actorUserId)&&row.status==='Active'),reason=String(input.reason||'').trim(),minutes=Math.min(120,Math.max(15,Number(input.minutes)||30));if(!tenant||!actor||!reason)return json(res,400,{error:'Company, active platform user, and support reason are required'});const token=crypto.randomBytes(32).toString('base64url'),now=new Date().toISOString(),grant={id:crypto.randomUUID(),companyId:tenant.company.id,companyName:tenant.company.name,actorUserId:actor.id,actorName:actor.name,reason,status:'Active',tokenHash:crypto.createHash('sha256').update(token).digest('hex'),createdAt:now,expiresAt:new Date(Date.now()+minutes*60000).toISOString()};platform.supportGrants ||= [];platform.auditEvents ||= [];platform.supportGrants.push(grant);platform.auditEvents.push({id:crypto.randomUUID(),action:'support_access_granted',companyId:grant.companyId,actorUserId:actor.id,actorName:actor.name,reason,at:now,grantId:grant.id});writePlatform(platform);return json(res,201,{id:grant.id,companyId:grant.companyId,companyName:grant.companyName,actorName:grant.actorName,reason:grant.reason,expiresAt:grant.expiresAt,url:`/support.html?token=${token}`})}
-  const revokeSupport=url.pathname.match(/^\/api\/platform\/support-access\/([a-f0-9-]+)$/);if(req.method==='DELETE'&&revokeSupport){const platform=readPlatform(),grant=(platform.supportGrants||[]).find(row=>row.id===revokeSupport[1]);if(!grant)return json(res,404,{error:'Support grant not found'});grant.status='Revoked';grant.revokedAt=new Date().toISOString();platform.auditEvents ||= [];platform.auditEvents.push({id:crypto.randomUUID(),action:'support_access_revoked',companyId:grant.companyId,actorUserId:grant.actorUserId,actorName:grant.actorName,reason:grant.reason,at:grant.revokedAt,grantId:grant.id});writePlatform(platform);return json(res,200,{ok:true})}
+  if(req.method==='POST'&&url.pathname==='/api/platform/help'){const input=await body(req),platform=readPlatform(),types=['article','video','document','faq'],audiences=['all','office','field'];if(!input.title?.trim()||!types.includes(input.type)||!audiences.includes(input.audience))return json(res,400,{error:'Title, content type, and audience are required'});platform.helpItems ||= [];const row={id:crypto.randomUUID(),title:input.title.trim().slice(0,140),type:input.type,audience:input.audience,category:String(input.category||'Getting started').trim().slice(0,80),summary:String(input.summary||'').trim().slice(0,500),content:String(input.content||'').trim().slice(0,8000),url:String(input.url||'').trim().slice(0,1000),status:input.status==='Draft'?'Draft':'Published',order:Number(input.order)||platform.helpItems.length+1,createdAt:new Date().toISOString(),updatedAt:new Date().toISOString()};platform.helpItems.push(row);platformAudit(platform,req,'help_content_created',row.title);await writePlatform(platform,{changedBy:String(req.platformAuth.user.id)});return json(res,201,row)}
+  const helpUpdate=url.pathname.match(/^\/api\/platform\/help\/([a-f0-9-]+)$/);if(helpUpdate&&req.method==='PATCH'){const input=await body(req),platform=readPlatform(),row=(platform.helpItems||[]).find(item=>item.id===helpUpdate[1]);if(!row)return json(res,404,{error:'Help item not found'});for(const key of ['title','category','summary','content','url'])if(input[key]!==undefined)row[key]=String(input[key]).trim();if(['article','video','document','faq'].includes(input.type))row.type=input.type;if(['all','office','field'].includes(input.audience))row.audience=input.audience;if(['Draft','Published'].includes(input.status))row.status=input.status;if(Number.isFinite(Number(input.order)))row.order=Number(input.order);row.updatedAt=new Date().toISOString();platformAudit(platform,req,'help_content_updated',row.title);await writePlatform(platform,{changedBy:String(req.platformAuth.user.id)});return json(res,200,row)}
+  if(req.method==='POST'&&url.pathname==='/api/platform/users'){
+    const input=await body(req),platform=readPlatform();platform.users ||= [];
+    const email=String(input.email||'').trim().toLowerCase(),name=String(input.name||'').trim();
+    if(!name||name.length>120||!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)||!PLATFORM_ROLES.includes(input.role))return json(res,400,{error:'Name, valid email, and platform role are required'});
+    if(platform.users.some(user=>String(user.email||'').toLowerCase()===email))return json(res,409,{error:'Platform user already exists'});
+    const setupCode=crypto.randomBytes(12).toString('base64url'),credential=credentialHash(setupCode),now=new Date().toISOString(),row={id:nextId(platform.users),name,email,role:input.role,status:'Active',mustSetPassword:true,setupHash:credential.hash,setupSalt:credential.salt,setupExpiresAt:new Date(Date.now()+72*3600000).toISOString(),createdAt:now,updatedAt:now};
+    platform.users.push(row);platformAudit(platform,req,'platform_staff_created',`${row.email} · ${row.role}`);await writePlatform(platform);
+    return json(res,201,{...platformStaffDto(row),setupCode,setupExpiresAt:row.setupExpiresAt});
+  }
+  const platformUserRoute=url.pathname.match(/^\/api\/platform\/users\/([^/]+)$/);
+  if(req.method==='PATCH'&&platformUserRoute){
+    const input=await body(req),platform=readPlatform(),row=(platform.users||[]).find(user=>String(user.id)===decodeURIComponent(platformUserRoute[1]));
+    if(!row)return json(res,404,{error:'Platform team member not found'});
+    const nextRole=input.role===undefined?row.role:String(input.role),nextStatus=input.status===undefined?row.status:String(input.status);
+    if(!PLATFORM_ROLES.includes(nextRole)||!['Active','Inactive'].includes(nextStatus))return json(res,400,{error:'Choose a valid role and status'});
+    const self=String(row.id)===String(req.platformAuth.user.id),removesOwner=row.role==='platform_owner'&&(nextRole!=='platform_owner'||nextStatus!=='Active');
+    if(self&&(nextRole!==row.role||nextStatus!=='Active'))return json(res,409,{error:'You cannot demote or deactivate your own signed-in account'});
+    if(removesOwner&&(platform.users||[]).filter(user=>user.id!==row.id&&user.role==='platform_owner'&&user.status==='Active').length===0)return json(res,409,{error:'Keep at least one other active Platform Owner before changing this account'});
+    if(nextRole===row.role&&nextStatus===row.status)return json(res,200,platformStaffDto(row));
+    const before={role:row.role,status:row.status},now=new Date().toISOString();row.role=nextRole;row.status=nextStatus;row.updatedAt=now;
+    platform.sessions=(platform.sessions||[]).filter(session=>String(session.userId)!==String(row.id));
+    let revokedSupportGrants=0;
+    if(!canPlatformUser(row,PLATFORM_CAPABILITIES.SUPPORT_GRANT_READ,{actorUserId:row.id})){
+      for(const grant of platform.supportGrants||[]){
+        if(String(grant.actorUserId)!==String(row.id)||grant.status!=='Active')continue;
+        grant.status='Revoked';grant.revokedAt=now;grant.revokeReason='Staff access changed';revokedSupportGrants+=1;
+      }
+    }
+    platformAudit(platform,req,'platform_staff_updated',`${row.email} · ${before.role}/${before.status} → ${row.role}/${row.status}`,null,{targetUserId:row.id,revokedSupportGrants});await writePlatform(platform);
+    return json(res,200,platformStaffDto(row));
+  }
+  const safeSupportGrant=grant=>({id:grant.id,companyId:grant.companyId,companyName:grant.companyName,actorUserId:grant.actorUserId,actorName:grant.actorName,reason:grant.reason,status:grant.status,createdAt:grant.createdAt,expiresAt:grant.expiresAt,revokedAt:grant.revokedAt||null});
+  if(req.method==='GET'&&url.pathname==='/api/platform/support-access'){
+    const platform=readPlatform(),owner=req.platformAuth.user.role==='platform_owner',actorId=String(req.platformAuth.user.id),rows=(platform.supportGrants||[]).filter(grant=>owner||String(grant.actorUserId)===actorId).map(safeSupportGrant).sort((a,b)=>String(b.createdAt).localeCompare(String(a.createdAt))).slice(0,100);
+    return json(res,200,rows);
+  }
+  if(req.method==='POST'&&url.pathname==='/api/platform/support-access'){
+    const input=await body(req),platform=readPlatform(),tenant=await readPlatformTenant(input.companyId),actor=req.platformAuth.user,reason=String(input.reason||'').trim(),minutes=Math.min(120,Math.max(15,Number(input.minutes)||30));
+    if(!tenant||!reason)return json(res,400,{error:'Company and support reason are required'});
+    if(reason.length>500)return json(res,400,{error:'Support reason must be 500 characters or fewer'});
+    const token=crypto.randomBytes(32).toString('base64url'),now=new Date().toISOString(),grant={id:crypto.randomUUID(),companyId:tenant.company.id,companyName:tenant.company.name,actorUserId:actor.id,actorName:actor.name,reason,status:'Active',tokenHash:crypto.createHash('sha256').update(token).digest('hex'),createdAt:now,expiresAt:new Date(Date.now()+minutes*60000).toISOString()};
+    platform.supportGrants ||= [];platform.supportGrants.push(grant);platformAudit(platform,req,'support_access_granted',reason,grant.companyId,{grantId:grant.id});await writePlatform(platform);
+    return json(res,201,{...safeSupportGrant(grant),url:`/support.html?token=${token}`});
+  }
+  const revokeSupport=url.pathname.match(/^\/api\/platform\/support-access\/([a-f0-9-]+)$/);if(req.method==='DELETE'&&revokeSupport){const platform=readPlatform(),grant=(platform.supportGrants||[]).find(row=>row.id===revokeSupport[1]);if(!grant)return json(res,404,{error:'Support grant not found'});if(grant.status==='Revoked')return json(res,200,{ok:true});grant.status='Revoked';grant.revokedAt=new Date().toISOString();platformAudit(platform,req,'support_access_revoked',grant.reason,grant.companyId,{grantId:grant.id});await writePlatform(platform);return json(res,200,{ok:true})}
   if(req.method==='GET'&&url.pathname==='/api/platform/audit'){const platform=readPlatform();return json(res,200,(platform.auditEvents||[]).slice().reverse())}
-  const supportSession=url.pathname.match(/^\/api\/support-session\/([A-Za-z0-9_-]{43})$/);if(req.method==='GET'&&supportSession){const platform=readPlatform(),tokenHash=crypto.createHash('sha256').update(supportSession[1]).digest('hex'),grant=(platform.supportGrants||[]).find(row=>row.tokenHash===tokenHash&&row.status==='Active'&&new Date(row.expiresAt)>new Date());if(!grant)return json(res,404,{error:'Support session is invalid or expired'});const primary=readDb(),tenantDir=path.join(path.dirname(DB_FILE),'tenants'),file=grant.companyId===primary.company.id?null:path.join(tenantDir,`${grant.companyId}.json`),tenant=file&&fs.existsSync(file)?JSON.parse(fs.readFileSync(file,'utf8')):primary;if(tenant.company.id!==grant.companyId)return json(res,404,{error:'Support session is invalid or expired'});platform.auditEvents ||= [];platform.auditEvents.push({id:crypto.randomUUID(),action:'support_session_viewed',companyId:grant.companyId,actorUserId:grant.actorUserId,actorName:grant.actorName,reason:grant.reason,at:new Date().toISOString(),grantId:grant.id});writePlatform(platform);return json(res,200,{banner:{companyName:tenant.company.name,actorName:grant.actorName,reason:grant.reason,expiresAt:grant.expiresAt},summary:{projects:(tenant.projects||[]).length,users:(tenant.users||[]).length,reports:(tenant.reports||[]).length,plan:tenant.company.plan||'pilot',onboarding:tenant.company.onboarding||null}})}
+  const supportSession=url.pathname.match(/^\/api\/support-session\/([A-Za-z0-9_-]{43})$/);if(req.method==='GET'&&supportSession){const platform=readPlatform(),tokenHash=crypto.createHash('sha256').update(supportSession[1]).digest('hex'),grant=(platform.supportGrants||[]).find(row=>row.tokenHash===tokenHash&&row.status==='Active'&&new Date(row.expiresAt)>new Date()),actor=grant&&(platform.users||[]).find(row=>String(row.id)===String(grant.actorUserId));if(!grant||!canPlatformUser(actor,PLATFORM_CAPABILITIES.SUPPORT_GRANT_READ,{grantActorUserId:grant.actorUserId}))return json(res,404,{error:'Support session is invalid or expired'});const tenant=await readPlatformTenant(grant.companyId);if(!tenant||String(tenant.company.id)!==String(grant.companyId))return json(res,404,{error:'Support session is invalid or expired'});platform.auditEvents ||= [];platform.auditEvents.push({id:crypto.randomUUID(),action:'support_session_viewed',companyId:grant.companyId,actorUserId:grant.actorUserId,actorName:grant.actorName,actorRole:'support_session',reason:grant.reason,at:new Date().toISOString(),grantId:grant.id});await writePlatform(platform,{changedBy:String(grant.actorUserId)});const summary={projects:(tenant.projects||[]).length,users:(tenant.users||[]).length,reports:(tenant.reports||[]).length,onboarding:tenant.company.onboarding||null};if(canPlatformUser(actor,PLATFORM_CAPABILITIES.SUBSCRIPTION_READ))summary.plan=tenant.company.plan||'pilot';return json(res,200,{banner:{companyName:tenant.company.name,actorName:grant.actorName,reason:grant.reason,expiresAt:grant.expiresAt},summary})}
   if(req.method==='POST'&&url.pathname==='/api/auth/claim'){const input=await body(req),db=readDb(),user=(db.users||[]).find(row=>row.email.toLowerCase()===String(input.email||'').toLowerCase()&&row.status==='Active'),temporaryPassword=input.temporaryPassword||input.setupCode;if(!user||!user.mustSetPassword||new Date(user.setupExpiresAt)<new Date()||!verifyCredential(temporaryPassword,user.setupSalt,user.setupHash))return json(res,401,{error:'Invalid or expired temporary password'});if(String(input.password||'').length<10)return json(res,400,{error:'Password must be at least 10 characters'});const credential=credentialHash(input.password);user.passwordHash=credential.hash;user.passwordSalt=credential.salt;user.mustSetPassword=false;delete user.setupHash;delete user.setupSalt;delete user.setupExpiresAt;writeDb(db);return json(res,200,{ok:true})}
   if(req.method==='POST'&&url.pathname==='/api/auth/login'){const input=await body(req),db=readDb(),user=(db.users||[]).find(row=>row.email.toLowerCase()===String(input.email||'').toLowerCase()&&row.status==='Active');if(user?.mustSetPassword&&new Date(user.setupExpiresAt)>new Date()&&verifyCredential(input.password,user.setupSalt,user.setupHash))return json(res,409,{error:'Create your permanent password to finish signing in.',code:'PASSWORD_SETUP_REQUIRED'});if(!user||user.mustSetPassword||!verifyCredential(input.password,user.passwordSalt,user.passwordHash))return json(res,401,{error:'Invalid email or password'});const token=crypto.randomBytes(32).toString('base64url'),tokenHash=crypto.createHash('sha256').update(token).digest('hex'),companyId=user.companyId||db.company.id,sessionSeconds=30*86400;db.sessions ||= [];db.sessions=db.sessions.filter(row=>new Date(row.expiresAt)>new Date());db.sessions.push({id:crypto.randomUUID(),tokenHash,userId:user.id,companyId,createdAt:new Date().toISOString(),expiresAt:new Date(Date.now()+sessionSeconds*1000).toISOString()});writeDb(db);const production=process.env.NODE_ENV==='production',secure=production?'; Secure':'';return jsonHeaders(res,200,{...(production?{}:{token}),expiresIn:sessionSeconds,user:{id:user.id,name:user.name,email:user.email,role:user.role,companyId}},{'Set-Cookie':[`pdl_session=${token}; HttpOnly; SameSite=Strict; Path=/; Max-Age=${sessionSeconds}${secure}`,`pdl_company=${companyId}; SameSite=Strict; Path=/; Max-Age=${sessionSeconds}${secure}`]})}
   if(req.method==='POST'&&url.pathname==='/api/auth/forgot'){
@@ -1332,14 +2653,14 @@ async function api(req,res,url){
   const catalogApply=url.pathname.match(/^\/api\/catalog\/(\d+)\/apply$/);if(req.method==='POST'&&catalogApply){const input=await body(req),db=readDb(),item=(db.catalog||[]).find(row=>row.id===Number(catalogApply[1])),project=db.projects.find(row=>row.id===Number(input.projectId)),quantity=Number(input.plannedQuantity);if(!item||!project||!(quantity>0))return json(res,400,{error:'Catalog item, project, and planned quantity are required'});project.estimateItems ||= [];const estimateItem={id:nextId(project.estimateItems),catalogItemId:item.id,name:item.name,plannedQuantity:quantity,unit:item.unit,budgetHours:Math.round(quantity*item.targetHoursPerUnit*100)/100,cost:0};project.estimateItems.push(estimateItem);writeDb(db);return json(res,201,estimateItem)}
   if(req.method==='GET'&&url.pathname==='/api/estimate-imports'){const db=readDb(),projectId=Number(url.searchParams.get('projectId'));if(!canViewPricing(db,req.auth?.user))return json(res,403,{error:'Pricing permission required'});if(req.auth.user.role==='project_manager'&&!managerScope(db,req.auth.user).projectIds.has(projectId))return json(res,404,{error:'Project not found'});return json(res,200,(db.estimateImports||[]).filter(row=>row.status==='Draft'&&row.projectId===projectId))}
   const saveImportDraft=url.pathname.match(/^\/api\/estimate-imports\/(\d+)\/draft$/);if(req.method==='PATCH'&&saveImportDraft){const input=await body(req),db=readDb(),row=(db.estimateImports||[]).find(item=>item.id===Number(saveImportDraft[1])),project=db.projects.find(item=>item.id===Number(input.projectId));if(!canViewPricing(db,req.auth?.user))return json(res,403,{error:'Pricing permission required'});if(!row||!project||req.auth.user.role==='project_manager'&&(!managerScope(db,req.auth.user).projectIds.has(project.id)||(row.projectId?!managerScope(db,req.auth.user).projectIds.has(row.projectId):row.createdByUserId!==req.auth.user.id)))return json(res,404,{error:'Import or project not found'});if(row.status==='Approved')return json(res,409,{error:'This import was already approved'});if(!Array.isArray(input.lines)||input.lines.length>500)return json(res,400,{error:'Draft must contain at most 500 reviewed lines'});const reviewed=[];for(const line of input.lines){if(!line||typeof line!=='object'||typeof line.description!=='string'||typeof line.unit!=='string')return json(res,400,{error:'Review line descriptions and units'});const next={description:line.description.trim().slice(0,500),unit:line.unit.trim().slice(0,20),confidence:'medium',scopeStatus:line.scopeStatus==='uncertain'?'uncertain':'included',catalogSuggestions:[],budgetHoursUserEdited:typeof line.budgetHoursUserEdited==='boolean'?line.budgetHoursUserEdited:line.budgetHours!=null};for(const key of ['quantity','amount','budgetHours','unitPrice','internalCost']){const value=line[key];if(value==null||typeof value==='string'&&value.trim()===''){next[key]=null;continue}if(!['number','string'].includes(typeof value)||!Number.isFinite(Number(value))||Number(value)<0||Number(value)>Number.MAX_SAFE_INTEGER)return json(res,400,{error:'Draft numbers must be finite, non-negative values or blank'});next[key]=Number(value)}const catalogId=Number(line.catalogItemId)||null;if(catalogId&&!(db.catalog||[]).some(item=>item.id===catalogId))return json(res,400,{error:'A selected catalog item no longer exists'});next.catalogItemId=catalogId;reviewed.push(next)}row.reviewedLines=enrichEstimateDraft({lines:reviewed},db.catalog||[]).lines.map(line=>{const selected=(db.catalog||[]).find(item=>item.id===line.catalogItemId);if(selected&&!line.catalogSuggestions.some(item=>item.id===selected.id))line.catalogSuggestions.push({...selected,score:0});return line});row.projectId=project.id;row.reviewedAt=new Date().toISOString();writeDb(db);return json(res,200,row)}
-  if(req.method==='POST'&&url.pathname==='/api/estimate-imports/analyze'){const input=await body(req),match=String(input.data||'').match(/^data:application\/pdf;base64,(.+)$/);if(!match)return json(res,400,{error:'A PDF estimate is required'});const bytes=Buffer.from(match[1],'base64');if(bytes.length>15_000_000)return json(res,400,{error:'PDF must be smaller than 15 MB'});const text=pdfText(bytes),db=readDb();let draft={...estimateDraft(text),extractionMethod:'embedded_text'},ocrWarning=null,estimateNumber=text.match(/(?:estimate|quote)\s*(?:#|no\.?|number)?\s*([A-Z0-9-]{2,30})/i)?.[1]||null;if((draft.requiresOcr||draft.requiresAiReview)&&process.env.OPENAI_API_KEY){try{draft=await aiEstimateDraft(bytes,String(input.filename||'estimate.pdf'),(meta)=>meterAI('estimate-import',req,meta));estimateNumber=draft.estimateNumber||estimateNumber}catch(error){ocrWarning=error.message}}draft=enrichEstimateDraft(draft,db.catalog||[]);db.estimateImports ||= [];fs.mkdirSync(path.join(ROOT,'uploads','estimates'),{recursive:true});const filename=`${Date.now()}-${crypto.randomUUID()}.pdf`;fs.writeFileSync(path.join(ROOT,'uploads','estimates',filename),bytes);const row={id:nextId(db.estimateImports),filename:String(input.filename||'estimate.pdf').slice(0,180),url:`/uploads/estimates/${filename}`,estimateNumber,status:'Draft',createdByUserId:req.auth?.user?.id||null,createdAt:new Date().toISOString(),textPreview:text.slice(0,500),...draft,ocrWarning,duplicate:estimateNumber?db.estimateImports.some(item=>item.estimateNumber===estimateNumber):false};db.estimateImports.push(row);writeDb(db);return json(res,201,row)}
+  if(req.method==='POST'&&url.pathname==='/api/estimate-imports/analyze'){const input=await body(req),match=String(input.data||'').match(/^data:application\/pdf;base64,(.+)$/);if(!match)return json(res,400,{error:'A PDF estimate is required'});const bytes=Buffer.from(match[1],'base64');if(bytes.length>15_000_000)return json(res,400,{error:'PDF must be smaller than 15 MB'});const text=pdfText(bytes),db=readDb();let draft={...estimateDraft(text),extractionMethod:'embedded_text'},ocrWarning=null,estimateNumber=text.match(/(?:estimate|quote)\s*(?:#|no\.?|number)?\s*([A-Z0-9-]{2,30})/i)?.[1]||null;if((draft.requiresOcr||draft.requiresAiReview)&&process.env.OPENAI_API_KEY){try{draft=await aiEstimateDraft(bytes,String(input.filename||'estimate.pdf'),(meta)=>meterAI('estimate-import',req,meta));estimateNumber=draft.estimateNumber||estimateNumber}catch(error){ocrWarning=error.message}}draft=enrichEstimateDraft(draft,db.catalog||[]);db.estimateImports ||= [];const filename=String(input.filename||'estimate.pdf').slice(0,180),stored=await saveAsset(db,'estimate-documents',filename,bytes,'application/pdf','uploads/estimates');const row={id:nextId(db.estimateImports),filename,url:stored.url,storageBucket:stored.bucket,storageKey:stored.objectKey,estimateNumber,status:'Draft',createdByUserId:req.auth?.user?.id||null,createdAt:new Date().toISOString(),textPreview:text.slice(0,500),...draft,ocrWarning,duplicate:estimateNumber?db.estimateImports.some(item=>item.estimateNumber===estimateNumber):false};db.estimateImports.push(row);writeDb(db);return json(res,201,row)}
   const approveImport=url.pathname.match(/^\/api\/estimate-imports\/(\d+)\/approve$/);if(req.method==='POST'&&approveImport){const input=await body(req),db=readDb(),row=(db.estimateImports||[]).find(item=>item.id===Number(approveImport[1])),project=db.projects.find(item=>item.id===Number(input.projectId)),lines=Array.isArray(input.lines)?input.lines:row?.lines;if(process.env.PDL_REQUIRE_AUTH==='1'){if(!canViewPricing(db,req.auth?.user))return json(res,403,{error:'Pricing permission required'});if(req.auth.user.role==='project_manager'&&(!project||!managerScope(db,req.auth.user).projectIds.has(project.id)||!row||(row.projectId?!managerScope(db,req.auth.user).projectIds.has(row.projectId):row.createdByUserId!==req.auth.user.id)))return json(res,404,{error:'Import or project not found'})}if(!row||!project||!lines?.length)return json(res,400,{error:'Import, project, and at least one confirmed line are required'});if(row.status==='Approved')return json(res,409,{error:'This import was already approved'});project.estimateItems ||= [];const created=[],prepared=[];for(const line of lines){if(!line||typeof line!=='object'||typeof line.description!=='string'||!line.description.trim()||!Number.isFinite(Number(line.quantity))||!(Number(line.quantity)>0)||typeof line.unit!=='string'||!line.unit.trim())return json(res,400,{error:'Every confirmed line needs a description, positive quantity, and unit. Review missing fields before approving.'});if(line.amount!=null&&(typeof line.amount!=='number'&&typeof line.amount!=='string'||!Number.isFinite(Number(line.amount))||Number(line.amount)<0))return json(res,400,{error:'Selling line amount must be a finite non-negative number'});const selectedId=Number(line.catalogItemId)||null,catalog=selectedId?(db.catalog||[]).find(item=>item.id===selectedId):null;if(selectedId&&!catalog)return json(res,400,{error:'A selected catalog item no longer exists'});const exact=catalog||(db.catalog||[]).find(item=>item.name.toLowerCase()===line.description.trim().toLowerCase()&&item.unit===line.unit.toUpperCase()),budgetHours=importBudgetHours(line,exact);if(budgetHours!==null&&!Number.isFinite(budgetHours))return json(res,400,{error:'Budget hours must be a non-negative number'});prepared.push({line,exact,budgetHours})}if(!prepared.length)return json(res,400,{error:'No valid estimate lines were confirmed'});for(const {line,exact,budgetHours} of prepared){const item={id:nextId(project.estimateItems),catalogItemId:exact?.id||null,name:line.description.trim(),plannedQuantity:Number(line.quantity),unit:line.unit.toUpperCase(),budgetHours,cost:line.amount==null||String(line.amount).trim()===''?null:Number(line.amount),sourceImportId:row.id};project.estimateItems.push(item);created.push(item)}row.status='Approved';row.projectId=project.id;row.approvedAt=new Date().toISOString();row.approvedLines=created.length;writeDb(db);return json(res,200,{import:row,items:created})}
   const ticketScan=url.pathname.match(/^\/api\/guest\/([a-f0-9]{48})\/ticket-scan$/);if(req.method==='POST'&&ticketScan){const input=await body(req),db=readDb(),tokenHash=crypto.createHash('sha256').update(ticketScan[1]).digest('hex'),link=(db.subcontractorLinks||[]).find(row=>row.tokenHash===tokenHash&&row.status==='Active');if(!link||new Date(link.expiresAt)<new Date())return json(res,404,{error:'This guest link is invalid or expired'});const files=(input.files||[]).slice(0,5);if(!files.length)return json(res,400,{error:'Choose at least one ticket'});try{return json(res,200,{tickets:await aiTicketDraft(files,(meta)=>meterAI('ticket-scan',req,meta))})}catch(error){return json(res,error.message.includes('not configured')?503:400,{error:error.message})}}
   const guestAccess=url.pathname.match(/^\/api\/guest\/([a-f0-9]{48})$/);if(req.method==='GET'&&guestAccess){const db=readDb(),tokenHash=crypto.createHash('sha256').update(guestAccess[1]).digest('hex'),link=(db.subcontractorLinks||[]).find(row=>row.tokenHash===tokenHash&&row.status==='Active');if(!link||new Date(link.expiresAt)<new Date())return json(res,404,{error:'This guest link is invalid or expired'});const subcontractor=(db.subcontractors||[]).find(row=>row.id===link.subcontractorId),project=db.projects.find(row=>row.id===link.projectId);if(!subcontractor||!project)return json(res,404,{error:'Guest access is no longer available'});const safeProject={id:project.id,name:project.name,code:project.code,site:project.site};return json(res,200,{company:{name:db.company.name},subcontractor:{id:subcontractor.id,name:subcontractor.name,trade:subcontractor.trade},project:safeProject,mode:link.mode||'progress',permissions:['start_day','end_day','daily_report','photos','tickets'],expiresAt:link.expiresAt})}
-  if(req.method==='POST'&&guestAccess){const input=await body(req),db=readDb(),tokenHash=crypto.createHash('sha256').update(guestAccess[1]).digest('hex'),link=(db.subcontractorLinks||[]).find(row=>row.tokenHash===tokenHash&&row.status==='Active');if(!link||new Date(link.expiresAt)<new Date())return json(res,404,{error:'This guest link is invalid or expired'});const subcontractor=(db.subcontractors||[]).find(row=>row.id===link.subcontractorId),projectIndex=db.projects.findIndex(row=>row.id===link.projectId);if(!subcontractor||projectIndex<0)return json(res,404,{error:'Guest access is no longer available'});if(!input.notes?.trim()||!input.startedAt||!input.endedAt||new Date(input.endedAt)<=new Date(input.startedAt))return json(res,400,{error:'Valid start time, end time, and work notes are required'});if((input.tickets||[]).some(ticket=>!ticket.confirmed))return json(res,400,{error:'Every ticket must be checked and confirmed before submission'});const crewCount=Math.max(1,Number(input.crewCount)||1),hours=Math.round(((new Date(input.endedAt)-new Date(input.startedAt))/3600000)*100)/100,now=new Date().toISOString(),report={id:nextId(db.reports),project:projectIndex,date:new Date(input.endedAt).toLocaleDateString('en-US',{month:'short',day:'numeric'}),dateIso:String(input.endedAt).slice(0,10),foreman:subcontractor.name,status:'Needs review',notes:input.notes.trim(),summary:`${subcontractor.name} reported ${crewCount} people on site for ${hours} hours each.`,labor:`${crewCount} people · ${(crewCount*hours).toFixed(2)} total hours`,quantity:'Needs office verification',next:String(input.next||'').slice(0,500),weather:'',temperature:'',productionEntries:[],laborEntries:[],materials:String(input.materials||'').slice(0,1000),equipment:String(input.equipment||'').slice(0,1000),delays:String(input.delays||'').slice(0,1000),safety:'',signature:String(input.signature||subcontractor.name).slice(0,120),source:'subcontractor',subcontractorId:subcontractor.id,guestTime:{startedAt:input.startedAt,endedAt:input.endedAt,crewCount,hoursPerPerson:hours},flags:[],history:[{action:'Submitted by subcontractor',by:subcontractor.name,at:now}]};db.reports.unshift(report);db.photos ||= [];const allowed={'image/jpeg':'jpg','image/png':'png','image/webp':'webp'},created=[];fs.mkdirSync(path.join(ROOT,'uploads'),{recursive:true});for(const file of (input.files||[]).slice(0,8)){const ext=allowed[file.type],match=String(file.data||'').match(/^data:[^;]+;base64,(.+)$/);if(!ext||!match)continue;const bytes=Buffer.from(match[1],'base64');if(bytes.length>6_000_000)continue;const filename=`${Date.now()}-${crypto.randomUUID()}.${ext}`,photo={id:nextId(db.photos),project:projectIndex,reportId:report.id,source:'field',phase:'end',caption:'Subcontractor daily photo',uploader:subcontractor.name,createdAt:now,url:`/uploads/${filename}`};fs.writeFileSync(path.join(ROOT,'uploads',filename),bytes);db.photos.push(photo);created.push(photo)}db.projectTickets ||= [];const savedTickets=[];for(const ticket of (input.tickets||[]).slice(0,5)){try{const duplicate=ticketDuplicate(db,link.projectId,ticket);if(duplicate)return json(res,409,{error:`Ticket ${ticket.ticketNumber} from ${ticket.vendor||'this vendor'} is already attached to this project`});const decoded=decodeTicketUpload(ticket.file),stored=await saveAsset(db,'project-tickets',decoded.name,decoded.bytes,decoded.type,'uploads/project-tickets'),lines=cleanTicketLines(ticket),row={id:nextId(db.projectTickets),projectId:link.projectId,reportId:report.id,subcontractorId:subcontractor.id,source:'subcontractor',vendor:String(ticket.vendor||'').slice(0,160),ticketNumber:String(ticket.ticketNumber||'').slice(0,100),ticketDate:String(ticket.ticketDate||'').slice(0,10),lines,material:lines.map(line=>line.material).filter(Boolean).join(', ').slice(0,250),quantity:lines.length===1?lines[0].quantity:0,unit:lines.length===1?lines[0].unit:'',amount:lines.reduce((sum,line)=>sum+Number(line.amount||0),0),confidence:['high','medium','low'].includes(ticket.confidence)?ticket.confidence:'low',needsReview:Array.isArray(ticket.needsReview)?ticket.needsReview.map(String).slice(0,20):[],status:'Needs review',confirmedBy:subcontractor.name,confirmedAt:now,createdAt:now,updatedAt:now,history:[{action:'Submitted and confirmed',by:subcontractor.name,at:now}],filename:decoded.name,contentType:decoded.type,...stored};db.projectTickets.push(row);savedTickets.push(row)}catch(error){return json(res,400,{error:error.message})}}report.ticketIds=savedTickets.map(ticket=>ticket.id);writeDb(db);bumpPublicStats();return json(res,201,{reportId:report.id,status:report.status,photos:created.length,tickets:savedTickets.length})}
+  if(req.method==='POST'&&guestAccess){const input=await body(req),db=readDb(),tokenHash=crypto.createHash('sha256').update(guestAccess[1]).digest('hex'),link=(db.subcontractorLinks||[]).find(row=>row.tokenHash===tokenHash&&row.status==='Active');if(!link||new Date(link.expiresAt)<new Date())return json(res,404,{error:'This guest link is invalid or expired'});const subcontractor=(db.subcontractors||[]).find(row=>row.id===link.subcontractorId),projectIndex=db.projects.findIndex(row=>row.id===link.projectId);if(!subcontractor||projectIndex<0)return json(res,404,{error:'Guest access is no longer available'});if(!input.notes?.trim()||!input.startedAt||!input.endedAt||new Date(input.endedAt)<=new Date(input.startedAt))return json(res,400,{error:'Valid start time, end time, and work notes are required'});if((input.tickets||[]).some(ticket=>!ticket.confirmed))return json(res,400,{error:'Every ticket must be checked and confirmed before submission'});const crewCount=Math.max(1,Number(input.crewCount)||1),hours=Math.round(((new Date(input.endedAt)-new Date(input.startedAt))/3600000)*100)/100,now=new Date().toISOString(),report={id:nextId(db.reports),project:projectIndex,date:new Date(input.endedAt).toLocaleDateString('en-US',{month:'short',day:'numeric'}),dateIso:String(input.endedAt).slice(0,10),foreman:subcontractor.name,status:'Needs review',notes:input.notes.trim(),summary:`${subcontractor.name} reported ${crewCount} people on site for ${hours} hours each.`,labor:`${crewCount} people · ${(crewCount*hours).toFixed(2)} total hours`,quantity:'Needs office verification',next:String(input.next||'').slice(0,500),weather:'',temperature:'',productionEntries:[],laborEntries:[],materials:String(input.materials||'').slice(0,1000),equipment:String(input.equipment||'').slice(0,1000),delays:String(input.delays||'').slice(0,1000),safety:'',signature:String(input.signature||subcontractor.name).slice(0,120),source:'subcontractor',subcontractorId:subcontractor.id,guestTime:{startedAt:input.startedAt,endedAt:input.endedAt,crewCount,hoursPerPerson:hours},flags:[],history:[{action:'Submitted by subcontractor',by:subcontractor.name,at:now}]};db.reports.unshift(report);db.photos ||= [];const allowed={'image/jpeg':'jpg','image/png':'png','image/webp':'webp'},created=[];for(const file of (input.files||[]).slice(0,8)){const ext=allowed[file.type],match=String(file.data||'').match(/^data:[^;]+;base64,(.+)$/);if(!ext||!match)continue;const bytes=Buffer.from(match[1],'base64');if(bytes.length>6_000_000)continue;const stored=await saveAsset(db,'project-photos',`subcontractor-photo.${ext}`,bytes,file.type),photo={id:nextId(db.photos),project:projectIndex,reportId:report.id,source:'field',phase:'end',caption:'Subcontractor daily photo',uploader:subcontractor.name,createdAt:now,url:stored.url,storageBucket:stored.bucket,storageKey:stored.objectKey};db.photos.push(photo);created.push(photo)}db.projectTickets ||= [];const savedTickets=[];for(const ticket of (input.tickets||[]).slice(0,5)){try{const duplicate=ticketDuplicate(db,link.projectId,ticket);if(duplicate)return json(res,409,{error:`Ticket ${ticket.ticketNumber} from ${ticket.vendor||'this vendor'} is already attached to this project`});const decoded=decodeTicketUpload(ticket.file),stored=await saveAsset(db,'project-tickets',decoded.name,decoded.bytes,decoded.type,'uploads/project-tickets'),lines=cleanTicketLines(ticket),row={id:nextId(db.projectTickets),projectId:link.projectId,reportId:report.id,subcontractorId:subcontractor.id,source:'subcontractor',vendor:String(ticket.vendor||'').slice(0,160),ticketNumber:String(ticket.ticketNumber||'').slice(0,100),ticketDate:String(ticket.ticketDate||'').slice(0,10),lines,material:lines.map(line=>line.material).filter(Boolean).join(', ').slice(0,250),quantity:lines.length===1?lines[0].quantity:0,unit:lines.length===1?lines[0].unit:'',amount:lines.reduce((sum,line)=>sum+Number(line.amount||0),0),confidence:['high','medium','low'].includes(ticket.confidence)?ticket.confidence:'low',needsReview:Array.isArray(ticket.needsReview)?ticket.needsReview.map(String).slice(0,20):[],status:'Needs review',confirmedBy:subcontractor.name,confirmedAt:now,createdAt:now,updatedAt:now,history:[{action:'Submitted and confirmed',by:subcontractor.name,at:now}],filename:decoded.name,contentType:decoded.type,...stored};db.projectTickets.push(row);savedTickets.push(row)}catch(error){return json(res,400,{error:error.message})}}report.ticketIds=savedTickets.map(ticket=>ticket.id);writeDb(db);bumpPublicStats();return json(res,201,{reportId:report.id,status:report.status,photos:created.length,tickets:savedTickets.length})}
   const tmSummary=url.pathname.match(/^\/api\/projects\/(\d+)\/tm-summary$/);if(req.method==='GET'&&tmSummary){const db=readDb(),projectIndex=db.projects.findIndex(p=>p.id===Number(tmSummary[1])),project=db.projects[projectIndex];if(!project)return json(res,404,{error:'Project not found'});if(process.env.PDL_REQUIRE_AUTH==='1'){if(!['owner','admin','project_manager'].includes(req.auth?.user?.role)||!canViewPricing(db,req.auth.user))return json(res,403,{error:'Pricing permission required'});if(req.auth.user.role==='project_manager'&&!managerScope(db,req.auth.user).projectIds.has(Number(project.id)))return json(res,404,{error:'Project not found'});}const reports=db.reports.filter(r=>r.project===projectIndex&&r.status==='Approved'),summary=reportRates.summarizeRates(db,projectIndex,reports);return json(res,200,{projectId:project.id,...summary,materialEntries:reports.filter(r=>r.materials).length,equipmentEntries:reports.filter(r=>r.equipment).length,currentDefaults:project.tmSettings||{}})}
   const estimateProposalApprove=url.pathname.match(/^\/api\/projects\/(\d+)\/estimate-proposals\/(\d+)\/approve$/);if(req.method==='POST'&&estimateProposalApprove){const db=readDb(),project=db.projects.find(row=>row.id===Number(estimateProposalApprove[1]));if(!project)return json(res,404,{error:'Project not found'});project.estimateProposals ||= [];const index=project.estimateProposals.findIndex(row=>row.id===Number(estimateProposalApprove[2]));if(index<0)return json(res,404,{error:'Field estimate draft not found'});const proposal=project.estimateProposals[index];if(!Number.isFinite(Number(proposal.plannedQuantity))||!(Number(proposal.plannedQuantity)>0)||typeof proposal.unit!=='string'||!proposal.unit.trim())return json(res,400,{error:'Review the scope quantity and unit before adding it to the estimate'});project.estimateItems ||= [];const item={id:nextId(project.estimateItems),name:proposal.name,plannedQuantity:proposal.plannedQuantity,unit:proposal.unit,budgetHours:null,cost:0,source:'field_proposal',sourceProposalId:proposal.id};project.estimateItems.push(item);project.estimateProposals.splice(index,1);writeDb(db);return json(res,200,{item,proposals:project.estimateProposals})}
-  const estimateProposals=url.pathname.match(/^\/api\/projects\/(\d+)\/estimate-proposals$/);if(req.method==='POST'&&estimateProposals){const input=await body(req),db=readDb(),project=db.projects.find(row=>row.id===Number(estimateProposals[1]));if(!project)return json(res,404,{error:'Project not found'});if(fieldRole(req.auth?.user)){const member=(db.team||[]).find(row=>Number(row.id)===Number(req.auth.user.memberId)),scope=member&&fieldProjectIds(db,member);if(!scope?.allowedIds.has(project.id))return json(res,403,{error:'You can only add scope to one of your assigned projects'})}let lines=[],sourceFile=null;if(input.data){const match=String(input.data).match(/^data:application\/pdf;base64,(.+)$/);if(!match)return json(res,400,{error:'Choose a PDF estimate'});const bytes=Buffer.from(match[1],'base64');if(bytes.length>15_000_000)return json(res,400,{error:'PDF must be smaller than 15 MB'});let draft=estimateDraft(pdfText(bytes));if((draft.requiresOcr||draft.requiresAiReview)&&process.env.OPENAI_API_KEY)draft=await aiEstimateDraft(bytes,String(input.filename||'estimate.pdf'),(meta)=>meterAI('estimate-import',req,meta));lines=(draft.lines||[]).map(line=>({name:String(line.description||'').trim(),plannedQuantity:Number(line.quantity),unit:String(line.unit||'').trim().toUpperCase()}));if(lines.some(line=>!line.name||!Number.isFinite(line.plannedQuantity)||!(line.plannedQuantity>0)||!line.unit))return json(res,400,{error:'PDF scope needs quantity and unit review. Use the office estimate import or enter each scope line manually.'});if(!lines.length)return json(res,400,{error:'No scope lines could be read. Add the scope line manually instead.'});fs.mkdirSync(path.join(ROOT,'uploads','estimates'),{recursive:true});const filename=`${Date.now()}-${crypto.randomUUID()}.pdf`;fs.writeFileSync(path.join(ROOT,'uploads','estimates',filename),bytes);sourceFile={name:String(input.filename||'estimate.pdf').slice(0,180),url:`/uploads/estimates/${filename}`}}else{const name=String(input.name||'').trim(),plannedQuantity=Number(input.plannedQuantity),unit=String(input.unit||'EA').toUpperCase();if(!name||!(plannedQuantity>0))return json(res,400,{error:'Scope and planned quantity are required'});lines=[{name:name.slice(0,120),plannedQuantity,unit:unit.slice(0,10)}]}project.estimateProposals ||= [];const now=new Date().toISOString(),createdBy=req.auth?.user?.name||'Field team';for(const line of lines)project.estimateProposals.push({id:nextId(project.estimateProposals),...line,sourceFile,createdBy,createdAt:now,status:'Needs office review'});writeDb(db);return json(res,201,{created:lines.length,proposals:project.estimateProposals})}
+  const estimateProposals=url.pathname.match(/^\/api\/projects\/(\d+)\/estimate-proposals$/);if(req.method==='POST'&&estimateProposals){const input=await body(req),db=readDb(),project=db.projects.find(row=>row.id===Number(estimateProposals[1]));if(!project)return json(res,404,{error:'Project not found'});if(fieldRole(req.auth?.user)){const member=(db.team||[]).find(row=>Number(row.id)===Number(req.auth.user.memberId)),scope=member&&fieldProjectIds(db,member);if(!scope?.allowedIds.has(project.id))return json(res,403,{error:'You can only add scope to one of your assigned projects'})}let lines=[],sourceFile=null;if(input.data){const match=String(input.data).match(/^data:application\/pdf;base64,(.+)$/);if(!match)return json(res,400,{error:'Choose a PDF estimate'});const bytes=Buffer.from(match[1],'base64');if(bytes.length>15_000_000)return json(res,400,{error:'PDF must be smaller than 15 MB'});let draft=estimateDraft(pdfText(bytes));if((draft.requiresOcr||draft.requiresAiReview)&&process.env.OPENAI_API_KEY)draft=await aiEstimateDraft(bytes,String(input.filename||'estimate.pdf'),(meta)=>meterAI('estimate-import',req,meta));lines=(draft.lines||[]).map(line=>({name:String(line.description||'').trim(),plannedQuantity:Number(line.quantity),unit:String(line.unit||'').trim().toUpperCase()}));if(lines.some(line=>!line.name||!Number.isFinite(line.plannedQuantity)||!(line.plannedQuantity>0)||!line.unit))return json(res,400,{error:'PDF scope needs quantity and unit review. Use the office estimate import or enter each scope line manually.'});if(!lines.length)return json(res,400,{error:'No scope lines could be read. Add the scope line manually instead.'});const name=String(input.filename||'estimate.pdf').slice(0,180),stored=await saveAsset(db,'estimate-documents',name,bytes,'application/pdf','uploads/estimates');sourceFile={name,url:stored.url,storageBucket:stored.bucket,storageKey:stored.objectKey}}else{const name=String(input.name||'').trim(),plannedQuantity=Number(input.plannedQuantity),unit=String(input.unit||'EA').toUpperCase();if(!name||!(plannedQuantity>0))return json(res,400,{error:'Scope and planned quantity are required'});lines=[{name:name.slice(0,120),plannedQuantity,unit:unit.slice(0,10)}]}project.estimateProposals ||= [];const now=new Date().toISOString(),createdBy=req.auth?.user?.name||'Field team';for(const line of lines)project.estimateProposals.push({id:nextId(project.estimateProposals),...line,sourceFile,createdBy,createdAt:now,status:'Needs office review'});writeDb(db);return json(res,201,{created:lines.length,proposals:project.estimateProposals})}
   const userTimeAccess=url.pathname.match(/^\/api\/users\/(\d+)\/time-access$/);if(req.method==='PATCH'&&userTimeAccess){const input=await body(req),db=readDb(),user=(db.users||[]).find(row=>row.id===Number(userTimeAccess[1]));if(!user)return json(res,404,{error:'User not found'});if(user.role==='owner')return json(res,409,{error:'The account owner always has time access'});user.permissions={...(user.permissions||{}),manageTime:['admin','project_manager'].includes(user.role)&&input.manageTime===true};user.updatedAt=new Date().toISOString();db.auditLog ||= [];db.auditLog.push({id:crypto.randomUUID(),type:'user_access_changed',userId:user.id,actor:req.auth?.user?.name||'Account owner',detail:`${user.name}: time management ${user.permissions.manageTime?'granted':'removed'}`,at:user.updatedAt});writeDb(db);const{setupHash,setupSalt,...safe}=user;return json(res,200,safe)}
   if(req.method==='GET'&&url.pathname==='/api/schedule-availability'){const db=readDb();return json(res,200,scopedScheduleAvailability(db,req.auth?.user))}
   if(req.method==='GET'&&url.pathname==='/api/state'){
@@ -1889,8 +3210,8 @@ async function api(req,res,url){
     return json(res,200,record);
   }
   if(req.method==='GET'&&url.pathname==='/api/company/export'){const db=readDb();if(process.env.PDL_REQUIRE_AUTH==='1'&&req.auth?.user.role!=='owner')return json(res,403,{error:'Account owner permission required'});const exportData=customerDataExport(db);if(projectNotesUser(req,db)?.role!=='owner')delete exportData.projectNotesTodos;else if(exportData.projectNotesTodos)exportData.projectNotesTodos=exportData.projectNotesTodos.filter(row=>row.companyId===db.company.id);const exported=JSON.stringify(exportData,null,2),filename=`pro-daily-link-${String(db.company.name||'company').toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'')||'company'}-export.json`;res.writeHead(200,{'Content-Type':'application/json; charset=utf-8','Content-Disposition':`attachment; filename="${filename}"`,'Cache-Control':'no-store'});return res.end(exported)}
-  if(req.method==='POST'&&url.pathname==='/api/company/deletion-request'){const input=await body(req),db=readDb();if(process.env.PDL_REQUIRE_AUTH==='1'&&req.auth?.user.role!=='owner')return json(res,403,{error:'Account owner permission required'});const phrase=`DELETE ${db.company.name}`;if(String(input.confirmation||'').trim()!==phrase)return json(res,400,{error:`Type ${phrase} exactly to request account closure`});const requestedAt=new Date(),scheduledFor=new Date(requestedAt.getTime()+30*86400000);db.company.deletionRequest={status:'Requested',requestedAt:requestedAt.toISOString(),scheduledFor:scheduledFor.toISOString(),requestedBy:req.auth?.user?.name||'Account owner'};db.auditLog ||= [];db.auditLog.push({id:nextId(db.auditLog),type:'account_deletion_requested',detail:`Company closure requested; deletion hold ends ${scheduledFor.toISOString().slice(0,10)}`,actor:req.auth?.user?.name||'Account owner',at:requestedAt.toISOString()});writeDb(db);return json(res,202,db.company.deletionRequest)}
-  if(req.method==='DELETE'&&url.pathname==='/api/company/deletion-request'){const db=readDb();if(process.env.PDL_REQUIRE_AUTH==='1'&&req.auth?.user.role!=='owner')return json(res,403,{error:'Account owner permission required'});if(!db.company.deletionRequest)return json(res,404,{error:'No account closure request is active'});const cancelledAt=new Date().toISOString();db.company.deletionRequest={...db.company.deletionRequest,status:'Cancelled',cancelledAt,cancelledBy:req.auth?.user?.name||'Account owner'};db.auditLog ||= [];db.auditLog.push({id:nextId(db.auditLog),type:'account_deletion_cancelled',detail:'Company closure request cancelled',actor:req.auth?.user?.name||'Account owner',at:cancelledAt});writeDb(db);return json(res,200,db.company.deletionRequest)}
+  if(req.method==='POST'&&url.pathname==='/api/company/deletion-request'){const input=await body(req),db=readDb();if(process.env.PDL_REQUIRE_AUTH==='1'&&req.auth?.user.role!=='owner')return json(res,403,{error:'Account owner permission required'});const phrase=`DELETE ${db.company.name}`;if(String(input.confirmation||'').trim()!==phrase)return json(res,400,{error:`Type ${phrase} exactly to request account closure`});if(['Awaiting operator review','Recovery hold'].includes(db.company.deletionRequest?.status))return json(res,409,{error:'An account closure request is already active'});const requestedAt=new Date().toISOString(),actor=req.auth?.user?.name||'Account owner';db.company.deletionRequest={id:crypto.randomUUID(),status:'Awaiting operator review',requestedAt,requestedBy:actor,requestedByUserId:req.auth?.user?.id??null,exportOffered:true,ownerNote:String(input.note||'').trim().slice(0,1000)};db.auditLog ||= [];db.auditLog.push({id:nextId(db.auditLog),type:'account_deletion_requested',detail:'Company closure requested for operator review; access and billing are unchanged until the request is verified',actor,at:requestedAt});writeDb(db);return json(res,202,{...deletionRequestDto(db.company.deletionRequest),message:'Your request is awaiting a person’s review. Your account and billing stay active until Pro Daily Link confirms the recovery hold.'})}
+  if(req.method==='DELETE'&&url.pathname==='/api/company/deletion-request'){const db=readDb();if(process.env.PDL_REQUIRE_AUTH==='1'&&req.auth?.user.role!=='owner')return json(res,403,{error:'Account owner permission required'});if(!db.company.deletionRequest||db.company.deletionRequest.status!=='Awaiting operator review')return json(res,409,{error:'Only a request awaiting review can be cancelled here. Contact support if a recovery hold has already started.'});const cancelledAt=new Date().toISOString();db.company.deletionRequest={...db.company.deletionRequest,status:'Cancelled',cancelledAt,cancelledBy:req.auth?.user?.name||'Account owner'};db.auditLog ||= [];db.auditLog.push({id:nextId(db.auditLog),type:'account_deletion_cancelled',detail:'Company closure request cancelled before operator review',actor:req.auth?.user?.name||'Account owner',at:cancelledAt});writeDb(db);return json(res,200,deletionRequestDto(db.company.deletionRequest))}
   const subCompliance=url.pathname.match(/^\/api\/subcontractors\/(\d+)$/);if(req.method==='PATCH'&&subCompliance){if(process.env.PDL_REQUIRE_AUTH==='1'&&!['owner','admin','project_manager'].includes(req.auth?.user.role))return json(res,403,{error:'Office permission required'});const input=await body(req),db=readDb(),sub=(db.subcontractors||[]).find(row=>row.id===Number(subCompliance[1]));if(!sub)return json(res,404,{error:'Subcontractor not found'});const before=JSON.stringify({insuranceExpiration:sub.insuranceExpiration||'',workersCompExpiration:sub.workersCompExpiration||'',licenseNumber:sub.licenseNumber||'',licenseExpiration:sub.licenseExpiration||'',w9Received:Boolean(sub.w9Received),agreementSigned:Boolean(sub.agreementSigned),autoComplianceReminders:Boolean(sub.autoComplianceReminders)});for(const key of ['insuranceExpiration','workersCompExpiration','licenseExpiration'])if(Object.hasOwn(input,key))sub[key]=/^\d{4}-\d{2}-\d{2}$/.test(String(input[key]||''))?String(input[key]):'';if(Object.hasOwn(input,'licenseNumber'))sub.licenseNumber=String(input.licenseNumber||'').trim().slice(0,100);if(Object.hasOwn(input,'notes'))sub.notes=String(input.notes||'').trim().slice(0,2000);for(const key of ['w9Received','agreementSigned','autoComplianceReminders'])if(Object.hasOwn(input,key))sub[key]=Boolean(input[key]);const after=JSON.stringify({insuranceExpiration:sub.insuranceExpiration||'',workersCompExpiration:sub.workersCompExpiration||'',licenseNumber:sub.licenseNumber||'',licenseExpiration:sub.licenseExpiration||'',w9Received:Boolean(sub.w9Received),agreementSigned:Boolean(sub.agreementSigned),autoComplianceReminders:Boolean(sub.autoComplianceReminders)});sub.complianceHistory ||= [];if(before!==after)sub.complianceHistory.push({action:'Compliance updated',detail:'Requirements and reminder settings reviewed by the office',at:new Date().toISOString()});sub.complianceReminderStages={};writeDb(db);return json(res,200,sub)}
   const complianceReminder=url.pathname.match(/^\/api\/subcontractors\/(\d+)\/compliance-reminder$/);if(req.method==='POST'&&complianceReminder){if(process.env.PDL_REQUIRE_AUTH==='1'&&!['owner','admin','project_manager'].includes(req.auth?.user.role))return json(res,403,{error:'Office permission required'});const db=readDb(),sub=(db.subcontractors||[]).find(row=>row.id===Number(complianceReminder[1]));if(!sub)return json(res,404,{error:'Subcontractor not found'});try{await sendComplianceReminder(db,sub);writeDb(db);return json(res,200,sub)}catch(error){return json(res,400,{error:error.message})}}
   const subLink=url.pathname.match(/^\/api\/subcontractors\/(\d+)\/links$/);if(req.method==='POST'&&subLink){const input=await body(req),db=readDb(),subcontractor=(db.subcontractors||[]).find(row=>row.id===Number(subLink[1])),project=db.projects.find(row=>row.id===Number(input.projectId));if(!subcontractor||!project||subcontractor.archivedAt)return json(res,404,{error:'Subcontractor or project not found'});const expiresAt=input.expiresAt?new Date(`${input.expiresAt}T23:59:59`).toISOString():new Date(Date.now()+30*86400000).toISOString(),token=crypto.randomBytes(24).toString('hex'),mode=input.mode==='tm'?'tm':'progress',now=new Date().toISOString(),actor=req.auth?.user?.name||'Office user',row={id:nextId(db.subcontractorLinks||[]),subcontractorId:subcontractor.id,projectId:project.id,mode,tokenHash:crypto.createHash('sha256').update(token).digest('hex'),status:'Active',createdAt:now,expiresAt};db.subcontractorLinks ||= [];db.subcontractorLinks.push(row);subcontractor.complianceHistory ||= [];subcontractor.complianceHistory.push({action:'Project access created',detail:`${project.name} · expires ${expiresAt.slice(0,10)}`,by:actor,at:now});writeDb(db);return json(res,201,{id:row.id,subcontractorId:row.subcontractorId,projectId:row.projectId,mode:row.mode,status:row.status,createdAt:row.createdAt,expiresAt:row.expiresAt,url:`/guest/${token}?c=${encodeURIComponent(db.company.id)}`})}
@@ -1901,7 +3222,7 @@ async function api(req,res,url){
   const extraBillable=url.pathname.match(/^\/api\/reports\/(\d+)\/extra-work$/);if(req.method==='PATCH'&&extraBillable){const input=await body(req),db=readDb(),report=(db.reports||[]).find(row=>row.id===Number(extraBillable[1]));if(!report)return json(res,404,{error:'Report not found'});if(process.env.PDL_REQUIRE_AUTH==='1'&&!['owner','admin','project_manager'].includes(req.auth?.user?.role))return json(res,403,{error:'Office permission required'});const index=Number(input.index),item=Array.isArray(report.extraWork)?report.extraWork[index]:null;if(!item||item.extra_work!==true)return json(res,404,{error:'Extra work item not found'});const choice=['potential_change','tm','mapped','non_billable'].includes(input.decision)?input.decision:input.billable===true?'potential_change':input.billable===false?'non_billable':'';if(!choice)return json(res,400,{error:'Choose billable or not billable'});const billable=choice==='potential_change'||choice==='tm',label=fieldScope.extraDecisionLabel(choice),actor=req.auth?.user?.name||'Office';if(item.officeDecision===choice&&item.billable===billable)return json(res,200,{report:presentReport(db,req.auth?.user,report)});item.billable=billable;item.officeDecision=choice;item.billableBy=actor;item.billableAt=new Date().toISOString();report.history ||= [];report.history.push({action:`Extra work marked ${label}`,by:actor,at:item.billableAt});writeDb(db);return json(res,200,{report:presentReport(db,req.auth?.user,report)})}
   const disposition=url.pathname.match(/^\/api\/reports\/(\d+)\/disposition$/);if(req.method==='PATCH'&&disposition){const input=await body(req),allowed=['mapped','non_billable','tm','potential_change'];if(!allowed.includes(input.resolution))return json(res,400,{error:'Choose a valid office disposition'});const db=readDb(),report=db.reports.find(r=>r.id===Number(disposition[1]));if(!report)return json(res,404,{error:'Report not found'});const unresolved=(report.flags||[]).filter(flag=>!flag.resolution);if(!unresolved.length)return json(res,400,{error:'This report has no unresolved exceptions'});const resolvedAt=new Date().toISOString(),note=String(input.note||'').slice(0,500);for(const flag of unresolved)Object.assign(flag,{resolution:input.resolution,resolutionNote:note,resolvedBy:'Office',resolvedAt});db.changes ||= [];let change=null;if(['potential_change','tm'].includes(input.resolution)){const project=db.projects[report.project],prefix=input.resolution==='tm'?'TM':'PC',number=`${prefix}-${String(db.changes.filter(row=>row.projectId===project.id).length+1).padStart(3,'0')}`;change={id:nextId(db.changes),projectId:project.id,reportId:report.id,number,title:note||(report.productionEntries||[]).filter(entry=>!entry.estimateItemId).map(entry=>entry.description).join(', ')||'Unplanned field work',status:input.resolution==='tm'?'T&M':'Potential',amount:0,createdAt:resolvedAt,history:[{action:`Created from daily exception as ${input.resolution==='tm'?'T&M':'potential change'}`,by:'Office',at:resolvedAt}]};db.changes.push(change)}report.history ||= [];report.history.push({action:`Exception resolved: ${input.resolution.replace('_',' ')}`,by:'Office',at:resolvedAt});alignReportNarrative(report);writeDb(db);return json(res,200,{report:presentReport(db,req.auth?.user,report),change})}
   const changeUpdate=url.pathname.match(/^\/api\/changes\/(\d+)$/);if(req.method==='PATCH'&&changeUpdate){const input=await body(req),statuses=['Potential','Pricing','Submitted','Approved','Rejected','Void','T&M'],db=readDb(),change=(db.changes||[]).find(row=>row.id===Number(changeUpdate[1])),showPricing=canViewPricing(db,req.auth?.user);if(!change)return json(res,404,{error:'Change not found'});if(req.auth?.user?.role==='project_manager'&&!managerScope(db,req.auth.user).projectIds.has(Number(change.projectId)))return json(res,404,{error:'Change not found'});if(input.status&&!statuses.includes(input.status))return json(res,400,{error:'Invalid change status'});if(Object.hasOwn(input,'title')&&!String(input.title||'').trim())return json(res,400,{error:'A change description is required'});if(Object.hasOwn(input,'amount')&&!showPricing)return json(res,403,{error:'Your company has not granted you pricing access'});const before={title:change.title,status:change.status,amount:Number(change.amount)||0,reason:change.reason||''};if(input.status)change.status=input.status;if(Object.hasOwn(input,'amount'))change.amount=Math.max(0,Number(input.amount)||0);if(Object.hasOwn(input,'title'))change.title=String(input.title).trim().slice(0,160);if(Object.hasOwn(input,'reason'))change.reason=String(input.reason||'').trim().slice(0,1000);let linesNote='';if(Object.hasOwn(input,'lines')){if(!Array.isArray(input.lines))return json(res,400,{error:'Line items must be a list'});const parsedLines=input.lines.slice(0,30).map(line=>({description:String(line?.description||'').trim().slice(0,300),quantity:Math.max(0,Number(line?.quantity)||0),unit:String(line?.unit||'').trim().slice(0,20),laborHours:Math.min(24,Math.max(0,Number(line?.laborHours)||0)),materialCost:Math.max(0,Number(line?.materialCost)||0)})).filter(line=>line.description);if(parsedLines.some(line=>line.materialCost>0)&&!showPricing)return json(res,403,{error:'Your company has not granted you pricing access'});if(JSON.stringify(change.lines||[])!==JSON.stringify(parsedLines))linesNote='line items';change.lines=parsedLines;if(parsedLines.length&&!Object.hasOwn(input,'amount'))change.amount=Math.round(parsedLines.reduce((sum,line)=>sum+line.materialCost,0)*100)/100}const actor=req.auth?.user?.name||'Office',at=new Date().toISOString(),changed=[];if(before.title!==change.title)changed.push('description');if((change.reason||'')!==before.reason)changed.push('reason');if(linesNote)changed.push(linesNote);if(before.status!==change.status){changed.push(`status ${before.status} → ${change.status}`);if(change.status==='Submitted'&&!change.submittedAt)change.submittedAt=at;if(['Approved','Rejected'].includes(change.status)){change.decidedAt=at;change.decidedBy=actor}}if(before.amount!==Number(change.amount))changed.push(`amount $${before.amount.toLocaleString()} → $${Number(change.amount).toLocaleString()}`);change.updatedAt=at;change.history ||= [];change.history.push({action:changed.length?`Updated ${changed.join('; ')}`:'Reviewed with no changes',by:actor,at});db.auditLog ||= [];db.auditLog.push({id:crypto.randomUUID(),type:'project_change_updated',projectId:change.projectId,changeId:change.id,actor,detail:`${change.number}: ${changed.join('; ')||'reviewed'}`,at});writeDb(db);if(change.fieldFlag&&before.status!==change.status){const flagUser=(db.users||[]).find(row=>row.status==='Active'&&row.email&&row.name===change.createdBy);if(flagUser&&process.env.RESEND_API_KEY)sendChangeStatusEmail({to:flagUser.email,name:flagUser.name,companyName:db.company.name,change,language:flagUser.preferredLanguage}).catch(error=>console.error('Change status email failed',error.message))}return json(res,200,showPricing?change:((({amount,...safe})=>safe)(change)))}
-  const changeSubmit=url.pathname.match(/^\/api\/changes\/(\d+)\/submit$/);if(req.method==='POST'&&changeSubmit){const db=readDb(),change=(db.changes||[]).find(row=>row.id===Number(changeSubmit[1]));if(!change)return json(res,404,{error:'Change not found'});if(req.auth?.user?.role==='project_manager'&&!managerScope(db,req.auth.user).projectIds.has(Number(change.projectId)))return json(res,404,{error:'Change not found'});if(!['Potential','Pricing','Submitted'].includes(change.status))return json(res,409,{error:`This change was already ${change.status.toLowerCase()}`});const at=new Date().toISOString(),actor=req.auth?.user?.name||'Office',before=change.status;if(before!=='Submitted'){change.status='Submitted';if(!change.submittedAt)change.submittedAt=at;change.updatedAt=at;change.history ||= [];change.history.push({action:`status ${before} → Submitted`,by:actor,at});db.auditLog ||= [];db.auditLog.push({id:crypto.randomUUID(),type:'project_change_submitted',projectId:change.projectId,changeId:change.id,actor,detail:`${change.number} submitted for customer approval`,at})}const raw=crypto.randomBytes(24).toString('base64url');change.customerTokenHash=crypto.createHash('sha256').update(raw).digest('hex');writeDb(db);if(change.fieldFlag&&before!==change.status){const flagUser=(db.users||[]).find(row=>row.status==='Active'&&row.email&&row.name===change.createdBy);if(flagUser&&process.env.RESEND_API_KEY)sendChangeStatusEmail({to:flagUser.email,name:flagUser.name,companyName:db.company.name,change,language:flagUser.preferredLanguage}).catch(error=>console.error('Change status email failed',error.message))}return json(res,200,{status:change.status,submittedAt:change.submittedAt,url:`/change-order.html?c=${change.id}&t=${raw}`})}
+  const changeSubmit=url.pathname.match(/^\/api\/changes\/(\d+)\/submit$/);if(req.method==='POST'&&changeSubmit){const db=readDb(),change=(db.changes||[]).find(row=>row.id===Number(changeSubmit[1]));if(!change)return json(res,404,{error:'Change not found'});if(req.auth?.user?.role==='project_manager'&&!managerScope(db,req.auth.user).projectIds.has(Number(change.projectId)))return json(res,404,{error:'Change not found'});if(!['Potential','Pricing','Submitted'].includes(change.status))return json(res,409,{error:`This change was already ${change.status.toLowerCase()}`});const at=new Date().toISOString(),actor=req.auth?.user?.name||'Office',before=change.status;if(before!=='Submitted'){change.status='Submitted';if(!change.submittedAt)change.submittedAt=at;change.updatedAt=at;change.history ||= [];change.history.push({action:`status ${before} → Submitted`,by:actor,at});db.auditLog ||= [];db.auditLog.push({id:crypto.randomUUID(),type:'project_change_submitted',projectId:change.projectId,changeId:change.id,actor,detail:`${change.number} submitted for customer approval`,at})}const raw=crypto.randomBytes(24).toString('base64url');change.customerTokenHash=crypto.createHash('sha256').update(raw).digest('hex');writeDb(db);if(change.fieldFlag&&before!==change.status){const flagUser=(db.users||[]).find(row=>row.status==='Active'&&row.email&&row.name===change.createdBy);if(flagUser&&process.env.RESEND_API_KEY)sendChangeStatusEmail({to:flagUser.email,name:flagUser.name,companyName:db.company.name,change,language:flagUser.preferredLanguage}).catch(error=>console.error('Change status email failed',error.message))}return json(res,200,{status:change.status,submittedAt:change.submittedAt,url:`/change-order.html?c=${change.id}&t=${raw}&tenant=${encodeURIComponent(db.company.id)}`})}
   const changeOrderGet=url.pathname.match(/^\/api\/change-order\/([A-Za-z0-9_-]+)$/);if(req.method==='GET'&&changeOrderGet){const db=readDb(),hash=crypto.createHash('sha256').update(changeOrderGet[1]).digest('hex'),change=(db.changes||[]).find(row=>row.customerTokenHash===hash);if(!change)return json(res,404,{error:'Change order link not found or revoked'});const project=(db.projects||[]).find(row=>Number(row.id)===Number(change.projectId));return json(res,200,{number:change.number,title:change.title,reason:change.reason||'',detail:change.detail||'',status:change.status,amount:Number(change.amount)||0,lines:(change.lines||[]).map(line=>({description:line.description,quantity:line.quantity,unit:line.unit,laborHours:line.laborHours,materialCost:line.materialCost})),photos:(db.photos||[]).filter(photo=>Number(photo.changeId)===Number(change.id)).map(photo=>({url:photo.url,caption:photo.caption||'',capturedAt:photo.capturedAt||photo.createdAt})),createdAt:change.createdAt,createdBy:change.createdBy||'',submittedAt:change.submittedAt||null,decidedAt:change.decidedAt||null,decidedBy:change.decidedBy||null,decisionNote:change.decisionNote||null,company:{name:db.company?.name||''},project:{name:project?.name||'',customer:project?.customer||'',site:project?.site||''}})}
   const changeOrderDecision=url.pathname.match(/^\/api\/change-order\/([A-Za-z0-9_-]+)\/decision$/);if(req.method==='POST'&&changeOrderDecision){const input=await body(req),db=readDb(),hash=crypto.createHash('sha256').update(changeOrderDecision[1]).digest('hex'),change=(db.changes||[]).find(row=>row.customerTokenHash===hash);if(!change)return json(res,404,{error:'Change order link not found or revoked'});const decision=input.decision==='approved'?'Approved':'Rejected';if(change.status===decision||!['Potential','Pricing','Submitted'].includes(change.status))return json(res,200,{status:change.status,decidedAt:change.decidedAt,decidedBy:change.decidedBy,decisionNote:change.decisionNote||'',already:true});const name=String(input.name||'').trim();if(!name)return json(res,400,{error:'Type your name to sign the decision'});const note=String(input.note||'').trim().slice(0,500),at=new Date().toISOString();change.status=decision;change.decidedAt=at;change.decidedBy=name;change.decisionNote=note||null;change.updatedAt=at;change.history ||= [];change.history.push({action:`${decision} by customer signature (${name})${note?` — ${note}`:''}`,by:name,at});db.auditLog ||= [];db.auditLog.push({id:crypto.randomUUID(),type:'project_change_decided',projectId:change.projectId,changeId:change.id,actor:name,detail:`${change.number} ${decision.toLowerCase()} via change order link`,at});writeDb(db);if(change.fieldFlag&&process.env.RESEND_API_KEY){const flagUser=(db.users||[]).find(row=>row.status==='Active'&&row.email&&row.name===change.createdBy);if(flagUser)sendChangeStatusEmail({to:flagUser.email,name:flagUser.name,companyName:db.company.name,change,language:flagUser.preferredLanguage}).catch(error=>console.error('Change status email failed',error.message))}return json(res,200,{status:change.status,decidedAt:change.decidedAt,decidedBy:change.decidedBy,decisionNote:change.decisionNote||''})}
   const reviewed=url.pathname.match(/^\/api\/reports\/(\d+)\/reviewed$/);if(req.method==='POST'&&reviewed){const db=readDb(),report=db.reports.find(r=>r.id===Number(reviewed[1]));if(!report)return json(res,404,{error:'Report not found'});const reviewer=req.auth?.user,reviewRole=reviewer?.role==='office'?'admin':reviewer?.role;if(fieldRole(reviewer)||(process.env.PDL_REQUIRE_AUTH==='1'&&!['owner','admin','project_manager'].includes(reviewRole)))return json(res,403,{error:'Office permission required'});if(report.updatedAfterSend){const at=new Date().toISOString(),by=reviewer?.name||'Office user';report.history ||= [];report.history.push({action:'Update reviewed',by,at});report.updatedAfterSendReviewed={at,by,role:reviewRole||'office'};delete report.updatedAfterSend;writeDb(db)}return json(res,200,presentReport(db,req.auth?.user,report))}
@@ -1927,10 +3248,41 @@ function readPublicStats(){try{return JSON.parse(fs.readFileSync(PUBLIC_STATS_FI
 function bumpPublicStats(){try{const stats=readPublicStats();stats.dailies=Number(stats.dailies||0)+1;fs.mkdirSync(path.dirname(PUBLIC_STATS_FILE),{recursive:true});fs.writeFileSync(PUBLIC_STATS_FILE,JSON.stringify(stats))}catch{}}
 const {createMcpHttp}=require('./mcp/http');
 const mcpHttp=createMcpHttp({dbFile:DB_FILE,verifyCredential,tenantDatabases,supabase,stableUuid,mergeTenantSnapshots,platformCloudId:PLATFORM_CLOUD_ID,withTenantQueue,requestDatabase,freshestTenantSnapshot,dbContext,readDb,writeDb,api,transactionalMode,closeTimeCards,timeCardsEnabled,quarterHours,companyDateIso,fieldProjectIds,accountAccess,nextId});
-const server=http.createServer(async(req,res)=>{const requestId=crypto.randomUUID();try{secureHeaders(res);res.setHeader('X-Request-Id',requestId);const url=new URL(req.url,'http://localhost');if(blockStagingRecovery(req,res,url,json))return;if(req.method==='GET'&&url.pathname==='/api/health/live')return json(res,200,{ok:true,kind:'liveness',time:new Date().toISOString()});if(mcpHttp.matches(url))return mcpHttp.handle(req,res,url);const shortLink=req.method==='GET'&&/^\/[a-z0-9]$/.test(url.pathname);if(shortLink){res.writeHead(302,{Location:`/?utm_source=heycatch&utm_campaign=${url.pathname.slice(1)}`});return res.end()}if(url.pathname.startsWith('/api/')){if(!rateLimit(req,res,url))return;if(req.method==='GET'&&url.pathname==='/api/public/stats'){const stats=readPublicStats();return json(res,200,{dailies:stats.dailies,since:stats.since})}if(salesDemoRoute.test(url.pathname))return await handleSalesDemo(req,res,url);if(req.method==='POST'&&url.pathname==='/api/demo-requests')return await handleDemoRequest(req,res);if(url.pathname==='/api/platform/revenue')return await handlePlatformRevenue(req,res,url);if(req.method==='POST'&&url.pathname==='/api/billing/webhook')return await handleStripeWebhook(req,res);if(req.method==='POST'&&url.pathname==='/api/auth/company'){const input=await body(req),companyId=await companyIdForEmail(input.email);return json(res,200,{companyId:companyId||null})}const guestToken=(req.method==='GET'||req.method==='POST')?url.pathname.match(/^\/api\/guest\/([a-f0-9]{48})(?:\/ticket-scan)?$/):null,changeOrderToken=(req.method==='GET'||req.method==='POST')?url.pathname.match(/^\/api\/change-order\/([A-Za-z0-9_-]+)(?:\/decision)?$/):null,database=guestToken?await guestRequestDatabase(req,url,guestToken[1]):changeOrderToken?await changeOrderRequestDatabase(req,url,changeOrderToken[1]):await authenticatedRequestDatabase(req);if(!database)return json(res,404,{error:guestToken?'This guest link is invalid or expired':changeOrderToken?'This link is invalid or expired':'Company workspace not found'});const companyId=String(database.db?.company?.id||JSON.parse(fs.readFileSync(database.file,'utf8')).company.id);if(assistantPath(url.pathname)){const pilotDb=freshestTenantSnapshot(database),{auth,status}=authenticateRequestAccount(req,pilotDb);if(!auth)return json(res,status,{error:'Authentication required'});if(!permittedCompany(pilotDb.company?.id))return json(res,403,{error:'Project assistant access is not enabled for this company.'})}if(req.method==='POST'&&/^\/api\/projects\/\d+\/assistant\/chat$/.test(url.pathname)||(req.method==='POST'&&url.pathname==='/api/assistant/interpret')||(req.method==='GET'&&url.pathname==='/api/assistant/context')){const context={...database,db:freshestTenantSnapshot(database),pending:[]};return await dbContext.run(context,()=>url.pathname.startsWith('/api/assistant/')?handleAssistantAI(req,res,url):handleProjectAssistant(req,res,url))}return await withTenantQueue(companyId,async()=>{database.db=freshestTenantSnapshot(database);const context={...database,pending:[],backup:null,deferResponse:transactionalMode()==='primary'};try{const result=await dbContext.run(context,()=>api(req,res,url));if(isCredentialAttempt(req,url)&&res.statusCode===401)recordAuthFailure(req);await Promise.all(context.pending);flushDeferredResponse(res,context);return result}catch(error){if(error.code==='PDL_REVISION_CONFLICT'||/PDL_REVISION_CONFLICT/.test(String(error.message))){if(!res.headersSent)return json(res,409,{error:'This company changed while you were saving. Nothing was overwritten. Refresh and try again.',code:'STALE_WRITE',requestId})}throw error}})}let requested=decodeURIComponent(url.pathname==='/'?'/landing.html':url.pathname==='/app'?'/index.html':url.pathname==='/favicon.ico'?'/assets/pro-daily-link-logo.png':/^\/guest\/[a-f0-9]{48}$/.test(url.pathname)?'/guest.html':url.pathname);if(requested.startsWith('/uploads/')){res.writeHead(307,{Location:'/api/local-files/'+requested.slice(9).split('/').map(encodeURIComponent).join('/'),'Cache-Control':'no-store'});return res.end()}let file=path.resolve(ROOT,'.'+requested);if(!isPublicFile(ROOT,file)||!file.startsWith(ROOT+path.sep)||!fs.existsSync(file)||fs.statSync(file).isDirectory()||!fs.realpathSync(file).startsWith(ROOT+path.sep)){res.writeHead(404);return res.end('Not found')}const extension=path.extname(file),mustRevalidate=['.html','.js','.css'].includes(extension);res.writeHead(200,{'Content-Type':MIME[extension]||'application/octet-stream','Cache-Control':mustRevalidate?'no-cache, no-store, must-revalidate':'public, max-age=3600'});fs.createReadStream(file).pipe(res)}catch(error){console.error(`[${requestId}]`,error);monitoring.captureRequestException(error,{requestId,method:req.method,route:req.url});if(!res.headersSent)json(res,error.statusCode||500,{error:error.statusCode===413?'Request is too large':error.statusCode===400?'Invalid request body':'Unexpected server error',requestId})}});
+async function runPlatformRequest(req,res,url,requestId,handler){
+  const platformMutation=url.pathname.startsWith('/api/platform/')&&!url.pathname.startsWith('/api/platform/auth/')&&!['GET','HEAD','OPTIONS'].includes(req.method);
+  // Buffer the body before authorization so a slow request cannot keep a role
+  // that was revoked while its payload was still arriving.
+  if(platformMutation)await body(req);
+  if(url.pathname==='/api/signup'){
+    const validation=signupInputValidation(await body(req));
+    if(validation)return json(res,validation.status,{error:validation.error});
+  }
+  return withPlatformQueue(async()=>{
+    const context={db:readDb(),file:DB_FILE,pending:[],backup:null,deferResponse:PLATFORM_REPOSITORY_MODE==='primary',platformMutation,platformRequest:req,platformUrl:url};
+    try{
+      const result=await dbContext.run(context,handler);
+      if(isCredentialAttempt(req,url)&&(context.response?.status||res.statusCode)===401)recordAuthFailure(req);
+      await Promise.all(context.pending);
+      flushDeferredResponse(res,context);
+      return result;
+    }catch(error){
+      if(error.code==='PDL_PLATFORM_REVISION_CONFLICT'||error instanceof PlatformRevisionConflictError){
+        if(!res.headersSent)return json(res,409,{error:'This back-office record changed while you were saving. Nothing was overwritten. Refresh and try again.',code:'STALE_PLATFORM_WRITE',requestId});
+      }
+      if(error.code==='PDL_REVISION_CONFLICT'||/PDL_REVISION_CONFLICT/.test(String(error.message))){
+        if(!res.headersSent)return json(res,409,{error:'This customer account changed while you were saving. Nothing was overwritten. Refresh and try again.',code:'STALE_WRITE',requestId});
+      }
+      throw error;
+    }
+  });
+}
+
+function publicPlatformContentRoute(req,url){return req.method==='GET'&&(url.pathname==='/api/help'||url.pathname==='/api/blog'||/^\/api\/blog\/[^/]+$/.test(url.pathname))}
+
+const server=http.createServer(async(req,res)=>{const requestId=crypto.randomUUID();try{secureHeaders(res);res.setHeader('X-Request-Id',requestId);const url=new URL(req.url,'http://localhost');if(blockStagingRecovery(req,res,url,json))return;if(req.method==='GET'&&url.pathname==='/api/health/live')return json(res,200,{ok:true,kind:'liveness',time:new Date().toISOString()});if(mcpHttp.matches(url))return mcpHttp.handle(req,res,url);const shortLink=req.method==='GET'&&/^\/[a-z0-9]$/.test(url.pathname);if(shortLink){res.writeHead(302,{Location:`/?utm_source=heycatch&utm_campaign=${url.pathname.slice(1)}`});return res.end()}if(url.pathname.startsWith('/api/')){if(!rateLimit(req,res,url))return;if(req.method==='GET'&&url.pathname==='/api/health')return await api(req,res,url);if(req.method==='GET'&&url.pathname==='/api/public/stats'){const stats=readPublicStats();return json(res,200,{dailies:stats.dailies,since:stats.since})}if(publicPlatformContentRoute(req,url))return await withPlatformQueue(()=>api(req,res,url));if(salesDemoRoute.test(url.pathname))return await handleSalesDemo(req,res,url);if(req.method==='POST'&&url.pathname==='/api/demo-requests')return await runPlatformRequest(req,res,url,requestId,()=>handleDemoRequest(req,res));if(url.pathname==='/api/platform/revenue')return await handlePlatformRevenue(req,res,url);if(/^\/api\/support-session\//.test(url.pathname))return await runPlatformRequest(req,res,url,requestId,()=>api(req,res,url));if(url.pathname.startsWith('/api/platform/'))return await runPlatformRequest(req,res,url,requestId,()=>api(req,res,url));if(req.method==='POST'&&url.pathname==='/api/signup')return await runPlatformRequest(req,res,url,requestId,()=>api(req,res,url));if(req.method==='POST'&&url.pathname==='/api/billing/webhook')return await handleStripeWebhook(req,res);if(req.method==='POST'&&url.pathname==='/api/auth/company'){const input=await body(req),companyId=await companyIdForEmail(input.email);return json(res,200,{companyId:companyId||null})}const guestToken=(req.method==='GET'||req.method==='POST')?url.pathname.match(/^\/api\/guest\/([a-f0-9]{48})(?:\/ticket-scan)?$/):null,changeOrderToken=(req.method==='GET'||req.method==='POST')?url.pathname.match(/^\/api\/change-order\/([A-Za-z0-9_-]+)(?:\/decision)?$/):null,database=guestToken?await guestRequestDatabase(req,url,guestToken[1]):changeOrderToken?await changeOrderRequestDatabase(req,url,changeOrderToken[1]):await authenticatedRequestDatabase(req);if(!database)return json(res,404,{error:guestToken?'This guest link is invalid or expired':changeOrderToken?'This link is invalid or expired':'Company workspace not found'});const companyId=String(database.db?.company?.id||JSON.parse(fs.readFileSync(database.file,'utf8')).company.id);if(assistantPath(url.pathname)){const pilotDb=freshestTenantSnapshot(database),{auth,status}=authenticateRequestAccount(req,pilotDb);if(!auth)return json(res,status,{error:'Authentication required'});if(!permittedCompany(pilotDb.company?.id))return json(res,403,{error:'Project assistant access is not enabled for this company.'})}if(req.method==='POST'&&/^\/api\/projects\/\d+\/assistant\/chat$/.test(url.pathname)||(req.method==='POST'&&url.pathname==='/api/assistant/interpret')||(req.method==='GET'&&url.pathname==='/api/assistant/context')){const context={...database,db:freshestTenantSnapshot(database),pending:[]};return await dbContext.run(context,()=>url.pathname.startsWith('/api/assistant/')?handleAssistantAI(req,res,url):handleProjectAssistant(req,res,url))}return await withTenantQueue(companyId,async()=>{database.db=freshestTenantSnapshot(database);const context={...database,pending:[],backup:null,deferResponse:transactionalMode()==='primary'};try{const result=await dbContext.run(context,()=>api(req,res,url));if(isCredentialAttempt(req,url)&&res.statusCode===401)recordAuthFailure(req);await Promise.all(context.pending);flushDeferredResponse(res,context);return result}catch(error){if(error.code==='PDL_REVISION_CONFLICT'||/PDL_REVISION_CONFLICT/.test(String(error.message))){if(!res.headersSent)return json(res,409,{error:'This company changed while you were saving. Nothing was overwritten. Refresh and try again.',code:'STALE_WRITE',requestId})}throw error}})}let requested=decodeURIComponent(url.pathname==='/'?'/landing.html':url.pathname==='/app'?'/index.html':url.pathname==='/favicon.ico'?'/assets/pro-daily-link-logo.png':/^\/guest\/[a-f0-9]{48}$/.test(url.pathname)?'/guest.html':url.pathname);if(requested.startsWith('/uploads/')){res.writeHead(307,{Location:'/api/local-files/'+requested.slice(9).split('/').map(encodeURIComponent).join('/'),'Cache-Control':'no-store'});return res.end()}let file=path.resolve(ROOT,'.'+requested);if(!isPublicFile(ROOT,file)||!file.startsWith(ROOT+path.sep)||!fs.existsSync(file)||fs.statSync(file).isDirectory()||!fs.realpathSync(file).startsWith(ROOT+path.sep)){res.writeHead(404);return res.end('Not found')}const extension=path.extname(file),mustRevalidate=['.html','.js','.css'].includes(extension);res.writeHead(200,{'Content-Type':MIME[extension]||'application/octet-stream','Cache-Control':mustRevalidate?'no-cache, no-store, must-revalidate':'public, max-age=3600'});fs.createReadStream(file).pipe(res)}catch(error){console.error(`[${requestId}]`,error);monitoring.captureRequestException(error,{requestId,method:req.method,route:req.url});if(!res.headersSent)json(res,error.statusCode||500,{error:error.statusCode===413?'Request is too large':error.statusCode===400?'Invalid request body':'Unexpected server error',requestId})}});
 server.requestTimeout=30000;server.headersTimeout=15000;server.keepAliveTimeout=5000;
-if(require.main===module){monitoring.installShutdownFlush(server);Promise.all([loadPrimaryCloud(),loadPlatformCloud()]).finally(()=>server.listen(PORT,()=>{console.log(`Pro Daily Link running at http://localhost:${PORT}`);const backupBootTimer=setTimeout(()=>{startBackupSelfHeal()},3000);backupBootTimer.unref();const digestCheck=()=>maybeSendWeeklyHealthDigest().catch(error=>console.error('Weekly digest check failed',error.message));const digestTimer=setInterval(digestCheck,30*60000);digestTimer.unref();const digestBootTimer=setTimeout(digestCheck,15000);digestBootTimer.unref()}))}
-module.exports={server,mergeTenantSnapshots,localExtract,rekeyDuplicateAssignments,prepareWorkspace,buildActionCenter,crewHourFact,customerDataExport,canReadStoredAsset,maybeSendWeeklyHealthDigest,nextWeeklyDigestDue,weeklyHealthDigestModel,renderWeeklyHealthDigestEmail,restoreBackupReceipt,mirrorBackupReceipt,startBackupSelfHeal};
+if(require.main===module){monitoring.installShutdownFlush(server);Promise.all([loadPrimaryCloud(),initializePlatformPersistence()]).then(()=>server.listen(PORT,()=>{console.log(`Pro Daily Link running at http://localhost:${PORT}`);const backupBootTimer=setTimeout(()=>{startBackupSelfHeal()},3000);backupBootTimer.unref();const digestCheck=()=>maybeSendWeeklyHealthDigest().catch(error=>console.error('Weekly digest check failed',error.message));const digestTimer=setInterval(digestCheck,30*60000);digestTimer.unref();const digestBootTimer=setTimeout(digestCheck,15000);digestBootTimer.unref();const growthRetry=()=>retryPendingSignupGrowth().catch(error=>console.error('Signup growth retry check failed',error.message));const growthRetryTimer=setInterval(growthRetry,5*60000);growthRetryTimer.unref();const growthRetryBootTimer=setTimeout(growthRetry,5000);growthRetryBootTimer.unref();const assistedSetupRetry=()=>retryPendingAssistedSetup().catch(error=>console.error('Assisted setup retry check failed',error.message));const assistedSetupRetryTimer=setInterval(assistedSetupRetry,5*60000);assistedSetupRetryTimer.unref();const assistedSetupRetryBootTimer=setTimeout(assistedSetupRetry,7000);assistedSetupRetryBootTimer.unref();const platformAuditRetry=()=>retryPendingPlatformAudits().catch(error=>console.error('Platform audit recovery check failed',error.message));const platformAuditRetryTimer=setInterval(platformAuditRetry,15*60000);platformAuditRetryTimer.unref();const platformAuditBootTimer=setTimeout(platformAuditRetry,9000);platformAuditBootTimer.unref();const deletionCleanupRetry=()=>withPlatformQueue(()=>retryPendingTenantDeletionCleanup()).catch(error=>console.error('Tenant deletion cleanup retry failed',error.message));const deletionCleanupTimer=setInterval(deletionCleanupRetry,15*60000);deletionCleanupTimer.unref();const deletionCleanupBootTimer=setTimeout(deletionCleanupRetry,10000);deletionCleanupBootTimer.unref();const retentionSweep=()=>sweepTenantRetention().catch(error=>console.error('Tenant retention sweep failed',error.message));const retentionTimer=setInterval(retentionSweep,6*60*60000);retentionTimer.unref();const retentionBootTimer=setTimeout(retentionSweep,11000);retentionBootTimer.unref()})).catch(error=>{console.error('Startup failed:',error.message);monitoring.captureException?.(error);process.exitCode=1})}
+module.exports={server,mergeTenantSnapshots,localExtract,rekeyDuplicateAssignments,prepareWorkspace,buildActionCenter,crewHourFact,customerDataExport,canReadStoredAsset,maybeSendWeeklyHealthDigest,nextWeeklyDigestDue,weeklyHealthDigestModel,renderWeeklyHealthDigestEmail,restoreBackupReceipt,mirrorBackupReceipt,startBackupSelfHeal,retryPendingSignupGrowth,retryPendingAssistedSetup,retryPendingPlatformAudits,retryPendingTenantDeletionCleanup,initializePlatformPersistence,platformRepositoryHealth,tenantRepositoryHealth,operationalHealthRequirements,operationalTenantSnapshots,platformRevenueCompanies,purgeExpiredTicketFiles,sweepTenantRetention,removeTenantStoredObjects,tenantMirrorFile,removeTenantMirror,scrubTenantPlatformPii,tenantPlatformPiiReferences,persistTenantDeletionCleanupJob,executePermanentTenantDeletion,deletionRequestDto};
 
 const PDL_SUPPORT_LIBRARY = [{"id":"pdl-help-01","title":"Create your company account","type":"article","audience":"all","category":"Getting started","summary":"Start a 14-day trial without a credit card.","content":"1) Open the sign-up page.\n2) Enter your company and contact details.\n3) Choose the plan that fits your team.\n4) Accept the Terms and Privacy Policy.\n5) Select [CONFIRM BUTTON NAME] to create the workspace.","url":"","status":"Published","order":100},{"id":"pdl-help-02","title":"Add your first project","type":"article","audience":"office","category":"Getting started","summary":"A project name is all you need. Link a customer now or come back to it later.","content":"1) Open Projects.\n2) Select Add project.\n3) Enter the project name — the only required field.\n4) Optionally choose a customer, or select + New customer to create one inline.\n5) Add any other details you have and save.\n6) Link or change the customer anytime from the project.","url":"","status":"Published","order":101},{"id":"pdl-help-03","title":"Invite office users","type":"article","audience":"office","category":"Team","summary":"Give trusted office staff their own secure sign-in.","content":"1) Open Team.\n2) Open User accounts.\n3) Select Add user account.\n4) Choose the office role.\n5) Enter the person’s email.\n6) Share the temporary-password instructions securely.","url":"","status":"Published","order":102},{"id":"pdl-help-04","title":"Add crew members and crews","type":"article","audience":"office","category":"Team","summary":"Keep people and crew assignments organized for reports and scheduling.","content":"1) Open Team.\n2) Select Add team member.\n3) Choose the member’s role.\n4) Select an existing crew or create one.\n5) Add contact information.\n6) Save the team member.","url":"","status":"Published","order":103},{"id":"pdl-help-05","title":"Schedule crews","type":"article","audience":"office","category":"Scheduling","summary":"Put the right crew on the right project and keep the field informed.","content":"1) Open Schedule.\n2) Select Add assignment, or select an open day beside a person.\n3) Choose the crew or person, then choose the project.\n4) Confirm the work date and shift times.\n5) Add an activity, or expand Add multiple days only when needed.\n6) Review the availability preview and select Add assignment.","url":"","status":"Published","order":104},{"id":"pdl-help-06","title":"What crew members see on My Day","type":"article","audience":"field","category":"Field work","summary":"My Day shows field users their own assignments and daily work tools.","content":"1) Sign in with your crew account.\n2) Open My Day.\n3) Review today’s assignment.\n4) Acknowledge the assignment.\n5) Start the workday when work begins.\n6) File a daily report when finished.","url":"","status":"Published","order":105},{"id":"pdl-help-07","title":"File a daily report on a phone","type":"article","audience":"field","category":"Field work","summary":"Capture notes, labor, photos, and installed work before leaving the job.","content":"1) Open My Day and choose New daily report.\n2) Confirm the project, date, and crew.\n3) Describe what happened today.\n4) Add photos or voice notes if helpful.\n5) Enter labor and production in Step 2.\n6) Submit to office.","url":"","status":"Published","order":106},{"id":"pdl-help-08","title":"Add photos and voice notes","type":"article","audience":"field","category":"Field work","summary":"Attach clear jobsite evidence to a daily report.","content":"1) Open a new or draft daily report.\n2) Use the photo area to add images.\n3) Add a short caption or tag when prompted.\n4) Select Speak notes to dictate an update.\n5) Review the transcribed note.\n6) Continue to submit the daily.","url":"","status":"Published","order":107},{"id":"pdl-help-09","title":"Add unplanned work","type":"article","audience":"field","category":"Field work","summary":"Record work that was not part of the estimate so the office can review it.","content":"1) Open Step 2 of the daily report.\n2) Select Custom work.\n3) Describe the work completed.\n4) Add labor hours and quantity when known.\n5) Submit the daily.\n6) The office will see the item flagged for review.","url":"","status":"Published","order":108},{"id":"pdl-help-10","title":"Approve daily reports","type":"article","audience":"office","category":"Daily reports","summary":"Only approved dailies count toward project production.","content":"1) Open Action center.\n2) Select a daily that needs review.\n3) Check notes, photos, hours, and quantities.\n4) Correct details if needed.\n5) Select Approve.\n6) Review the updated project actuals.","url":"","status":"Published","order":109},{"id":"pdl-help-11","title":"Set up estimate items","type":"article","audience":"office","category":"Projects","summary":"Use estimate items to compare planned work with approved production.","content":"1) Open the project.\n2) Open Estimate & actual.\n3) Select Add estimate item.\n4) Enter the scope, planned quantity, unit, and budgeted labor hours.\n5) Add estimated cost if your office uses it.\n6) Save the item.","url":"","status":"Published","order":110},{"id":"pdl-help-12","title":"Read Estimate & actual","type":"article","audience":"office","category":"Projects","summary":"See completed quantity, remaining quantity, and labor used for each scope item.","content":"1) Open the project.\n2) Open Estimate & actual.\n3) Find the scope item.\n4) Review completed and remaining quantity.\n5) Review labor used against budget.\n6) Open the item to edit planned values if authorized.","url":"","status":"Published","order":111},{"id":"pdl-help-13","title":"Understand efficiency percentage","type":"article","audience":"office","category":"Insights","summary":"Efficiency compares earned labor from completed work with actual approved labor.","content":"1) Open Production insights.\n2) Choose a date range.\n3) Filter by project, crew, or scope.\n4) Review the efficiency percentage.\n5) Compare results with completed quantity and labor hours.\n6) Use the trend as a conversation starter, not payroll data.","url":"","status":"Published","order":112},{"id":"pdl-help-14","title":"Export CSV reports","type":"article","audience":"office","category":"Insights","summary":"Download report data for a spreadsheet or project meeting.","content":"1) Open Production insights.\n2) Set the date range and filters.\n3) Review the results.\n4) Select Export CSV.\n5) Open the downloaded file in your spreadsheet program.","url":"","status":"Published","order":113},{"id":"pdl-help-15","title":"Who can see pricing","type":"article","audience":"office","category":"Access and permissions","summary":"Company owners control who in the office can view contract values, estimated costs, and pricing.","content":"1) Open Company settings.\n2) Open pricing visibility.\n3) Turn pricing access on or off for office roles.\n4) Select individual office team members if needed.\n5) Save the settings.\n6) Field and crew users do not see pricing.","url":"","status":"Published","order":114},{"id":"pdl-help-16","title":"Use subcontractor guest links","type":"article","audience":"office","category":"Access and permissions","summary":"Share limited project access without giving a subcontractor full company access.","content":"1) Open the project or subcontractor area.\n2) Select Create guest link.\n3) Choose the allowed project access.\n4) Copy the link.\n5) Share it only with the intended subcontractor.\n6) Revoke it when access is no longer needed.","url":"","status":"Published","order":115},{"id":"pdl-help-17","title":"Trial and plans","type":"article","audience":"all","category":"Billing","summary":"Every new company starts with a 14-day trial and no credit card.","content":"1) Start your free trial.\n2) Use the trial to create customers, projects, teams, and reports.\n3) Check days remaining in your workspace.\n4) Choose Starter, Growth, or Pro before the trial ends.\n5) Select Manage plan to continue.","url":"","status":"Published","order":116},{"id":"pdl-help-18","title":"Billing and cancelling","type":"article","audience":"office","category":"Billing","summary":"Plan and billing actions are handled by the company owner or authorized office staff.","content":"1) Open Manage plan.\n2) Review your plan and billing details.\n3) Choose the plan action you need.\n4) For a billing dispute, refund, or cancellation request, contact support with your company name and email.","url":"","status":"Published","order":117}];
 const TIME_CARD_HELP = {id:'pdl-help-19',title:'Create, correct, submit, and approve time cards',type:'article',audience:'all',category:'Time cards',summary:'Use a clear Draft → Submitted → Approved workflow while preserving correction history.',content:'1) Field users end their workday or company-time clock to close the card.\n2) Office users can select Add time card to enter a missed card manually.\n3) Correct times while the card is in Draft; overlapping hours are blocked.\n4) Select Submit when the card is ready for office review.\n5) Office users review Submitted cards, then select Approve.\n6) Select Unapprove to return a card to Draft before correcting it.\n7) Deleting a Draft or Submitted card removes it from the list but retains its audit record.\n8) Corrections to a linked time card update that daily report’s labor hours.',url:'',status:'Published',order:118};
@@ -1942,7 +3294,6 @@ readPlatform = function(){
   if(missing.length){
     const now = new Date().toISOString();
     platform.helpItems.push(...missing.map(item => ({...item, createdAt:now, updatedAt:now})));
-    writePlatform(platform);
   }
   const priorHelpContent = {
     'pdl-help-02': {
@@ -1963,6 +3314,5 @@ readPlatform = function(){
       }
     }
   }
-  if(refreshedHelp) writePlatform(platform);
   return platform;
 };

@@ -1,7 +1,9 @@
 'use strict';
 const assert=require('node:assert/strict'),fs=require('node:fs'),vm=require('node:vm');
 const source=fs.readFileSync('platform-sales-demo.js','utf8');
-assert.match(fs.readFileSync('platform.js','utf8'),/c\.demoResetAvailable\?`<button class="small" data-demo-reset=/);
+const platformSource=fs.readFileSync('platform.js','utf8');
+assert.match(platformSource,/can\(PLATFORM_CAP\.DEMO_RESET\)\?`\$\{\['DEMO \| Alder Ridge Excavation & Concrete','DEMO \| Alder Ridge Builders'\]\.includes\(c\.name\)\?`<button class="small" data-prepare-sales-demo=/);
+assert.doesNotMatch(platformSource,/c\.demoResetAvailable\?`<button class="small" data-demo-reset=/);
 const id='ad1de000-d300-4000-8000-000000000001';
 function fixture({role='platform_owner',confirm=true,delayGet=false,errorPost=false}={}){
  let listener,release;const calls=[],alerts=[],host={children:[],querySelector(){return null},append(x){this.children.push(x)}};

@@ -31,7 +31,7 @@ function splitSnapshot(snapshot) {
   const scalarData = {};
   const records = [];
   for (const [collection, value] of Object.entries(snapshot || {})) {
-    if (!Array.isArray(value)) {
+    if (!Array.isArray(value) || value.length === 0) {
       scalarData[collection] = value;
       continue;
     }

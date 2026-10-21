@@ -19,54 +19,7 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="default" />
   <meta name="apple-mobile-web-app-title" content="Pro Daily Link" />
   <link rel="apple-touch-icon" href="assets/pro-daily-link-logo.png" />
-  <style>
-    .workspace-loader{position:fixed;inset:0;z-index:1000;display:flex;align-items:center;justify-content:center;background:#f4f2ec;color:#17382d;font-family:"DM Sans",sans-serif}
-    html.workspace-ready .workspace-loader{display:none}
-    html.workspace-authenticated:not(.workspace-ready) .app-shell{visibility:hidden}
-    .workspace-loader-card{display:grid;justify-items:center;gap:12px;text-align:center;padding:28px}
-    .workspace-loader-card img{width:66px;height:66px;object-fit:contain}
-    .workspace-loader-card strong{font:700 18px "Oswald",sans-serif;letter-spacing:.04em;text-transform:uppercase}
-    .workspace-loader-card span{font-size:13px;color:#64726c}
-    .workspace-loader-bar{width:150px;height:4px;overflow:hidden;border-radius:99px;background:#dfe5e1}
-    .workspace-loader-bar::after{content:"";display:block;width:55%;height:100%;border-radius:inherit;background:#ef6c19;animation:workspace-loading 1s ease-in-out infinite alternate}
-    @keyframes workspace-loading{from{transform:translateX(-80%)}to{transform:translateX(160%)}}
-  </style>
-  <script>
-    window.pdlWorkspaceGate=(async()=>{
-      try{
-        const config=await fetch('/api/config',{credentials:'include',cache:'no-store'}).then(response=>response.json());
-        if(config.staging){
-          window.pdlStaging=true;
-          const paintStagingBanner=()=>{
-            if(document.querySelector('.staging-banner'))return;
-            const bar=document.createElement('div');
-            bar.className='staging-banner';
-            bar.setAttribute('role','status');
-            bar.textContent='STAGING';
-            (document.body||document.documentElement).prepend(bar);
-          };
-          if(document.body)paintStagingBanner();else document.addEventListener('DOMContentLoaded',paintStagingBanner);
-        }
-        if(config.authRequired){
-          const response=await fetch('/api/auth/me',{credentials:'include',cache:'no-store'});
-          if(!response.ok){location.replace('/');return false}
-          window.pdlAuthenticatedUser=await response.json();
-        }
-        document.documentElement.classList.add('workspace-authenticated');
-        return true;
-      }catch(error){
-        // No connection at all: if this device has a cached workspace, open it
-        // offline instead of bouncing to the sign-in page.
-        if(localStorage.getItem('pdl-last-state')){
-          document.documentElement.classList.add('workspace-authenticated');
-          window.pdlOfflineBoot=true;
-          return true;
-        }
-        location.replace('/');
-        return false
-      }
-    })();
-  </script>
+  <script src="workspace-gate.js"></script>
 </head>
 <body>
   <div class="workspace-loader" role="status" aria-live="polite"><div class="workspace-loader-card"><img src="assets/pro-daily-link-logo.png" alt="" /><strong>Opening your workspace</strong><span>Loading your company’s latest jobs and reports…</span><div class="workspace-loader-bar" aria-hidden="true"></div></div></div>
@@ -578,13 +531,8 @@
     <p id="pay-period-zone" class="input-help"></p>
     <label id="pay-period-reason-label" hidden>Correction reason<textarea id="pay-period-reason" maxlength="1000"></textarea></label><p id="pay-period-form-error" role="alert" hidden></p><button class="primary" id="pay-period-save" type="submit">Save period</button>
   </form></dialog>
-  <script>
-    // App shell offline: cache the workspace page and static assets so the
-    // app opens with no connection; data always comes live or from the app's
-    // own last-known-state cache (offline.js).
-    if ('serviceWorker' in navigator && location.protocol === 'https:')
-      window.addEventListener('load', () => navigator.serviceWorker.register('/sw.js').catch(() => {}));
-  </script>
+  <script src="register-service-worker.js"></script>
+  <script src="staging-banner.js"></script>
   <script src="offline.js?v=20261014-offline"></script>
   <script src="i18n.js?v=20261019-schedule1"></script>
   <script src="csv-cell.js?v=20261004-security"></script>

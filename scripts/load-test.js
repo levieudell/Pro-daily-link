@@ -8,7 +8,7 @@ const urlArgument=process.argv.find(value=>value.startsWith('--url='));
 const target = String(process.env.PDL_LOAD_TARGET || (urlArgument&&urlArgument.slice(6)) || process.argv[2] || 'http://127.0.0.1:4173').replace(/\/$/, '');
 const requests = Math.max(1, Math.min(5000, Number(process.env.PDL_LOAD_REQUESTS || 200)));
 const concurrency = Math.max(1, Math.min(100, Number(process.env.PDL_LOAD_CONCURRENCY || 20)));
-const paths = ['/landing.html', '/login.html', '/api/health'];
+const paths = ['/landing.html', '/login.html', '/api/health/live'];
 const timings = [];
 let next = 0;
 let failures = 0;
