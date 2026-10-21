@@ -308,8 +308,8 @@ table td,.activity-item,.schedule-cell{border-color:var(--border-default)}
   .panel-header h2{font-size:18px}
   .projects-panel th:nth-child(2),.projects-panel td:nth-child(2),.projects-panel th:nth-child(4),.projects-panel td:nth-child(4){display:none}
   .projects-panel th,.projects-panel td{padding:12px 10px}
-  .start-day-hero{display:grid;grid-template-columns:1fr;padding:20px 18px}
-  .hero-start-button{width:100%;min-width:0;min-height:54px}
+  .field-mode .start-day-hero{display:grid;grid-template-columns:minmax(0,1fr);padding:20px 18px}
+  .field-mode .hero-start-button{width:100%;height:auto;min-width:0;min-height:56px;max-width:none;flex:0 0 auto;white-space:nowrap}
   .field-dashboard-grid{gap:12px}
   .field-mode:has(#myday-page.active) .top-actions [data-open-report]{display:none}
   .field-time-tabs{display:grid!important;grid-template-columns:1fr 1fr;width:100%}
