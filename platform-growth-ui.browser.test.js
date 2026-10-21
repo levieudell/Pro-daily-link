@@ -8,15 +8,28 @@ const path = require('node:path');
 const { pathToFileURL } = require('node:url');
 
 const EDGE_CANDIDATES = [
+  process.env.PDL_TEST_CHROME,
   process.env.EDGE_PATH,
-  'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe',
-  'C:\\Program Files\\Microsoft\\Edge\\Application\\msedge.exe'
+  process.env.CHROME_PATH,
+  ...(process.platform === 'win32' ? [
+    'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe',
+    'C:\\Program Files\\Microsoft\\Edge\\Application\\msedge.exe',
+    'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe'
+  ] : process.platform === 'darwin' ? [
+    '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
+    '/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge'
+  ] : [
+    '/usr/bin/google-chrome-stable',
+    '/usr/bin/google-chrome',
+    '/usr/bin/chromium-browser',
+    '/usr/bin/chromium'
+  ])
 ].filter(Boolean);
 
 function findEdge() {
   const executable = EDGE_CANDIDATES.find(candidate => fs.existsSync(candidate));
   if (!executable) {
-    throw new Error(`Microsoft Edge was not found. Checked: ${EDGE_CANDIDATES.join(', ')}`);
+    throw new Error(`Chrome or Microsoft Edge was not found. Checked: ${EDGE_CANDIDATES.join(', ')}`);
   }
   return executable;
 }
