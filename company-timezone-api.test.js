@@ -25,7 +25,7 @@ async function main(){await new Promise(resolve=>server.listen(0,'127.0.0.1',res
 async function call(route,input,user=1){const response=await realFetch(base+route,{method:input?'PATCH':'GET',headers:{'X-PDL-Company':companyA,Authorization:'Bearer '+token(companyA,user),'Content-Type':'application/json'},...(input?{body:JSON.stringify(input)}:{})});return{status:response.status,data:await response.json()};}
 function reset(zone){cloud=fixture();if(zone===undefined)delete cloud.company.timezone;else cloud.company.timezone=zone;revision=0;if(fs.existsSync(tenantFile))fs.unlinkSync(tenantFile);}
 try{
-  for(const mode of ['off','primary']){
+  for(const mode of ['off','shadow','primary']){
     process.env.PDL_TRANSACTIONAL_DB=mode;reset();assert.equal(fs.existsSync(tenantFile),false,'start cloud-only, with no local tenant JSON');
     let saved=await call('/api/company',{name:'Synthetic renamed company'});assert.equal(saved.status,200);assert.equal(Object.hasOwn(saved.data,'timezone'),false);assert.equal(Object.hasOwn(cloud.company,'timezone'),false,'unrelated Save never chooses Pacific');
     saved=await call('/api/company',{name:'Synthetic renamed company',timezone:''});assert.equal(saved.status,200);assert.equal(Object.hasOwn(cloud.company,'timezone'),false,'blank displayed choice is not persisted as a default');

@@ -228,24 +228,41 @@ async function startBackupSelfHeal(){try{maintenanceFence.assertWritesAllowed(pr
 function cookie(req,name){return String(req.headers.cookie||'').split(';').map(value=>value.trim()).find(value=>value.startsWith(`${name}=`))?.slice(name.length+1)||''}
 async function requestDatabase(req,{includeArchived=false}={}){
   const companyId=String(req.headers['x-pdl-company']||cookie(req,'pdl_company')||'').trim();
-  if(!companyId)return{file:DB_FILE,db:null};
+  if(!companyId)return transactionalMode()==='primary'?null:{file:DB_FILE,db:null};
   const primary=JSON.parse(fs.readFileSync(DB_FILE,'utf8')),file=companyId===String(primary.company.id)?DB_FILE:path.join(path.dirname(DB_FILE),'tenants',`${companyId}.json`);
   if(companyId!==String(primary.company.id)&&!/^[0-9a-f]{8}-[0-9a-f-]{27}$/i.test(companyId))return null;
   const allowed=snapshot=>snapshot?.company?.id===companyId&&(includeArchived||!snapshot.company.archivedDuplicate);
-  if(supabase.configured()&&transactionalMode()!=='off'){
-    const transactional=await supabase.loadTransactionalSnapshot(companyId);
-    if(allowed(transactional?.snapshot))return{file,db:transactionalMode()==='primary'?transactional.snapshot:null,transactionalRevision:transactional.revision,source:transactionalMode()==='primary'?'transactional':'snapshot'};
-    if(transactional?.snapshot?.company?.archivedDuplicate&&!includeArchived)return null;
+  const mode=transactionalMode();
+  const cloudConfigured=supabase.configured();
+  // Primary mode must never resurrect a legacy or disposable local mirror when
+  // the transactional authority is unavailable or its credentials are missing.
+  if(mode==='primary'&&!cloudConfigured)return null;
+  let transactional=null;
+  if(cloudConfigured&&mode!=='off'){
+    transactional=await supabase.loadTransactionalSnapshot(companyId);
+    if(mode==='primary'){
+      // Primary mode has one authority. Falling through to a legacy or local
+      // mirror when the transactional row is absent would resurrect stale
+      // sessions, permissions, or archived accounts.
+      if(allowed(transactional?.snapshot))return{file,db:transactional.snapshot,transactionalRevision:transactional.revision,source:'transactional'};
+      return null;
+    }
+    // In shadow mode the local/legacy snapshot remains authoritative. Keep
+    // the comparison revision for CAS shadow writes, but do not promote the
+    // transactional copy before the reviewed primary cutover. A live local
+    // mirror preserves the existing fast path; a fresh Render instance falls
+    // through to the durable legacy Supabase snapshot below.
+    if(allowed(transactional?.snapshot)&&fs.existsSync(file))return{file,db:null,transactionalRevision:transactional.revision,source:'snapshot'};
   }
-  if(companyId===String(primary.company.id))return allowed(primary)?{file:DB_FILE,db:null}:null;
-  if(supabase.configured()){
+  if(companyId===String(primary.company.id))return allowed(primary)?{file:DB_FILE,db:null,transactionalRevision:transactional?.revision,source:'snapshot'}:null;
+  if(cloudConfigured){
     const snapshot=await supabase.loadCompanySnapshot(companyId);
-    if(allowed(snapshot))return{file,db:snapshot};
+    if(allowed(snapshot))return{file,db:snapshot,transactionalRevision:transactional?.revision,source:'legacy-cloud'};
     if(snapshot?.company?.archivedDuplicate&&!includeArchived)return null;
   }
   if(!fs.existsSync(file))return null;
   const local=readStoredSnapshot(file);
-  return allowed(local)?{file,db:null}:null;
+  return allowed(local)?{file,db:null,transactionalRevision:transactional?.revision,source:'snapshot'}:null;
 }
 function tenantHasSession(tenant,tokenHash){return Boolean(tokenHash&&(tenant?.sessions||[]).some(row=>row.tokenHash===tokenHash&&new Date(row.expiresAt)>new Date()))}
 async function authenticatedRequestDatabase(req){
@@ -255,8 +272,10 @@ async function authenticatedRequestDatabase(req){
   if(tenantHasSession(hintedTenant,tokenHash))return{...hinted,db:hintedTenant};
   const headerCompany=String(req.headers['x-pdl-company']||'').trim(),cookieCompany=String(cookie(req,'pdl_company')||'').trim();
   if(headerCompany&&headerCompany!==cookieCompany)return hinted;
-  const local=tenantDatabases().find(tenant=>tenantHasSession(tenant,tokenHash));
-  if(local)return requestDatabase({headers:{'x-pdl-company':String(local.company.id)}});
+  if(transactionalMode()!=='primary'){
+    const local=tenantDatabases().find(tenant=>tenantHasSession(tenant,tokenHash));
+    if(local)return requestDatabase({headers:{'x-pdl-company':String(local.company.id)}});
+  }
   if(supabase.configured()){
     const remote=(await operationalTenantSnapshots()).find(tenant=>tenantHasSession(tenant,tokenHash));
     if(remote)return requestDatabase({headers:{'x-pdl-company':String(remote.company.id)}});
@@ -1139,7 +1158,8 @@ async function handleStripeWebhook(req,res){
         // Load inside the queue so concurrent app writes cannot be overwritten by an old snapshot.
         const database=await requestDatabase({headers:{'x-pdl-company':companyId}});
         if(!database)throw new Error('Webhook company is unavailable');
-        if(!database.db)database.db=JSON.parse(fs.readFileSync(database.file,'utf8'));
+        database.db=freshestTenantSnapshot(database);
+        if(!database.db)throw new Error('Webhook company is unavailable');
         const context={...database,pending:[],backup:null};
         await dbContext.run(context,()=>task(context.db));
         await Promise.all(context.pending);
