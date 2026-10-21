@@ -8,6 +8,7 @@ const supabase = require('./database/supabase');
 const { PlatformRepository, PlatformRevisionConflictError } = require('./database/platform-repository');
 const { PlatformStateStore } = require('./database/platform-state-store');
 const backupVerification = require('./database/backup-verification');
+const recoveryReadiness = require('./database/recovery-readiness');
 const { stableUuid } = require('./database/migrate-json');
 const { databaseCompanyId } = require('./database/transactional-repository');
 const monitoring = require('./monitoring');
@@ -15,6 +16,8 @@ const stripeWebhook = require('./stripe-webhook');
 const founderAlerts = require('./founder-alerts');
 const founderBilling = require('./founder-billing');
 const subscriptionCheckout = require('./subscription-checkout');
+const billingPortalPolicy = require('./billing-portal-policy');
+const providerReadiness = require('./provider-readiness');
 const safeCsvCell = require('./csv-cell');
 const csvCell = value => safeCsvCell(value, { quoteAll: false });
 const { isPublicFile } = require('./public-file-policy');
@@ -49,8 +52,9 @@ const {
 } = require('./platform-capabilities');
 const platformRevenueReport = createRevenueReporter();
 const { estimateActuals } = require('./mcp/estimate');
+const maintenanceFence = require('./database/maintenance-fence');
 
-const { blockStagingRecovery } = require('./staging-recovery');
+const { blockStagingRecovery: blockStagingPasswordRecovery } = require('./staging-recovery');
 const ROOT = __dirname;
 const CONTENT_SECURITY_POLICY = contentSecurityPolicy(ROOT);
 supabase.loadLocalEnv(ROOT);
@@ -81,6 +85,7 @@ const aiUsageStore=aiUsage.createUsageStore(AI_USAGE_FILE);
 // usage visibility must never break a field or office feature.
 const meterAI=(feature,req,meta)=>{try{aiUsageStore.record({feature,model:meta?.model||aiUsage.defaultModel(),inputTokens:meta?.usage?.input_tokens,outputTokens:meta?.usage?.output_tokens,companyId:req?.auth?.user?.companyId||req?.headers?.['x-pdl-company']||null})}catch(_){}};
 const BACKUP_RECEIPT_DIRECTORY = path.join(path.dirname(DB_FILE), '.backup-verification');
+const detachedBackupTasks = new Set();
 // Render's filesystem is ephemeral: receipts kept only on disk vanish on every
 // deploy, so the backup clock resets and /api/health reports "not fresh".
 // Mirror each receipt into the private tenant-backups bucket and restore it at
@@ -89,10 +94,12 @@ const receiptObjectKey = companyId => `${companyId}/_receipt.json`;
 async function restoreBackupReceipt(companyId){
   if(!supabase.configured()||!companyId)return;
   try{
+    maintenanceFence.assertWritesAllowed(process.env,{root:ROOT});
     if(fs.existsSync(backupVerification.receiptFile(BACKUP_RECEIPT_DIRECTORY,companyId)))return;
     const downloaded=Buffer.from(await (await supabase.download('tenant-backups',receiptObjectKey(companyId))).arrayBuffer());
     const receipt=JSON.parse(downloaded.toString('utf8'));
     if(receipt?.version===1&&String(receipt.companyId)===String(companyId)){
+      maintenanceFence.assertWritesAllowed(process.env,{root:ROOT});
       fs.mkdirSync(BACKUP_RECEIPT_DIRECTORY,{recursive:true,mode:0o700});
       fs.writeFileSync(backupVerification.receiptFile(BACKUP_RECEIPT_DIRECTORY,companyId),JSON.stringify(receipt),{mode:0o600});
       console.log(`Restored backup receipt from cloud for ${companyId}`);
@@ -102,10 +109,26 @@ async function restoreBackupReceipt(companyId){
 async function mirrorBackupReceipt(companyId){
   if(!supabase.configured()||!companyId)return;
   try{
+    maintenanceFence.assertWritesAllowed(process.env,{root:ROOT});
     const file=backupVerification.receiptFile(BACKUP_RECEIPT_DIRECTORY,companyId);
     if(!fs.existsSync(file))return;
-    await supabase.upload('tenant-backups',receiptObjectKey(companyId),Buffer.from(fs.readFileSync(file)),'application/json',true);
+    maintenanceFence.assertWritesAllowed(process.env,{root:ROOT});
+    await backupVerification.withProviderDeadline(
+      signal=>supabase.upload('tenant-backups',receiptObjectKey(companyId),Buffer.from(fs.readFileSync(file)),'application/json',true,{signal})
+    );
   }catch(error){console.error('Backup receipt mirror failed',error.message)}
+}
+function detachBackupTask(task){
+  let tracked;
+  tracked=Promise.resolve(task)
+    .catch(error=>{
+      console.error('Verified backup failed; a later write will retry.');
+      monitoring.captureRequestException(error,{method:'INTERNAL',route:'/internal/tenant-backup'});
+      return null;
+    })
+    .finally(()=>detachedBackupTasks.delete(tracked));
+  detachedBackupTasks.add(tracked);
+  return tracked;
 }
 const PLATFORM_CLOUD_ID=stableUuid('platform','pro-daily-link-operations');
 const PORT = Number(process.env.PORT || 4173);
@@ -132,6 +155,14 @@ function rateLimit(req,res,url){
 }
 function stagingBlocksOutbound(){return process.env.PDL_STAGING==='1'}
 function secureHeaders(res){res.setHeader('X-Content-Type-Options','nosniff');res.setHeader('X-Frame-Options','DENY');res.setHeader('Referrer-Policy','strict-origin-when-cross-origin');res.setHeader('Permissions-Policy','camera=(self), geolocation=(self), microphone=(self)');res.setHeader('Cross-Origin-Resource-Policy','same-origin');res.setHeader('Strict-Transport-Security','max-age=31536000; includeSubDomains');res.setHeader('Content-Security-Policy',CONTENT_SECURITY_POLICY);if(stagingBlocksOutbound())res.setHeader('X-Robots-Tag','noindex, nofollow')}
+function blockStagingRecovery(req,res,url,json){
+  if(blockStagingPasswordRecovery(req,res,url,json))return true;
+  // This runs before MCP/OAuth routing, body parsing, tenant lookup, and every
+  // ordinary API handler. The persistence-boundary checks below are the
+  // second line of defense for state-mutating GETs and background jobs.
+  return maintenanceFence.guardHttpMutation(req,res,json,process.env,{root:ROOT});
+}
+function maintenanceReadOnly(){return maintenanceFence.inspectMaintenanceFence(process.env,{root:ROOT}).enforced}
 
 const dbContext=new AsyncLocalStorage();
 const tenantQueues=new Map();
@@ -140,11 +171,12 @@ function withTenantQueue(companyId,task){const prior=tenantQueues.get(companyId)
 function withPlatformQueue(task){return withTenantQueue(PLATFORM_CLOUD_ID,async()=>{if(PLATFORM_REPOSITORY_MODE==='primary'&&platformStateStore)await platformStateStore.refresh();return task()})}
 function activeDbFile(){return dbContext.getStore()?.file||DB_FILE}
 function rekeyDuplicateAssignments(db){const rows=db?.assignments;if(!Array.isArray(rows))return false;const seen=new Set();let next=rows.reduce((max,row)=>Math.max(max,Number(row.id)||0),0)+1,changed=false;for(const row of rows){const id=Number(row.id);if(!seen.has(id)){seen.add(id);continue}row.id=next++;changed=true}return changed}
-function readDb(){const context=dbContext.getStore(),db=context?.db||JSON.parse(fs.readFileSync(activeDbFile(),'utf8'));if(rekeyDuplicateAssignments(db)||collapseStoredTimeCards(db))writeDb(db);return db}
+function readDb(){const context=dbContext.getStore(),db=context?.db||JSON.parse(fs.readFileSync(activeDbFile(),'utf8'));const repaired=rekeyDuplicateAssignments(db)||collapseStoredTimeCards(db);if(repaired&&!maintenanceReadOnly())writeDb(db);return db}
 function syncStoredTimeCardFlag(db){if(!db?.company)return;const file=activeDbFile();if(!fs.existsSync(file))return;let disk;try{disk=JSON.parse(fs.readFileSync(file,'utf8')).company?.features||{}}catch{return}for(const key of ['timeCards','templates']){if(typeof disk[key]!=='boolean'||db.company.features?.[key]===disk[key])continue;db.company.features={...(db.company.features||{}),[key]:disk[key]}}}
-function mirrorTenantFile(file,snapshot){const tmp=file+'.tmp';fs.mkdirSync(path.dirname(file),{recursive:true});fs.writeFileSync(tmp,JSON.stringify(snapshot,null,2));fs.renameSync(tmp,file)}
+function mirrorTenantFile(file,snapshot){maintenanceFence.assertWritesAllowed(process.env,{root:ROOT});const tmp=file+'.tmp';fs.mkdirSync(path.dirname(file),{recursive:true});fs.writeFileSync(tmp,JSON.stringify(snapshot,null,2));fs.renameSync(tmp,file)}
 function reportMirrorFailure(label,error){console.error(`${label} failed after the authoritative database commit`,error.message);monitoring.captureRequestException(error,{method:'INTERNAL',route:'/internal/persistence-mirror'})}
 function writeDb(db){
+  maintenanceFence.assertWritesAllowed(process.env,{root:ROOT});
   const context=dbContext.getStore();collapseStoredTimeCards(db);if(transactionalMode()!=='primary'&&!context?.authoritativeFeatureMutation)syncStoredTimeCardFlag(db);
   const now=new Date();
   // Legacy lastBackupAt recorded an attempt, even when verification failed. Never promote it.
@@ -153,36 +185,38 @@ function writeDb(db){
   const file=activeDbFile();
   if(context&&supabase.configured()&&transactionalMode()==='primary'){
     const snapshot=structuredClone(db),prior=context.transactionalPending||Promise.resolve();
-    const transactional=prior.then(()=>supabase.saveTransactionalSnapshot(snapshot,context.transactionalRevision??0)).then(async result=>{
+    const transactional=prior.then(()=>{maintenanceFence.assertWritesAllowed(process.env,{root:ROOT});return supabase.saveTransactionalSnapshot(snapshot,context.transactionalRevision??0)}).then(async result=>{
       context.transactionalRevision=result.revision;
       try{mirrorTenantFile(file,snapshot)}catch(error){reportMirrorFailure('Tenant local mirror',error)}
-      try{await supabase.saveCompanySnapshot(snapshot)}catch(error){reportMirrorFailure('Tenant legacy cloud mirror',error)}
+      try{maintenanceFence.assertWritesAllowed(process.env,{root:ROOT});await supabase.saveCompanySnapshot(snapshot)}catch(error){reportMirrorFailure('Tenant legacy cloud mirror',error)}
       return result;
     });
     context.transactionalPending=transactional;context.pending ||= [];context.pending.push(transactional);context.deferResponse=true;
     if(!context.backupPending&&backupVerification.backupDue(BACKUP_RECEIPT_DIRECTORY,db.company.id)){
-      context.backupPending=transactional.then(result=>backupVerification.createAndRecordVerification(snapshot,{directory:BACKUP_RECEIPT_DIRECTORY,createBackup:supabase.createVerifiedBackup,sourceRevision:result.revision,sourceContentHash:result.contentHash}))
-        .then(result=>{context.backup=result;mirrorBackupReceipt(db.company.id);return result}).catch(()=>{console.error('Verified backup failed; a later write will retry.');return null});
-      context.pending.push(context.backupPending);
+      context.backupPending=detachBackupTask(transactional
+        .then(result=>backupVerification.createAndRecordVerification(snapshot,{directory:BACKUP_RECEIPT_DIRECTORY,createBackup:supabase.createVerifiedBackup,sourceRevision:result.revision,sourceContentHash:result.contentHash,assertWrite:()=>maintenanceFence.assertWritesAllowed(process.env,{root:ROOT})}))
+        .then(async result=>{context.backup=result;await mirrorBackupReceipt(db.company.id);return result}));
     }
     return;
   }
   mirrorTenantFile(file,db);
   if(context&&supabase.configured()){
-    const snapshot=structuredClone(db),save=/^[0-9a-f]{8}-[0-9a-f-]{27}$/i.test(String(db.company.id))?supabase.saveCompanySnapshot(snapshot):supabase.saveSnapshot(stableUuid('legacy-company',db.company.id),db.company.name,snapshot);
+    const snapshot=structuredClone(db);maintenanceFence.assertWritesAllowed(process.env,{root:ROOT});const save=/^[0-9a-f]{8}-[0-9a-f-]{27}$/i.test(String(db.company.id))?supabase.saveCompanySnapshot(snapshot):supabase.saveSnapshot(stableUuid('legacy-company',db.company.id),db.company.name,snapshot);
     context.pending.push(save);
+    let transactional=null;
     if(transactionalMode()==='shadow'){
-      const transactional=(context.transactionalPending||Promise.resolve()).then(()=>supabase.saveTransactionalSnapshot(snapshot,context.transactionalRevision||0)).then(result=>{context.transactionalRevision=result.revision;return result});
+      transactional=(context.transactionalPending||Promise.resolve()).then(()=>{maintenanceFence.assertWritesAllowed(process.env,{root:ROOT});return supabase.saveTransactionalSnapshot(snapshot,context.transactionalRevision||0)}).then(result=>{context.transactionalRevision=result.revision;return result});
       context.transactionalPending=transactional;context.pending.push(transactional);
     }
     if(!context.backupPending&&backupVerification.backupDue(BACKUP_RECEIPT_DIRECTORY,db.company.id)){
-      context.backupPending=backupVerification.createAndRecordVerification(snapshot,{directory:BACKUP_RECEIPT_DIRECTORY,createBackup:supabase.createVerifiedBackup})
-        .then(result=>{context.backup=result;mirrorBackupReceipt(db.company.id)}).catch(()=>{console.error('Verified backup failed; a later write will retry.');return null});
-      context.pending.push(context.backupPending);
+      const committed=transactional?Promise.all([save,transactional]).then(([,result])=>result):Promise.resolve(save).then(()=>({revision:Number(snapshot.company.persistence?.revision||0),contentHash:''}));
+      context.backupPending=detachBackupTask(committed
+        .then(result=>backupVerification.createAndRecordVerification(snapshot,{directory:BACKUP_RECEIPT_DIRECTORY,createBackup:supabase.createVerifiedBackup,sourceRevision:result.revision,sourceContentHash:result.contentHash,assertWrite:()=>maintenanceFence.assertWritesAllowed(process.env,{root:ROOT})}))
+        .then(async result=>{context.backup=result;await mirrorBackupReceipt(db.company.id);return result}));
     }
   }
 }
-async function loadPrimaryCloud(){if(!supabase.configured())return;try{const local=JSON.parse(fs.readFileSync(DB_FILE,'utf8')),snapshot=await supabase.loadSnapshot(stableUuid('legacy-company',local.company.id));if(snapshot?.company?.id===local.company.id){const tmp=DB_FILE+'.tmp';fs.writeFileSync(tmp,JSON.stringify(snapshot,null,2));fs.renameSync(tmp,DB_FILE)}}catch(error){console.error('Primary cloud load failed',error.message)}}
+async function loadPrimaryCloud(){if(!supabase.configured())return;try{const local=JSON.parse(fs.readFileSync(DB_FILE,'utf8')),snapshot=await supabase.loadSnapshot(stableUuid('legacy-company',local.company.id));if(snapshot?.company?.id===local.company.id){maintenanceFence.assertWritesAllowed(process.env,{root:ROOT});const tmp=DB_FILE+'.tmp';fs.writeFileSync(tmp,JSON.stringify(snapshot,null,2));fs.renameSync(tmp,DB_FILE)}}catch(error){console.error('Primary cloud load failed',error.message)}}
 async function backupAuthorityStates(){
   if(transactionalMode()!=='primary')return tenantDatabases().map(snapshot=>({snapshot,revision:Number(snapshot.company?.persistence?.revision||0),contentHash:null}));
   if(!supabase.configured())throw new Error('Primary backup verification requires Supabase');
@@ -190,7 +224,7 @@ async function backupAuthorityStates(){
   for(const summary of summaries){const loaded=await supabase.loadTransactionalSnapshot(summary.companyId);if(!loaded)throw new Error(`Authoritative tenant ${summary.companyId} disappeared during backup discovery`);states.push(loaded)}
   return states;
 }
-async function startBackupSelfHeal(){try{const states=await backupAuthorityStates();for(const state of states)await restoreBackupReceipt(state.snapshot.company.id);for(const state of states){const tenant=state.snapshot,companyId=tenant.company?.id;if(!companyId||!backupVerification.backupDue(BACKUP_RECEIPT_DIRECTORY,companyId))continue;const result=await backupVerification.createAndRecordVerification(tenant,{directory:BACKUP_RECEIPT_DIRECTORY,createBackup:supabase.createVerifiedBackup,sourceRevision:state.revision,sourceContentHash:state.contentHash||''});await mirrorBackupReceipt(companyId);console.log(`Startup verified backup for ${companyId}: ${result?.objectKey||'ok'}`)}}catch(error){console.error('Startup backup self-heal failed',error.message)}}
+async function startBackupSelfHeal(){try{maintenanceFence.assertWritesAllowed(process.env,{root:ROOT});const states=await backupAuthorityStates();for(const state of states)await restoreBackupReceipt(state.snapshot.company.id);for(const state of states){const tenant=state.snapshot,companyId=tenant.company?.id;if(!companyId||!backupVerification.backupDue(BACKUP_RECEIPT_DIRECTORY,companyId))continue;maintenanceFence.assertWritesAllowed(process.env,{root:ROOT});const result=await backupVerification.createAndRecordVerification(tenant,{directory:BACKUP_RECEIPT_DIRECTORY,createBackup:supabase.createVerifiedBackup,sourceRevision:state.revision,sourceContentHash:state.contentHash||'',assertWrite:()=>maintenanceFence.assertWritesAllowed(process.env,{root:ROOT})});await mirrorBackupReceipt(companyId);console.log(`Startup verified backup for ${companyId}: ${result?.objectKey||'ok'}`)}}catch(error){console.error('Startup backup self-heal failed',error.message)}}
 function cookie(req,name){return String(req.headers.cookie||'').split(';').map(value=>value.trim()).find(value=>value.startsWith(`${name}=`))?.slice(name.length+1)||''}
 async function requestDatabase(req,{includeArchived=false}={}){
   const companyId=String(req.headers['x-pdl-company']||cookie(req,'pdl_company')||'').trim();
@@ -306,8 +340,9 @@ function readPlatform(){
   return basePlatformSnapshot();
 }
 let platformCloudWrites=Promise.resolve();
-function mirrorPlatformFile(data){const tmp=PLATFORM_FILE+'.tmp';fs.writeFileSync(tmp,JSON.stringify(data,null,2));fs.renameSync(tmp,PLATFORM_FILE)}
+function mirrorPlatformFile(data){maintenanceFence.assertWritesAllowed(process.env,{root:ROOT});const tmp=PLATFORM_FILE+'.tmp';fs.writeFileSync(tmp,JSON.stringify(data,null,2));fs.renameSync(tmp,PLATFORM_FILE)}
 async function writePlatform(data,{changedBy='platform-server'}={}){
+  maintenanceFence.assertWritesAllowed(process.env,{root:ROOT});
   const context=dbContext.getStore();
   if(context?.platformMutation){
     const req=context.platformRequest,url=context.platformUrl,access=platformAllowed(req)&&platformRouteAccess(req,url);
@@ -322,6 +357,7 @@ async function writePlatform(data,{changedBy='platform-server'}={}){
     const expected=data[PLATFORM_REVISION];
     if(!Number.isSafeInteger(expected))throw new PlatformRevisionConflictError(-1,platformStateStore.readState().revision);
     const pending=platformStateStore.update(()=>{
+      maintenanceFence.assertWritesAllowed(process.env,{root:ROOT});
       const current=platformStateStore.readState().revision;
       if(current!==expected)throw new PlatformRevisionConflictError(expected,current);
       return snapshot;
@@ -346,8 +382,9 @@ async function writePlatform(data,{changedBy='platform-server'}={}){
   // slower save must never overwrite an already acknowledged demo request.
   const legacySnapshot={company:{id:PLATFORM_CLOUD_ID,name:'Pro Daily Link Platform Operations'},platform:snapshot};
   const pending=platformCloudWrites.catch(()=>{}).then(async()=>{
+    maintenanceFence.assertWritesAllowed(process.env,{root:ROOT});
     await supabase.saveCompanySnapshot(legacySnapshot);
-    if(PLATFORM_REPOSITORY_MODE==='shadow'&&platformStateStore)await platformStateStore.update(()=>snapshot,{changedBy});
+    if(PLATFORM_REPOSITORY_MODE==='shadow'&&platformStateStore){maintenanceFence.assertWritesAllowed(process.env,{root:ROOT});await platformStateStore.update(()=>snapshot,{changedBy})}
   });
   platformCloudWrites=pending;
   pending.catch(error=>console.error('Platform cloud save failed',error.message));
@@ -446,10 +483,12 @@ function tenantFileForCompany(companyId){
   return String(primary.company.id)===String(companyId)?DB_FILE:path.join(path.dirname(DB_FILE),'tenants',`${companyId}.json`);
 }
 function mirrorTenantSnapshot(tenant){
+  maintenanceFence.assertWritesAllowed(process.env,{root:ROOT});
   const file=tenantFileForCompany(tenant.company.id),tmp=file+'.tmp';fs.mkdirSync(path.dirname(file),{recursive:true});fs.writeFileSync(tmp,JSON.stringify(tenant,null,2));fs.renameSync(tmp,file);return file;
 }
 function removeUncommittedSignupTenant(file,tenant){
   try{
+    maintenanceFence.assertWritesAllowed(process.env,{root:ROOT});
     const tenantRoot=path.resolve(path.dirname(DB_FILE),'tenants'),target=path.resolve(file);
     if(!target.startsWith(tenantRoot+path.sep)||!fs.existsSync(target))return false;
     const stored=JSON.parse(fs.readFileSync(target,'utf8'));
@@ -458,6 +497,7 @@ function removeUncommittedSignupTenant(file,tenant){
   }catch{return false}
 }
 async function markSignupGrowthSynced(tenant,database=null){
+  maintenanceFence.assertWritesAllowed(process.env,{root:ROOT});
   const synced=structuredClone(tenant),prior=synced.company.platformGrowthSync||{},syncedAt=new Date().toISOString();
   synced.company.platformGrowthSync={status:'synced',requestedAt:prior.requestedAt||synced.company.createdAt,syncedAt};
   synced.company.persistence={...(synced.company.persistence||{}),revision:Number(synced.company.persistence?.revision||0)+1,updatedAt:syncedAt};
@@ -467,10 +507,10 @@ async function markSignupGrowthSynced(tenant,database=null){
     if(transactionalMode()!=='off'){
       let expectedRevision=database?.transactionalRevision;
       if(!Number.isSafeInteger(expectedRevision))expectedRevision=Number((await supabase.loadTransactionalSnapshot(synced.company.id))?.revision||0);
-      await supabase.saveTransactionalSnapshot(synced,expectedRevision);
-      try{await supabase.saveCompanySnapshot(synced)}catch(error){reportMirrorFailure('Signup legacy cloud mirror',error)}
+      maintenanceFence.assertWritesAllowed(process.env,{root:ROOT});await supabase.saveTransactionalSnapshot(synced,expectedRevision);
+      try{maintenanceFence.assertWritesAllowed(process.env,{root:ROOT});await supabase.saveCompanySnapshot(synced)}catch(error){reportMirrorFailure('Signup legacy cloud mirror',error)}
     }else{
-      await supabase.saveCompanySnapshot(synced);
+      maintenanceFence.assertWritesAllowed(process.env,{root:ROOT});await supabase.saveCompanySnapshot(synced);
     }
   }
   mirrorTenantSnapshot(synced);
@@ -478,6 +518,7 @@ async function markSignupGrowthSynced(tenant,database=null){
 }
 let signupGrowthRetryRunning=false;
 async function retryPendingSignupGrowth(){
+  maintenanceFence.assertWritesAllowed(process.env,{root:ROOT});
   if(signupGrowthRetryRunning)return{retried:0,synced:0};
   signupGrowthRetryRunning=true;
   let retried=0,synced=0;
@@ -496,7 +537,7 @@ async function retryPendingSignupGrowth(){
             // failed while refreshing a legacy/local mirror. Heal those mirrors
             // so the pending candidate does not recur after another restart.
             if(candidate.company?.platformGrowthSync?.status==='pending'&&tenant.company?.platformGrowthSync?.status==='synced'){
-              if(supabase.configured())await supabase.saveCompanySnapshot(tenant);
+              if(supabase.configured()){maintenanceFence.assertWritesAllowed(process.env,{root:ROOT});await supabase.saveCompanySnapshot(tenant)}
               mirrorTenantSnapshot(tenant);synced++;
             }
             return;
@@ -535,6 +576,7 @@ async function handleSignup(req,res){
     users:[{id:1,companyId:tenantId,name:ownerName,email,role:'owner',status:'Active',projectIds:[],memberId:null,mustSetPassword:false,passwordHash:password.hash,passwordSalt:password.salt,createdAt:now}],
     customers:[],projects:[],team:[],subcontractors:[],assignments:[],reports:[],photos:[],workdays:[],changes:[],subcontractorLinks:[],catalog:[],sessions:[{id:crypto.randomUUID(),tokenHash,userId:1,companyId:tenantId,createdAt:now,expiresAt:new Date(Date.now()+sessionSeconds*1000).toISOString()}]
   };
+  maintenanceFence.assertWritesAllowed(process.env,{root:ROOT});
   const tenantDir=path.join(path.dirname(DB_FILE),'tenants'),tenantFile=path.join(tenantDir,`${tenantId}.json`);fs.mkdirSync(tenantDir,{recursive:true});fs.writeFileSync(tenantFile,JSON.stringify(tenant,null,2),{flag:'wx'});
   let transactionalRevision=null;
   try{
@@ -544,10 +586,10 @@ async function handleSignup(req,res){
         // public.companies parent and tenant repository children atomically.
         // Do not move the legacy mirror ahead of this commit; a two-step
         // signup can strand a parent row or fail its child foreign key.
-        const committed=await supabase.saveTransactionalSnapshot(tenant,0);
+        maintenanceFence.assertWritesAllowed(process.env,{root:ROOT});const committed=await supabase.saveTransactionalSnapshot(tenant,0);
         transactionalRevision=committed.revision;
-        try{await supabase.saveCompanySnapshot(tenant)}catch(error){reportMirrorFailure('Signup legacy cloud mirror',error)}
-      }else await supabase.saveCompanySnapshot(tenant);
+        try{maintenanceFence.assertWritesAllowed(process.env,{root:ROOT});await supabase.saveCompanySnapshot(tenant)}catch(error){reportMirrorFailure('Signup legacy cloud mirror',error)}
+      }else{maintenanceFence.assertWritesAllowed(process.env,{root:ROOT});await supabase.saveCompanySnapshot(tenant)}
     }
   }catch(error){
     const removed=removeUncommittedSignupTenant(tenantFile,tenant);
@@ -610,15 +652,16 @@ function blogPayload(input,existing={}){const title=String(input.title??existing
 function publicBlogPost(row){return{id:row.id,title:row.title,slug:row.slug,excerpt:row.excerpt,content:row.content,category:row.category,author:row.author,publishedAt:row.publishedAt,updatedAt:row.updatedAt}}
 async function loadLegacyPlatformCloud(){if(!supabase.configured())return;try{const snapshot=await supabase.loadCompanySnapshot(PLATFORM_CLOUD_ID);if(snapshot?.platform)mirrorPlatformFile(snapshot.platform)}catch(error){console.error('Platform cloud load failed',error.message)}}
 async function initializePlatformPersistence(){
-  if(require.main===module&&supabase.configured())await supabase.verifyManagedPrivateBuckets();
+  if(require.main===module&&supabase.configured()&&!maintenanceReadOnly())await supabase.verifyManagedPrivateBuckets();
   if(PLATFORM_REPOSITORY_MODE==='off')return loadLegacyPlatformCloud();
   if(!supabase.configured())throw new Error('PDL_PLATFORM_TRANSACTIONAL_DB requires Supabase configuration');
   if(PLATFORM_REPOSITORY_MODE==='shadow')await loadLegacyPlatformCloud();
-  const repository=new PlatformRepository({request:supabase.request});platformStateStore=new PlatformStateStore(repository);
+  const repository=new PlatformRepository({request:supabase.request,assertWrite:()=>maintenanceFence.assertWritesAllowed(process.env,{root:ROOT})});platformStateStore=new PlatformStateStore(repository);
   // Shadow mode is the explicit bootstrap/cutover phase. Once primary mode is
   // enabled, a missing repository is a configuration or recovery incident and
   // must fail closed instead of resurrecting a possibly stale local snapshot.
-  await platformStateStore.initialize(PLATFORM_REPOSITORY_MODE==='shadow'?basePlatformSnapshot():null,'platform-cutover');
+  const bootstrap=PLATFORM_REPOSITORY_MODE==='shadow'&&!maintenanceReadOnly()?basePlatformSnapshot():null;
+  await platformStateStore.initialize(bootstrap,'platform-cutover');
   if(PLATFORM_REPOSITORY_MODE==='primary')try{mirrorPlatformFile(platformStateStore.read())}catch(error){reportMirrorFailure('Platform startup mirror',error)}
 }
 async function platformRepositoryHealth(){
@@ -649,6 +692,66 @@ async function tenantRepositoryHealth(){
   }catch{return{...base,ready:false}}
   finally{if(timer)clearTimeout(timer)}
 }
+async function completeRecoveryHealth(){
+  return recoveryReadiness.publicStatus({
+    env:process.env,
+    download:supabase.download,
+    loadTenantAuthorities:()=>supabase.listTransactionalSnapshots(),
+    loadPlatformAuthority:()=>platformStateStore?.repository?.load?.()||null
+  });
+}
+const DEFAULT_OPERATIONAL_HEALTH_TIMEOUT_MS=5000;
+function operationalHealthTimeoutMs(env=process.env){
+  const configured=Number(env.PDL_OPERATIONAL_HEALTH_TIMEOUT_MS||DEFAULT_OPERATIONAL_HEALTH_TIMEOUT_MS);
+  return Number.isSafeInteger(configured)&&configured>=50&&configured<=10000?configured:DEFAULT_OPERATIONAL_HEALTH_TIMEOUT_MS;
+}
+function nonproductionRecoveryHealth(){
+  return{scope:'all-eligible-tenants-and-platform',configured:false,ready:false,tenantCount:null,tenantBackupsVerified:0,
+    platformBackupVerified:false,independentCopy:'not-verified',restore:'not-verified',lastVerifiedAt:null,reason:'nonproduction'};
+}
+function unavailableOperationalHealth(db,production,reason){
+  const providerVerification=production
+    ?{ready:false,status:'unknown',reason,checks:{stripe:false,email:false,monitoring:false}}
+    :{ready:false,status:'not-required',reason:'nonproduction',checks:{stripe:false,email:false,monitoring:false}};
+  const recovery=production
+    ?{...nonproductionRecoveryHealth(),configured:true,reason}
+    :nonproductionRecoveryHealth();
+  return{
+    cloud:{configured:Boolean(supabase.configured()),reachable:false},
+    platformRepository:{mode:PLATFORM_REPOSITORY_MODE,configured:PLATFORM_REPOSITORY_MODE!=='off',ready:false},
+    tenantRepository:{mode:transactionalMode(),configured:transactionalMode()!=='off',ready:false},
+    recovery,
+    providerVerification,
+    backup:backupVerification.publicStatus(BACKUP_RECEIPT_DIRECTORY,db.company.id,Date.now(),null)
+  };
+}
+async function collectOperationalHealth(db,{production=process.env.NODE_ENV==='production'}={}){
+  let timer;
+  const collection=(async()=>{
+    const providerStatus=production
+      ?providerReadiness.publicStatus({env:process.env,download:supabase.download})
+      :Promise.resolve({ready:false,status:'not-required',reason:'nonproduction',checks:{stripe:false,email:false,monitoring:false}});
+    const recoveryStatus=production?completeRecoveryHealth():Promise.resolve(nonproductionRecoveryHealth());
+    const [cloud,platformRepository,tenantRepository,recovery,providerVerification]=await Promise.all([
+      supabase.health(),platformRepositoryHealth(),tenantRepositoryHealth(),recoveryStatus,providerStatus
+    ]);
+    let backupAuthority=null;
+    if(production&&transactionalMode()==='primary'&&supabase.configured()){
+      const authoritative=await supabase.loadTransactionalSnapshot(db.company.id);
+      if(authoritative)backupAuthority={revision:authoritative.revision,contentHash:authoritative.contentHash};
+    }
+    return{cloud,platformRepository,tenantRepository,recovery,providerVerification,
+      backup:backupVerification.publicStatus(BACKUP_RECEIPT_DIRECTORY,db.company.id,Date.now(),backupAuthority)};
+  })();
+  try{
+    return await Promise.race([
+      collection,
+      new Promise((_,reject)=>{timer=setTimeout(()=>reject(Object.assign(new Error('operational health deadline exceeded'),{code:'PDL_OPERATIONAL_HEALTH_TIMEOUT'})),operationalHealthTimeoutMs());})
+    ]);
+  }catch(error){
+    return unavailableOperationalHealth(db,production,error?.code==='PDL_OPERATIONAL_HEALTH_TIMEOUT'?'health_timeout':'health_dependency_unavailable');
+  }finally{if(timer)clearTimeout(timer)}
+}
 function operationalHealthRequirements({cloud,services,production=process.env.NODE_ENV==='production'}){
   const database=production?Boolean(cloud?.configured&&cloud?.reachable):Boolean(!cloud?.configured||cloud?.reachable);
   const tenantRepository=production
@@ -657,14 +760,19 @@ function operationalHealthRequirements({cloud,services,production=process.env.NO
   const platformRepository=production
     ?services?.platformRepository?.mode==='primary'&&services.platformRepository.configured===true&&services.platformRepository.ready===true
     :services?.platformRepository?.mode!=='primary'||services.platformRepository.ready===true;
+  const providerVerification=services?.providerVerification;
   const requirements={
     database,
     tenantRepository:Boolean(tenantRepository),
     platformRepository:Boolean(platformRepository),
-    email:production?services?.email===true:true,
-    billingWebhook:production?services?.billing===true:true,
-    monitoring:production?services?.monitoring===true:true,
-    verifiedBackup:production?services?.backup?.fresh===true:true
+    email:production?services?.email?.configured===true&&providerVerification?.ready===true&&providerVerification?.checks?.email===true:true,
+    billingWebhook:production?services?.billing?.configured===true&&providerVerification?.ready===true&&providerVerification?.checks?.stripe===true:true,
+    monitoring:production?services?.monitoring?.configured===true&&providerVerification?.ready===true&&providerVerification?.checks?.monitoring===true:true,
+    // The same-provider single-tenant receipt remains visible for diagnosis,
+    // but it cannot satisfy production readiness. Only a target-bound
+    // attestation covering every eligible live tenant plus platform state,
+    // an independently verified copy, and exercised restore evidence can.
+    verifiedBackup:production?services?.recovery?.ready===true:true
   };
   return{ok:Object.values(requirements).every(Boolean),requirements};
 }
@@ -710,6 +818,8 @@ async function platformCompanies(platform){
     if(silentDays!=null&&silentDays>21)alerts.push(`No daily report in ${silentDays} days`);
     if(onboarding&&onboarding.status==='Blocked')alerts.push('Onboarding blocked');
     if(openTickets)alerts.push(`${openTickets} open support ticket${openTickets===1?'':'s'}`);
+    const founderReview=founderBilling.renewalReview(company);
+    if(founderReview.eligible&&(founderReview.overdue||founderReview.daysRemaining<=90))alerts.push(founderReview.overdue?'Founder renewal review overdue':`Founder renewal review in ${founderReview.daysRemaining} day${founderReview.daysRemaining===1?'':'s'}`);
     const deletionRequest=deletionRequestDto(company.deletionRequest);
     if(deletionRequest&&deletionRequest.status==='Awaiting operator review')alerts.push('Account closure request needs review');
     if(deletionRequest&&deletionRequest.status==='Recovery hold')alerts.push(`Account closure hold${deletionRequest.holdEndsAt?` through ${String(deletionRequest.holdEndsAt).slice(0,10)}`:''}`);
@@ -775,6 +885,7 @@ async function flushTenantPlatformAuditOutboxSafely(companyId,options={}){
   catch(error){console.error('Platform tenant audit delivery deferred',String(companyId),error.message);return null}
 }
 async function retryPendingPlatformAudits(){
+  maintenanceFence.assertWritesAllowed(process.env,{root:ROOT});
   return withPlatformQueue(async()=>{
     const tenants=await operationalTenantSnapshots();let delivered=0,failed=0;
     for(const tenant of tenants){
@@ -837,6 +948,7 @@ function backupSectionHtml(model){const rows=model.backups.map(b=>{const state=b
 function renderWeeklyHealthDigestEmail(model){const rows=model.flagged.map(c=>`<tr><td style="padding:10px 12px;border-top:1px solid #eee"><strong>${escapeHtml(c.name)}</strong><br><small style="color:#66717a">${escapeHtml(c.plan)} · ${escapeHtml(c.subscriptionStatus)} · latest daily ${c.lastReport?relativeDigestDay(c.lastReport):'never'}</small></td><td style="padding:10px 12px;border-top:1px solid #eee;white-space:nowrap"><strong>${c.score}</strong> ${escapeHtml(c.healthStatus)}</td><td style="padding:10px 12px;border-top:1px solid #eee">${c.alerts.map(alert=>`<span style="display:inline-block;background:#fff1e8;color:#b3541e;border-radius:12px;padding:3px 9px;font-size:11px;margin:2px">${escapeHtml(alert)}</span>`).join('')}</td></tr>`).join(''),summary=model.flagged.length===0?`<p>All ${model.total} customer account${model.total===1?'':'s'} look healthy this week. Nothing needs attention.</p>`:model.flagged.length===model.total?`<p>All ${model.total} customer account${model.total===1?'':'s'} need attention this week.</p>`:`<p>${model.flagged.length} of ${model.total} customer accounts need attention this week. The other ${model.healthyCount} look healthy.</p>`;return `<div style="font-family:Arial,sans-serif;max-width:640px;margin:auto;color:#111416"><h1 style="font-size:22px">Weekly customer health</h1>${summary}${model.flagged.length?`<table style="width:100%;border-collapse:collapse;font-size:13px"><thead><tr><th align="left" style="padding:6px 12px;color:#66717a;font-size:11px;text-transform:uppercase">Account</th><th align="left" style="padding:6px 12px;color:#66717a;font-size:11px;text-transform:uppercase">Health</th><th align="left" style="padding:6px 12px;color:#66717a;font-size:11px;text-transform:uppercase">Why</th></tr></thead><tbody>${rows}</tbody></table>`:''}${model.backups?.length?backupSectionHtml(model):''}<p style="color:#68716d;font-size:12px">Generated ${new Date(model.generatedAt).toLocaleString('en-US',{timeZone:WEEKLY_DIGEST_TIMEZONE})} · Pro Daily Link Platform Operations</p></div>`}
 async function deliverWeeklyHealthDigest(recipients,model){if(stagingBlocksOutbound())throw Error('Outbound email is disabled in staging');if(!process.env.RESEND_API_KEY)throw Error('Email is not configured');const response=await fetch('https://api.resend.com/emails',{method:'POST',headers:{Authorization:`Bearer ${process.env.RESEND_API_KEY}`,'Content-Type':'application/json','User-Agent':'ProDailyLink/1.0'},body:JSON.stringify({from:process.env.RESEND_FROM||'Pro Daily Link <support@prodailylink.com>',reply_to:resendReplyTo(),to:recipients,subject:`Customer health · ${model.flagged.length} account${model.flagged.length===1?'':'s'} need attention`,html:renderWeeklyHealthDigestEmail(model)})});if(!response.ok)throw Error(`Email provider rejected the health digest (${response.status})`)}
 async function maybeSendWeeklyHealthDigest({now=new Date(),force=false,sendEmailFn=null}={}){
+  maintenanceFence.assertWritesAllowed(process.env,{root:ROOT});
   if(stagingBlocksOutbound())return{sent:false,reason:'staging'};
   if(process.env.PDL_WEEKLY_DIGEST==='0')return{sent:false,reason:'disabled'};
   return withPlatformQueue(async()=>{
@@ -862,7 +974,7 @@ async function maybeSendWeeklyHealthDigest({now=new Date(),force=false,sendEmail
     };
     const model=await weeklyHealthDigestModel();
     if(sendEmailFn||process.env.PDL_EMAIL_DEV_MODE!=='1'||process.env.RESEND_API_KEY){
-      try{await(sendEmailFn||deliverWeeklyHealthDigest)(recipients,model)}catch(error){
+      try{maintenanceFence.assertWritesAllowed(process.env,{root:ROOT});await(sendEmailFn||deliverWeeklyHealthDigest)(recipients,model)}catch(error){
         console.error('Weekly health digest failed',error.message);
         await finishLease(latest=>{delete latest.weeklyDigest.pendingSlot;delete latest.weeklyDigest.pendingAt;delete latest.weeklyDigest.pendingBy;latest.weeklyDigest.lastFailureAt=now.toISOString()});
         return{sent:false,reason:'send-failed'};
@@ -876,7 +988,7 @@ async function maybeSendWeeklyHealthDigest({now=new Date(),force=false,sendEmail
 function billingSummary(db){
   const base=billingPlan(db.company),access=accountAccess(db.company),founder=founderBilling.isFounder(db.company);
   const planId=BILLING_PLANS[db.company.plan]?db.company.plan:'pro',protectedPrice=founder&&(!db.company.founder.protectedUntil||new Date(db.company.founder.protectedUntil)>new Date());
-  return {plan:planId,planName:base.name,price:protectedPrice?founderBilling.PRICES[planId].monthly:base.price,annualPrice:protectedPrice?founderBilling.PRICES[planId].annual:base.annualPrice,billingCycle:db.company.billingCycle||'monthly',status:access.status,trialEndsAt:db.company.trialEndsAt||null,daysRemaining:access.daysRemaining,nextBillingAt:db.company.nextBillingAt||null,configured:Boolean(process.env.STRIPE_SECRET_KEY),hasSubscription:Boolean(db.company.stripeSubscriptionId)&&access.status!=='Cancelled',hasBillingCustomer:Boolean(db.company.stripeCustomerId),locked:access.locked,lockReason:access.reason,demo:access.demo,accountType:access.accountType,billingExempt:access.exempt,cohort:String(db.company.cohort||''),discountPercent:Math.min(100,Math.max(0,Number(db.company.discountPercent)||0)),founder:founder?{protectedUntil:db.company.founder.protectedUntil||null,assistedSetup:db.company.founder.assistedSetup,plan:db.company.founder.plan,billingCycle:db.company.founder.billingCycle}:null,usage:{users:(db.users||[]).filter(row=>row.status==='Active').length,activeProjects:(db.projects||[]).filter(row=>!row.archived).length},limits:{users:base.maxUsers,activeProjects:base.maxProjects},plans:Object.entries(BILLING_PLANS).map(([id,item])=>({id,name:item.name,price:protectedPrice?founderBilling.PRICES[id].monthly:item.price,annualPrice:protectedPrice?founderBilling.PRICES[id].annual:item.annualPrice,maxUsers:item.maxUsers,maxProjects:item.maxProjects,available:Boolean(process.env[founderBilling.priceKey(id,'monthly',protectedPrice)])&&(!founder||founderBilling.enabled()),annualAvailable:Boolean(process.env[founderBilling.priceKey(id,'annual',protectedPrice)])&&(!founder||founderBilling.enabled())}))};
+  return {plan:planId,planName:base.name,price:protectedPrice?founderBilling.PRICES[planId].monthly:base.price,annualPrice:protectedPrice?founderBilling.PRICES[planId].annual:base.annualPrice,billingCycle:db.company.billingCycle||'monthly',status:access.status,trialEndsAt:db.company.trialEndsAt||null,daysRemaining:access.daysRemaining,nextBillingAt:db.company.nextBillingAt||null,configured:Boolean(process.env.STRIPE_SECRET_KEY),hasSubscription:Boolean(db.company.stripeSubscriptionId)&&access.status!=='Cancelled',hasBillingCustomer:Boolean(db.company.stripeCustomerId),planChange:billingPortalPolicy.summary(db.company),locked:access.locked,lockReason:access.reason,demo:access.demo,accountType:access.accountType,billingExempt:access.exempt,cohort:String(db.company.cohort||''),discountPercent:Math.min(100,Math.max(0,Number(db.company.discountPercent)||0)),founder:founder?{protectedUntil:db.company.founder.protectedUntil||null,assistedSetup:db.company.founder.assistedSetup,plan:db.company.founder.plan,billingCycle:db.company.founder.billingCycle,renewalReview:founderBilling.renewalReview(db.company)}:null,usage:{users:(db.users||[]).filter(row=>row.status==='Active').length,activeProjects:(db.projects||[]).filter(row=>!row.archived).length},limits:{users:base.maxUsers,activeProjects:base.maxProjects},plans:Object.entries(BILLING_PLANS).map(([id,item])=>({id,name:item.name,price:protectedPrice?founderBilling.PRICES[id].monthly:item.price,annualPrice:protectedPrice?founderBilling.PRICES[id].annual:item.annualPrice,maxUsers:item.maxUsers,maxProjects:item.maxProjects,available:Boolean(process.env[founderBilling.priceKey(id,'monthly',protectedPrice)])&&(!founder||founderBilling.enabled()),annualAvailable:Boolean(process.env[founderBilling.priceKey(id,'annual',protectedPrice)])&&(!founder||founderBilling.enabled())}))};
 }
 async function stripeRequest(pathname,params=null,method='POST',idempotencyKey=null){
   if(stagingBlocksOutbound()||!process.env.STRIPE_SECRET_KEY)throw new Error('Stripe billing is not configured yet');
@@ -922,6 +1034,7 @@ async function recordPaidAssistedSetup(tenant,subscriptionId){
   }
 }
 async function markAssistedSetupSynced(tenant,database=null){
+  maintenanceFence.assertWritesAllowed(process.env,{root:ROOT});
   const synced=structuredClone(tenant),prior=synced.company.platformAssistedSetupSync||{},syncedAt=new Date().toISOString();
   synced.company.platformAssistedSetupSync={...prior,status:'synced',syncedAt};
   synced.company.persistence={...(synced.company.persistence||{}),revision:Number(synced.company.persistence?.revision||0)+1,updatedAt:syncedAt};
@@ -932,9 +1045,9 @@ async function markAssistedSetupSynced(tenant,database=null){
     if(transactionalMode()!=='off'){
       let expectedRevision=database?.transactionalRevision;
       if(!Number.isSafeInteger(expectedRevision))expectedRevision=Number((await supabase.loadTransactionalSnapshot(synced.company.id))?.revision||0);
-      await supabase.saveTransactionalSnapshot(synced,expectedRevision);
+      maintenanceFence.assertWritesAllowed(process.env,{root:ROOT});await supabase.saveTransactionalSnapshot(synced,expectedRevision);
     }
-    await supabase.saveCompanySnapshot(synced);
+    maintenanceFence.assertWritesAllowed(process.env,{root:ROOT});await supabase.saveCompanySnapshot(synced);
   }
   mirrorTenantSnapshot(synced);
   return synced;
@@ -952,6 +1065,7 @@ function scheduleAssistedSetupSync(){
   timer.unref?.();
 }
 async function retryPendingAssistedSetup(){
+  maintenanceFence.assertWritesAllowed(process.env,{root:ROOT});
   if(assistedSetupRetryRunning)return{retried:0,synced:0};
   assistedSetupRetryRunning=true;
   let retried=0,synced=0;
@@ -970,7 +1084,7 @@ async function retryPendingAssistedSetup(){
         try{
           if(sync?.status!=='pending'){
             if(candidateSync.status==='pending'&&sync?.status==='synced'){
-              if(supabase.configured())await supabase.saveCompanySnapshot(tenant);
+              if(supabase.configured()){maintenanceFence.assertWritesAllowed(process.env,{root:ROOT});await supabase.saveCompanySnapshot(tenant)}
               mirrorTenantSnapshot(tenant);synced++;
             }
             return;
@@ -983,6 +1097,37 @@ async function retryPendingAssistedSetup(){
     }
     return{retried,synced};
   }finally{assistedSetupRetryRunning=false}
+}
+let founderRenewalRetryRunning=false;
+async function retryFounderRenewalReviews({now=new Date()}={}){
+  maintenanceFence.assertWritesAllowed(process.env,{root:ROOT});
+  if(founderRenewalRetryRunning)return{attempted:0,sent:0,pending:0};
+  founderRenewalRetryRunning=true;
+  let attempted=0,sent=0,pending=0;
+  try{
+    const tenants=await operationalTenantSnapshots();
+    for(const candidate of tenants){
+      const companyId=String(candidate?.company?.id||''),review=founderBilling.renewalReview(candidate?.company,now);
+      if(!companyId||!review.eligible||!review.dueReminderDays)continue;
+      const queued=await mutatePlatformTenant(companyId,tenant=>{
+        const reminder=founderBilling.queueRenewalReview(tenant.company,now);
+        return{changed:Boolean(reminder),reminder};
+      });
+      const reminder=queued?.outcome?.reminder;if(!reminder)continue;
+      attempted++;
+      let result;
+      try{
+        result=await founderAlerts.renewalReviewAlert({platform:readPlatform(),company:{name:queued.tenant.company.name,plan:queued.tenant.company.plan,billingCycle:queued.tenant.company.billingCycle||'monthly'},reminder,persist:persistFounderAlertAudit});
+      }catch(error){
+        result={sent:false,reason:'provider-error'};
+        console.error('Founder renewal reminder delivery failed');
+        monitoring.captureRequestException(error,{method:'INTERNAL',route:'/internal/founder-renewal-review'});
+      }
+      await mutatePlatformTenant(companyId,tenant=>({changed:founderBilling.settleRenewalReview(tenant.company,reminder.days,result,now)}));
+      if(result.sent)sent++;else pending++;
+    }
+    return{attempted,sent,pending};
+  }finally{founderRenewalRetryRunning=false}
 }
 async function syncStripeSubscription(db,subscriptionId){const subscription=await stripeRequest(`/subscriptions/${encodeURIComponent(subscriptionId)}`,null,'GET');await applyStripeSubscription(db,subscription);writeDb(db);return subscription}
 async function handleStripeWebhook(req,res){
@@ -1005,6 +1150,10 @@ async function handleStripeWebhook(req,res){
   } catch(error) {
     const status=error.statusCode||500;
     console.error('Stripe webhook processing failed',status);
+    // This route handles its own response, so the outer request catcher never
+    // sees the exception. Capture only a scrubbed error plus a static route;
+    // never attach the Stripe payload, signature, object IDs, or customer data.
+    monitoring.captureRequestException(error,{method:'POST',route:'/api/billing/webhook'});
     return json(res,status,{error:status===400?'Invalid Stripe webhook':status===413?'Request is too large':'Webhook processing unavailable'});
   }
 }
@@ -1100,6 +1249,7 @@ async function sendComplianceEmail({sub,companyName,items}){
   if(stagingBlocksOutbound())throw Error('Outbound email is disabled in staging');
   if(!process.env.RESEND_API_KEY)throw Error('Compliance reminder email is not configured');
   const rows=items.map(item=>`<li><strong>${escapeHtml(item.label)}</strong> — ${item.state==='missing'?'missing':item.state==='expired'?`expired ${Math.abs(item.days)} day${Math.abs(item.days)===1?'':'s'} ago`:`expires in ${item.days} day${item.days===1?'':'s'}`}</li>`).join('');
+  maintenanceFence.assertWritesAllowed(process.env,{root:ROOT});
   const response=await fetch('https://api.resend.com/emails',{method:'POST',headers:{Authorization:`Bearer ${process.env.RESEND_API_KEY}`,'Content-Type':'application/json','User-Agent':'ProDailyLink/1.0'},body:JSON.stringify({from:process.env.RESEND_FROM||'Pro Daily Link <support@prodailylink.com>',reply_to:resendReplyTo(),to:[sub.email],subject:`Compliance information needed · ${companyName}`,html:`<div style="font-family:Arial,sans-serif;max-width:560px;margin:auto;color:#111416"><h1 style="font-size:24px">Compliance information needed</h1><p>Hi ${escapeHtml(sub.contact||sub.name)},</p><p><strong>${escapeHtml(companyName)}</strong> needs the following information kept current before work is scheduled:</p><ul>${rows}</ul><p>Please reply to this email so the office can confirm the update. Do not send tax identification numbers by ordinary email.</p><p style="color:#68716d;font-size:12px">This reminder was sent automatically by Pro Daily Link. The office must verify all updates before cleared-to-work status changes.</p></div>`})});
   if(!response.ok)throw Error(`Email provider rejected the compliance reminder (${response.status})`);
 }
@@ -1114,8 +1264,9 @@ const IMAGE_UPLOAD_TYPES={'image/jpeg':'jpg','image/png':'png','image/webp':'web
 function decodeImageUpload(input){const type=String(input?.type||''),ext=IMAGE_UPLOAD_TYPES[type],match=String(input?.data||'').match(/^data:([^;]+);base64,([A-Za-z0-9+/=\s]+)$/);if(!ext||!match||match[1]!==type)return{error:'Company logo must be a JPG, PNG, or WebP image'};const bytes=Buffer.from(match[2].replace(/\s/g,''),'base64');if(!bytes.length)return{error:'Company logo must be a JPG, PNG, or WebP image'};if(bytes.length>IMAGE_UPLOAD_MAX_BYTES)return{error:'Company logo must be smaller than 6 MB'};return{type,ext,bytes}}
 function companyLogoFile(logo){const relative=String(logo?.url||'').replace(/^\//,'');if(!relative.startsWith('uploads/company-logos/')||relative.includes('..'))return null;const file=path.resolve(ROOT,relative),root=path.resolve(ROOT,'uploads','company-logos');return file.startsWith(root+path.sep)?file:null}
 async function readCompanyLogo(db){const logo=db.company?.logo;if(!logo)return null;if(logo.bucket&&logo.objectKey){if(!String(logo.objectKey).startsWith(`${tenantUuid(db)}/`)||!supabase.configured())return null;const response=await supabase.download(logo.bucket,logo.objectKey);return{bytes:Buffer.from(await response.arrayBuffer()),contentType:logo.contentType||response.headers.get('content-type')||'application/octet-stream'}}const file=companyLogoFile(logo);if(!file||!fs.existsSync(file))return null;return{bytes:fs.readFileSync(file),contentType:logo.contentType||'application/octet-stream'}}
-async function removeStoredCompanyLogo(db,logo){if(!logo)return;if(logo.bucket&&logo.objectKey){if(String(logo.objectKey).startsWith(`${tenantUuid(db)}/`)&&supabase.configured())await supabase.remove(logo.bucket,logo.objectKey);return}const file=companyLogoFile(logo);if(file&&fs.existsSync(file))fs.unlinkSync(file)}
+async function removeStoredCompanyLogo(db,logo){if(!logo)return;maintenanceFence.assertWritesAllowed(process.env,{root:ROOT});if(logo.bucket&&logo.objectKey){if(String(logo.objectKey).startsWith(`${tenantUuid(db)}/`)&&supabase.configured()){maintenanceFence.assertWritesAllowed(process.env,{root:ROOT});await supabase.remove(logo.bucket,logo.objectKey)}return}const file=companyLogoFile(logo);if(file&&fs.existsSync(file)){maintenanceFence.assertWritesAllowed(process.env,{root:ROOT});fs.unlinkSync(file)}}
 async function saveAsset(db,bucket,filename,bytes,contentType,localDirectory='uploads'){
+  maintenanceFence.assertWritesAllowed(process.env,{root:ROOT});
   if(supabase.configured())return supabase.upload(bucket,`${tenantUuid(db)}/${Date.now()}-${crypto.randomUUID()}-${filename.replace(/[^a-zA-Z0-9._-]/g,'_')}`,bytes,contentType);
   if(transactionalMode()==='primary'||process.env.PDL_DURABLE_STORAGE_REQUIRED==='1')throw Error('Private file storage is temporarily unavailable. Nothing was saved; try again when storage is healthy.');
   const directory=path.join(ROOT,localDirectory);fs.mkdirSync(directory,{recursive:true});const localName=`${Date.now()}-${crypto.randomUUID()}-${filename.replace(/[^a-zA-Z0-9._-]/g,'_')}`;fs.writeFileSync(path.join(directory,localName),bytes);return{bucket:null,objectKey:null,url:`/${localDirectory.replaceAll('\\','/')}/${localName}`};
@@ -1150,6 +1301,7 @@ function ticketLocalSourceFile(ticket,root=ROOT){
   return file.startsWith(directory+path.sep)?file:null;
 }
 async function purgeExpiredTicketFiles(db,now=new Date(),{storage=supabase,root=ROOT}={}){
+  maintenanceFence.assertWritesAllowed(process.env,{root:ROOT});
   let changed=false;
   for(const ticket of db.projectTickets||[]){
     if(!ticket.deletedAt||ticket.purgedAt||!ticket.retainedUntil||new Date(ticket.retainedUntil)>now)continue;
@@ -1158,12 +1310,12 @@ async function purgeExpiredTicketFiles(db,now=new Date(),{storage=supabase,root=
       if(hasCloudPointer){
         if(!ticket.bucket||!ticket.objectKey)throw new Error('Incomplete cloud storage pointer');
         if(!storage?.configured?.())throw new Error('Cloud storage is not configured');
-        const removed=await storage.remove(ticket.bucket,ticket.objectKey);
+        maintenanceFence.assertWritesAllowed(process.env,{root:ROOT});const removed=await storage.remove(ticket.bucket,ticket.objectKey);
         if(removed!==true)throw new Error('Cloud storage did not confirm deletion');
       }else if(hasLocalPointer){
         const file=ticketLocalSourceFile(ticket,root);
         if(!file)throw new Error('Unsafe local storage pointer');
-        if(fs.existsSync(file))fs.unlinkSync(file);
+        if(fs.existsSync(file)){maintenanceFence.assertWritesAllowed(process.env,{root:ROOT});fs.unlinkSync(file)}
         // A verified path that is already absent is an idempotent success.
       }
       const purgedAt=now.toISOString();
@@ -1179,6 +1331,7 @@ async function purgeExpiredTicketFiles(db,now=new Date(),{storage=supabase,root=
   return changed;
 }
 async function sweepTenantRetention(now=new Date(),{listTenants=operationalTenantSnapshots,mutateTenant=mutatePlatformTenant,storage=supabase,root=ROOT}={}){
+  maintenanceFence.assertWritesAllowed(process.env,{root:ROOT});
   const tenants=await listTenants(),results=[];
   for(const tenant of tenants){
     const companyId=String(tenant?.company?.id||'');
@@ -1215,6 +1368,7 @@ function localTenantStorageFiles(snapshot,root=ROOT){
   return[...new Set(values)];
 }
 async function removeTenantStoredObjects(snapshot,{storage=supabase,root=ROOT}={}){
+  maintenanceFence.assertWritesAllowed(process.env,{root:ROOT});
   const companyId=databaseCompanyId(snapshot.company?.id),cloudByKey=new Map();
   for(const {asset,source} of tenantStorageAssets(snapshot)){const bucket=asset.storageBucket??asset.bucket,rawKey=asset.storageKey??asset.objectKey;if(!bucket&&!rawKey)continue;if(!bucket||!rawKey)throw new Error(`Incomplete private storage reference in ${source}`);const objectKey=String(rawKey).replaceAll('\\','/').replace(/^\/+/, '');if(!objectKey||objectKey.includes('../')||objectKey.split('/').includes('..')||!objectKey.startsWith(`${companyId}/`))throw new Error(`Unsafe or cross-tenant storage key in ${source}`);cloudByKey.set(`${bucket}/${objectKey}`,{bucket:String(bucket),objectKey})}
   const managedBuckets=new Set([...Object.keys(supabase.MANAGED_PRIVATE_BUCKETS||{}),...[...cloudByKey.values()].map(row=>row.bucket)]);
@@ -1223,9 +1377,9 @@ async function removeTenantStoredObjects(snapshot,{storage=supabase,root=ROOT}={
   for(const bucket of managedBuckets){for(const object of await storage.listByPrefix(bucket,companyId)){if(!String(object.objectKey||'').startsWith(`${companyId}/`))throw new Error('Cloud storage returned a cross-tenant object');cloudByKey.set(`${bucket}/${object.objectKey}`,{bucket,objectKey:object.objectKey})}}
   const cloud=[...cloudByKey.values()],local=localTenantStorageFiles(snapshot,root);
   let removed=0,alreadyAbsent=0;
-  for(const object of cloud){try{if(await storage.remove(object.bucket,object.objectKey)!==true)throw new Error('Storage provider did not confirm deletion');removed++}catch(error){if(Number(error?.statusCode)===404){alreadyAbsent++;continue}throw error}}
+  for(const object of cloud){try{maintenanceFence.assertWritesAllowed(process.env,{root:ROOT});if(await storage.remove(object.bucket,object.objectKey)!==true)throw new Error('Storage provider did not confirm deletion');removed++}catch(error){if(Number(error?.statusCode)===404){alreadyAbsent++;continue}throw error}}
   for(const bucket of managedBuckets){const remaining=await storage.listByPrefix(bucket,companyId);if(remaining.length)throw new Error(`Cloud storage still contains ${remaining.length} tenant object${remaining.length===1?'':'s'} in ${bucket}; database purge was stopped`)}
-  for(const file of local){if(fs.existsSync(file)){fs.unlinkSync(file);removed++}else alreadyAbsent++}
+  for(const file of local){if(fs.existsSync(file)){maintenanceFence.assertWritesAllowed(process.env,{root:ROOT});fs.unlinkSync(file);removed++}else alreadyAbsent++}
   return{removed,alreadyAbsent,total:cloud.length+local.length};
 }
 function tenantMirrorFile(companyId,{dbFile=DB_FILE}={}){
@@ -1236,6 +1390,7 @@ function tenantMirrorFile(companyId,{dbFile=DB_FILE}={}){
   return file;
 }
 function removeTenantMirror(companyId,{fileSystem=fs,dbFile=DB_FILE}={}){
+  maintenanceFence.assertWritesAllowed(process.env,{root:ROOT});
   const file=tenantMirrorFile(companyId,{dbFile}),existed=fileSystem.existsSync(file);
   if(existed)fileSystem.unlinkSync(file);
   if(fileSystem.existsSync(file))throw new Error('Local tenant mirror still exists after deletion');
@@ -1317,9 +1472,10 @@ async function executePermanentTenantDeletion({companyId,authority,request},{
   deletionStatus=supabase.transactionalTenantDeletionStatus,
   captureException=(error,context)=>monitoring.captureException?.(error,context)
 }={}){
+  maintenanceFence.assertWritesAllowed(process.env,{root:ROOT});
   const revision=Number(authority.revision),databaseId=authority.databaseCompanyId||databaseCompanyId(companyId),common={companyId,deletionRequestId:request.id,terminalRevision:revision};
   const expectedRequestId=String(request.id).toLowerCase();let lock,receipt,recoveredCommit=false,alreadyDeleted=false;
-  try{lock=await begin(databaseId,revision,request.id)}catch(error){
+  try{maintenanceFence.assertWritesAllowed(process.env,{root:ROOT});lock=await begin(databaseId,revision,request.id)}catch(error){
     let status;
     try{status=await deletionStatus(databaseId)}catch(statusError){error.deletionPhase='lock_unconfirmed';error.statusCheckError=statusError;throw error}
     if(status.status==='locked'&&tenantDeletionIdentityMatches(status,databaseId,expectedRequestId)&&Number(status.lockedRevision)===revision)lock={locked:true,companyId:databaseId,deletionRequestId:expectedRequestId,lockedRevision:revision,resumed:true};
@@ -1332,12 +1488,14 @@ async function executePermanentTenantDeletion({companyId,authority,request},{
   let storage={removed:0,alreadyAbsent:0,total:0};
   if(!alreadyDeleted){
     try{
-      storage=await removeStorage(authority.snapshot);
+      maintenanceFence.assertWritesAllowed(process.env,{root:ROOT});storage=await removeStorage(authority.snapshot);
+      maintenanceFence.assertWritesAllowed(process.env,{root:ROOT});
       await removeMirror(companyId);
+      maintenanceFence.assertWritesAllowed(process.env,{root:ROOT});
       await prepareCleanupJob({...common,storage});
     }catch(error){error.deletionPhase='external_cleanup';error.deletionLocked=true;throw error}
     try{
-      receipt=await finalize(databaseId,lock.lockedRevision,request.id);
+      maintenanceFence.assertWritesAllowed(process.env,{root:ROOT});receipt=await finalize(databaseId,lock.lockedRevision,request.id);
       if(!tenantDeletionReceiptMatches(receipt,databaseId,expectedRequestId,lock.lockedRevision))throw new Error('The permanent deletion receipt did not match this company, request, and revision');
     }catch(error){
       let status;
@@ -1363,13 +1521,14 @@ async function retryPendingTenantDeletionCleanup({
   deletionStatus=supabase.transactionalTenantDeletionStatus,
   removeMirror=removeTenantMirror
 }={}){
+  maintenanceFence.assertWritesAllowed(process.env,{root:ROOT});
   const platform=read(),jobs=Array.isArray(platform.tenantDeletionCleanupJobs)?platform.tenantDeletionCleanupJobs:[],results=[],now=new Date().toISOString();let changed=false;
   for(const job of jobs){
     if(!['external_cleanup_verified','cleanup_pending'].includes(job.status))continue;
     try{
       const status=await deletionStatus(job.companyId);
       if(status.status!=='deleted'||status.deletionRequestId!==String(job.deletionRequestId).toLowerCase()){results.push({id:job.id,status:'waiting'});continue}
-      await removeMirror(job.companyId);job.status='complete';job.completedAt=now;job.updatedAt=now;delete job.lastError;delete job.lastErrorCode;changed=true;results.push({id:job.id,status:'complete'});
+      maintenanceFence.assertWritesAllowed(process.env,{root:ROOT});await removeMirror(job.companyId);job.status='complete';job.completedAt=now;job.updatedAt=now;delete job.lastError;delete job.lastErrorCode;changed=true;results.push({id:job.id,status:'complete'});
     }catch(error){job.status='cleanup_pending';job.updatedAt=now;delete job.lastError;job.lastErrorCode='cleanup_retry_required';changed=true;results.push({id:job.id,status:'retry_required'});}
   }
   if(changed)await write(platform,{changedBy:'tenant-deletion-cleanup-retry'});
@@ -2101,13 +2260,14 @@ const handleProjectNotes = createProjectNotesHandler({
 });
 
 async function salesDemoRecoveryBackup(snapshot){
+  maintenanceFence.assertWritesAllowed(process.env,{root:ROOT});
   const directory=path.join(path.dirname(DB_FILE),'.demo-recovery');
   fs.mkdirSync(directory,{recursive:true,mode:0o700});
   const bytes=Buffer.from(JSON.stringify(snapshot)),snapshotSha256=crypto.createHash('sha256').update(bytes).digest('hex'),file=path.join(directory,`${snapshot.company.id}-${snapshotSha256}.json`);
   try{fs.writeFileSync(file,bytes,{flag:'wx',mode:0o600})}catch(error){if(error.code!=='EEXIST')throw error}
   if(crypto.createHash('sha256').update(fs.readFileSync(file)).digest('hex')!==snapshotSha256)throw new Error('Demo recovery backup verification failed');
   if(supabase.configured()){
-    const verified=await backupVerification.createAndRecordVerification(snapshot,{directory:BACKUP_RECEIPT_DIRECTORY,createBackup:supabase.createVerifiedBackup});
+    const verified=await backupVerification.createAndRecordVerification(snapshot,{directory:BACKUP_RECEIPT_DIRECTORY,createBackup:supabase.createVerifiedBackup,assertWrite:()=>maintenanceFence.assertWritesAllowed(process.env,{root:ROOT})});
     if(verified?.hash!==snapshotSha256||verified?.bytes!==bytes.length)throw new Error('A verified cloud recovery backup is required');
     mirrorBackupReceipt(snapshot.company.id);
   }
@@ -2130,11 +2290,11 @@ async function api(req,res,url){
   const subcontractorLinkCreate=req.method==='POST'&&/^\/api\/subcontractors\/\d+\/links$/.test(url.pathname);
   const subcontractorLinkRevoke=req.method==='DELETE'&&/^\/api\/subcontractor-links\/\d+$/.test(url.pathname);
   if(req.method==='GET'&&url.pathname==='/api/health'){
-    const [cloud,platformRepository,tenantRepository]=await Promise.all([supabase.health(),platformRepositoryHealth(),tenantRepositoryHealth()]);
-    const db=readDb();let backupAuthority=null;
-    if(transactionalMode()==='primary'&&supabase.configured()){const authoritative=await supabase.loadTransactionalSnapshot(db.company.id);if(authoritative)backupAuthority={revision:authoritative.revision,contentHash:authoritative.contentHash}}
-    const backup=backupVerification.publicStatus(BACKUP_RECEIPT_DIRECTORY,db.company.id,Date.now(),backupAuthority);
-    const services={ai:Boolean(process.env.OPENAI_API_KEY),email:Boolean(process.env.RESEND_API_KEY&&process.env.RESEND_FROM),billing:Boolean(process.env.STRIPE_SECRET_KEY&&process.env.STRIPE_WEBHOOK_SECRET),monitoring:monitoring.active(),transactionalDatabase:transactionalMode(),tenantRepository,platformRepository,backup};
+    const production=process.env.NODE_ENV==='production';
+    const db=readDb();
+    const{cloud,platformRepository,tenantRepository,recovery,providerVerification,backup}=await collectOperationalHealth(db,{production});
+    const runtimeProviders=providerReadiness.runtimeConfiguration(process.env,monitoring.active());
+    const services={ai:Boolean(process.env.OPENAI_API_KEY),email:{configured:runtimeProviders.email,verified:providerVerification.checks.email===true},billing:{configured:runtimeProviders.billing,verified:providerVerification.checks.stripe===true},monitoring:{configured:runtimeProviders.monitoring,verified:providerVerification.checks.monitoring===true},providerVerification,transactionalDatabase:transactionalMode(),tenantRepository,platformRepository,backup,recovery};
     const readiness=operationalHealthRequirements({cloud,services});
     return json(res,readiness.ok?200:503,{ok:readiness.ok,kind:'operational-readiness',requirements:readiness.requirements,services,cloud:{configured:Boolean(cloud.configured),reachable:Boolean(cloud.reachable)},time:new Date().toISOString()});
   }
@@ -2232,6 +2392,7 @@ async function api(req,res,url){
     if(transactionalMode()!=='primary'||!supabase.configured())return json(res,503,{error:'Email conflict review requires the primary transactional repository.'});
     const input=await body(req),email=String(input.email||'').trim().toLowerCase(),authorizedCompanyId=String(input.authorizedCompanyId||'').trim(),note=String(input.note||'').trim();
     if(!email||!authorizedCompanyId||note.length<8)return json(res,400,{error:'Email, authorized company, and an operator note are required.'});
+    maintenanceFence.assertWritesAllowed(process.env,{root:ROOT});
     const result=await supabase.resolveTenantEmailConflict({email,authorizedCompanyId,resolvedBy:`${req.platformAuth.user.name} (${req.platformAuth.user.id})`,resolutionNote:note});
     let auditStatus='complete';
     try{const platform=readPlatform();platformAudit(platform,req,'tenant_email_conflict_resolved',`Authorized company ${result.authorizedCompanyId}; ${note.slice(0,500)}`,result.authorizedCompanyId,{affectedConflicts:result.affectedConflicts});await writePlatform(platform,{changedBy:String(req.platformAuth.user.id)})}
@@ -2460,7 +2621,7 @@ async function api(req,res,url){
   }
   const revokeSupport=url.pathname.match(/^\/api\/platform\/support-access\/([a-f0-9-]+)$/);if(req.method==='DELETE'&&revokeSupport){const platform=readPlatform(),grant=(platform.supportGrants||[]).find(row=>row.id===revokeSupport[1]);if(!grant)return json(res,404,{error:'Support grant not found'});if(grant.status==='Revoked')return json(res,200,{ok:true});grant.status='Revoked';grant.revokedAt=new Date().toISOString();platformAudit(platform,req,'support_access_revoked',grant.reason,grant.companyId,{grantId:grant.id});await writePlatform(platform);return json(res,200,{ok:true})}
   if(req.method==='GET'&&url.pathname==='/api/platform/audit'){const platform=readPlatform();return json(res,200,(platform.auditEvents||[]).slice().reverse())}
-  const supportSession=url.pathname.match(/^\/api\/support-session\/([A-Za-z0-9_-]{43})$/);if(req.method==='GET'&&supportSession){const platform=readPlatform(),tokenHash=crypto.createHash('sha256').update(supportSession[1]).digest('hex'),grant=(platform.supportGrants||[]).find(row=>row.tokenHash===tokenHash&&row.status==='Active'&&new Date(row.expiresAt)>new Date()),actor=grant&&(platform.users||[]).find(row=>String(row.id)===String(grant.actorUserId));if(!grant||!canPlatformUser(actor,PLATFORM_CAPABILITIES.SUPPORT_GRANT_READ,{grantActorUserId:grant.actorUserId}))return json(res,404,{error:'Support session is invalid or expired'});const tenant=await readPlatformTenant(grant.companyId);if(!tenant||String(tenant.company.id)!==String(grant.companyId))return json(res,404,{error:'Support session is invalid or expired'});platform.auditEvents ||= [];platform.auditEvents.push({id:crypto.randomUUID(),action:'support_session_viewed',companyId:grant.companyId,actorUserId:grant.actorUserId,actorName:grant.actorName,actorRole:'support_session',reason:grant.reason,at:new Date().toISOString(),grantId:grant.id});await writePlatform(platform,{changedBy:String(grant.actorUserId)});const summary={projects:(tenant.projects||[]).length,users:(tenant.users||[]).length,reports:(tenant.reports||[]).length,onboarding:tenant.company.onboarding||null};if(canPlatformUser(actor,PLATFORM_CAPABILITIES.SUBSCRIPTION_READ))summary.plan=tenant.company.plan||'pilot';return json(res,200,{banner:{companyName:tenant.company.name,actorName:grant.actorName,reason:grant.reason,expiresAt:grant.expiresAt},summary})}
+  const supportSession=url.pathname.match(/^\/api\/support-session\/([A-Za-z0-9_-]{43})$/);if(req.method==='GET'&&supportSession){const platform=readPlatform(),tokenHash=crypto.createHash('sha256').update(supportSession[1]).digest('hex'),grant=(platform.supportGrants||[]).find(row=>row.tokenHash===tokenHash&&row.status==='Active'&&new Date(row.expiresAt)>new Date()),actor=grant&&(platform.users||[]).find(row=>String(row.id)===String(grant.actorUserId));if(!grant||!canPlatformUser(actor,PLATFORM_CAPABILITIES.SUPPORT_GRANT_READ,{grantActorUserId:grant.actorUserId}))return json(res,404,{error:'Support session is invalid or expired'});const tenant=await readPlatformTenant(grant.companyId);if(!tenant||String(tenant.company.id)!==String(grant.companyId))return json(res,404,{error:'Support session is invalid or expired'});if(!maintenanceReadOnly()){platform.auditEvents ||= [];platform.auditEvents.push({id:crypto.randomUUID(),action:'support_session_viewed',companyId:grant.companyId,actorUserId:grant.actorUserId,actorName:grant.actorName,actorRole:'support_session',reason:grant.reason,at:new Date().toISOString(),grantId:grant.id});await writePlatform(platform,{changedBy:String(grant.actorUserId)})}const summary={projects:(tenant.projects||[]).length,users:(tenant.users||[]).length,reports:(tenant.reports||[]).length,onboarding:tenant.company.onboarding||null};if(canPlatformUser(actor,PLATFORM_CAPABILITIES.SUBSCRIPTION_READ))summary.plan=tenant.company.plan||'pilot';return json(res,200,{banner:{companyName:tenant.company.name,actorName:grant.actorName,reason:grant.reason,expiresAt:grant.expiresAt},summary})}
   if(req.method==='POST'&&url.pathname==='/api/auth/claim'){const input=await body(req),db=readDb(),user=(db.users||[]).find(row=>row.email.toLowerCase()===String(input.email||'').toLowerCase()&&row.status==='Active'),temporaryPassword=input.temporaryPassword||input.setupCode;if(!user||!user.mustSetPassword||new Date(user.setupExpiresAt)<new Date()||!verifyCredential(temporaryPassword,user.setupSalt,user.setupHash))return json(res,401,{error:'Invalid or expired temporary password'});if(String(input.password||'').length<10)return json(res,400,{error:'Password must be at least 10 characters'});const credential=credentialHash(input.password);user.passwordHash=credential.hash;user.passwordSalt=credential.salt;user.mustSetPassword=false;delete user.setupHash;delete user.setupSalt;delete user.setupExpiresAt;writeDb(db);return json(res,200,{ok:true})}
   if(req.method==='POST'&&url.pathname==='/api/auth/login'){const input=await body(req),db=readDb(),user=(db.users||[]).find(row=>row.email.toLowerCase()===String(input.email||'').toLowerCase()&&row.status==='Active');if(user?.mustSetPassword&&new Date(user.setupExpiresAt)>new Date()&&verifyCredential(input.password,user.setupSalt,user.setupHash))return json(res,409,{error:'Create your permanent password to finish signing in.',code:'PASSWORD_SETUP_REQUIRED'});if(!user||user.mustSetPassword||!verifyCredential(input.password,user.passwordSalt,user.passwordHash))return json(res,401,{error:'Invalid email or password'});const token=crypto.randomBytes(32).toString('base64url'),tokenHash=crypto.createHash('sha256').update(token).digest('hex'),companyId=user.companyId||db.company.id,sessionSeconds=30*86400;db.sessions ||= [];db.sessions=db.sessions.filter(row=>new Date(row.expiresAt)>new Date());db.sessions.push({id:crypto.randomUUID(),tokenHash,userId:user.id,companyId,createdAt:new Date().toISOString(),expiresAt:new Date(Date.now()+sessionSeconds*1000).toISOString()});writeDb(db);const production=process.env.NODE_ENV==='production',secure=production?'; Secure':'';return jsonHeaders(res,200,{...(production?{}:{token}),expiresIn:sessionSeconds,user:{id:user.id,name:user.name,email:user.email,role:user.role,companyId}},{'Set-Cookie':[`pdl_session=${token}; HttpOnly; SameSite=Strict; Path=/; Max-Age=${sessionSeconds}${secure}`,`pdl_company=${companyId}; SameSite=Strict; Path=/; Max-Age=${sessionSeconds}${secure}`]})}
   if(req.method==='POST'&&url.pathname==='/api/auth/forgot'){
@@ -2481,7 +2642,7 @@ async function api(req,res,url){
     if(!user||!user.emailVerificationExpiresAt||new Date(user.emailVerificationExpiresAt)<new Date())return json(res,401,{error:'This confirmation link is invalid or expired'});
     user.emailVerifiedAt=new Date().toISOString();delete user.emailVerificationTokenHash;delete user.emailVerificationExpiresAt;writeDb(db);return json(res,200,{ok:true,email:user.email})
   }
-  if(req.method==='GET'&&url.pathname==='/api/auth/me'){const db=readDb(),token=bearer(req)||cookie(req,'pdl_session'),tokenHash=token&&crypto.createHash('sha256').update(token).digest('hex'),session=(db.sessions||[]).find(row=>row.tokenHash===tokenHash&&new Date(row.expiresAt)>new Date()),user=session&&(db.users||[]).find(row=>row.id===session.userId&&row.status==='Active');if(!session||!user)return json(res,401,{error:'Authentication required'});const sessionSeconds=30*86400;session.expiresAt=new Date(Date.now()+sessionSeconds*1000).toISOString();writeDb(db);const secure=process.env.NODE_ENV==='production'?'; Secure':'';return jsonHeaders(res,200,{id:user.id,name:user.name,email:user.email,emailVerifiedAt:user.emailVerifiedAt||null,role:user.role==='foreman'?'field':user.role==='office'?'admin':user.role,accessRole:user.role==='office'?'admin':user.role,companyId:session.companyId,projectIds:user.projectIds||[],assignedCrews:user.assignedCrews||[],memberId:user.memberId||null,preferredLanguage:user.preferredLanguage||'en',preferences:user.preferences||{},permissions:user.permissions||{},timeCards:freshTimeCardsFlag(),templates:freshTemplatesFlag()},{'Set-Cookie':[`pdl_session=${token}; HttpOnly; SameSite=Strict; Path=/; Max-Age=${sessionSeconds}${secure}`,`pdl_company=${session.companyId}; SameSite=Strict; Path=/; Max-Age=${sessionSeconds}${secure}`]})}
+  if(req.method==='GET'&&url.pathname==='/api/auth/me'){const db=readDb(),token=bearer(req)||cookie(req,'pdl_session'),tokenHash=token&&crypto.createHash('sha256').update(token).digest('hex'),session=(db.sessions||[]).find(row=>row.tokenHash===tokenHash&&new Date(row.expiresAt)>new Date()),user=session&&(db.users||[]).find(row=>row.id===session.userId&&row.status==='Active');if(!session||!user)return json(res,401,{error:'Authentication required'});const sessionSeconds=30*86400;if(!maintenanceReadOnly()){session.expiresAt=new Date(Date.now()+sessionSeconds*1000).toISOString();writeDb(db)}const secure=process.env.NODE_ENV==='production'?'; Secure':'';return jsonHeaders(res,200,{id:user.id,name:user.name,email:user.email,emailVerifiedAt:user.emailVerifiedAt||null,role:user.role==='foreman'?'field':user.role==='office'?'admin':user.role,accessRole:user.role==='office'?'admin':user.role,companyId:session.companyId,projectIds:user.projectIds||[],assignedCrews:user.assignedCrews||[],memberId:user.memberId||null,preferredLanguage:user.preferredLanguage||'en',preferences:user.preferences||{},permissions:user.permissions||{},timeCards:freshTimeCardsFlag(),templates:freshTemplatesFlag()},{'Set-Cookie':[`pdl_session=${token}; HttpOnly; SameSite=Strict; Path=/; Max-Age=${sessionSeconds}${secure}`,`pdl_company=${session.companyId}; SameSite=Strict; Path=/; Max-Age=${sessionSeconds}${secure}`]})}
   if(req.method==='POST'&&url.pathname==='/api/auth/logout'){const db=readDb(),token=bearer(req)||cookie(req,'pdl_session'),tokenHash=token&&crypto.createHash('sha256').update(token).digest('hex');db.sessions=(db.sessions||[]).filter(row=>row.tokenHash!==tokenHash);writeDb(db);const secure=process.env.NODE_ENV==='production'?'; Secure':'';return jsonHeaders(res,200,{ok:true},{'Set-Cookie':[`pdl_session=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0${secure}`,`pdl_company=; SameSite=Strict; Path=/; Max-Age=0${secure}`]})}
   if(await handleAssistantAI(req,res,url))return;
   if(await handleProjectAssistant(req,res,url))return;
@@ -2548,7 +2709,7 @@ async function api(req,res,url){
   if(req.method==='GET'&&url.pathname==='/api/account-access'){const db=readDb();return json(res,200,accountAccess(db.company))}
   if(req.method==='GET'&&url.pathname==='/api/billing'){
     const db=readDb();if(!billingOwnerAllowed(req))return json(res,403,{error:'Account owner permission required'});
-    if(db.company.stripeSubscriptionId&&process.env.STRIPE_SECRET_KEY){try{await syncStripeSubscription(db,db.company.stripeSubscriptionId)}catch(error){console.error('Stripe subscription refresh failed',error.message)}}
+    if(!maintenanceReadOnly()&&db.company.stripeSubscriptionId&&process.env.STRIPE_SECRET_KEY){try{await syncStripeSubscription(db,db.company.stripeSubscriptionId)}catch(error){console.error('Stripe subscription refresh failed',error.message)}}
     return json(res,200,billingSummary(db))
   }
   if(req.method==='POST'&&url.pathname==='/api/billing/checkout'){
@@ -2575,8 +2736,10 @@ async function api(req,res,url){
         trialParams=subscriptionCheckout.trialParameters(db.company,choice.founder);
       }
       if(previous?.status==='creating'&&(previous.plan!==input.plan||previous.cycle!==choice.cycle))throw founderBilling.fail('Retry the previous plan and billing period first so checkout can be recovered safely.',409);
-      const params={mode:'subscription',payment_method_types:'card','payment_method_types[0]':'card','line_items[0][price]':choice.priceId,'line_items[0][quantity]':1,success_url:publicUrl+'/app?tenant='+encodeURIComponent(db.company.id)+'&billing=success&session_id={CHECKOUT_SESSION_ID}',cancel_url:publicUrl+'/app?tenant='+encodeURIComponent(db.company.id)+'&billing=cancelled',client_reference_id:db.company.id,'metadata[company_id]':db.company.id,'subscription_data[metadata][company_id]':db.company.id,'subscription_data[metadata][plan]':input.plan,'subscription_data[metadata][billing_cycle]':choice.cycle};
-      delete params.payment_method_types;
+      // Let Stripe choose the eligible payment methods from the Dashboard
+      // configuration. Delayed methods are reconciled by the signed
+      // async-payment success/failure webhook events.
+      const params={mode:'subscription','line_items[0][price]':choice.priceId,'line_items[0][quantity]':1,success_url:publicUrl+'/app?tenant='+encodeURIComponent(db.company.id)+'&billing=success&session_id={CHECKOUT_SESSION_ID}',cancel_url:publicUrl+'/app?tenant='+encodeURIComponent(db.company.id)+'&billing=cancelled',client_reference_id:db.company.id,'metadata[company_id]':db.company.id,'subscription_data[metadata][company_id]':db.company.id,'subscription_data[metadata][plan]':input.plan,'subscription_data[metadata][billing_cycle]':choice.cycle};
       Object.assign(params,trialParams);
       if(trialParams['subscription_data[billing_cycle_anchor]'])params['custom_text[submit][message]']='Your original free trial ends '+db.company.trialEndsAt+'. No charge before then. Your selected subscription starts billing at that deadline; completing checkout after it requires payment.';
       if(choice.founder){params['subscription_data[metadata][offer]']='founder';params['custom_text[submit][message]']='Founder pricing applies for 24 months from first payment. We will contact you before it ends to review renewal options. No automatic regular-price increase. No free trial.';}
@@ -2594,6 +2757,7 @@ async function api(req,res,url){
     const db=readDb(),sessionId=url.searchParams.get('session_id');
     if(!billingOwnerAllowed(req))return json(res,403,{error:'Account owner permission required'});
     if(!sessionId)return json(res,400,{error:'Checkout session is required'});
+    if(maintenanceReadOnly())return json(res,503,{error:maintenanceFence.PUBLIC_MESSAGE,code:'MAINTENANCE_READ_ONLY'});
     try{
       const session=await stripeRequest(`/checkout/sessions/${encodeURIComponent(sessionId)}`,null,'GET');
       const customerId=typeof session.customer==='string'?session.customer:session.customer?.id,subscriptionId=typeof session.subscription==='string'?session.subscription:session.subscription?.id;
@@ -2607,7 +2771,7 @@ async function api(req,res,url){
 
   }
   if(req.method==='POST'&&url.pathname==='/api/billing/portal'){
-    const db=readDb();if(!billingOwnerAllowed(req))return json(res,403,{error:'Account owner permission required'});if(!db.company.stripeCustomerId)return json(res,409,{error:'Choose a paid plan before opening billing management'});try{const session=await stripeRequest('/billing_portal/sessions',{customer:db.company.stripeCustomerId,return_url:`${String(process.env.PDL_PUBLIC_URL||'').replace(/\/$/,'')}/app?tenant=${encodeURIComponent(db.company.id)}`});return json(res,200,{url:session.url})}catch(error){return json(res,502,{error:error.message})}
+    const db=readDb();if(!billingOwnerAllowed(req))return json(res,403,{error:'Account owner permission required'});if(!db.company.stripeCustomerId)return json(res,409,{error:'Choose a paid plan before opening billing management'});try{const policy=billingPortalPolicy.select(db.company);if(!policy.configurationId)throw billingPortalPolicy.failure(policy.message);const configuration=await stripeRequest('/billing_portal/configurations/'+encodeURIComponent(policy.configurationId),null,'GET');billingPortalPolicy.validate(configuration,policy,BILLING_PLANS);const session=await stripeRequest('/billing_portal/sessions',{customer:db.company.stripeCustomerId,configuration:policy.configurationId,return_url:`${String(process.env.PDL_PUBLIC_URL||'').replace(/\/$/,'')}/app?tenant=${encodeURIComponent(db.company.id)}`});return json(res,200,{url:session.url})}catch(error){return json(res,error.statusCode||502,{error:error.statusCode?error.message:'Billing management could not be opened. Please try again or contact support.'})}
   }
   if(url.pathname==='/api/company/logo'){
     const db=readDb();
@@ -2633,12 +2797,12 @@ async function api(req,res,url){
     }
     return json(res,200,{generatedAt:new Date().toISOString(),records})
   }
-  if(req.method==='GET'&&url.pathname==='/api/exceptions'){const db=readDb();if(prepareWorkspace(db))writeDb(db);const open=new Set(['Needs review','Missing data']),items=db.reports.filter(report=>open.has(report.status)).flatMap(report=>(report.flags||[]).filter(flag=>!flag.resolution).map(flag=>({reportId:report.id,projectId:db.projects[report.project]?.id,date:reportDateLabel(report),foreman:report.foreman,status:report.status,...flag})));return json(res,200,items)}
+  if(req.method==='GET'&&url.pathname==='/api/exceptions'){const db=readDb();if(prepareWorkspace(db)&&!maintenanceReadOnly())writeDb(db);const open=new Set(['Needs review','Missing data']),items=db.reports.filter(report=>open.has(report.status)).flatMap(report=>(report.flags||[]).filter(flag=>!flag.resolution).map(flag=>({reportId:report.id,projectId:db.projects[report.project]?.id,date:reportDateLabel(report),foreman:report.foreman,status:report.status,...flag})));return json(res,200,items)}
   if(req.method==='GET'&&url.pathname==='/api/audit-log'){const db=readDb();if(process.env.PDL_REQUIRE_AUTH==='1'&&!['owner','admin'].includes(req.auth?.user.role))return json(res,403,{error:'Account Owner or Admin permission required'});return json(res,200,(db.auditLog||[]).slice().reverse())}
   const projectTicket=url.pathname.match(/^\/api\/project-tickets\/(\d+)$/);if(projectTicket&&req.method==='PATCH'){const input=await body(req),db=readDb(),ticket=(db.projectTickets||[]).find(row=>row.id===Number(projectTicket[1])&&!row.deletedAt);if(!ticket)return json(res,404,{error:'Ticket not found'});if(process.env.PDL_REQUIRE_AUTH==='1'&&!['owner','admin','project_manager'].includes(req.auth?.user.role))return json(res,403,{error:'Office permission required'});if(req.auth?.user.role==='project_manager'&&!(req.auth.user.projectIds||[]).map(Number).includes(Number(ticket.projectId)))return json(res,404,{error:'Ticket not found'});const next={vendor:Object.hasOwn(input,'vendor')?String(input.vendor||'').trim().slice(0,160):ticket.vendor,ticketNumber:Object.hasOwn(input,'ticketNumber')?String(input.ticketNumber||'').trim().slice(0,100):ticket.ticketNumber,ticketDate:Object.hasOwn(input,'ticketDate')?String(input.ticketDate||'').slice(0,10):ticket.ticketDate},duplicate=ticketDuplicate(db,ticket.projectId,next,ticket.id);if(duplicate)return json(res,409,{error:`Ticket ${next.ticketNumber} from ${next.vendor||'this vendor'} already exists on this project`});const before=JSON.stringify({vendor:ticket.vendor,ticketNumber:ticket.ticketNumber,ticketDate:ticket.ticketDate,lines:ticket.lines||[],status:ticket.status});Object.assign(ticket,next);if(Array.isArray(input.lines)){ticket.lines=cleanTicketLines(input);ticket.material=ticket.lines.map(line=>line.material).filter(Boolean).join(', ').slice(0,250);ticket.quantity=ticket.lines.length===1?ticket.lines[0].quantity:0;ticket.unit=ticket.lines.length===1?ticket.lines[0].unit:'';ticket.amount=ticket.lines.reduce((sum,line)=>sum+Number(line.amount||0),0)}if(['Needs review','Verified','Rejected'].includes(input.status))ticket.status=input.status;ticket.updatedAt=new Date().toISOString();const actor=req.auth?.user.name||'Office user',after=JSON.stringify({vendor:ticket.vendor,ticketNumber:ticket.ticketNumber,ticketDate:ticket.ticketDate,lines:ticket.lines||[],status:ticket.status});if(before!==after){ticket.history ||= [];ticket.history.push({action:input.status&&input.status!==JSON.parse(before).status?`Status changed to ${ticket.status}`:'Ticket corrected',by:actor,at:ticket.updatedAt});db.auditLog ||= [];db.auditLog.push({id:crypto.randomUUID(),type:'project_ticket_changed',projectId:ticket.projectId,ticketId:ticket.id,actor,detail:`Ticket ${ticket.ticketNumber||ticket.id} updated`,at:ticket.updatedAt})}writeDb(db);return json(res,200,ticket)}
   if(projectTicket&&req.method==='DELETE'){const input=await body(req),db=readDb(),ticket=(db.projectTickets||[]).find(row=>row.id===Number(projectTicket[1])&&!row.deletedAt),reason=String(input.reason||'').trim();if(!ticket)return json(res,404,{error:'Ticket not found'});if(process.env.PDL_REQUIRE_AUTH==='1'&&!['owner','admin'].includes(req.auth?.user.role))return json(res,403,{error:'Account Owner or Admin permission required'});if(!reason)return json(res,400,{error:'A deletion reason is required'});const at=new Date().toISOString();ticket.status='Deleted';ticket.deletedAt=at;ticket.deletedBy=req.auth?.user.name||'Office administrator';ticket.deleteReason=reason.slice(0,500);ticket.retainedUntil=new Date(Date.now()+90*86400000).toISOString();ticket.history ||= [];ticket.history.push({action:'Deleted from project view',by:ticket.deletedBy,detail:ticket.deleteReason,at});for(const report of db.reports||[])report.ticketIds=(report.ticketIds||[]).filter(id=>id!==ticket.id);db.auditLog ||= [];db.auditLog.push({id:crypto.randomUUID(),type:'project_ticket_deleted',projectId:ticket.projectId,ticketId:ticket.id,actor:ticket.deletedBy,detail:`${ticket.deleteReason} · source file retained until ${ticket.retainedUntil.slice(0,10)}`,at});writeDb(db);return json(res,200,{ok:true,retainedUntil:ticket.retainedUntil})}
   if(req.method==='GET'&&url.pathname==='/api/schedule/today'){const db=readDb(),user=req.auth?.user,live=scheduleLiveState(db);if(user?.role==='project_manager'){for(const id of Object.keys(live.byAssignment)){const assignment=(db.assignments||[]).find(row=>Number(row.id)===Number(id));if(!assignment||!managerAssignmentAllowed(db,user,assignment))delete live.byAssignment[id]}}return json(res,200,{today:live.today,graceMinutes:live.graceMinutes,assignments:live.byAssignment})}
-  if(req.method==='GET'&&url.pathname==='/api/action-center'){const db=readDb();let changed=prepareWorkspace(db);if(process.env.RESEND_API_KEY&&await runAutomaticComplianceReminders(db))changed=true;if(changed)writeDb(db);const result=buildActionCenter(db);if(req.auth?.user?.role==='project_manager'){const scope=managerScope(db,req.auth.user),workspace=managerWorkspace(db,req.auth.user),reportIds=new Set(workspace.reports.map(report=>Number(report.id)));result.items=result.items.filter(item=>scope.projectIds.has(Number(item.projectId))&&(!item.reportId||reportIds.has(Number(item.reportId))));result.counts={urgent:result.items.filter(item=>item.severity==='urgent').length,high:result.items.filter(item=>item.severity==='high').length,medium:result.items.filter(item=>item.severity==='medium').length,total:result.items.length}}return json(res,200,result)}
+  if(req.method==='GET'&&url.pathname==='/api/action-center'){const db=readDb(),readOnly=maintenanceReadOnly();let changed=prepareWorkspace(db);if(!readOnly&&process.env.RESEND_API_KEY&&await runAutomaticComplianceReminders(db))changed=true;if(changed&&!readOnly)writeDb(db);const result=buildActionCenter(db);if(req.auth?.user?.role==='project_manager'){const scope=managerScope(db,req.auth.user),workspace=managerWorkspace(db,req.auth.user),reportIds=new Set(workspace.reports.map(report=>Number(report.id)));result.items=result.items.filter(item=>scope.projectIds.has(Number(item.projectId))&&(!item.reportId||reportIds.has(Number(item.reportId))));result.counts={urgent:result.items.filter(item=>item.severity==='urgent').length,high:result.items.filter(item=>item.severity==='high').length,medium:result.items.filter(item=>item.severity==='medium').length,total:result.items.length}}return json(res,200,result)}
   if(req.method==='GET'&&url.pathname==='/api/users'){const db=readDb();if(process.env.PDL_REQUIRE_AUTH==='1'&&!['owner','admin'].includes(req.auth?.user.role))return json(res,403,{error:'Account Owner or Admin permission required'});return json(res,200,(db.users||[]).map(({setupHash,setupSalt,passwordHash,passwordSalt,emailVerificationTokenHash,...user})=>user))}
   if(req.method==='POST'&&url.pathname==='/api/users'){const verificationDb=readDb();if(verificationDb.company.emailVerificationRequiredAt&&!req.auth?.user.emailVerifiedAt)return json(res,403,{error:'Confirm the account owner email before inviting team members',code:'email_verification_required'})}
   if(req.method==='POST'&&url.pathname==='/api/users'){const input=await body(req),roles=['owner','admin','project_manager','foreman','field'],db=readDb(),limit=billingPlan(db.company).maxUsers;db.users ||= [];if(limit!=null&&db.users.filter(user=>user.status==='Active').length>=limit)return json(res,409,{error:`Your ${billingPlan(db.company).name} plan includes ${limit} active users. Manage your plan to add more.`});if(!input.name?.trim()||!input.email?.trim()||!roles.includes(input.role))return json(res,400,{error:'Name, email, and valid role are required'});if(db.users.some(user=>user.email.toLowerCase()===input.email.toLowerCase()))return json(res,409,{error:'A user with that email already exists'});if(input.role==='owner'&&db.users.some(user=>user.role==='owner'&&user.status==='Active'))return json(res,409,{error:'Transfer ownership instead of creating another owner'});const validCrews=new Set((db.team||[]).map(member=>String(member.crew||'').trim()).filter(Boolean)),assignedCrews=input.role==='project_manager'?[...new Set((input.assignedCrews||[]).map(String).filter(name=>validCrews.has(name)))]:[],permissions=input.role==='project_manager'?{scheduleCrews:input.permissions?.scheduleCrews===true,viewTime:input.permissions?.viewTime===true,manageTime:input.permissions?.manageTime===true,viewDailies:input.permissions?.viewDailies!==false,approveDailies:input.permissions?.approveDailies===true}:{},temporaryPassword=crypto.randomBytes(6).toString('base64url'),credential=credentialHash(temporaryPassword),row={id:nextId(db.users),companyId:db.company.id,name:input.name.trim(),email:input.email.trim().toLowerCase(),role:input.role,preferredLanguage:input.preferredLanguage==='es'?'es':'en',projectIds:[...new Set((input.projectIds||[]).map(Number))],assignedCrews,permissions,memberId:Number(input.memberId)||null,status:'Active',mustSetPassword:true,setupHash:credential.hash,setupSalt:credential.salt,setupExpiresAt:new Date(Date.now()+72*3600000).toISOString(),createdAt:new Date().toISOString()};db.users.push(row);writeDb(db);const{setupHash,setupSalt,...safe}=row;return json(res,201,{...safe,temporaryPassword})}
@@ -2664,8 +2828,9 @@ async function api(req,res,url){
   const userTimeAccess=url.pathname.match(/^\/api\/users\/(\d+)\/time-access$/);if(req.method==='PATCH'&&userTimeAccess){const input=await body(req),db=readDb(),user=(db.users||[]).find(row=>row.id===Number(userTimeAccess[1]));if(!user)return json(res,404,{error:'User not found'});if(user.role==='owner')return json(res,409,{error:'The account owner always has time access'});user.permissions={...(user.permissions||{}),manageTime:['admin','project_manager'].includes(user.role)&&input.manageTime===true};user.updatedAt=new Date().toISOString();db.auditLog ||= [];db.auditLog.push({id:crypto.randomUUID(),type:'user_access_changed',userId:user.id,actor:req.auth?.user?.name||'Account owner',detail:`${user.name}: time management ${user.permissions.manageTime?'granted':'removed'}`,at:user.updatedAt});writeDb(db);const{setupHash,setupSalt,...safe}=user;return json(res,200,safe)}
   if(req.method==='GET'&&url.pathname==='/api/schedule-availability'){const db=readDb();return json(res,200,scopedScheduleAvailability(db,req.auth?.user))}
   if(req.method==='GET'&&url.pathname==='/api/state'){
-    const db=readDb(),workspaceChanged=prepareWorkspace(db),ticketFilesPurged=await purgeExpiredTicketFiles(db);
-    if(ensureOwnerTeamMember(db)||workspaceChanged||ticketFilesPurged)writeDb(db);
+    const readOnly=maintenanceReadOnly(),db=readDb(),workspaceChanged=prepareWorkspace(db),ticketFilesPurged=readOnly?false:await purgeExpiredTicketFiles(db);
+    const ownerTeamChanged=ensureOwnerTeamMember(db);
+    if(!readOnly&&(ownerTeamChanged||workspaceChanged||ticketFilesPurged))writeDb(db);
     const session=req.auth?.user||null,userId=Number(url.searchParams.get('userId'))||0,requestedMemberId=url.searchParams.has('memberId')?Number(url.searchParams.get('memberId')):null;
     let accountUser=userId?(db.users||[]).find(user=>user.id===userId):null;
     if(userId&&!accountUser)return json(res,404,{error:'User not found'});
@@ -2998,7 +3163,7 @@ async function api(req,res,url){
     if(!created.length)return json(res,400,{error:'Use PDF, JPG, PNG, or WebP files smaller than 10 MB'});
     writeDb(db);return json(res,201,created);
   }
-  if(req.method==='GET'&&url.pathname==='/api/crews'){const db=readDb();db.crews ||= [];let changed=false;for(const name of [...new Set((db.team||[]).map(member=>String(member.crew||'').trim()).filter(name=>name&&!/^(office|unassigned)$/i.test(name)))])if(!db.crews.some(crew=>crew.name.toLowerCase()===name.toLowerCase())){db.crews.push({id:nextId(db.crews),name,createdAt:new Date().toISOString(),migratedFromTeam:true});changed=true}if(changed)writeDb(db);return json(res,200,db.crews)}
+  if(req.method==='GET'&&url.pathname==='/api/crews'){const db=readDb();db.crews ||= [];let changed=false;for(const name of [...new Set((db.team||[]).map(member=>String(member.crew||'').trim()).filter(name=>name&&!/^(office|unassigned)$/i.test(name)))])if(!db.crews.some(crew=>crew.name.toLowerCase()===name.toLowerCase())){db.crews.push({id:nextId(db.crews),name,createdAt:new Date().toISOString(),migratedFromTeam:true});changed=true}if(changed&&!maintenanceReadOnly())writeDb(db);return json(res,200,db.crews)}
   if(req.method==='POST'&&url.pathname==='/api/crews'){const input=await body(req),db=readDb(),name=String(input.name||'').trim(),memberIds=[...new Set((input.memberIds||[]).map(Number))];db.crews ||= [];if(process.env.PDL_REQUIRE_AUTH==='1'&&!['owner','admin'].includes(req.auth?.user.role))return json(res,403,{error:'Account Owner or Admin permission required'});if(!name)return json(res,400,{error:'Crew name is required'});if(db.crews.some(crew=>crew.name.toLowerCase()===name.toLowerCase()))return json(res,409,{error:'A crew with that name already exists'});const crew={id:nextId(db.crews),name,createdAt:new Date().toISOString()};db.crews.push(crew);for(const member of db.team||[])if(memberIds.includes(member.id))member.crew=name;writeDb(db);return json(res,201,{crew,crews:db.crews,team:db.team})}
   const crewUpdate=url.pathname.match(/^\/api\/crews\/(\d+)$/);if(req.method==='PATCH'&&crewUpdate){const input=await body(req),db=readDb(),crew=(db.crews||[]).find(row=>row.id===Number(crewUpdate[1])),name=String(input.name||'').trim(),memberIds=[...new Set((input.memberIds||[]).map(Number))];if(process.env.PDL_REQUIRE_AUTH==='1'&&!['owner','admin'].includes(req.auth?.user.role))return json(res,403,{error:'Account Owner or Admin permission required'});if(!crew)return json(res,404,{error:'Crew not found'});if(!name)return json(res,400,{error:'Crew name is required'});if(db.crews.some(row=>row.id!==crew.id&&row.name.toLowerCase()===name.toLowerCase()))return json(res,409,{error:'A crew with that name already exists'});const oldName=crew.name,renamed=oldName!==name;crew.name=name;crew.updatedAt=new Date().toISOString();for(const member of db.team||[]){if(memberIds.includes(member.id))member.crew=name;else if(member.crew===oldName)member.crew='Unassigned'}if(renamed){for(const user of db.users||[])if(Array.isArray(user.assignedCrews))user.assignedCrews=[...new Set(user.assignedCrews.map(value=>String(value).toLowerCase()===oldName.toLowerCase()?name:value))];for(const assignment of db.assignments||[])if(String(assignment.crew||'').toLowerCase()===oldName.toLowerCase())assignment.crew=name;for(const task of db.projectTasks||[])if(String(task.crew||'').toLowerCase()===oldName.toLowerCase())task.crew=name}writeDb(db);return json(res,200,{crew,crews:db.crews,team:db.team})}
   const crewDelete=url.pathname.match(/^\/api\/crews\/(\d+)$/);if(req.method==='DELETE'&&crewDelete){const db=readDb(),index=(db.crews||[]).findIndex(row=>row.id===Number(crewDelete[1]));if(process.env.PDL_REQUIRE_AUTH==='1'&&!['owner','admin'].includes(req.auth?.user.role))return json(res,403,{error:'Account Owner or Admin permission required'});if(index<0)return json(res,404,{error:'Crew not found'});const crew=db.crews[index],memberIds=new Set((db.team||[]).filter(member=>String(member.crew||'').toLowerCase()===String(crew.name).toLowerCase()).map(member=>Number(member.id))),today=new Date().toISOString().slice(0,10),activeAssignment=(db.assignments||[]).find(row=>String(row.date||'')>=today&&(row.memberIds||[]).some(id=>memberIds.has(Number(id))));if(activeAssignment)return json(res,409,{error:'Move or remove this crew’s current and future schedule assignments before deleting the crew'});const openWorkday=(db.workdays||[]).find(row=>!row.endedAt&&(row.memberIds||[]).some(id=>memberIds.has(Number(id))));if(openWorkday)return json(res,409,{error:'End this crew’s active workday before deleting the crew'});for(const member of db.team||[])if(memberIds.has(Number(member.id)))member.crew='Unassigned';for(const user of db.users||[])if(Array.isArray(user.assignedCrews))user.assignedCrews=user.assignedCrews.filter(name=>String(name).toLowerCase()!==String(crew.name).toLowerCase());db.crews.splice(index,1);db.auditLog ||= [];db.auditLog.push({id:crypto.randomUUID(),type:'crew_deleted',crewId:crew.id,crewName:crew.name,actor:req.auth?.user?.name||'Account owner',detail:`${crew.name} deleted; ${memberIds.size} team member${memberIds.size===1?'':'s'} moved to Unassigned`,at:new Date().toISOString()});writeDb(db);return json(res,200,{ok:true,crew,crews:db.crews,team:db.team})}
@@ -3245,9 +3410,9 @@ function trackBillingEvent(db,eventName){const plan=String(db.company?.plan||'')
 async function applyStripeSubscriptionWithAnalytics(db,subscription,eventType){await applyStripeSubscription(db,subscription);const eventName=HEYCATCH_BILLING_EVENTS[eventType];if(eventName)trackBillingEvent(db,eventName)}
 const PUBLIC_STATS_FILE=path.join(__dirname,'data','public-stats.json');
 function readPublicStats(){try{return JSON.parse(fs.readFileSync(PUBLIC_STATS_FILE,'utf8'))}catch{return{dailies:0,since:new Date().toISOString().slice(0,10)}}}
-function bumpPublicStats(){try{const stats=readPublicStats();stats.dailies=Number(stats.dailies||0)+1;fs.mkdirSync(path.dirname(PUBLIC_STATS_FILE),{recursive:true});fs.writeFileSync(PUBLIC_STATS_FILE,JSON.stringify(stats))}catch{}}
+function bumpPublicStats(){try{maintenanceFence.assertWritesAllowed(process.env,{root:ROOT});const stats=readPublicStats();stats.dailies=Number(stats.dailies||0)+1;fs.mkdirSync(path.dirname(PUBLIC_STATS_FILE),{recursive:true});fs.writeFileSync(PUBLIC_STATS_FILE,JSON.stringify(stats))}catch{}}
 const {createMcpHttp}=require('./mcp/http');
-const mcpHttp=createMcpHttp({dbFile:DB_FILE,verifyCredential,tenantDatabases,supabase,stableUuid,mergeTenantSnapshots,platformCloudId:PLATFORM_CLOUD_ID,withTenantQueue,requestDatabase,freshestTenantSnapshot,dbContext,readDb,writeDb,api,transactionalMode,closeTimeCards,timeCardsEnabled,quarterHours,companyDateIso,fieldProjectIds,accountAccess,nextId});
+const mcpHttp=createMcpHttp({dbFile:DB_FILE,verifyCredential,tenantDatabases,supabase,stableUuid,mergeTenantSnapshots,platformCloudId:PLATFORM_CLOUD_ID,withTenantQueue,requestDatabase,freshestTenantSnapshot,dbContext,readDb,writeDb,api,transactionalMode,closeTimeCards,timeCardsEnabled,quarterHours,companyDateIso,fieldProjectIds,accountAccess,nextId,assertWritesAllowed:()=>maintenanceFence.assertWritesAllowed(process.env,{root:ROOT})});
 async function runPlatformRequest(req,res,url,requestId,handler){
   const platformMutation=url.pathname.startsWith('/api/platform/')&&!url.pathname.startsWith('/api/platform/auth/')&&!['GET','HEAD','OPTIONS'].includes(req.method);
   // Buffer the body before authorization so a slow request cannot keep a role
@@ -3279,10 +3444,10 @@ async function runPlatformRequest(req,res,url,requestId,handler){
 
 function publicPlatformContentRoute(req,url){return req.method==='GET'&&(url.pathname==='/api/help'||url.pathname==='/api/blog'||/^\/api\/blog\/[^/]+$/.test(url.pathname))}
 
-const server=http.createServer(async(req,res)=>{const requestId=crypto.randomUUID();try{secureHeaders(res);res.setHeader('X-Request-Id',requestId);const url=new URL(req.url,'http://localhost');if(blockStagingRecovery(req,res,url,json))return;if(req.method==='GET'&&url.pathname==='/api/health/live')return json(res,200,{ok:true,kind:'liveness',time:new Date().toISOString()});if(mcpHttp.matches(url))return mcpHttp.handle(req,res,url);const shortLink=req.method==='GET'&&/^\/[a-z0-9]$/.test(url.pathname);if(shortLink){res.writeHead(302,{Location:`/?utm_source=heycatch&utm_campaign=${url.pathname.slice(1)}`});return res.end()}if(url.pathname.startsWith('/api/')){if(!rateLimit(req,res,url))return;if(req.method==='GET'&&url.pathname==='/api/health')return await api(req,res,url);if(req.method==='GET'&&url.pathname==='/api/public/stats'){const stats=readPublicStats();return json(res,200,{dailies:stats.dailies,since:stats.since})}if(publicPlatformContentRoute(req,url))return await withPlatformQueue(()=>api(req,res,url));if(salesDemoRoute.test(url.pathname))return await handleSalesDemo(req,res,url);if(req.method==='POST'&&url.pathname==='/api/demo-requests')return await runPlatformRequest(req,res,url,requestId,()=>handleDemoRequest(req,res));if(url.pathname==='/api/platform/revenue')return await handlePlatformRevenue(req,res,url);if(/^\/api\/support-session\//.test(url.pathname))return await runPlatformRequest(req,res,url,requestId,()=>api(req,res,url));if(url.pathname.startsWith('/api/platform/'))return await runPlatformRequest(req,res,url,requestId,()=>api(req,res,url));if(req.method==='POST'&&url.pathname==='/api/signup')return await runPlatformRequest(req,res,url,requestId,()=>api(req,res,url));if(req.method==='POST'&&url.pathname==='/api/billing/webhook')return await handleStripeWebhook(req,res);if(req.method==='POST'&&url.pathname==='/api/auth/company'){const input=await body(req),companyId=await companyIdForEmail(input.email);return json(res,200,{companyId:companyId||null})}const guestToken=(req.method==='GET'||req.method==='POST')?url.pathname.match(/^\/api\/guest\/([a-f0-9]{48})(?:\/ticket-scan)?$/):null,changeOrderToken=(req.method==='GET'||req.method==='POST')?url.pathname.match(/^\/api\/change-order\/([A-Za-z0-9_-]+)(?:\/decision)?$/):null,database=guestToken?await guestRequestDatabase(req,url,guestToken[1]):changeOrderToken?await changeOrderRequestDatabase(req,url,changeOrderToken[1]):await authenticatedRequestDatabase(req);if(!database)return json(res,404,{error:guestToken?'This guest link is invalid or expired':changeOrderToken?'This link is invalid or expired':'Company workspace not found'});const companyId=String(database.db?.company?.id||JSON.parse(fs.readFileSync(database.file,'utf8')).company.id);if(assistantPath(url.pathname)){const pilotDb=freshestTenantSnapshot(database),{auth,status}=authenticateRequestAccount(req,pilotDb);if(!auth)return json(res,status,{error:'Authentication required'});if(!permittedCompany(pilotDb.company?.id))return json(res,403,{error:'Project assistant access is not enabled for this company.'})}if(req.method==='POST'&&/^\/api\/projects\/\d+\/assistant\/chat$/.test(url.pathname)||(req.method==='POST'&&url.pathname==='/api/assistant/interpret')||(req.method==='GET'&&url.pathname==='/api/assistant/context')){const context={...database,db:freshestTenantSnapshot(database),pending:[]};return await dbContext.run(context,()=>url.pathname.startsWith('/api/assistant/')?handleAssistantAI(req,res,url):handleProjectAssistant(req,res,url))}return await withTenantQueue(companyId,async()=>{database.db=freshestTenantSnapshot(database);const context={...database,pending:[],backup:null,deferResponse:transactionalMode()==='primary'};try{const result=await dbContext.run(context,()=>api(req,res,url));if(isCredentialAttempt(req,url)&&res.statusCode===401)recordAuthFailure(req);await Promise.all(context.pending);flushDeferredResponse(res,context);return result}catch(error){if(error.code==='PDL_REVISION_CONFLICT'||/PDL_REVISION_CONFLICT/.test(String(error.message))){if(!res.headersSent)return json(res,409,{error:'This company changed while you were saving. Nothing was overwritten. Refresh and try again.',code:'STALE_WRITE',requestId})}throw error}})}let requested=decodeURIComponent(url.pathname==='/'?'/landing.html':url.pathname==='/app'?'/index.html':url.pathname==='/favicon.ico'?'/assets/pro-daily-link-logo.png':/^\/guest\/[a-f0-9]{48}$/.test(url.pathname)?'/guest.html':url.pathname);if(requested.startsWith('/uploads/')){res.writeHead(307,{Location:'/api/local-files/'+requested.slice(9).split('/').map(encodeURIComponent).join('/'),'Cache-Control':'no-store'});return res.end()}let file=path.resolve(ROOT,'.'+requested);if(!isPublicFile(ROOT,file)||!file.startsWith(ROOT+path.sep)||!fs.existsSync(file)||fs.statSync(file).isDirectory()||!fs.realpathSync(file).startsWith(ROOT+path.sep)){res.writeHead(404);return res.end('Not found')}const extension=path.extname(file),mustRevalidate=['.html','.js','.css'].includes(extension);res.writeHead(200,{'Content-Type':MIME[extension]||'application/octet-stream','Cache-Control':mustRevalidate?'no-cache, no-store, must-revalidate':'public, max-age=3600'});fs.createReadStream(file).pipe(res)}catch(error){console.error(`[${requestId}]`,error);monitoring.captureRequestException(error,{requestId,method:req.method,route:req.url});if(!res.headersSent)json(res,error.statusCode||500,{error:error.statusCode===413?'Request is too large':error.statusCode===400?'Invalid request body':'Unexpected server error',requestId})}});
+const server=http.createServer(async(req,res)=>{const requestId=crypto.randomUUID();try{secureHeaders(res);res.setHeader('X-Request-Id',requestId);const url=new URL(req.url,'http://localhost');if(blockStagingRecovery(req,res,url,json))return;if(req.method==='GET'&&url.pathname==='/api/health/live')return json(res,200,{ok:true,kind:'liveness',time:new Date().toISOString()});if(mcpHttp.matches(url))return mcpHttp.handle(req,res,url);const shortLink=req.method==='GET'&&/^\/[a-z0-9]$/.test(url.pathname);if(shortLink){res.writeHead(302,{Location:`/?utm_source=heycatch&utm_campaign=${url.pathname.slice(1)}`});return res.end()}if(url.pathname.startsWith('/api/')){if(!rateLimit(req,res,url))return;if(req.method==='GET'&&url.pathname==='/api/health')return await api(req,res,url);if(req.method==='GET'&&url.pathname==='/api/public/stats'){const stats=readPublicStats();return json(res,200,{dailies:stats.dailies,since:stats.since})}if(publicPlatformContentRoute(req,url))return await withPlatformQueue(()=>api(req,res,url));if(salesDemoRoute.test(url.pathname))return await handleSalesDemo(req,res,url);if(req.method==='POST'&&url.pathname==='/api/demo-requests')return await runPlatformRequest(req,res,url,requestId,()=>handleDemoRequest(req,res));if(url.pathname==='/api/platform/revenue')return await handlePlatformRevenue(req,res,url);if(/^\/api\/support-session\//.test(url.pathname))return await runPlatformRequest(req,res,url,requestId,()=>api(req,res,url));if(url.pathname.startsWith('/api/platform/'))return await runPlatformRequest(req,res,url,requestId,()=>api(req,res,url));if(req.method==='POST'&&url.pathname==='/api/signup')return await runPlatformRequest(req,res,url,requestId,()=>api(req,res,url));if(req.method==='POST'&&url.pathname==='/api/billing/webhook')return await handleStripeWebhook(req,res);if(req.method==='POST'&&url.pathname==='/api/auth/company'){const input=await body(req),companyId=await companyIdForEmail(input.email);return json(res,200,{companyId:companyId||null})}const guestToken=(req.method==='GET'||req.method==='POST')?url.pathname.match(/^\/api\/guest\/([a-f0-9]{48})(?:\/ticket-scan)?$/):null,changeOrderToken=(req.method==='GET'||req.method==='POST')?url.pathname.match(/^\/api\/change-order\/([A-Za-z0-9_-]+)(?:\/decision)?$/):null,database=guestToken?await guestRequestDatabase(req,url,guestToken[1]):changeOrderToken?await changeOrderRequestDatabase(req,url,changeOrderToken[1]):await authenticatedRequestDatabase(req);if(!database)return json(res,404,{error:guestToken?'This guest link is invalid or expired':changeOrderToken?'This link is invalid or expired':'Company workspace not found'});const companyId=String(database.db?.company?.id||JSON.parse(fs.readFileSync(database.file,'utf8')).company.id);if(assistantPath(url.pathname)){const pilotDb=freshestTenantSnapshot(database),{auth,status}=authenticateRequestAccount(req,pilotDb);if(!auth)return json(res,status,{error:'Authentication required'});if(!permittedCompany(pilotDb.company?.id))return json(res,403,{error:'Project assistant access is not enabled for this company.'})}if(req.method==='POST'&&/^\/api\/projects\/\d+\/assistant\/chat$/.test(url.pathname)||(req.method==='POST'&&url.pathname==='/api/assistant/interpret')||(req.method==='GET'&&url.pathname==='/api/assistant/context')){const context={...database,db:freshestTenantSnapshot(database),pending:[]};return await dbContext.run(context,()=>url.pathname.startsWith('/api/assistant/')?handleAssistantAI(req,res,url):handleProjectAssistant(req,res,url))}return await withTenantQueue(companyId,async()=>{database.db=freshestTenantSnapshot(database);const context={...database,pending:[],backup:null,deferResponse:transactionalMode()==='primary'};try{const result=await dbContext.run(context,()=>api(req,res,url));if(isCredentialAttempt(req,url)&&res.statusCode===401)recordAuthFailure(req);await Promise.all(context.pending);flushDeferredResponse(res,context);return result}catch(error){if(error.code==='PDL_REVISION_CONFLICT'||/PDL_REVISION_CONFLICT/.test(String(error.message))){if(!res.headersSent)return json(res,409,{error:'This company changed while you were saving. Nothing was overwritten. Refresh and try again.',code:'STALE_WRITE',requestId})}throw error}})}let requested=decodeURIComponent(url.pathname==='/'?'/landing.html':url.pathname==='/app'?'/index.html':url.pathname==='/favicon.ico'?'/assets/pro-daily-link-logo.png':/^\/guest\/[a-f0-9]{48}$/.test(url.pathname)?'/guest.html':url.pathname);if(requested.startsWith('/uploads/')){res.writeHead(307,{Location:'/api/local-files/'+requested.slice(9).split('/').map(encodeURIComponent).join('/'),'Cache-Control':'no-store'});return res.end()}let file=path.resolve(ROOT,'.'+requested);if(!isPublicFile(ROOT,file)||!file.startsWith(ROOT+path.sep)||!fs.existsSync(file)||fs.statSync(file).isDirectory()||!fs.realpathSync(file).startsWith(ROOT+path.sep)){res.writeHead(404);return res.end('Not found')}const extension=path.extname(file),mustRevalidate=['.html','.js','.css'].includes(extension);res.writeHead(200,{'Content-Type':MIME[extension]||'application/octet-stream','Cache-Control':mustRevalidate?'no-cache, no-store, must-revalidate':'public, max-age=3600'});fs.createReadStream(file).pipe(res)}catch(error){console.error(`[${requestId}]`,error);monitoring.captureRequestException(error,{requestId,method:req.method,route:req.url});if(!res.headersSent){if(error.code==='MAINTENANCE_READ_ONLY')return json(res,503,{error:error.publicMessage||maintenanceFence.PUBLIC_MESSAGE,code:'MAINTENANCE_READ_ONLY',requestId});json(res,error.statusCode||500,{error:error.statusCode===413?'Request is too large':error.statusCode===400?'Invalid request body':'Unexpected server error',requestId})}}});
 server.requestTimeout=30000;server.headersTimeout=15000;server.keepAliveTimeout=5000;
-if(require.main===module){monitoring.installShutdownFlush(server);Promise.all([loadPrimaryCloud(),initializePlatformPersistence()]).then(()=>server.listen(PORT,()=>{console.log(`Pro Daily Link running at http://localhost:${PORT}`);const backupBootTimer=setTimeout(()=>{startBackupSelfHeal()},3000);backupBootTimer.unref();const digestCheck=()=>maybeSendWeeklyHealthDigest().catch(error=>console.error('Weekly digest check failed',error.message));const digestTimer=setInterval(digestCheck,30*60000);digestTimer.unref();const digestBootTimer=setTimeout(digestCheck,15000);digestBootTimer.unref();const growthRetry=()=>retryPendingSignupGrowth().catch(error=>console.error('Signup growth retry check failed',error.message));const growthRetryTimer=setInterval(growthRetry,5*60000);growthRetryTimer.unref();const growthRetryBootTimer=setTimeout(growthRetry,5000);growthRetryBootTimer.unref();const assistedSetupRetry=()=>retryPendingAssistedSetup().catch(error=>console.error('Assisted setup retry check failed',error.message));const assistedSetupRetryTimer=setInterval(assistedSetupRetry,5*60000);assistedSetupRetryTimer.unref();const assistedSetupRetryBootTimer=setTimeout(assistedSetupRetry,7000);assistedSetupRetryBootTimer.unref();const platformAuditRetry=()=>retryPendingPlatformAudits().catch(error=>console.error('Platform audit recovery check failed',error.message));const platformAuditRetryTimer=setInterval(platformAuditRetry,15*60000);platformAuditRetryTimer.unref();const platformAuditBootTimer=setTimeout(platformAuditRetry,9000);platformAuditBootTimer.unref();const deletionCleanupRetry=()=>withPlatformQueue(()=>retryPendingTenantDeletionCleanup()).catch(error=>console.error('Tenant deletion cleanup retry failed',error.message));const deletionCleanupTimer=setInterval(deletionCleanupRetry,15*60000);deletionCleanupTimer.unref();const deletionCleanupBootTimer=setTimeout(deletionCleanupRetry,10000);deletionCleanupBootTimer.unref();const retentionSweep=()=>sweepTenantRetention().catch(error=>console.error('Tenant retention sweep failed',error.message));const retentionTimer=setInterval(retentionSweep,6*60*60000);retentionTimer.unref();const retentionBootTimer=setTimeout(retentionSweep,11000);retentionBootTimer.unref()})).catch(error=>{console.error('Startup failed:',error.message);monitoring.captureException?.(error);process.exitCode=1})}
-module.exports={server,mergeTenantSnapshots,localExtract,rekeyDuplicateAssignments,prepareWorkspace,buildActionCenter,crewHourFact,customerDataExport,canReadStoredAsset,maybeSendWeeklyHealthDigest,nextWeeklyDigestDue,weeklyHealthDigestModel,renderWeeklyHealthDigestEmail,restoreBackupReceipt,mirrorBackupReceipt,startBackupSelfHeal,retryPendingSignupGrowth,retryPendingAssistedSetup,retryPendingPlatformAudits,retryPendingTenantDeletionCleanup,initializePlatformPersistence,platformRepositoryHealth,tenantRepositoryHealth,operationalHealthRequirements,operationalTenantSnapshots,platformRevenueCompanies,purgeExpiredTicketFiles,sweepTenantRetention,removeTenantStoredObjects,tenantMirrorFile,removeTenantMirror,scrubTenantPlatformPii,tenantPlatformPiiReferences,persistTenantDeletionCleanupJob,executePermanentTenantDeletion,deletionRequestDto};
+if(require.main===module){monitoring.installShutdownFlush(server);Promise.all([loadPrimaryCloud(),initializePlatformPersistence()]).then(()=>server.listen(PORT,()=>{console.log(`Pro Daily Link running at http://localhost:${PORT}`);const backupBootTimer=setTimeout(()=>{startBackupSelfHeal()},3000);backupBootTimer.unref();const digestCheck=()=>maybeSendWeeklyHealthDigest().catch(error=>console.error('Weekly digest check failed',error.message));const digestTimer=setInterval(digestCheck,30*60000);digestTimer.unref();const digestBootTimer=setTimeout(digestCheck,15000);digestBootTimer.unref();const growthRetry=()=>retryPendingSignupGrowth().catch(error=>console.error('Signup growth retry check failed',error.message));const growthRetryTimer=setInterval(growthRetry,5*60000);growthRetryTimer.unref();const growthRetryBootTimer=setTimeout(growthRetry,5000);growthRetryBootTimer.unref();const assistedSetupRetry=()=>retryPendingAssistedSetup().catch(error=>console.error('Assisted setup retry check failed',error.message));const assistedSetupRetryTimer=setInterval(assistedSetupRetry,5*60000);assistedSetupRetryTimer.unref();const assistedSetupRetryBootTimer=setTimeout(assistedSetupRetry,7000);assistedSetupRetryBootTimer.unref();const founderRenewalRetry=()=>retryFounderRenewalReviews().catch(error=>console.error('Founder renewal review check failed',error.message));const founderRenewalTimer=setInterval(founderRenewalRetry,6*60*60000);founderRenewalTimer.unref();const founderRenewalBootTimer=setTimeout(founderRenewalRetry,13000);founderRenewalBootTimer.unref();const platformAuditRetry=()=>retryPendingPlatformAudits().catch(error=>console.error('Platform audit recovery check failed',error.message));const platformAuditRetryTimer=setInterval(platformAuditRetry,15*60000);platformAuditRetryTimer.unref();const platformAuditBootTimer=setTimeout(platformAuditRetry,9000);platformAuditBootTimer.unref();const deletionCleanupRetry=()=>withPlatformQueue(()=>retryPendingTenantDeletionCleanup()).catch(error=>console.error('Tenant deletion cleanup retry failed',error.message));const deletionCleanupTimer=setInterval(deletionCleanupRetry,15*60000);deletionCleanupTimer.unref();const deletionCleanupBootTimer=setTimeout(deletionCleanupRetry,10000);deletionCleanupBootTimer.unref();const retentionSweep=()=>sweepTenantRetention().catch(error=>console.error('Tenant retention sweep failed',error.message));const retentionTimer=setInterval(retentionSweep,6*60*60000);retentionTimer.unref();const retentionBootTimer=setTimeout(retentionSweep,11000);retentionBootTimer.unref()})).catch(error=>{console.error('Startup failed:',error.message);monitoring.captureException?.(error);process.exitCode=1})}
+module.exports={server,writeDb,writePlatform,mergeTenantSnapshots,localExtract,rekeyDuplicateAssignments,prepareWorkspace,buildActionCenter,crewHourFact,customerDataExport,canReadStoredAsset,maybeSendWeeklyHealthDigest,nextWeeklyDigestDue,weeklyHealthDigestModel,renderWeeklyHealthDigestEmail,restoreBackupReceipt,mirrorBackupReceipt,startBackupSelfHeal,retryPendingSignupGrowth,retryPendingAssistedSetup,retryFounderRenewalReviews,retryPendingPlatformAudits,retryPendingTenantDeletionCleanup,initializePlatformPersistence,platformRepositoryHealth,tenantRepositoryHealth,completeRecoveryHealth,collectOperationalHealth,operationalHealthRequirements,operationalTenantSnapshots,platformRevenueCompanies,purgeExpiredTicketFiles,sweepTenantRetention,removeTenantStoredObjects,tenantMirrorFile,removeTenantMirror,scrubTenantPlatformPii,tenantPlatformPiiReferences,persistTenantDeletionCleanupJob,executePermanentTenantDeletion,deletionRequestDto};
 
 const PDL_SUPPORT_LIBRARY = [{"id":"pdl-help-01","title":"Create your company account","type":"article","audience":"all","category":"Getting started","summary":"Start a 14-day trial without a credit card.","content":"1) Open the sign-up page.\n2) Enter your company and contact details.\n3) Choose the plan that fits your team.\n4) Accept the Terms and Privacy Policy.\n5) Select [CONFIRM BUTTON NAME] to create the workspace.","url":"","status":"Published","order":100},{"id":"pdl-help-02","title":"Add your first project","type":"article","audience":"office","category":"Getting started","summary":"A project name is all you need. Link a customer now or come back to it later.","content":"1) Open Projects.\n2) Select Add project.\n3) Enter the project name — the only required field.\n4) Optionally choose a customer, or select + New customer to create one inline.\n5) Add any other details you have and save.\n6) Link or change the customer anytime from the project.","url":"","status":"Published","order":101},{"id":"pdl-help-03","title":"Invite office users","type":"article","audience":"office","category":"Team","summary":"Give trusted office staff their own secure sign-in.","content":"1) Open Team.\n2) Open User accounts.\n3) Select Add user account.\n4) Choose the office role.\n5) Enter the person’s email.\n6) Share the temporary-password instructions securely.","url":"","status":"Published","order":102},{"id":"pdl-help-04","title":"Add crew members and crews","type":"article","audience":"office","category":"Team","summary":"Keep people and crew assignments organized for reports and scheduling.","content":"1) Open Team.\n2) Select Add team member.\n3) Choose the member’s role.\n4) Select an existing crew or create one.\n5) Add contact information.\n6) Save the team member.","url":"","status":"Published","order":103},{"id":"pdl-help-05","title":"Schedule crews","type":"article","audience":"office","category":"Scheduling","summary":"Put the right crew on the right project and keep the field informed.","content":"1) Open Schedule.\n2) Select Add assignment, or select an open day beside a person.\n3) Choose the crew or person, then choose the project.\n4) Confirm the work date and shift times.\n5) Add an activity, or expand Add multiple days only when needed.\n6) Review the availability preview and select Add assignment.","url":"","status":"Published","order":104},{"id":"pdl-help-06","title":"What crew members see on My Day","type":"article","audience":"field","category":"Field work","summary":"My Day shows field users their own assignments and daily work tools.","content":"1) Sign in with your crew account.\n2) Open My Day.\n3) Review today’s assignment.\n4) Acknowledge the assignment.\n5) Start the workday when work begins.\n6) File a daily report when finished.","url":"","status":"Published","order":105},{"id":"pdl-help-07","title":"File a daily report on a phone","type":"article","audience":"field","category":"Field work","summary":"Capture notes, labor, photos, and installed work before leaving the job.","content":"1) Open My Day and choose New daily report.\n2) Confirm the project, date, and crew.\n3) Describe what happened today.\n4) Add photos or voice notes if helpful.\n5) Enter labor and production in Step 2.\n6) Submit to office.","url":"","status":"Published","order":106},{"id":"pdl-help-08","title":"Add photos and voice notes","type":"article","audience":"field","category":"Field work","summary":"Attach clear jobsite evidence to a daily report.","content":"1) Open a new or draft daily report.\n2) Use the photo area to add images.\n3) Add a short caption or tag when prompted.\n4) Select Speak notes to dictate an update.\n5) Review the transcribed note.\n6) Continue to submit the daily.","url":"","status":"Published","order":107},{"id":"pdl-help-09","title":"Add unplanned work","type":"article","audience":"field","category":"Field work","summary":"Record work that was not part of the estimate so the office can review it.","content":"1) Open Step 2 of the daily report.\n2) Select Custom work.\n3) Describe the work completed.\n4) Add labor hours and quantity when known.\n5) Submit the daily.\n6) The office will see the item flagged for review.","url":"","status":"Published","order":108},{"id":"pdl-help-10","title":"Approve daily reports","type":"article","audience":"office","category":"Daily reports","summary":"Only approved dailies count toward project production.","content":"1) Open Action center.\n2) Select a daily that needs review.\n3) Check notes, photos, hours, and quantities.\n4) Correct details if needed.\n5) Select Approve.\n6) Review the updated project actuals.","url":"","status":"Published","order":109},{"id":"pdl-help-11","title":"Set up estimate items","type":"article","audience":"office","category":"Projects","summary":"Use estimate items to compare planned work with approved production.","content":"1) Open the project.\n2) Open Estimate & actual.\n3) Select Add estimate item.\n4) Enter the scope, planned quantity, unit, and budgeted labor hours.\n5) Add estimated cost if your office uses it.\n6) Save the item.","url":"","status":"Published","order":110},{"id":"pdl-help-12","title":"Read Estimate & actual","type":"article","audience":"office","category":"Projects","summary":"See completed quantity, remaining quantity, and labor used for each scope item.","content":"1) Open the project.\n2) Open Estimate & actual.\n3) Find the scope item.\n4) Review completed and remaining quantity.\n5) Review labor used against budget.\n6) Open the item to edit planned values if authorized.","url":"","status":"Published","order":111},{"id":"pdl-help-13","title":"Understand efficiency percentage","type":"article","audience":"office","category":"Insights","summary":"Efficiency compares earned labor from completed work with actual approved labor.","content":"1) Open Production insights.\n2) Choose a date range.\n3) Filter by project, crew, or scope.\n4) Review the efficiency percentage.\n5) Compare results with completed quantity and labor hours.\n6) Use the trend as a conversation starter, not payroll data.","url":"","status":"Published","order":112},{"id":"pdl-help-14","title":"Export CSV reports","type":"article","audience":"office","category":"Insights","summary":"Download report data for a spreadsheet or project meeting.","content":"1) Open Production insights.\n2) Set the date range and filters.\n3) Review the results.\n4) Select Export CSV.\n5) Open the downloaded file in your spreadsheet program.","url":"","status":"Published","order":113},{"id":"pdl-help-15","title":"Who can see pricing","type":"article","audience":"office","category":"Access and permissions","summary":"Company owners control who in the office can view contract values, estimated costs, and pricing.","content":"1) Open Company settings.\n2) Open pricing visibility.\n3) Turn pricing access on or off for office roles.\n4) Select individual office team members if needed.\n5) Save the settings.\n6) Field and crew users do not see pricing.","url":"","status":"Published","order":114},{"id":"pdl-help-16","title":"Use subcontractor guest links","type":"article","audience":"office","category":"Access and permissions","summary":"Share limited project access without giving a subcontractor full company access.","content":"1) Open the project or subcontractor area.\n2) Select Create guest link.\n3) Choose the allowed project access.\n4) Copy the link.\n5) Share it only with the intended subcontractor.\n6) Revoke it when access is no longer needed.","url":"","status":"Published","order":115},{"id":"pdl-help-17","title":"Trial and plans","type":"article","audience":"all","category":"Billing","summary":"Every new company starts with a 14-day trial and no credit card.","content":"1) Start your free trial.\n2) Use the trial to create customers, projects, teams, and reports.\n3) Check days remaining in your workspace.\n4) Choose Starter, Growth, or Pro before the trial ends.\n5) Select Manage plan to continue.","url":"","status":"Published","order":116},{"id":"pdl-help-18","title":"Billing and cancelling","type":"article","audience":"office","category":"Billing","summary":"Plan and billing actions are handled by the company owner or authorized office staff.","content":"1) Open Manage plan.\n2) Review your plan and billing details.\n3) Choose the plan action you need.\n4) For a billing dispute, refund, or cancellation request, contact support with your company name and email.","url":"","status":"Published","order":117}];
 const TIME_CARD_HELP = {id:'pdl-help-19',title:'Create, correct, submit, and approve time cards',type:'article',audience:'all',category:'Time cards',summary:'Use a clear Draft → Submitted → Approved workflow while preserving correction history.',content:'1) Field users end their workday or company-time clock to close the card.\n2) Office users can select Add time card to enter a missed card manually.\n3) Correct times while the card is in Draft; overlapping hours are blocked.\n4) Select Submit when the card is ready for office review.\n5) Office users review Submitted cards, then select Approve.\n6) Select Unapprove to return a card to Draft before correcting it.\n7) Deleting a Draft or Submitted card removes it from the list but retains its audit record.\n8) Corrections to a linked time card update that daily report’s labor hours.',url:'',status:'Published',order:118};

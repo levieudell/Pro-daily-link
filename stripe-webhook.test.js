@@ -4,6 +4,7 @@ const os = require('node:os');
 const path = require('node:path');
 const Stripe = require('stripe');
 const { verifyEvent, processEvent } = require('./stripe-webhook');
+const monitoring = require('./monitoring');
 
 const secret = 'whsec_local_test_only';
 const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'pdl-webhook-'));
@@ -35,6 +36,8 @@ global.fetch = async (url, options) => {
   }
   return realFetch(url, options);
 };
+const capturedWebhookErrors = [];
+monitoring.captureRequestException = (error, details) => capturedWebhookErrors.push({ error, details });
 const { server } = require('./server');
 const event = (id, type = 'customer.subscription.updated', object = current) => ({
   id, type, created: Math.floor(Date.now() / 1000), livemode: false, data: { object },
@@ -64,13 +67,24 @@ const read = () => JSON.parse(fs.readFileSync(process.env.PDL_DB_FILE));
 
     // Authentication and an unrelated tenant header/cookie cannot select the webhook tenant.
     const result = await send(event('evt_active'), undefined, { 'x-pdl-company': otherId, cookie: `pdl_company=${otherId}` });
-    assert.equal(result.status, 200);
+    assert.equal(result.status, 200, capturedWebhookErrors.at(-1)?.error?.stack);
     assert.equal(read().company.subscriptionStatus, 'Active');
     assert.equal(read().company.plan, 'starter');
     assert.equal(read().company.nextBillingAt, new Date(1800000000 * 1000).toISOString());
     assert.equal(JSON.parse(fs.readFileSync(path.join(temp, 'tenants', `${otherId}.json`))).company.subscriptionStatus, 'Cancelled');
     assert.equal((await send(event('evt_active'))).status, 200);
     assert.equal(read().company.stripeWebhookEvents.filter(id => id === 'evt_active').length, 1);
+
+    const asyncSession = { id: 'cs_async', customer: 'cus_test', subscription: 'sub_test',
+      client_reference_id: seed.company.id, metadata: { company_id: seed.company.id }, payment_status: 'unpaid' };
+    current.status = 'incomplete';
+    assert.equal((await send(event('evt_async_failed', 'checkout.session.async_payment_failed', asyncSession))).status, 200);
+    assert.equal(read().company.subscriptionStatus, 'Incomplete', 'a delayed payment failure follows current Stripe subscription state');
+    assert.equal((await send(event('evt_async_failed', 'checkout.session.async_payment_failed', asyncSession))).status, 200);
+    assert.equal(read().company.stripeWebhookEvents.filter(id => id === 'evt_async_failed').length, 1, 'a retried delayed failure is idempotent');
+    current.status = 'active';
+    assert.equal((await send(event('evt_async_succeeded', 'checkout.session.async_payment_succeeded', { ...asyncSession, payment_status: 'paid' }))).status, 200);
+    assert.equal(read().company.subscriptionStatus, 'Active', 'delayed payment success activates from current Stripe state');
 
     current.status = 'past_due';
     const invoice = { id: 'in_test', customer: 'cus_test', parent: { subscription_details: { subscription: 'sub_test' } } };
@@ -99,6 +113,13 @@ const read = () => JSON.parse(fs.readFileSync(process.env.PDL_DB_FILE));
     assert.equal((await send(event('evt_missing_company'))).status, 500);
     current.metadata.company_id = seed.company.id;
 
+    assert.ok(capturedWebhookErrors.length >= 1, 'internally handled webhook failures reach monitoring');
+    for (const captured of capturedWebhookErrors) {
+      assert.deepEqual(captured.details, { method: 'POST', route: '/api/billing/webhook' }, 'monitoring receives only static, non-PII context');
+      assert.ok(!JSON.stringify(captured.details).includes('stripe-signature'));
+      assert.ok(!JSON.stringify(captured.details).includes('cus_'));
+    }
+
     // A cloud failure after local persistence must be retried, including duplicate event IDs.
     const db = { company: { id: seed.company.id } };
     let saves = 0;
@@ -109,7 +130,7 @@ const read = () => JSON.parse(fs.readFileSync(process.env.PDL_DB_FILE));
     await processEvent(event('evt_cloud'), deps);
     assert.equal(saves, 2);
     assert.equal(db.company.stripeWebhookEvents.length, 1);
-    console.log('Stripe webhook tests passed: signatures, rotation, mode, tenant isolation, current state, invoices, duplicates and retries');
+    console.log('Stripe webhook tests passed: signatures, mode, tenant isolation, delayed success/failure, sanitized monitoring, current state, invoices, duplicates and retries');
   } finally {
     global.fetch = realFetch;
     await new Promise(resolve => server.close(resolve));

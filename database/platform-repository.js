@@ -112,13 +112,15 @@ function normalizeRpcResult(payload) {
 }
 
 class PlatformRepository {
-  constructor({ request, namespaceId = PLATFORM_NAMESPACE_ID } = {}) {
+  constructor({ request, namespaceId = PLATFORM_NAMESPACE_ID, assertWrite = () => {} } = {}) {
     if (typeof request !== 'function') throw new TypeError('PlatformRepository requires a server-side Supabase request function.');
+    if (typeof assertWrite !== 'function') throw new TypeError('PlatformRepository assertWrite must be a function.');
     if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(namespaceId))) {
       throw new TypeError('Platform namespace must be a UUID.');
     }
     this.request = request;
     this.namespaceId = String(namespaceId).toLowerCase();
+    this.assertWrite = assertWrite;
   }
 
   async load() {
@@ -161,6 +163,10 @@ class PlatformRepository {
     }));
     let response;
     try {
+      // Check at the outbound persistence boundary as well as in the server's
+      // higher-level write path. This also covers bootstrap and direct
+      // repository callers that never pass through writePlatform.
+      this.assertWrite();
       response = await this.request('/rest/v1/rpc/replace_platform_repository', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },

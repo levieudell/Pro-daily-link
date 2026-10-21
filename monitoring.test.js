@@ -385,7 +385,12 @@ function fakeSdk({ deliver = true, initError = null } = {}) {
   assert.deepEqual(flushTimeoutProcess.exits, [0]);
 
   const serverSource = fs.readFileSync(path.join(__dirname, 'server.js'), 'utf8');
-  assert.match(serverSource, /monitoring:monitoring\.active\(\)/);
+  assert.match(
+    serverSource,
+    /monitoring:\{configured:runtimeProviders\.monitoring,verified:providerVerification\.checks\.monitoring===true\}/
+  );
+  assert.match(serverSource, /providerReadiness\.runtimeConfiguration\(process\.env,monitoring\.active\(\)\)/);
+  assert.match(serverSource, /providerReadiness\.publicStatus\(/);
   assert.match(serverSource, /monitoring\.captureRequestException\(error,/);
   assert.match(serverSource, /monitoring\.installShutdownFlush\(server\)/);
   assert.doesNotMatch(serverSource, /monitoring:Boolean\(process\.env\.SENTRY_DSN\)/);

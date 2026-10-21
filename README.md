@@ -65,7 +65,7 @@ To enable genuine AI report extraction, copy `.env.example` to `.env`, provide a
 
 The repository includes `render.yaml` for a Render web service. Secrets are entered in Render's environment settings and must never be committed. Set `PDL_SUPABASE_ENABLED=1` to use Supabase private storage and health checks. The included Blueprint requires authentication (`PDL_REQUIRE_AUTH=1`) and uses `/api/health/live` for Render's process-liveness probe; `/api/health` remains the fail-closed operational-readiness endpoint.
 
-This is a connected MVP. Public production launch still requires completing the PostgreSQL repository cutover, backup/restore validation, billing, and monitoring.
+This is a connected MVP. Public production launch still requires completing the PostgreSQL repository cutover, backup/restore validation, billing, and monitoring. The legacy-to-transactional population step is the fail-closed `database/migrate-transactional.js` workflow documented in [Shadow repository reconciliation and primary cutover](docs/SHADOW-RECONCILIATION.md): preview is read-only; apply is exact-project, exact-Render-instance, independent-population, and maintenance-fence bound; only missing tenants may be initialized at revision `0`; existing drift is never overwritten.
 
 ## Project Notes & To-dos
 
@@ -80,6 +80,8 @@ This tab requires an active signed-in account. Owners and admins can use it on a
 - `PATCH /api/projects/:id/notes-todos/:itemId` accepts the current `revision` plus `text` and/or to-do `completed` status.
 
 Run `npm run check` and `npm test` for syntax, synthetic API/UI, security, persistence, and existing workflow regressions. The notes UI tests use a DOM fixture, not a real mobile browser.
+
+Production billing configuration, webhook events, separate standard/founder portal policies, founder renewal reminders, and Enterprise payment reconciliation are controlled by [Stripe billing operations](docs/STRIPE-BILLING-OPERATIONS.md). A Mercury invoice alone never grants application access.
 
 ## Time off by day or appointment
 

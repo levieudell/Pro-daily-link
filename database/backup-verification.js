@@ -7,9 +7,40 @@ const path = require('node:path');
 const BACKUP_INTERVAL_MS = 24 * 60 * 60 * 1000;
 const FRESHNESS_MS = 36 * 60 * 60 * 1000;
 const RETRY_AFTER_MS = 60 * 1000;
+const DEFAULT_PROVIDER_TIMEOUT_MS = 60 * 1000;
 const digest = bytes => crypto.createHash('sha256').update(bytes).digest('hex');
 const milliseconds = value => typeof value === 'string' ? Date.parse(value) : NaN;
 const inFlight = new Map();
+
+function providerTimeoutMs(value = process.env.PDL_BACKUP_VERIFICATION_TIMEOUT_MS) {
+  const configured = Number(value || DEFAULT_PROVIDER_TIMEOUT_MS);
+  return Number.isSafeInteger(configured) && configured >= 50 && configured <= 120_000
+    ? configured
+    : DEFAULT_PROVIDER_TIMEOUT_MS;
+}
+
+async function withProviderDeadline(task, timeoutMs = providerTimeoutMs()) {
+  let timer;
+  const controller = new AbortController();
+  try {
+    let operation;
+    try { operation = Promise.resolve(task(controller.signal)); }
+    catch (error) { operation = Promise.reject(error); }
+    return await Promise.race([
+      operation,
+      new Promise((_, reject) => {
+        timer = setTimeout(() => {
+          controller.abort();
+          reject(Object.assign(new Error('Backup provider deadline exceeded.'), {
+            code: 'PDL_BACKUP_VERIFICATION_TIMEOUT'
+          }));
+        }, providerTimeoutMs(timeoutMs));
+      })
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
 
 function receiptFile(directory, companyId) {
   if (!companyId || !directory) throw new Error('Backup verification requires a tenant and private directory.');
@@ -81,7 +112,7 @@ function publicStatus(directory, companyId, now = Date.now(), authority = null) 
   };
 }
 
-function completeAttempt(directory, companyId, attempt, verification, previous, now) {
+function completeAttempt(directory, companyId, attempt, verification, previous, now, assertWrite = () => {}) {
   // A failed application save can release its tenant queue before an older backup settles.
   // Preserve evidence from any newer receipt, including across an interrupted process.
   const current = readReceipt(directory, companyId, now);
@@ -92,21 +123,25 @@ function completeAttempt(directory, companyId, attempt, verification, previous, 
   }
   const newerAttempt = current?.attempt && current.attempt.id !== attempt.id &&
     milliseconds(current.attempt.at) >= milliseconds(attempt.at);
+  assertWrite();
   writeReceipt(directory, companyId, { version: 1, companyId,
     attempt: newerAttempt ? current.attempt : attempt, verification: newest });
 }
 
-async function runVerification(snapshot, { directory, createBackup, now = () => Date.now(), sourceRevision = null, sourceContentHash = '' }) {
+async function runVerification(snapshot, { directory, createBackup, now = () => Date.now(), sourceRevision = null,
+  sourceContentHash = '', assertWrite = () => {}, timeoutMs = providerTimeoutMs() }) {
   const companyId = String(snapshot?.company?.id || '');
   const attemptedAt = new Date(now()).toISOString();
   const previous = readReceipt(directory, companyId, now());
   const attempt = { id: crypto.randomUUID(), at: attemptedAt, status: 'pending' };
   const receipt = { version: 1, companyId, attempt,
     verification: previous?.verification || null };
+  assertWrite();
   writeReceipt(directory, companyId, receipt);
   try {
     // createBackup must complete its upload, download and hash comparison before returning.
-    const result = await createBackup(snapshot);
+    assertWrite();
+    const result = await withProviderDeadline(signal => createBackup(snapshot, { signal }), timeoutMs);
     const bytes = Buffer.from(JSON.stringify(snapshot));
     const completedAt = now();
     const verification = {
@@ -121,11 +156,11 @@ async function runVerification(snapshot, { directory, createBackup, now = () => 
         verification.sha256 !== digest(bytes) || verification.bytes !== bytes.length) {
       throw new Error('Backup verification result does not match the captured snapshot.');
     }
-    completeAttempt(directory, companyId, { ...attempt, status: 'verified' }, verification, previous, completedAt);
+    completeAttempt(directory, companyId, { ...attempt, status: 'verified' }, verification, previous, completedAt, assertWrite);
     return result;
   } catch (error) {
     // Preserve the previous real success; a failed attempt never advances its timestamp.
-    completeAttempt(directory, companyId, { ...attempt, status: 'failed' }, null, previous, now());
+    completeAttempt(directory, companyId, { ...attempt, status: 'failed' }, null, previous, now(), assertWrite);
     throw error;
   }
 }
@@ -140,5 +175,5 @@ function createAndRecordVerification(snapshot, options) {
   return running;
 }
 
-module.exports = { BACKUP_INTERVAL_MS, FRESHNESS_MS, RETRY_AFTER_MS, receiptFile,
-  readReceipt, backupDue, publicStatus, createAndRecordVerification };
+module.exports = { BACKUP_INTERVAL_MS, FRESHNESS_MS, RETRY_AFTER_MS, DEFAULT_PROVIDER_TIMEOUT_MS,
+  providerTimeoutMs, withProviderDeadline, receiptFile, readReceipt, backupDue, publicStatus, createAndRecordVerification };

@@ -1,0 +1,79 @@
+name: Provider readiness
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '27 */6 * * *'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: production-provider-readiness
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    # Scheduled runs execute from the default branch. Manual runs are also
+    # main-only and must pass the protected environment's required reviewers.
+    if: github.ref == 'refs/heads/main'
+    environment: production-provider-readiness
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 22
+          cache: npm
+      # No provider secret is present during checkout, tool setup, dependency
+      # resolution, or package lifecycle. Lifecycle scripts are disabled.
+      - run: npm ci --ignore-scripts
+      - name: Verify providers and publish signed readiness evidence
+        run: node scripts/service-smoke-test.js --active --publish-readiness
+        env:
+          NODE_ENV: production
+          PDL_PUBLIC_URL: https://app.prodailylink.com
+          PDL_SUPABASE_ENABLED: '1'
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          PDL_PRODUCTION_SUPABASE_PROJECT_REF: ${{ secrets.PDL_PRODUCTION_SUPABASE_PROJECT_REF }}
+          PDL_PROVIDER_ATTESTATION_PUBLIC_KEY: ${{ secrets.PDL_PROVIDER_ATTESTATION_PUBLIC_KEY }}
+          PDL_PROVIDER_ATTESTATION_PRIVATE_KEY: ${{ secrets.PDL_PROVIDER_ATTESTATION_PRIVATE_KEY }}
+          STRIPE_SECRET_KEY: ${{ secrets.STRIPE_MONITOR_KEY }}
+          PDL_STRIPE_RUNTIME_KEY_VERSION: ${{ vars.PDL_STRIPE_RUNTIME_KEY_VERSION }}
+          PDL_STRIPE_WEBHOOK_SECRET_VERSION: ${{ vars.PDL_STRIPE_WEBHOOK_SECRET_VERSION }}
+          STRIPE_PORTAL_CONFIG_STANDARD: ${{ secrets.STRIPE_PORTAL_CONFIG_STANDARD }}
+          STRIPE_PORTAL_CONFIG_FOUNDER: ${{ secrets.STRIPE_PORTAL_CONFIG_FOUNDER }}
+          STRIPE_PRICE_STARTER: ${{ secrets.STRIPE_PRICE_STARTER }}
+          STRIPE_PRICE_STARTER_ANNUAL: ${{ secrets.STRIPE_PRICE_STARTER_ANNUAL }}
+          STRIPE_PRICE_GROWTH: ${{ secrets.STRIPE_PRICE_GROWTH }}
+          STRIPE_PRICE_GROWTH_ANNUAL: ${{ secrets.STRIPE_PRICE_GROWTH_ANNUAL }}
+          STRIPE_PRICE_PRO: ${{ secrets.STRIPE_PRICE_PRO }}
+          STRIPE_PRICE_PRO_ANNUAL: ${{ secrets.STRIPE_PRICE_PRO_ANNUAL }}
+          STRIPE_PRICE_FOUNDER_STARTER: ${{ secrets.STRIPE_PRICE_FOUNDER_STARTER }}
+          STRIPE_PRICE_FOUNDER_STARTER_ANNUAL: ${{ secrets.STRIPE_PRICE_FOUNDER_STARTER_ANNUAL }}
+          STRIPE_PRICE_FOUNDER_GROWTH: ${{ secrets.STRIPE_PRICE_FOUNDER_GROWTH }}
+          STRIPE_PRICE_FOUNDER_GROWTH_ANNUAL: ${{ secrets.STRIPE_PRICE_FOUNDER_GROWTH_ANNUAL }}
+          STRIPE_PRICE_FOUNDER_PRO: ${{ secrets.STRIPE_PRICE_FOUNDER_PRO }}
+          STRIPE_PRICE_FOUNDER_PRO_ANNUAL: ${{ secrets.STRIPE_PRICE_FOUNDER_PRO_ANNUAL }}
+          STRIPE_PRICE_ASSISTED_SETUP: ${{ secrets.STRIPE_PRICE_ASSISTED_SETUP }}
+          STRIPE_PRODUCT_STARTER: ${{ secrets.STRIPE_PRODUCT_STARTER }}
+          STRIPE_PRODUCT_GROWTH: ${{ secrets.STRIPE_PRODUCT_GROWTH }}
+          STRIPE_PRODUCT_PRO: ${{ secrets.STRIPE_PRODUCT_PRO }}
+          STRIPE_PRODUCT_FOUNDER_STARTER: ${{ secrets.STRIPE_PRODUCT_FOUNDER_STARTER }}
+          STRIPE_PRODUCT_FOUNDER_GROWTH: ${{ secrets.STRIPE_PRODUCT_FOUNDER_GROWTH }}
+          STRIPE_PRODUCT_FOUNDER_PRO: ${{ secrets.STRIPE_PRODUCT_FOUNDER_PRO }}
+          STRIPE_PRODUCT_ASSISTED_SETUP: ${{ secrets.STRIPE_PRODUCT_ASSISTED_SETUP }}
+          RESEND_API_KEY: ${{ secrets.RESEND_MONITOR_API_KEY }}
+          RESEND_FROM: Pro Daily Link <support@prodailylink.com>
+          RESEND_REPLY_TO: support@prodailylink.com
+          PDL_RESEND_RUNTIME_KEY_VERSION: ${{ vars.PDL_RESEND_RUNTIME_KEY_VERSION }}
+          PDL_MONITOR_EMAIL_TO: ${{ secrets.PDL_MONITOR_EMAIL_TO }}
+          SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
+          PDL_SENTRY_RUNTIME_DSN_VERSION: ${{ vars.PDL_SENTRY_RUNTIME_DSN_VERSION }}
+          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_MONITOR_AUTH_TOKEN }}
+          SENTRY_ORG: ${{ secrets.SENTRY_ORG }}
+          SENTRY_PROJECT: ${{ secrets.SENTRY_PROJECT }}

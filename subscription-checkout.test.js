@@ -5,6 +5,7 @@ const os = require('node:os');
 const path = require('node:path');
 const Stripe = require('stripe');
 const policy = require('./subscription-checkout');
+const portalPolicy = require('./billing-portal-policy');
 const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'pdl-subscription-repair-'));
 for (const key of Object.keys(process.env)) if (/STRIPE|SUPABASE|OPENAI|RESEND|SENTRY|DATABASE_URL/.test(key)) delete process.env[key];
 Object.assign(process.env, { PDL_DB_FILE: path.join(temp, 'db.json'), PDL_PLATFORM_FILE: path.join(temp, 'platform.json'),
@@ -12,27 +13,33 @@ Object.assign(process.env, { PDL_DB_FILE: path.join(temp, 'db.json'), PDL_PLATFO
   STRIPE_SECRET_KEY: 'sk_test_synthetic', STRIPE_WEBHOOK_SECRET: 'whsec_local_only', PDL_PUBLIC_URL: 'http://localhost' });
 const prices = {};
 for (const [plan, amount] of Object.entries({ starter: 99, growth: 199, pro: 399 })) {
+  process.env[`STRIPE_PRODUCT_${plan.toUpperCase()}`] = `prod_${plan}`;
   for (const cycle of ['monthly', 'annual']) {
     const id = `price_${plan}_${cycle}`;
     process.env[`STRIPE_PRICE_${plan.toUpperCase()}${cycle === 'annual' ? '_ANNUAL' : ''}`] = id;
     prices[id] = { id, active: true, livemode: false, currency: 'usd', unit_amount: amount * (cycle === 'annual' ? 1000 : 100),
-      type: 'recurring', recurring: { interval: cycle === 'annual' ? 'year' : 'month', interval_count: 1 } };
+      custom_unit_amount: null, billing_scheme: 'per_unit', transform_quantity: null, tiers_mode: null,
+      product: { id: `prod_${plan}`, active: true, livemode: false }, type: 'recurring',
+      recurring: { interval: cycle === 'annual' ? 'year' : 'month', interval_count: 1, usage_type: 'licensed', aggregate_usage: null, meter: null } };
   }
 }
 fs.copyFileSync(path.join(__dirname, 'data/db.json'), process.env.PDL_DB_FILE);
 fs.copyFileSync(path.join(__dirname, 'data/platform.json'), process.env.PDL_PLATFORM_FILE);
-const subscriptions = new Map(), sessions = new Map(), attempts = new Map(), calls = [];
+const subscriptions = new Map(), sessions = new Map(), attempts = new Map(), portalConfigurations = new Map(), calls = [];
 let failAfterCreate = false, providerOutage = false, corruptSubscription = false, historyMore = false, created = 0;
 const realFetch = global.fetch;
 global.fetch = async (url, options = {}) => {
   const target = new URL(url);
   if (target.hostname === '127.0.0.1') return realFetch(url, options);
+  if (target.origin === 'https://in.heycatch.ai') return new Response(null, { status: 204 });
   assert.equal(target.origin, 'https://api.stripe.com', 'no unmocked external service');
   const pathname = target.pathname.slice(3), params = Object.fromEntries(new URLSearchParams(options.body));
   calls.push({ pathname, method: options.method, params, key: options.headers?.['Idempotency-Key'] });
   const reply = (value, status = 200) => new Response(JSON.stringify(value), { status });
   if (providerOutage) return reply({ error: { message: 'Synthetic outage' } }, 503);
   if (pathname.startsWith('/prices/')) return reply(prices[pathname.split('/').pop()]);
+  if (pathname.startsWith('/billing_portal/configurations/')) return reply(portalConfigurations.get(pathname.split('/').pop()) || { error: { message: 'Missing portal configuration' } }, portalConfigurations.has(pathname.split('/').pop()) ? 200 : 404);
+  if (pathname === '/billing_portal/sessions') return reply({ id: 'bps_test', url: 'https://billing.example.invalid/session' });
   if (pathname === '/subscriptions') return reply({ data: [...subscriptions.values()].filter(s => s.customer === target.searchParams.get('customer')), has_more: historyMore });
   if (pathname.startsWith('/subscriptions/')) {
     const subscription = subscriptions.get(pathname.split('/').pop());
@@ -108,6 +115,8 @@ async function webhook(subscription, suffix) {
       assert.equal(Number(pending.params['subscription_data[billing_cycle_anchor]']), Math.ceil(Date.parse(end) / 1000));
       assert.equal(c.read().company.trialEndsAt, end); assert.equal((await c.request('/api/billing')).data.status, 'Trial');
       assert.equal(pending.params['line_items[0][price]'], `price_${plan}_${billingCycle}`);
+      assert.equal(Object.keys(pending.params).some(key => key.startsWith('payment_method_types')), false,
+        'Checkout leaves eligible payment methods to Stripe so delayed methods can be reconciled by webhooks');
     }
     const c = await signup(), end = c.read().company.trialEndsAt;
     process.env.PDL_CHECKOUT_DISABLED = '1'; const disabledCount = created;
@@ -123,7 +132,9 @@ async function webhook(subscription, suffix) {
     process.env.STRIPE_SECRET_KEY='sk_live_synthetic';
     assert.equal((await c.request('/api/billing/checkout','POST',{plan:'starter'})).status,503,'ambiguous checkout never replays in another provider mode');
     prices.price_starter_monthly.livemode=true;
+    prices.price_starter_monthly.product.livemode=true;
     assert.equal((await c.request('/api/billing/checkout','POST',{plan:'starter'})).status,409,'stored creation attempt is bound to its provider mode');
+    prices.price_starter_monthly.product.livemode=false;
     prices.price_starter_monthly.livemode=false;
     process.env.STRIPE_SECRET_KEY='sk_test_synthetic';
     assert.equal((await c.request('/api/billing/checkout', 'POST', { plan: 'growth' })).status, 409);
@@ -144,6 +155,41 @@ async function webhook(subscription, suffix) {
     assert.equal((await c.request('/api/billing/confirm?session_id=' + session.id)).status, 200);
     assert.equal(c.read().company.subscriptionStatus, 'Active'); assert.equal((await c.request('/api/billing')).data.status,'Trial'); assert.equal(c.read().company.plan, 'growth');
     assert.equal(c.read().company.trialEndsAt, end, 'provider trial confirmation keeps original local deadline');
+
+    // Standard and founder accounts use different, verified portal
+    // configurations so a global Dashboard toggle cannot expose protected
+    // founder prices or silently remove standard self-service plan changes.
+    assert.equal((await c.request('/api/billing')).data.planChange.mode, 'support');
+    const standardConfigId = 'bpc_standard123', founderConfigId = 'bpc_founder123';
+    process.env.STRIPE_PORTAL_CONFIG_STANDARD = standardConfigId;
+    process.env.STRIPE_PORTAL_CONFIG_FOUNDER = founderConfigId;
+    const portalPlans = { starter: {}, growth: {}, pro: {} }, standardPriceIds = portalPolicy.priceIds(portalPlans, process.env, false);
+    portalConfigurations.set(standardConfigId, { id: standardConfigId, active: true, livemode: false,
+      features: { subscription_update: { enabled: true, default_allowed_updates: ['price'], products: [{ product: 'prod_standard', prices: standardPriceIds }] } } });
+    portalConfigurations.set(founderConfigId, { id: founderConfigId, active: true, livemode: false,
+      features: { subscription_update: { enabled: false, default_allowed_updates: [], products: [] } } });
+    assert.equal((await c.request('/api/billing')).data.planChange.mode, 'portal');
+    const portal = await c.request('/api/billing/portal', 'POST', {});
+    assert.equal(portal.status, 200); assert.equal(portal.data.url, 'https://billing.example.invalid/session');
+    const portalSessionCall = calls.findLast(call => call.pathname === '/billing_portal/sessions');
+    assert.equal(portalSessionCall.params.configuration, standardConfigId);
+    assert.equal(portalSessionCall.params.customer, trialing.customer);
+    const founderSelection = portalPolicy.select({ founder: { requested: true } }, process.env);
+    assert.equal(founderSelection.kind, 'founder'); assert.equal(founderSelection.planChanges, 'protected');
+    assert.doesNotThrow(() => portalPolicy.validate(portalConfigurations.get(founderConfigId), founderSelection, { starter: {}, growth: {}, pro: {} }, process.env));
+    assert.throws(() => portalPolicy.validate({ ...portalConfigurations.get(founderConfigId), features: { subscription_update: { enabled: true } } }, founderSelection, portalPlans, process.env), /Founder billing protection/);
+    const missingStandardPrice = process.env.STRIPE_PRICE_PRO_ANNUAL;
+    delete process.env.STRIPE_PRICE_PRO_ANNUAL;
+    assert.throws(() => portalPolicy.validate(portalConfigurations.get(standardConfigId), portalPolicy.select({}, process.env), portalPlans, process.env), /All current monthly and annual plan prices/);
+    process.env.STRIPE_PRICE_PRO_ANNUAL = missingStandardPrice;
+    process.env.STRIPE_PRICE_FOUNDER_STARTER = 'price_founder_private';
+    const unsafeStandard = structuredClone(portalConfigurations.get(standardConfigId));
+    unsafeStandard.features.subscription_update.products[0].prices.push(process.env.STRIPE_PRICE_FOUNDER_STARTER);
+    assert.throws(() => portalPolicy.validate(unsafeStandard, portalPolicy.select({}, process.env), portalPlans, process.env), /exactly the current/);
+    delete process.env.STRIPE_PRICE_FOUNDER_STARTER;
+    portalConfigurations.get(standardConfigId).features.subscription_update.enabled = false;
+    assert.equal((await c.request('/api/billing/portal', 'POST', {})).status, 503, 'misconfigured standard portal fails closed before session creation');
+    portalConfigurations.get(standardConfigId).features.subscription_update.enabled = true;
 
     // Final 48h and the last seconds use the same no-proration anchor.
     for (const remaining of [48*3600000,36*3600000,1000]) {

@@ -23,6 +23,7 @@ jobs:
       - name: Prepare field browser screenshots
         run: sudo mkdir -p /opt/cursor/artifacts/screenshots && sudo chmod -R a+rwx /opt/cursor
       - run: npm run check
+      - run: npm run test:release-safety
       - run: node --check signup.js
       - run: node founder-billing.test.js
       - run: npm test

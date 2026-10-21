@@ -1,4 +1,5 @@
 const crypto = require('node:crypto');
+const stripePricePolicy = require('./stripe-price-policy');
 
 // No keys, invitation codes, or live price IDs are stored in source.
 const PRICES = Object.freeze({
@@ -6,6 +7,8 @@ const PRICES = Object.freeze({
   growth: { monthly: 159, annual: 1590 },
   pro: { monthly: 319, annual: 3190 },
 });
+const RENEWAL_REVIEW_DAYS = Object.freeze([90, 60, 30]);
+const DAY_MS = 86_400_000;
 function fail(message, statusCode = 400) { return Object.assign(new Error(message), { statusCode }); }
 function enabled(env = process.env) { return env.PDL_FOUNDER_ENABLED === '1'; }
 function priceKey(plan, cycle, founder = false) {
@@ -67,12 +70,66 @@ function addMonths(timestamp, months) {
   date.setUTCDate(Math.min(day, last));
   return Math.floor(date.valueOf()/1000);
 }
+function renewalReview(company, now = new Date()) {
+  const founder = company?.founder;
+  const end = Date.parse(founder?.protectedUntil || '');
+  if (!isFounder(company) || founder.renewalReviewRequired !== true || company.archivedDuplicate || company.subscriptionStatus === 'Cancelled' || !Number.isFinite(end)) return { eligible: false };
+  const nowMs = now instanceof Date ? now.valueOf() : Number(now);
+  if (!Number.isFinite(nowMs)) throw fail('Choose a valid founder review time.');
+  const reminders = founder.renewalReminders || {};
+  const final = state => ['sent', 'suppressed', 'superseded'].includes(state?.status);
+  const milestones = RENEWAL_REVIEW_DAYS.map(days => ({
+    days,
+    dueAt: new Date(end - days * DAY_MS).toISOString(),
+    state: reminders[String(days)] || null
+  }));
+  const due = milestones.filter(item => nowMs >= Date.parse(item.dueAt) && !final(item.state));
+  const dueReminderDays = due.length ? Math.min(...due.map(item => item.days)) : null;
+  const future = milestones.filter(item => nowMs < Date.parse(item.dueAt) && !final(item.state));
+  const daysRemaining = Math.max(0, Math.ceil((end - nowMs) / DAY_MS));
+  const overdue = nowMs >= end;
+  return {
+    eligible: true,
+    protectedUntil: new Date(end).toISOString(),
+    daysRemaining,
+    overdue,
+    dueReminderDays,
+    nextReminderDays: dueReminderDays || (future.length ? Math.max(...future.map(item => item.days)) : null),
+    status: overdue ? 'overdue' : dueReminderDays ? 'due' : milestones.every(item => final(item.state)) ? 'complete' : 'scheduled',
+    milestones: milestones.map(item => ({ days: item.days, dueAt: item.dueAt, status: item.state?.status || 'scheduled' }))
+  };
+}
+function queueRenewalReview(company, now = new Date()) {
+  const review = renewalReview(company, now);
+  if (!review.eligible || !review.dueReminderDays) return null;
+  const nowIso = new Date(now).toISOString(), key = String(review.dueReminderDays);
+  const reminders = { ...(company.founder.renewalReminders || {}) }, prior = reminders[key] || {};
+  if (prior.status === 'pending' && Date.parse(prior.lastAttemptAt || '') > Date.parse(nowIso) - DAY_MS) return null;
+  for (const days of RENEWAL_REVIEW_DAYS) {
+    const old = reminders[String(days)];
+    if (days > review.dueReminderDays && !['sent', 'suppressed', 'superseded'].includes(old?.status)) {
+      reminders[String(days)] = { ...old, status: 'superseded', supersededAt: nowIso };
+    }
+  }
+  reminders[key] = { ...prior, status: 'pending', dueAt: new Date(Date.parse(review.protectedUntil) - review.dueReminderDays * DAY_MS).toISOString(), lastAttemptAt: nowIso, attempts: Number(prior.attempts || 0) + 1 };
+  company.founder.renewalReminders = reminders;
+  return { days: review.dueReminderDays, daysRemaining: review.daysRemaining, protectedUntil: review.protectedUntil, attempt: reminders[key].attempts };
+}
+function settleRenewalReview(company, days, result, now = new Date()) {
+  if (!RENEWAL_REVIEW_DAYS.includes(Number(days)) || !company?.founder?.renewalReminders?.[String(days)]) return false;
+  const nowIso = new Date(now).toISOString(), prior = company.founder.renewalReminders[String(days)];
+  if (result?.sent) company.founder.renewalReminders[String(days)] = { ...prior, status: 'sent', sentAt: nowIso };
+  else if (result?.reason === 'disabled') company.founder.renewalReminders[String(days)] = { ...prior, status: 'suppressed', suppressedAt: nowIso };
+  else company.founder.renewalReminders[String(days)] = { ...prior, status: 'pending', lastResult: ['no-recipients', 'email-not-configured', 'provider-error'].includes(result?.reason) ? result.reason : 'provider-error' };
+  return true;
+}
 async function validatePrice(stripeRequest, id, amount, cycle, env = process.env) {
-  const price = await stripeRequest('/prices/' + encodeURIComponent(id), null, 'GET');
+  const specification = stripePricePolicy.specificationForPrice(id, env);
+  if (!specification) throw fail('Stripe price configuration does not match this offer. Contact support.', 503);
+  const price = await stripeRequest('/prices/' + encodeURIComponent(id) + '?expand[]=product', null, 'GET');
   const live = /^(sk|rk)_live_/.test(env.STRIPE_SECRET_KEY || '');
-  if (price.id !== id || price.active !== true || price.livemode !== live ||
-      price.currency !== 'usd' || price.unit_amount !== amount * 100 ||
-      (cycle ? price.type !== 'recurring' || price.recurring?.interval !== (cycle === 'annual' ? 'year' : 'month') || price.recurring?.interval_count !== 1 : price.type !== 'one_time')) {
+  if (specification[2] !== amount * 100 || specification[3] !== (cycle ? cycle === 'annual' ? 'year' : 'month' : null) ||
+      !stripePricePolicy.matches(price, specification, env, live)) {
     throw fail('Stripe price configuration does not match this offer. Contact support.', 503);
   }
 }
@@ -109,4 +166,4 @@ async function prepareSubscription(db, subscription, plans, stripeRequest, env =
   db.company.accountType = 'early_adopter'; db.company.cohort = 'founder-2026';
   return info;
 }
-module.exports = { validatePrice, prepareSubscription, PRICES, enabled, priceKey, validCode, offer, enroll, isFounder, checkout, identify, addMonths, fail };
+module.exports = { validatePrice, prepareSubscription, PRICES, RENEWAL_REVIEW_DAYS, enabled, priceKey, validCode, offer, enroll, isFounder, checkout, identify, addMonths, renewalReview, queueRenewalReview, settleRenewalReview, fail };

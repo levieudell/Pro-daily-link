@@ -56,6 +56,7 @@ function createMcpHttp(deps) {
   const cloudId = deps.stableUuid('mcp-oauth', 'pro-daily-link-connector');
   const oauth = createOAuth({
     file: path.join(path.dirname(deps.dbFile), 'mcp-oauth.json'),
+    assertWrite: deps.assertWritesAllowed,
     async loadCloud() {
       if (!deps.supabase.configured()) return null;
       const snapshot = await deps.supabase.loadCompanySnapshot(cloudId);

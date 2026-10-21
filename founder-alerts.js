@@ -111,4 +111,23 @@ function subscriptionActivatedAlert({ platform, company, persist, env, fetchImpl
   });
 }
 
-module.exports = { platformOwnerRecipients, buildAlertEmail, sendFounderAlert, demoRequestAlert, trialSignupAlert, subscriptionActivatedAlert };
+function renewalReviewAlert({ platform, company, reminder, persist, env, fetchImpl }) {
+  const deadline = new Date(reminder.protectedUntil).toLocaleDateString('en-US', { timeZone: 'UTC', year: 'numeric', month: 'long', day: 'numeric' });
+  return sendFounderAlert({
+    platform,
+    persist,
+    env,
+    fetchImpl,
+    badge: 'FOUNDER RENEWAL REVIEW',
+    subject: `[Pro Daily Link] Founder review — ${company.name} (${reminder.days} days)`,
+    title: `${company.name} needs a founder renewal conversation`,
+    lines: [
+      ['Milestone', `${reminder.days}-day review`],
+      ['Protected through', deadline],
+      ['Plan', `${company.plan} · ${company.billingCycle}`],
+      ['Next action', 'Contact the founder, agree on renewal terms, and record the decision before protection ends.'],
+    ],
+  });
+}
+
+module.exports = { platformOwnerRecipients, buildAlertEmail, sendFounderAlert, demoRequestAlert, trialSignupAlert, subscriptionActivatedAlert, renewalReviewAlert };
