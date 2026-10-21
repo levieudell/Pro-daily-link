@@ -140,7 +140,7 @@ BEGIN
   IF current_revision <> p_expected_revision THEN
     RAISE EXCEPTION 'PDL_PLATFORM_REVISION_CONFLICT expected=% actual=%',
       p_expected_revision, current_revision
-      USING ERRCODE = '40001';
+      USING ERRCODE = 'PT409';
   END IF;
 
   next_revision := current_revision + 1;
