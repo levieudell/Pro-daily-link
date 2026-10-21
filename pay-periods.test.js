@@ -16,7 +16,7 @@ for(const changed of [{outAt:null},{hours:null},{hours:true},{hours:' '},{outAt:
 
 // Complete synthetic HTTP journey: two companies, roles, time review and immutable exports.
 const temp=fs.mkdtempSync(path.join(os.tmpdir(),'pdl-custom-period-'));
-process.env.PDL_DB_FILE=path.join(temp,'db.json');process.env.PDL_PLATFORM_FILE=path.join(temp,'platform.json');process.env.PDL_SUPABASE_ENABLED='0';process.env.PDL_TRANSACTIONAL_DB='off';process.env.PDL_REQUIRE_AUTH='1';process.env.PDL_EMAIL_DEV_MODE='1';process.env.PDL_FOUNDER_ENABLED='0';process.env.PDL_PLATFORM_KEY='synthetic-platform-key-over-32-characters';
+process.env.PDL_DB_FILE=path.join(temp,'db.json');process.env.PDL_PLATFORM_FILE=path.join(temp,'platform.json');process.env.PDL_SUPABASE_ENABLED='0';process.env.PDL_TRANSACTIONAL_DB='off';process.env.PDL_REQUIRE_AUTH='1';process.env.NODE_ENV='test';process.env.PDL_ALLOW_PLATFORM_KEY_AUTH='1';process.env.PDL_EMAIL_DEV_MODE='1';process.env.PDL_FOUNDER_ENABLED='0';process.env.PDL_PLATFORM_KEY='synthetic-platform-key-over-32-characters';
 for(const key of ['SENTRY_DSN','RESEND_API_KEY','OPENAI_API_KEY','STRIPE_SECRET_KEY'])delete process.env[key];
 fs.copyFileSync('data/db.json',process.env.PDL_DB_FILE);fs.copyFileSync('data/platform.json',process.env.PDL_PLATFORM_FILE);
 const {server}=require('./server');let base,restarted;

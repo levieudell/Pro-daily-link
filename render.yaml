@@ -2,17 +2,31 @@ services:
   - type: web
     name: pro-daily-link-demo
     runtime: node
-    plan: free
-    buildCommand: npm install
+    # Match the live service's 1 CPU / 2 GB compute plan. Leaving this at
+    # `free` would let a future Blueprint sync silently downgrade production.
+    plan: 1c-2g
+    buildCommand: npm ci
     startCommand: npm start
-    healthCheckPath: /api/health
+    # Render restarts only a dead process. Operational readiness (database,
+    # billing, email, Sentry, and verified backups) is monitored separately at
+    # /api/health so a stale backup cannot create a destructive restart loop.
+    healthCheckPath: /api/health/live
     envVars:
       - key: NODE_ENV
         value: production
       - key: PDL_REQUIRE_AUTH
         value: "1"
+      - key: PDL_TRUST_PROXY_HOPS
+        value: "1"
       - key: PDL_SUPABASE_ENABLED
         value: "1"
+      # Repository cutovers are intentionally configured in Render instead of
+      # hard-coded here: off -> shadow -> verified primary. `sync: false`
+      # keeps the current reviewed value during future Blueprint syncs.
+      - key: PDL_TRANSACTIONAL_DB
+        sync: false
+      - key: PDL_PLATFORM_TRANSACTIONAL_DB
+        sync: false
       - key: SUPABASE_URL
         sync: false
       - key: SUPABASE_SECRET_KEY

@@ -69,8 +69,12 @@ assert.match(server, /staging:process\.env\.PDL_STAGING==='1'/);
 const source = fs.readFileSync(__dirname + '/staging-seed.js', 'utf8');
 assert.match(source, /OPENAI_API_KEY/);
 assert.equal(source.includes(ownerPassword), false);
-assert.match(fs.readFileSync(__dirname + '/index.html', 'utf8'), /config\.staging/);
-assert.match(fs.readFileSync(__dirname + '/index.html', 'utf8'), /STAGING/);
-assert.match(fs.readFileSync(__dirname + '/login.html', 'utf8'), /config\.staging/);
+const indexHtml = fs.readFileSync(__dirname + '/index.html', 'utf8');
+const loginHtml = fs.readFileSync(__dirname + '/login.html', 'utf8');
+const stagingBanner = fs.readFileSync(__dirname + '/staging-banner.js', 'utf8');
+assert.match(indexHtml, /src="staging-banner\.js"/);
+assert.match(loginHtml, /src="staging-banner\.js"/);
+assert.match(stagingBanner, /config\.staging/);
+assert.match(stagingBanner, /STAGING/);
 
 console.log('Staging seed checks passed.');

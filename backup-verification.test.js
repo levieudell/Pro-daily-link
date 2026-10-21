@@ -87,13 +87,16 @@ async function verify(input = snapshot, extra = {}) {
     assert.equal(backup.publicStatus(directory, otherId).fresh, false, 'one tenant cannot establish coverage for another');
     assert.equal(backup.backupDue(directory, companyId), false);
     assert.equal(receipt().verification.sourceRevision, 7);
+    assert.equal(backup.publicStatus(directory, companyId, Date.now(), { revision: 7, contentHash: receipt().verification.sourceContentHash }).fresh, true);
+    assert.equal(backup.publicStatus(directory, companyId, Date.now(), { revision: 8, contentHash: receipt().verification.sourceContentHash }).fresh, false, 'a receipt for an older primary revision is stale immediately');
+    assert.equal(backup.publicStatus(directory, companyId, Date.now(), { revision: 7, contentHash: 'f'.repeat(64) }).fresh, false, 'a receipt for different primary content is stale immediately');
     expectMode600(backup.receiptFile(directory, companyId));
     const publicText = JSON.stringify(backup.publicStatus(directory, companyId));
     for (const secret of [companyId, snapshot.company.name, 'Private synthetic note', receipt().verification.sha256, receipt().verification.objectKey]) {
       assert.equal(publicText.includes(secret), false, 'public health must not disclose receipt details');
     }
-    assert.equal(backup.publicStatus(directory, companyId).independentCopy, 'verified');
-    assert.equal(backup.publicStatus(directory, companyId).restore, 'verified');
+    assert.equal(backup.publicStatus(directory, companyId).independentCopy, 'not-checked', 'same-provider snapshot verification is not independent-copy evidence');
+    assert.equal(backup.publicStatus(directory, companyId).restore, 'not-checked', 'upload/download verification is not a restore drill');
     assert.equal(backup.publicStatus(directory, otherId).restore, 'not-checked', 'no receipt means restore is still unchecked');
     const restart = spawnSync(process.execPath, ['-e',
       `const b=require('./database/backup-verification');process.stdout.write(JSON.stringify(b.publicStatus(${JSON.stringify(directory)},${JSON.stringify(companyId)})))`],

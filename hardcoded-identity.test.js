@@ -16,7 +16,8 @@ assert.match(server,/foreman:fieldRole\(req\.auth\?\.user\)\?req\.auth\.user\.na
 assert.doesNotMatch(platformLogin,/value="levi@prodailylink\.com"/i);
 assert.doesNotMatch(platformForgot,/value="levi@prodailylink\.com"/i);
 assert.doesNotMatch(platform,/value="Levi"/);
-assert.match(platform,/platformUser=user/);
+assert.match(platform,/platformUser=await response\.json\(\)/);
+assert.match(platform,/platformUser\.active!==true/);
 assert.match(render,/https:\/\/app\.prodailylink\.com/);
 
 console.log('Hard-coded identity guard tests passed');

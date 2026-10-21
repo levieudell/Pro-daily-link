@@ -20,6 +20,7 @@ const originalFetch = global.fetch;
 let backupBytes,logoAttempts=0,logoBucketCreated=false;
 global.fetch = async (url, options = {}) => {
   if (String(url).endsWith('/storage/v1/bucket')) {const input=JSON.parse(options.body||'{}');if(input.id==='company-logos'){logoBucketCreated=input.public===false&&input.file_size_limit===6000000&&input.allowed_mime_types?.includes('image/png');return new Response('',{status:200})}return new Response(JSON.stringify({ statusCode:'409',code:'BucketAlreadyExists',message:'The resource already exists' }), { status: 400 });}
+  if (String(url).endsWith('/storage/v1/bucket/tenant-backups')) return new Response(JSON.stringify({id:'tenant-backups',public:false,file_size_limit:25000000,allowed_mime_types:['application/json']}),{status:200,headers:{'content-type':'application/json'}});
   if (String(url).includes('/storage/v1/object/company-logos/') && options.method === 'POST') {logoAttempts++;return logoAttempts===1?new Response(JSON.stringify({statusCode:'404',error:'Bucket not found',message:'Bucket not found',code:'NoSuchBucket'}),{status:400}):new Response('',{status:200})}
   if (String(url).includes('/storage/v1/object/tenant-backups/') && options.method === 'POST') { backupBytes = Buffer.from(options.body); return new Response('', { status: 200 }); }
   if (String(url).includes('/storage/v1/object/tenant-backups/')) return new Response(backupBytes, { status: 200, headers: { 'Content-Type': 'application/json' } });

@@ -22,7 +22,7 @@ const verifiedAt = new Date(Date.now() - 60 * 1000).toISOString();
 const cloudReceipt = {
   version: 1, companyId,
   attempt: { id: 'attempt-1', at: verifiedAt, status: 'verified' },
-  verification: { method: 'upload-download-sha256', verifiedAt, bucket: 'tenant-backups', objectKey: `${companyId}/2026-01-01-abc.json`, sha256: 'a'.repeat(64), bytes: 42, sourceRevision: 3 }
+  verification: { method: 'upload-download-sha256', verifiedAt, bucket: 'tenant-backups', objectKey: `${companyId}/2026-01-01-abc.json`, sha256: 'a'.repeat(64), bytes: 42, sourceRevision: 3, sourceContentHash: 'b'.repeat(64) }
 };
 const uploads = [];
 supabase.download = async (bucket, objectKey) => {
@@ -43,7 +43,7 @@ const { restoreBackupReceipt, mirrorBackupReceipt } = require('./server');
     const restored = backup.readReceipt(receiptDir, companyId);
     assert.equal(restored.verification.verifiedAt, verifiedAt, 'cloud receipt restored locally');
     assert.equal(backup.publicStatus(receiptDir, companyId).fresh, true, 'restored receipt establishes freshness after a restart');
-    assert.equal(backup.publicStatus(receiptDir, companyId).restore, 'verified', 'restored receipt carries the round-trip restore evidence');
+    assert.equal(backup.publicStatus(receiptDir, companyId).restore, 'not-checked', 'a restored snapshot receipt is not falsely promoted to restore-drill evidence');
     assert.equal(backup.publicStatus(receiptDir, companyId).lastAttemptStatus, 'verified');
 
     // Restore is idempotent and never clobbers a local receipt.

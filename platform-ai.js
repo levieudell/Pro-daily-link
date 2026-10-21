@@ -65,7 +65,7 @@
       || '<div class="empty-state"><b>No account-level usage yet</b><span>Calls are attributed to the signed-in account, or to a guest link when one was used.</span></div>';
     const assistantRetention = payload.assistant?.retentionDays || 4;
     content.innerHTML = `
-      <section class="metrics" style="grid-template-columns:repeat(4,1fr)">${metrics}</section>
+      <section class="metrics ai-metrics">${metrics}</section>
       <section class="grid">
         <article><div class="section-heading"><div><h2>By feature</h2><p>Where the model calls happen.</p></div></div>${featureRows}</article>
         <article><div class="section-heading"><div><h2>By account</h2><p>Spend attributed to each customer workspace.</p></div></div>${companyRows}</article>

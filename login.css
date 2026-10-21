@@ -38,3 +38,4 @@ dialog[open]{animation:pdl-dialog-in .24s cubic-bezier(.2,.7,.3,1)}
 ::-webkit-scrollbar-thumb{background:rgba(16,37,30,.22);border-radius:99px;border:2px solid transparent;background-clip:content-box}
 ::-webkit-scrollbar-track{background:transparent}
 .verification-continue{display:block;width:100%;margin-top:20px;padding:14px 16px;border-radius:10px;text-align:center;text-decoration:none;font-weight:800;font-size:14px}
+.staging-banner{position:sticky;top:0;z-index:2000;width:100%;box-sizing:border-box;flex:0 0 auto;background:#ef6c19;color:#111416;text-align:center;font:800 13px/1.2 "DM Sans",sans-serif;letter-spacing:.12em;padding:8px 12px}

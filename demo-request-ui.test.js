@@ -13,6 +13,8 @@ const form = {
   reset: () => { resetCount++; }
 };
 const context = {
+  URLSearchParams,
+  location: { pathname: '/', search: '' },
   document: {
     querySelector: selector => ({ '#demo-request-form': form, '#demo-form-status': status })[selector] || null,
     querySelectorAll: () => []

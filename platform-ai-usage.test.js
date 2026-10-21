@@ -1,7 +1,7 @@
 'use strict';
 // Founder console AI usage: (1) the ai-usage store rolls up per-day token and
 // cost data with exact microdollar math, unknown-model handling, and retention
-// pruning; (2) /api/platform/ai-usage is owner-gated and returns company names
+// pruning; (2) /api/platform/ai-usage is capability-gated and returns company names
 // plus a null assistant ledger when the cloud store is unconfigured; (3) the
 // server instruments every production AI call site through the never-throwing
 // meterAI wrapper.
@@ -72,7 +72,7 @@ const aiUsage = require('./ai-usage');
     "meterAI('template-draft',req,meta)"
   ]) assert.ok(serverSrc.includes(site), `${site} is wired`);
   assert.ok(serverSrc.includes("url.pathname==='/api/platform/ai-usage'"), 'owner endpoint exists');
-  assert.ok(serverSrc.includes('platformRevenueOwner(req)'), 'endpoint is owner-gated');
+  assert.match(serverSrc, /AI_USAGE_READ/, 'endpoint is protected by the AI-usage capability');
 
   const html = fs.readFileSync(path.join(__dirname, 'platform.html'), 'utf8');
   assert.match(html, /data-view="ai"/, 'nav exposes the AI usage view');
@@ -81,9 +81,15 @@ const aiUsage = require('./ai-usage');
   assert.ok(html.indexOf('platform.js?') < html.indexOf('platform-ai.js?'), 'platform-ai.js loads after platform.js');
   const platformJs = fs.readFileSync(path.join(__dirname, 'platform.js'), 'utf8');
   assert.match(platformJs, /ai:\['AI usage','Watch model spend across every account\.'\]/);
-  assert.match(platformJs, /if\(name==='ai'&&typeof loadAIUsageView==='function'\)loadAIUsageView\(\)/);
+  assert.match(platformJs, /name==='ai'&&can\(PLATFORM_CAP\.AI_USAGE_READ\)&&typeof loadAIUsageView==='function'/);
   const viewJs = fs.readFileSync(path.join(__dirname, 'platform-ai.js'), 'utf8');
   assert.match(viewJs, /\/api\/platform\/ai-usage/);
+  assert.match(viewJs, /class="metrics ai-metrics"/, 'AI KPIs use the responsive class instead of a fixed inline grid');
+  assert.doesNotMatch(viewJs, /class="metrics" style="grid-template-columns:repeat\(4/, 'AI KPIs do not force four mobile columns');
+  const platformCss = fs.readFileSync(path.join(__dirname, 'platform.css'), 'utf8');
+  const mobileCss = fs.readFileSync(path.join(__dirname, 'platform-mobile.css'), 'utf8');
+  assert.match(platformCss, /\.ai-metrics\{grid-template-columns:repeat\(4,minmax\(0,1fr\)\)\}/, 'AI KPIs render four across when space allows');
+  assert.match(mobileCss, /@media\(max-width:560px\)[\s\S]*\.metrics,\.ai-metrics\{grid-template-columns:1fr 1fr\}/, 'AI KPIs use an explicit two-column phone layout');
   const { isPublicFile } = require('./public-file-policy');
   assert.equal(isPublicFile(__dirname, path.join(__dirname, 'platform-ai.js')), true, 'the server must actually serve the view script (public-file-policy allowlist)');
 }
@@ -98,7 +104,7 @@ process.env.PDL_DB_FILE = dbFile;
 process.env.PDL_PLATFORM_FILE = platformFile;
 process.env.PDL_SUPABASE_ENABLED = '0';
 process.env.PDL_EMAIL_DEV_MODE = '1';
-process.env.PDL_REQUIRE_AUTH = '0';
+process.env.PDL_REQUIRE_AUTH = '1';
 process.env.PDL_PLATFORM_KEY = 'test-platform-key-32-characters-minimum';
 
 const { server } = require('./server');
@@ -126,9 +132,9 @@ server.listen(0, async () => {
       return { response, data: await response.json() };
     };
 
-    // No session → 403.
+    // No session → 401.
     let result = await get('/api/platform/ai-usage');
-    assert.equal(result.response.status, 403, `unauthenticated owner call rejected: ${JSON.stringify(result.data)}`);
+    assert.equal(result.response.status, 401, `unauthenticated call rejected: ${JSON.stringify(result.data)}`);
 
     // Owner session → full payload with resolved names; assistant null because Supabase is off.
     result = await get('/api/platform/ai-usage', { Authorization: `Bearer ${ownerToken}` });

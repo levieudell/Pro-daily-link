@@ -6,7 +6,6 @@
 const assert = require('node:assert/strict');
 const { spawn } = require('node:child_process');
 const fs = require('node:fs');
-const net = require('node:net');
 const os = require('node:os');
 const path = require('node:path');
 
@@ -21,16 +20,6 @@ const OWNER_PASSWORD = 'staging-owner-pass';
 function puppeteer() {
   try { return require('puppeteer-core'); }
   catch { return require('/tmp/puppeteer/node_modules/puppeteer-core'); }
-}
-
-function freePort() {
-  return new Promise((resolve, reject) => {
-    const server = net.createServer();
-    server.listen(0, '127.0.0.1', () => {
-      const { port } = server.address();
-      server.close(error => error ? reject(error) : resolve(port));
-    });
-  });
 }
 
 function pinOpenPunch(file, minutes) {
@@ -109,26 +98,27 @@ async function dailyState(page) {
   const chrome = process.env.PDL_TEST_CHROME || (process.platform === 'win32' ? 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe' : '/usr/bin/google-chrome-stable');
   assert.ok(fs.existsSync(chrome), 'Chrome is required for the next-step browser test');
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'pdl-next-e2e-'));
-  const port = await freePort();
   const dbFile = path.join(root, 'db.json');
-  const env = { ...process.env, PORT: String(port), PDL_STAGING: '1', PDL_STAGING_OWNER_PASSWORD: OWNER_PASSWORD, PDL_STAGING_FIELD_PASSWORD: FIELD_PASSWORD, PDL_DB_FILE: dbFile, PDL_PLATFORM_FILE: path.join(root, 'platform.json'), PDL_EMAIL_DEV_MODE: '1', PDL_SUPABASE_ENABLED: '0', PDL_TRANSACTIONAL_DB: 'off', OPENAI_API_KEY: '' };
+  const env = { ...process.env, PDL_STAGING: '1', PDL_STAGING_OWNER_PASSWORD: OWNER_PASSWORD, PDL_STAGING_FIELD_PASSWORD: FIELD_PASSWORD, PDL_DB_FILE: dbFile, PDL_PLATFORM_FILE: path.join(root, 'platform.json'), PDL_EMAIL_DEV_MODE: '1', PDL_SUPABASE_ENABLED: '0', PDL_TRANSACTIONAL_DB: 'off', OPENAI_API_KEY: '' };
   for (const name of ['STRIPE_SECRET_KEY', 'STRIPE_WEBHOOK_SECRET', 'RESEND_API_KEY', 'INDEXNOW_KEY', 'SENTRY_DSN']) delete env[name];
-  const child = spawn(process.execPath, ['server.js'], { cwd: __dirname, env, stdio: ['ignore', 'pipe', 'pipe'] });
+  const boot = "const {server,initializePlatformPersistence}=require('./server');Promise.resolve(initializePlatformPersistence()).then(()=>server.listen(0,'127.0.0.1',()=>console.log('NEXT_E2E_PORT='+server.address().port))).catch(error=>{console.error(error);process.exit(1)});";
+  const child = spawn(process.execPath, ['-e', boot], { cwd: __dirname, env, stdio: ['ignore', 'pipe', 'pipe'] });
   let log = '';
   child.stdout.on('data', chunk => { log += chunk; });
   child.stderr.on('data', chunk => { log += chunk; });
   let browser;
   try {
-    browser = await puppeteer().launch({ executablePath: chrome, headless: true, args: ['--no-sandbox', '--disable-dev-shm-usage', '--disable-gpu'] });
-    await new Promise((resolve, reject) => {
+    const port = await new Promise((resolve, reject) => {
       const timer = setTimeout(() => reject(new Error('staging server did not start\n' + log)), 20000);
       const poll = () => {
-        if (log.includes('running at')) { clearTimeout(timer); resolve(); return; }
+        const match = log.match(/NEXT_E2E_PORT=(\d+)/);
+        if (match) { clearTimeout(timer); resolve(Number(match[1])); return; }
         if (child.exitCode != null) { clearTimeout(timer); reject(new Error('server exited\n' + log)); return; }
         setTimeout(poll, 100);
       };
       poll();
     });
+    browser = await puppeteer().launch({ executablePath: chrome, headless: true, args: ['--no-sandbox', '--disable-dev-shm-usage', '--disable-gpu'] });
     const page = await browser.newPage();
     page.__port = port;
     await page.setViewport({ width: 390, height: 844, deviceScaleFactor: 2, isMobile: true, hasTouch: true });

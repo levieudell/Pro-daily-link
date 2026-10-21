@@ -22,7 +22,8 @@ function validVerification(value, companyId, now) {
     value.bucket === 'tenant-backups' && typeof value.objectKey === 'string' &&
     value.objectKey.startsWith(String(companyId) + '/') && !value.objectKey.includes('..') &&
     /^[a-f0-9]{64}$/.test(value.sha256 || '') && Number.isSafeInteger(value.bytes) && value.bytes > 0 &&
-    Number.isSafeInteger(value.sourceRevision) && value.sourceRevision >= 0;
+    Number.isSafeInteger(value.sourceRevision) && value.sourceRevision >= 0 &&
+    /^[a-f0-9]{64}$/.test(value.sourceContentHash || '');
 }
 
 function readReceipt(directory, companyId, now = Date.now()) {
@@ -62,20 +63,21 @@ function backupDue(directory, companyId, now = Date.now()) {
   return !Number.isFinite(attemptedAt) || now - attemptedAt >= RETRY_AFTER_MS;
 }
 
-function publicStatus(directory, companyId, now = Date.now()) {
+function publicStatus(directory, companyId, now = Date.now(), authority = null) {
   const receipt = readReceipt(directory, companyId, now);
   const lastVerifiedAt = receipt?.verification?.verifiedAt || null;
-  // The verification method is an upload-download-sha256 round trip, so a
-  // valid receipt is itself evidence of a restorable, integrity-checked copy.
-  const verified = Boolean(lastVerifiedAt);
   return {
     scope: 'single-tenant-snapshot',
     lastAttemptAt: receipt?.attempt?.at || null,
     lastAttemptStatus: receipt?.attempt?.status || null,
     lastVerifiedAt,
-    fresh: Boolean(lastVerifiedAt && now - milliseconds(lastVerifiedAt) < FRESHNESS_MS),
-    independentCopy: verified ? 'verified' : 'not-checked',
-    restore: verified ? 'verified' : 'not-checked'
+    fresh: Boolean(lastVerifiedAt && now - milliseconds(lastVerifiedAt) < FRESHNESS_MS &&
+      (!authority || (receipt.verification.sourceRevision === authority.revision && receipt.verification.sourceContentHash === authority.contentHash))),
+    // The receipt proves only a same-provider snapshot round trip. Portable
+    // independent copies and exercised restores are monitored separately and
+    // must never be inferred from this narrower check.
+    independentCopy: 'not-checked',
+    restore: 'not-checked'
   };
 }
 
@@ -94,7 +96,7 @@ function completeAttempt(directory, companyId, attempt, verification, previous, 
     attempt: newerAttempt ? current.attempt : attempt, verification: newest });
 }
 
-async function runVerification(snapshot, { directory, createBackup, now = () => Date.now() }) {
+async function runVerification(snapshot, { directory, createBackup, now = () => Date.now(), sourceRevision = null, sourceContentHash = '' }) {
   const companyId = String(snapshot?.company?.id || '');
   const attemptedAt = new Date(now()).toISOString();
   const previous = readReceipt(directory, companyId, now());
@@ -110,7 +112,9 @@ async function runVerification(snapshot, { directory, createBackup, now = () => 
     const verification = {
       method: 'upload-download-sha256', verifiedAt: result?.verifiedAt,
       bucket: result?.bucket, objectKey: result?.objectKey, sha256: result?.hash,
-      bytes: result?.bytes, sourceRevision: Number(snapshot.company.persistence?.revision || 0)
+      bytes: result?.bytes,
+      sourceRevision: sourceRevision != null && Number.isSafeInteger(Number(sourceRevision)) ? Number(sourceRevision) : Number(snapshot.company.persistence?.revision || 0),
+      sourceContentHash: /^[a-f0-9]{64}$/.test(sourceContentHash) ? sourceContentHash : String(result?.hash || '')
     };
     if (!validVerification(verification, companyId, completedAt) ||
         milliseconds(verification.verifiedAt) < milliseconds(attemptedAt) ||

@@ -3,8 +3,11 @@
 (function(){
   'use strict';
   const host = document.getElementById('co-document');
+  document.getElementById('change-order-print')?.addEventListener('click', () => window.print());
   const params = new URLSearchParams(location.search);
   const token = params.get('t') || '';
+  const tenant = params.get('tenant') || '';
+  const publicHeaders = extra => ({ ...(tenant ? { 'x-pdl-company': tenant } : {}), ...extra });
   const money = value => '$' + (Number(value) || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   const date = iso => iso ? new Date(String(iso).length === 10 ? iso + 'T12:00:00' : iso).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' }) : '—';
   const esc = value => String(value == null ? '' : value).replace(/[&<>"']/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
@@ -81,7 +84,7 @@
       if (!name.value.trim()) { error.textContent = 'Type your name to sign the decision.'; error.hidden = false; name.focus(); return; }
       approve.disabled = decline.disabled = true;
       try {
-        const response = await fetch('/api/change-order/' + encodeURIComponent(token) + '/decision', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ decision, name: name.value.trim(), note: note.value.trim() }) });
+        const response = await fetch('/api/change-order/' + encodeURIComponent(token) + '/decision', { method: 'POST', headers: publicHeaders({ 'Content-Type': 'application/json' }), body: JSON.stringify({ decision, name: name.value.trim(), note: note.value.trim() }) });
         const payload = await response.json();
         if (!response.ok) throw new Error(payload.error || 'The decision could not be recorded.');
         load();
@@ -98,7 +101,7 @@
   async function load(){
     host.innerHTML = '<p class="empty">Loading change order…</p>';
     try {
-      const response = await fetch('/api/change-order/' + encodeURIComponent(token));
+      const response = await fetch('/api/change-order/' + encodeURIComponent(token), { headers: publicHeaders() });
       const payload = await response.json();
       if (!response.ok) throw new Error(payload.error || 'This change order link is invalid or has been revoked.');
       render(payload);
