@@ -13,11 +13,21 @@ const app = fs.readFileSync('app.js', 'utf8');
 const server = fs.readFileSync('server.js', 'utf8');
 const sw = fs.readFileSync('sw.js', 'utf8');
 const offline = fs.readFileSync('offline.js', 'utf8');
+const workspaceGate = fs.readFileSync('workspace-gate.js', 'utf8');
+const serviceWorkerRegistration = fs.readFileSync('register-service-worker.js', 'utf8');
 assert.equal(isPublicFile(process.cwd(), path.join(process.cwd(), 'sw.js')), true, 'service worker is publicly served');
 assert.equal(isPublicFile(process.cwd(), path.join(process.cwd(), 'offline.js')), true, 'offline module is publicly served');
+assert.equal(isPublicFile(process.cwd(), path.join(process.cwd(), 'register-service-worker.js')), true, 'service worker registration is publicly served');
+assert.ok(index.indexOf('register-service-worker.js') < index.indexOf('offline.js?'), 'service worker registration loads before the offline queue');
 assert.ok(index.indexOf('offline.js?') < index.indexOf('app.js?'), 'offline module loads before app.js');
-assert.match(index, /navigator\.serviceWorker\.register\('\/sw\.js'\)/, 'service worker registration');
-assert.ok(index.includes("localStorage.getItem('pdl-last-state')"), 'workspace gate opens the cached state when offline');
+assert.match(serviceWorkerRegistration, /location\.protocol === 'https:'/,
+  'service worker registration is restricted to secure production pages');
+assert.match(serviceWorkerRegistration, /navigator\.serviceWorker\.register\('\/sw\.js'\)/,
+  'the external registration module installs the service worker without weakening CSP');
+assert.equal([index, app, offline, workspaceGate, serviceWorkerRegistration]
+  .filter(source => /navigator\.serviceWorker\.register\('\/sw\.js'\)/.test(source)).length, 1,
+  'the service worker has one registration owner');
+assert.ok(workspaceGate.includes("localStorage.getItem('pdl-last-state')"), 'external workspace gate opens the cached state when offline');
 assert.match(sw, /url\.pathname\.startsWith\('\/api\/'\)\)/, 'service worker never caches API responses');
 assert.match(sw, /caches\.match\(APP_PAGE\)/, 'service worker serves the cached app page for navigations');
 assert.match(app, /window\.PDLOffline\.loadState\(\)/, 'api() falls back to the cached state for GET /api/state');
