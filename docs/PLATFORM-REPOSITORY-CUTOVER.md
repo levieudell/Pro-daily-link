@@ -2,6 +2,8 @@
 
 This change gives Pro Daily Link's back office its own transactional, revisioned database boundary. It does **not** apply the migration or modify production by itself.
 
+The controlling production evidence and rollback procedure is [`SHADOW-RECONCILIATION.md`](SHADOW-RECONCILIATION.md). Its combined tenant-and-platform gate takes precedence over any shorter reconciliation description in this document.
+
 ## What it protects
 
 The existing `platform.json` model can lose an update when two requests read the same file and each writes a full replacement. The new repository prevents that failure in two layers:
@@ -31,17 +33,23 @@ Platform operations data has a stable namespace separate from customer-company r
 
 ## Safe deployment sequence
 
-1. **Merge and deploy code without enabling the new repository.** The added modules have no production side effects.
-2. **Apply `database/008_platform_repository.sql` in a non-production Supabase project first.** Do not paste secrets into the SQL editor.
-3. **Verify privileges.** The migration's final query must show only `service_role` for the two RPCs. Also confirm the `private` schema is not in Data API exposed schemas.
-4. **Run the focused tests** listed below.
-5. **Create an independent backup of the current `platform.json`.** Keep the backup outside the Render filesystem.
-6. **Initialize the repository in staging** with expected revision `0`, then read it back and compare its canonical SHA-256 with the source.
-7. **Deploy with `PDL_PLATFORM_TRANSACTIONAL_DB=shadow`.** The server keeps the existing mirror as the read source and writes the same committed state to the repository. Investigate every shadow-write failure before continuing.
-8. **Exercise simultaneous updates in staging** (for example, update a support ticket while assigning a demo request). One stale write must return HTTP `409`; neither edit may disappear.
-9. **Reconcile shadow and mirror state** by comparing their canonical SHA-256 values and collection counts. Do not cut over if they differ.
-10. **Cut over production during a short back-office maintenance window:** create and verify a fresh independent backup, set `PDL_PLATFORM_TRANSACTIONAL_DB=primary`, restart, confirm health, sign in, and perform a read-only inspection before permitting staff mutations.
-11. **Confirm operational readiness:** `/api/health` must show both platform and tenant repositories in `primary` mode with every requirement `true`. `/api/health/live` is only process liveness and is not cutover evidence.
+This section qualifies the platform repository implementation. It does not replace the combined live cutover in `SHADOW-RECONCILIATION.md`.
+
+1. **Merge and deploy code without enabling the repository.** Record the exact release SHA. The added modules have no production effect while the mode is `off`.
+2. **Apply `database/008_platform_repository.sql` outside production first, then production under the migration procedure.** Never paste secrets into the SQL editor or evidence.
+3. **Verify privileges.** The migration's final query must show only `service_role` for the two RPCs. Confirm the `private` schema is not a Data API exposed schema and retain the final privilege query result.
+4. **Run every focused test below plus the required aggregate suite.** A focused pass that is absent from `npm test` is not shipped protection.
+5. **Create and independently verify a full platform portable set.** It must contain the committed snapshot plus every referenced private Storage object, be copied off Render, be rehashed after transfer, and be protected from overwrite. A raw `platform.json` copy is not a recovery set.
+6. **Initialize and exercise the repository in staging.** Start at expected revision `0`, read the committed state back, compare its canonical SHA-256, and exercise simultaneous updates. Exactly one stale writer must receive HTTP `409`; no edit may disappear.
+7. **Deploy production with `PDL_PLATFORM_TRANSACTIONAL_DB=shadow`.** Reads remain on the legacy mirror and acknowledged mutations dual-write. Investigate every shadow-write, revision, or integrity failure before continuing.
+8. **Run a reversible synthetic back-office mutation in production shadow mode.** Read it back, reverse it through the normal application path, and confirm both copies settle without Render or Sentry errors.
+9. **Use the combined fenced gate.** The live cutover requires both tenant and platform modes in `shadow`, externally proven single-instance Render state, the environment and verified local maintenance fences, and two consecutive complete `--all` passes from the ordinary SSH session on that exact instance. A platform-only diagnostic cannot authorize primary mode.
+10. **Promote only by separate recorded human decision.** Keep maintenance enabled, change both tenant and platform modes to `primary` together, deploy the exact reconciled SHA, and complete all pre-write health, backup, restore, and read-only acceptance in the controlling runbook.
+11. **Reopen writes in a separate deployment.** Keep both modes `primary`, disable maintenance, prove one instance again, and verify one controlled platform CAS mutation plus one tenant mutation before ending the window.
+
+`/api/health/live` proves only that the process can answer. Before writes reopen, `/api/health` must return HTTP `200`, show both repositories in `primary`, and report every required dependency true.
+
+If a primary write might have committed, do not blindly return to `shadow` or `off`: freeze mutations and follow the decision table in `SHADOW-RECONCILIATION.md`. A mirror can be older even when a mode change appears to recover service.
 
 ## Server integration contract
 
@@ -60,46 +68,92 @@ Important integration rules:
 
 ## Backup and recovery
 
-All commands are server/local operator commands. They print hashes and revision metadata, never keys.
-The recovery set contains sensitive platform state, including password hashes. Write it only to an approved encrypted, access-controlled backup location; never attach it to a ticket, commit it, or place it in a public/shared folder.
+[`PLATFORM-PORTABLE-RECOVERY.md`](PLATFORM-PORTABLE-RECOVERY.md) is the controlling platform backup/restore procedure. The commands below are a compact reference only. They print hashes and revision metadata, never keys.
 
-```powershell
-# Export the committed platform revision to an independent directory.
-node database/platform-recovery.js export --output "D:\Pro Daily Link Backups\Platform"
+The recovery set contains sensitive platform state, including password hashes. Write it only to an approved encrypted, access-controlled backup location; never attach it to a ticket, commit it, paste it into chat, or place it in a public/shared folder. Preserve the CLI-reported manifest SHA-256 outside the set, transfer the complete set off Render, independently recompute `manifest.json` SHA-256 at the destination, and compare all three values. A mutable copy or an adjacent sidecar alone is not independent evidence.
 
-# Verify every payload, object, and the manifest without touching Supabase.
-node database/platform-recovery.js verify --backup "D:\Pro Daily Link Backups\Platform\platform-..."
+Production export and restore run only from Render Shell (bash) on the exact active web-service instance. Configure `PDL_PRODUCTION_SUPABASE_PROJECT_REF` in that service to the exact production project reference. First deploy `PDL_MAINTENANCE_MODE=1`, externally prove one settled instance, and open or reuse the verified instance-local fence. Do not replace an existing fence; if `status` reports a partial or corrupt artifact, stop for incident review.
 
-# Show restore evidence and required next step; makes no changes.
-node database/platform-recovery.js restore-preview --backup "D:\Pro Daily Link Backups\Platform\platform-..." --expected-manifest-sha256 <independently-recorded-sha256>
+```bash
+set -euo pipefail
 
-# Only after approval and after reading the current repository revision.
-node database/platform-recovery.js restore --backup "D:\Pro Daily Link Backups\Platform\platform-..." --expected-manifest-sha256 <independently-recorded-sha256> --expected-revision 42 --pre-restore-output "D:\Pro Daily Link Backups\Platform\Pre-restore" --apply
+node database/maintenance-lock.js status \
+  --expected-service-id "$RENDER_SERVICE_ID" \
+  --expected-instance-id "$RENDER_INSTANCE_ID"
+
+# Run open only when status proves there is no existing or corrupt artifact.
+node database/maintenance-lock.js open --apply \
+  --expected-service-id "$RENDER_SERVICE_ID" \
+  --expected-instance-id "$RENDER_INSTANCE_ID"
+
+sleep 35
+
+node database/maintenance-lock.js status \
+  --expected-service-id "$RENDER_SERVICE_ID" \
+  --expected-instance-id "$RENDER_INSTANCE_ID"
+
+node database/platform-recovery.js export \
+  --output /tmp/pdl-platform-export \
+  --production-target "$PDL_PRODUCTION_SUPABASE_PROJECT_REF" \
+  --expected-service-id "$RENDER_SERVICE_ID" \
+  --expected-instance-id "$RENDER_INSTANCE_ID"
 ```
 
-The restore command:
+The final status and export must report the exact service/instance identity, `environmentEnabled: true`, `verified: true`, and the same non-null fence digest. The exporter withholds `manifest.sha256`, the sole completeness marker, until object re-download, repository double-read, and exact-fence recheck pass; a failed final check removes the unaccepted set. Keep the fence open. Transfer the complete generated set to the approved encrypted off-Render destination, rehash it there, and record the returned manifest SHA-256 outside the set.
 
-1. verifies `manifest.sha256`;
-2. verifies the platform snapshot byte hash and canonical hash;
-3. verifies every referenced private object and inventory entry in the source recovery set;
-4. compares the operator-supplied current revision;
-5. exports the current revision and all available current object bytes to the independent pre-restore destination (already-missing live objects are explicitly recorded as missing evidence);
-6. preflights every destination object before making any change;
-7. leaves byte-identical objects untouched, creates missing objects without upsert, and overwrites a different object only when its exact prior bytes are present in the verified pre-restore set;
-8. re-downloads every restored object and verifies its byte count and SHA-256;
-9. commits the platform snapshot through the same CAS function only after storage is verified;
-10. reads the repository result back and reconciles revision and SHA-256; and
-11. writes `restore-evidence.json` beside the pre-restore manifest with revisions, manifests, per-object actions, byte counts, hashes, and the final result.
+Verification and preview are local, read-only operations and require no production credentials:
 
-If an upload or the repository commit fails before the repository is committed, the command reverses every storage change in reverse order: newly created objects are removed and overwritten objects are restored from the verified pre-restore bytes. It then verifies the rollback. An incomplete rollback is reported as a separate recovery emergency and is never presented as success. A provider timeout after a storage upload is treated as ambiguous: the command inspects the destination and includes any landed write in the rollback journal.
+```powershell
+$destination = 'C:\Users\levif\OneDrive - forgedbuilt.com\Pro Daily Link Backups\Platform'
+$sourceManifestSha256 = 'replace-with-the-independently-recorded-64-character-sha256'
+$backup = Join-Path $destination '<exact-generated-platform-set>'
 
-If both a repository save response and all reconciliation reads are lost, commit status is unknowable. In that exceptional state the command retains the already verified target objects, records `repository-outcome-unknown`, and fails with an operator-action error; guessing and rolling storage back could break a database commit that actually succeeded. Reconcile the repository revision/content hash and the listed object hashes before resuming writes.
+node database/platform-recovery.js verify --backup $backup
+node database/platform-recovery.js restore-preview `
+  --backup $backup `
+  --expected-manifest-sha256 $sourceManifestSha256
+```
 
-A pre-restore evidence set can be integrity-valid while explicitly recording that a live object was already missing. The `verify` result reports `complete: false` and a non-zero `missingObjects` count for that evidence. Such a set documents the pre-restore state but is not accepted by `restore-preview` or `restore` as a source recovery set.
+After the required isolated disposable-target drill and explicit production approval, securely transfer the approved set onto the same already-quiescent Render instance. Re-run the exact identity-bound `status`, read the current live platform revision, and use that exact compare-and-swap value:
 
-`restore-preview` is intentionally local and read-only. It verifies the selected recovery set and requires the manifest SHA-256 recorded independently when the set was created; an attacker cannot make a rewritten set trustworthy by rewriting its adjacent sidecar. It does not read or write the repository and does not contact Storage. The apply command repeats the independent-hash check before live preflight. Run apply only in the documented maintenance window so no other operator is replacing the same Storage keys; Supabase Storage does not expose an object-level compare-and-swap primitive.
+```bash
+set -euo pipefail
 
-As a recovery safety rule, restore clears all platform sessions and temporary setup/reset hashes, and revokes every temporary customer-support grant. Password hashes remain so active staff can sign in again, but old bearer links cannot be resurrected by restoring an earlier backup.
+node database/maintenance-lock.js status \
+  --expected-service-id "$RENDER_SERVICE_ID" \
+  --expected-instance-id "$RENDER_INSTANCE_ID"
+
+backup=/tmp/pdl-approved-platform-set
+pre_restore_output=/tmp/pdl-platform-pre-restore
+current_target_capture=/tmp/pdl-platform-current-target
+source_manifest_sha256=replace-with-the-independently-recorded-64-character-sha256
+
+current_target_json="$(node database/platform-recovery.js export \
+  --output "$current_target_capture" \
+  --production-target "$PDL_PRODUCTION_SUPABASE_PROJECT_REF" \
+  --expected-service-id "$RENDER_SERVICE_ID" \
+  --expected-instance-id "$RENDER_INSTANCE_ID")"
+current_target_revision="$(printf '%s' "$current_target_json" | node -e '
+  const fs = require("node:fs");
+  const value = JSON.parse(fs.readFileSync(0, "utf8"));
+  if (!value.ok || !Number.isSafeInteger(value.revision) || value.revision < 0) process.exit(2);
+  process.stdout.write(String(value.revision));
+')"
+
+node database/platform-recovery.js restore \
+  --backup "$backup" \
+  --expected-manifest-sha256 "$source_manifest_sha256" \
+  --expected-revision "$current_target_revision" \
+  --pre-restore-output "$pre_restore_output" \
+  --production-target "$PDL_PRODUCTION_SUPABASE_PROJECT_REF" \
+  --expected-service-id "$RENDER_SERVICE_ID" \
+  --expected-instance-id "$RENDER_INSTANCE_ID" \
+  --apply
+```
+
+The source and pre-restore output must be separate, non-overlapping directories. Production target, Supabase URL, Render service/instance identity, and the verified fence must all agree before repository or Storage I/O. The same fence is rechecked immediately before the repository commit and before success evidence.
+
+Do not run production `restore` from this summary alone. `PLATFORM-PORTABLE-RECOVERY.md` defines source completeness, independent-hash verification, pre-restore capture, Storage preflight and rollback, CAS commit/reconciliation, session and temporary-token revocation, ambiguous provider outcomes, acceptance, and required human authorization. If its verifier reports `complete: false`, or a repository/storage outcome is ambiguous, freeze writes and enter incident response; never retry blindly.
 
 ## Focused verification
 

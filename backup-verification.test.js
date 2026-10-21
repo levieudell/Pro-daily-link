@@ -12,6 +12,7 @@ const path = require('node:path');
 const { spawnSync } = require('node:child_process');
 const backup = require('./database/backup-verification');
 const supabase = require('./database/supabase');
+const { canonicalHash } = require('./database/transactional-repository');
 const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'pdl-backup-verification-'));
 const directory = path.join(temp, '.backup-verification');
 const companyId = '11111111-1111-4111-8111-111111111111';
@@ -140,6 +141,14 @@ async function verify(input = snapshot, extra = {}) {
     assert.deepEqual(backup.readReceipt(directory, companyId, syntheticNow), newest, 'out-of-order success cannot roll back newer evidence');
     overwriteReceipt(beforeRace);
 
+    let providerAborted = false;
+    await assert.rejects(() => verify(snapshot, { timeoutMs: 50, createBackup: (_snapshot, { signal }) => new Promise(() => {
+      signal.addEventListener('abort', () => { providerAborted = true; }, { once: true });
+    }) }), error => error?.code === 'PDL_BACKUP_VERIFICATION_TIMEOUT');
+    assert.equal(providerAborted, true, 'the bounded backup attempt aborts compatible provider I/O');
+    assert.equal(backup.publicStatus(directory, companyId).lastAttemptStatus, 'failed', 'a provider timeout is durably recorded for retry');
+    overwriteReceipt(beforeRace);
+
     for (mode of ['upload-failure', 'download-failure', 'hash-mismatch']) {
       ageReceipt(37);
       const lastSuccess = receipt().verification.verifiedAt;
@@ -192,7 +201,7 @@ async function verify(input = snapshot, extra = {}) {
     const base = 'http://127.0.0.1:' + server.address().port;
     const request = async (route, method = 'GET', input) => {
       const response = await realFetch(base + route, { method,
-        headers: { Authorization: 'Bearer synthetic-owner-token', 'Content-Type': 'application/json' },
+        headers: { Authorization: 'Bearer synthetic-owner-token', 'Content-Type': 'application/json', 'X-PDL-Company': companyId },
         ...(input === undefined ? {} : { body: JSON.stringify(input) }) });
       return { status: response.status, data: await response.json() };
     };
@@ -220,28 +229,20 @@ async function verify(input = snapshot, extra = {}) {
     assert.equal(saveCount, saveBefore + 1, 'recording verification does not add a customer snapshot write');
     assert.deepEqual(savedSnapshot.projectNotesTodos, snapshot.projectNotesTodos);
 
-    // A rejected app save must be caught by the HTTP server while older backup I/O is
-    // still pending. It cannot terminate Node or permit an overlapping upload.
+    // Backup work begins only after the authoritative save. A rejected save is
+    // caught by the HTTP server and cannot publish evidence for uncommitted data.
     ageReceipt(37);
-    blockDownload = true; releaseDownload = undefined; failSave = true;
+    failSave = true;
     const beforeHeld = uploadCount;
     const originalError = console.error, expectedErrors = [];
     console.error = (...args) => expectedErrors.push(args);
     try {
       assert.equal((await request('/api/auth/me')).status, 200, 'snapshot-mode response timing is unchanged');
-      for (let i = 0; !releaseDownload && i < 100; i++) await new Promise(resolve => setTimeout(resolve, 1));
-      assert.ok(releaseDownload);
-      assert.equal((await health()).lastAttemptStatus, 'pending');
-      const pendingReceipt = receipt(); pendingReceipt.attempt.at = new Date(Date.now() - backup.RETRY_AFTER_MS - 100).toISOString(); overwriteReceipt(pendingReceipt);
-      assert.equal((await request('/api/auth/me')).status, 200, 'server remains available after persistence rejection');
-      assert.equal(uploadCount, beforeHeld + 1, 'no new upload while the older one remains pending');
-      mode = 'download-failure'; blockDownload = false; releaseDownload();
-      for (let i = 0; backup.publicStatus(directory, companyId).lastAttemptStatus === 'pending' && i < 100; i++) await new Promise(resolve => setTimeout(resolve, 1));
-      assert.equal((await health()).lastAttemptStatus, 'failed');
+      await new Promise(resolve => setTimeout(resolve, 10));
+      assert.equal(uploadCount, beforeHeld, 'a rejected authoritative save never starts backup upload');
       assert.equal((await health()).fresh, false);
       assert.ok(expectedErrors.some(args => args.some(value => String(value).includes('Synthetic save failure'))), 'app storage rejection reached the server error handler');
     } finally { console.error = originalError; }
-    const retry = receipt(); retry.attempt.at = new Date(Date.now() - backup.RETRY_AFTER_MS - 100).toISOString(); overwriteReceipt(retry);
     mode = 'success';
     assert.equal((await request('/api/auth/me')).status, 200);
     assert.equal((await health()).fresh, true);
@@ -264,6 +265,56 @@ async function verify(input = snapshot, extra = {}) {
     assert.equal((await health()).lastVerifiedAt, null);
     assert.equal((await request('/api/auth/me')).status, 200);
     assert.equal((await health()).fresh, true, 'a later write can re-establish verified evidence');
+
+    // Production primary writes must acknowledge the authoritative commit without
+    // waiting for backup storage. A hung backup cannot retain the tenant queue.
+    fs.rmSync(directory, { recursive: true, force: true });
+    const originalTransactional = {
+      load: supabase.loadTransactionalSnapshot,
+      save: supabase.saveTransactionalSnapshot,
+      createBackup: supabase.createVerifiedBackup
+    };
+    let primaryState = {
+      snapshot: JSON.parse(fs.readFileSync(process.env.PDL_DB_FILE, 'utf8')),
+      revision: 40,
+      contentHash: null
+    };
+    primaryState.contentHash = canonicalHash(primaryState.snapshot);
+    let hungBackupCalls = 0;
+    Object.assign(process.env, { PDL_TRANSACTIONAL_DB: 'primary', PDL_BACKUP_VERIFICATION_TIMEOUT_MS: '50' });
+    supabase.loadTransactionalSnapshot = async () => structuredClone(primaryState);
+    supabase.saveTransactionalSnapshot = async (next, expectedRevision) => {
+      assert.equal(expectedRevision, primaryState.revision);
+      primaryState = { snapshot: structuredClone(next), revision: primaryState.revision + 1, contentHash: canonicalHash(next) };
+      return { companyId, revision: primaryState.revision, contentHash: primaryState.contentHash, records: 0 };
+    };
+    supabase.createVerifiedBackup = (_next, { signal }) => {
+      hungBackupCalls += 1;
+      return new Promise(() => signal.addEventListener('abort', () => {}, { once: true }));
+    };
+    const unhandled = [];
+    const recordUnhandled = reason => unhandled.push(reason);
+    process.on('unhandledRejection', recordUnhandled);
+    try {
+      const queueStartedAt = Date.now();
+      assert.equal((await request('/api/auth/me')).status, 200, 'the committed write does not wait for backup storage');
+      assert.equal((await request('/api/auth/me')).status, 200, 'a later same-tenant request is not trapped behind backup storage');
+      assert.ok(Date.now() - queueStartedAt < 1000, 'both same-tenant requests complete before the detached backup deadline');
+      assert.equal(hungBackupCalls, 1, 'in-flight coalescing prevents a duplicate backup');
+      for (let i = 0; backup.publicStatus(directory, companyId).lastAttemptStatus !== 'failed' && i < 100; i++) {
+        await new Promise(resolve => setTimeout(resolve, 2));
+      }
+      assert.equal(backup.publicStatus(directory, companyId).lastAttemptStatus, 'failed', 'the detached timeout is recorded for a bounded retry');
+      await new Promise(resolve => setImmediate(resolve));
+      assert.deepEqual(unhandled, [], 'detached backup failures are handled and cannot become process-level rejections');
+    } finally {
+      process.removeListener('unhandledRejection', recordUnhandled);
+      process.env.PDL_TRANSACTIONAL_DB = 'off';
+      delete process.env.PDL_BACKUP_VERIFICATION_TIMEOUT_MS;
+      supabase.loadTransactionalSnapshot = originalTransactional.load;
+      supabase.saveTransactionalSnapshot = originalTransactional.save;
+      supabase.createVerifiedBackup = originalTransactional.createBackup;
+    }
     console.log('Backup verification passed: upload/download/hash completion, failures/retry, legacy/local false-positive denial, scoped private receipts, client forgery denial, process restart and ephemeral reset. No production providers used.');
   } finally {
     if (server?.listening) await new Promise(resolve => server.close(resolve));

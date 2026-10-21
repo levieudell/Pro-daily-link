@@ -36,6 +36,7 @@ assert.match(saveAsset, /transactionalMode\(\)==='primary'/, 'primary storage fa
 const companyId = '11111111-1111-4111-8111-111111111111';
 const snapshot = {
   company: { id: companyId, name: 'Durable Uploads' },
+  users: [{ id: 1, email: 'durable-owner@example.test', role: 'owner', status: 'Active' }],
   photos: [{ id: 1, storageBucket: 'project-photos', storageKey: `${companyId}/subcontractor.jpg` }],
   estimateImports: [{ id: 2, storageBucket: 'estimate-documents', storageKey: `${companyId}/office.pdf` }],
   projects: [{ id: 3, estimateProposals: [{ id: 4, sourceFile: { storageBucket: 'estimate-documents', storageKey: `${companyId}/field.pdf` } }] }]

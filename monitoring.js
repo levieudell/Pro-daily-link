@@ -18,6 +18,7 @@ const SAFE_TAGS = new Set([
 const SAFE_STATIC_ROUTES = new Set([
   '/',
   '/app',
+  '/internal/founder-renewal-review',
   '/api/account-access',
   '/api/action-center',
   '/api/ai/extract',

@@ -78,20 +78,21 @@ async function readRpc(functionName, params, attempts = 3) {
   throw lastError;
 }
 
-async function upload(bucket, objectKey, bytes, contentType, upsert = false) {
-  if (MANAGED_PRIVATE_BUCKETS[bucket]) await ensurePrivateBucket(bucket, ...MANAGED_PRIVATE_BUCKETS[bucket]);
+async function upload(bucket, objectKey, bytes, contentType, upsert = false, requestOptions = {}) {
+  if (MANAGED_PRIVATE_BUCKETS[bucket]) await ensurePrivateBucket(bucket, ...MANAGED_PRIVATE_BUCKETS[bucket], requestOptions);
   const safeKey = objectKey.split('/').map(encodeURIComponent).join('/');
   const save = () => request(`/storage/v1/object/${bucket}/${safeKey}`, {
     method: 'POST',
     headers: { 'Content-Type': contentType, 'x-upsert': upsert ? 'true' : 'false' },
-    body: bytes
+    body: bytes,
+    signal: requestOptions.signal
   });
   try {
     await save();
   } catch (error) {
     if (!/Bucket not found|NoSuchBucket/i.test(String(error.message))) throw error;
     const [fileSizeLimit, allowedMimeTypes] = MANAGED_PRIVATE_BUCKETS[bucket] || [Math.max(6_000_000, Buffer.byteLength(bytes)), [contentType]];
-    await ensurePrivateBucket(bucket, fileSizeLimit, allowedMimeTypes);
+    await ensurePrivateBucket(bucket, fileSizeLimit, allowedMimeTypes, requestOptions);
     await save();
   }
   return { bucket, objectKey, url: `/api/files/${encodeURIComponent(bucket)}/${safeKey}` };
@@ -104,19 +105,20 @@ async function remove(bucket, objectKey) {
   return true;
 }
 
-async function ensurePrivateBucket(bucket, fileSizeLimit = 25_000_000, allowedMimeTypes = ['application/json']) {
+async function ensurePrivateBucket(bucket, fileSizeLimit = 25_000_000, allowedMimeTypes = ['application/json'], requestOptions = {}) {
   if (!configured()) return false;
   const response = await fetch(`${process.env.SUPABASE_URL}/storage/v1/bucket`, {
     method: 'POST',
     headers: headers({ 'Content-Type': 'application/json' }),
-    body: JSON.stringify({ id: bucket, name: bucket, public: false, file_size_limit: fileSizeLimit, allowed_mime_types: allowedMimeTypes })
+    body: JSON.stringify({ id: bucket, name: bucket, public: false, file_size_limit: fileSizeLimit, allowed_mime_types: allowedMimeTypes }),
+    signal: requestOptions.signal
   });
   const responseText = response.ok ? '' : await response.text();
   const alreadyExists = response.status === 409 || /BucketAlreadyExists|resource already exists/i.test(responseText);
   if (!response.ok && !alreadyExists) throw new Error(`Supabase bucket setup failed (${response.status}): ${responseText.slice(0, 300)}`);
   if (alreadyExists) {
     const readBucket = async () => {
-      const current = await request(`/storage/v1/bucket/${encodeURIComponent(bucket)}`);
+      const current = await request(`/storage/v1/bucket/${encodeURIComponent(bucket)}`, { signal: requestOptions.signal });
       return current.json();
     };
     const matches = value => {
@@ -128,7 +130,8 @@ async function ensurePrivateBucket(bucket, fileSizeLimit = 25_000_000, allowedMi
     if (!matches(current)) {
       await request(`/storage/v1/bucket/${encodeURIComponent(bucket)}`, {
         method: 'PUT', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id: bucket, name: bucket, public: false, file_size_limit: fileSizeLimit, allowed_mime_types: allowedMimeTypes })
+        body: JSON.stringify({ id: bucket, name: bucket, public: false, file_size_limit: fileSizeLimit, allowed_mime_types: allowedMimeTypes }),
+        signal: requestOptions.signal
       });
       current = await readBucket();
     }
@@ -169,24 +172,24 @@ async function listByPrefix(bucket, prefix) {
   throw new Error(`Supabase object listing exceeded the safety limit for ${bucket}/${normalized}`);
 }
 
-async function createVerifiedBackup(snapshot) {
+async function createVerifiedBackup(snapshot, requestOptions = {}) {
   if (!configured()) return null;
-  await ensurePrivateBucket('tenant-backups');
+  await ensurePrivateBucket('tenant-backups', ...MANAGED_PRIVATE_BUCKETS['tenant-backups'], requestOptions);
   const bytes = Buffer.from(JSON.stringify(snapshot));
   const hash = crypto.createHash('sha256').update(bytes).digest('hex');
   const companyId = snapshot.company.id;
   const stamp = new Date().toISOString().replace(/[:.]/g, '-');
   const objectKey = `${companyId}/${stamp}-${hash.slice(0, 12)}.json`;
-  await upload('tenant-backups', objectKey, bytes, 'application/json');
-  const restored = Buffer.from(await (await download('tenant-backups', objectKey)).arrayBuffer());
+  await upload('tenant-backups', objectKey, bytes, 'application/json', false, requestOptions);
+  const restored = Buffer.from(await (await download('tenant-backups', objectKey, requestOptions)).arrayBuffer());
   const restoredHash = crypto.createHash('sha256').update(restored).digest('hex');
   if (restoredHash !== hash) throw new Error('Supabase backup verification failed');
   return { bucket: 'tenant-backups', objectKey, hash, bytes: bytes.length, verifiedAt: new Date().toISOString() };
 }
 
-async function download(bucket, objectKey) {
+async function download(bucket, objectKey, requestOptions = {}) {
   const safeKey = objectKey.split('/').map(encodeURIComponent).join('/');
-  return request(`/storage/v1/object/${bucket}/${safeKey}`);
+  return request(`/storage/v1/object/${bucket}/${safeKey}`, { signal: requestOptions.signal });
 }
 
 async function loadCompanySnapshot(companyId) {

@@ -28,9 +28,10 @@ function emptyStore() {
   return { clients: [], codes: [], tokens: [], tickets: [], idempotency: [] };
 }
 
-function createStore({ file, loadCloud, saveCloud }) {
+function createStore({ file, loadCloud, saveCloud, assertWrite = () => {} }) {
   let chain = Promise.resolve();
   let primed = false;
+  let readOnlyCloud = null;
   async function read() {
     if (!primed) {
       primed = true;
@@ -38,8 +39,18 @@ function createStore({ file, loadCloud, saveCloud }) {
         try {
           const cloud = await loadCloud();
           if (cloud && typeof cloud === 'object') {
-            fs.mkdirSync(path.dirname(file), { recursive: true });
-            fs.writeFileSync(file, JSON.stringify(cloud));
+            const normalized = { ...emptyStore(), ...cloud };
+            try {
+              assertWrite();
+              fs.mkdirSync(path.dirname(file), { recursive: true });
+              fs.writeFileSync(file, JSON.stringify(normalized));
+            } catch (error) {
+              if (error?.code !== 'MAINTENANCE_READ_ONLY') throw error;
+              // The cloud snapshot is already authoritative read data. Keep a
+              // private in-memory copy so existing connector tokens continue
+              // to authenticate while maintenance prevents cache hydration.
+              readOnlyCloud = normalized;
+            }
           }
         } catch (error) {
           console.error('MCP OAuth cloud load failed', error.message);
@@ -47,7 +58,11 @@ function createStore({ file, loadCloud, saveCloud }) {
       }
     }
     try {
-      if (!fs.existsSync(file)) return emptyStore();
+      if (!fs.existsSync(file)) {
+        // Updates mutate their input before the write fence rejects them, so
+        // never return the retained snapshot by reference.
+        return readOnlyCloud ? JSON.parse(JSON.stringify(readOnlyCloud)) : emptyStore();
+      }
       const parsed = JSON.parse(fs.readFileSync(file, 'utf8'));
       return { ...emptyStore(), ...parsed };
     } catch {
@@ -55,6 +70,7 @@ function createStore({ file, loadCloud, saveCloud }) {
     }
   }
   function write(data) {
+    assertWrite();
     fs.mkdirSync(path.dirname(file), { recursive: true });
     const tmp = `${file}.tmp`;
     fs.writeFileSync(tmp, JSON.stringify(data));
@@ -69,8 +85,12 @@ function createStore({ file, loadCloud, saveCloud }) {
       data.tokens = (data.tokens || []).filter(row => Date.parse(row.refreshExpiresAt) > now && !row.revoked);
       data.idempotency = (data.idempotency || []).filter(row => Date.parse(row.expiresAt) > now).slice(-2000);
       const result = await fn(data);
+      assertWrite();
       write(data);
-      if (saveCloud) saveCloud(data).catch(error => console.error('MCP OAuth cloud save failed', error.message));
+      if (saveCloud) {
+        assertWrite();
+        saveCloud(data).catch(error => console.error('MCP OAuth cloud save failed', error.message));
+      }
       return result;
     });
     chain = run.then(() => {}, () => {});

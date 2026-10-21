@@ -5,7 +5,7 @@ Run `npm run launch:check` after adding the values below. This command checks co
 ## Already connected
 
 - Supabase: `SUPABASE_URL`, `SUPABASE_SECRET_KEY`, and `PDL_SUPABASE_ENABLED=1`
-- Public app: `PDL_PUBLIC_URL=https://pro-daily-link-demo.onrender.com`
+- Public app: `PDL_PUBLIC_URL=https://app.prodailylink.com`
 - Authentication: `PDL_REQUIRE_AUTH=1`
 
 ## Connect when the accounts are ready
@@ -22,6 +22,9 @@ Add these Render environment variables:
 - `STRIPE_PRICE_PRO`
 - `STRIPE_PRICE_PRO_ANNUAL`
 - `STRIPE_WEBHOOK_SECRET`
+- `STRIPE_PORTAL_CONFIG_STANDARD`
+- `STRIPE_PORTAL_CONFIG_FOUNDER`
+- all six `STRIPE_PRICE_FOUNDER_*` values and `STRIPE_PRICE_ASSISTED_SETUP`
 
 Create recurring Stripe prices for each billing interval:
 
@@ -31,12 +34,13 @@ Create recurring Stripe prices for each billing interval:
 
 After this change is merged and deployed, create a **test-mode** snapshot event destination at:
 
-`https://pro-daily-link-demo.onrender.com/api/billing/webhook`
+`https://app.prodailylink.com/api/billing/webhook`
 
 Confirm this is the intended Render service before registering the destination. Subscribe to:
 
 - `checkout.session.completed`
 - `checkout.session.async_payment_succeeded`
+- `checkout.session.async_payment_failed`
 - `customer.subscription.created`
 - `customer.subscription.updated`
 - `customer.subscription.deleted`
@@ -66,7 +70,11 @@ Add `OPENAI_API_KEY` for Spanish translation and scanned-estimate extraction. Th
 
 Create a hosted Sentry Node project and add `SENTRY_DSN` privately in Render. Never paste the DSN into source control, support messages, or documentation. The server accepts only an HTTPS `*.sentry.io` DSN and reports monitoring active only after the SDK exposes the initialized hosted Sentry client. The server sends only a scrubbed stack location plus request ID, method, and a token-safe route name. Request bodies, headers, cookies, query strings, user data, breadcrumbs, local variables, AI inputs/outputs, database values, outbound HTTP instrumentation, and performance traces are disabled. Enabling tracing or outbound HTTP instrumentation requires a separate privacy and cost review.
 
-After Render restarts, confirm `/api/health` reports `services.monitoring: true`. Then run `npm run monitor:verify` once from a Render shell. The command confirms only that the controlled event was queued and the SDK flush completed; it does not prove delivery. Confirm through the Sentry UI or API that the tagged `MonitoringVerificationError` arrived in the intended project, inspect the event to verify that it contains no customer data or access tokens, configure a new-issue alert for the named on-call recipient, and confirm that person receives the alert. A `true` health flag proves only that a hosted Sentry client initialized; it does not prove event delivery or human notification. On `SIGTERM` or `SIGINT`, the server first drains active requests and then gives Sentry the remainder of a two-second hard deadline to flush before exiting, so in-flight failures are included without allowing Render deploys to hang indefinitely.
+The six-hour independent provider workflow emits a controlled scrubbed event and retrieves it through the Sentry API before it can publish a readiness receipt. A DSN or SDK-initialized flag alone never makes `/api/health` green. Inspect the controlled event once to verify that it contains no customer data or access tokens, configure a new-issue alert for the named on-call recipient, and separately confirm that person receives the alert. On `SIGTERM` or `SIGINT`, the server first drains active requests and then gives Sentry the remainder of a two-second hard deadline to flush before exiting, so in-flight failures are included without allowing Render deploys to hang indefinitely.
+
+### Independent provider readiness
+
+Configure `.github/workflows/provider-readiness.yml` with the documented least-privilege Stripe, Resend, Sentry, Supabase, and Ed25519 secrets. Run `npm run services:verify-active` only in that approved external runner. It sends one controlled monitor email and one scrubbed Sentry event, performs read-only Stripe inventory/configuration checks, and writes only its signed readiness evidence. It never creates a charge or changes a provider setting. Render stores only `PDL_PROVIDER_ATTESTATION_PUBLIC_KEY`; never place the matching private key in Render.
 
 ### Backup restoration
 

@@ -1,21 +1,31 @@
 'use strict';
 
 const assert = require('node:assert/strict');
-const { parseArgs, selectSnapshots } = require('./database/migrate-transactional');
+const path = require('node:path');
+const { main } = require('./database/migrate-transactional');
+const { CONFIRMATION, parseArgs } = require('./database/transactional-backfill');
 
-assert.deepEqual(parseArgs([]), { apply: false, all: false, companyId: '' });
-assert.deepEqual(parseArgs(['--apply', '--company-id', 'qa-id']), { apply: true, all: false, companyId: 'qa-id' });
-assert.throws(() => parseArgs(['--apply']), /Refusing an unscoped migration/);
-assert.throws(() => parseArgs(['--apply', '--all', '--company-id', 'qa-id']), /either --company-id or --all/);
-assert.throws(() => parseArgs(['--company-id']), /requires a company UUID/);
-
-const snapshots = [
-  { company: { id: 'qa-id', name: 'QA' } },
-  { company: { id: 'archived', archivedDuplicate: true } },
-  { platform: true, company: { id: 'platform' } }
+const sha256 = 'a'.repeat(64);
+const common = [
+  '--all',
+  '--evidence', path.resolve('backfill-evidence.json'),
+  '--production-target', 'abcdefghijklmnopqrst',
+  '--expected-service-id', 'srv-abcdefghijklmnopqrst',
+  '--expected-instance-id', 'instance-transactional-backfill',
+  '--expected-population-manifest', path.resolve('population.json'),
+  '--expected-population-sha256', sha256
 ];
-assert.deepEqual(selectSnapshots(snapshots, '').map(row => row.company.id), ['qa-id']);
-assert.deepEqual(selectSnapshots(snapshots, 'qa-id').map(row => row.company.id), ['qa-id']);
-assert.throws(() => selectSnapshots(snapshots, 'missing'), /Company snapshot not found/);
+
+assert.equal(typeof main, 'function');
+assert.equal(parseArgs(common).apply, false);
+assert.throws(() => parseArgs([]), /requires --all/);
+assert.throws(() => parseArgs([...common, '--company-id', 'qa-id']), /Unsupported transactional backfill argument/);
+assert.throws(() => parseArgs([...common, '--apply']), /confirm-population-sha256/);
+assert.equal(parseArgs([
+  ...common,
+  '--apply',
+  '--confirm-population-sha256', sha256,
+  '--confirm-action', CONFIRMATION
+]).apply, true);
 
 console.log('Transactional migration safety tests passed.');

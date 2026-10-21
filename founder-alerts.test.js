@@ -6,7 +6,7 @@
 // app. PDL_FOUNDER_ALERTS=0 silences emails while still recording the audit.
 const assert = require('node:assert/strict'), fs = require('node:fs');
 const founderAlerts = require('./founder-alerts');
-const { platformOwnerRecipients, buildAlertEmail, sendFounderAlert, demoRequestAlert, trialSignupAlert, subscriptionActivatedAlert } = founderAlerts;
+const { platformOwnerRecipients, buildAlertEmail, sendFounderAlert, demoRequestAlert, trialSignupAlert, subscriptionActivatedAlert, renewalReviewAlert } = founderAlerts;
 const server = fs.readFileSync('server.js', 'utf8');
 
 // --- Recipients -------------------------------------------------------------
@@ -116,6 +116,17 @@ async function captureFetch(status = 200) {
     assert.ok(payload.html.includes('$399/mo'));
   }
 
+  { // founder renewal review: internal milestone and action are explicit
+    const { calls, fetchImpl } = await captureFetch();
+    await renewalReviewAlert({ platform: { users: [{ role: 'platform_owner', status: 'Active', email: 'levie@example.com' }] },
+      company: { name: 'Acme', plan: 'growth', billingCycle: 'annual' },
+      reminder: { days: 60, protectedUntil: '2028-09-28T00:00:00.000Z' }, env, fetchImpl, persist: async () => {} });
+    const payload = JSON.parse(calls[0][1].body);
+    assert.match(payload.subject, /Founder review — Acme \(60 days\)/);
+    assert.ok(payload.html.includes('September 28, 2028'));
+    assert.ok(payload.html.includes('record the decision'));
+  }
+
   // --- Server wiring contracts ----------------------------------------------
   assert.ok(server.includes("require('./founder-alerts')"), 'server loads the alerts module');
   const demoStart = server.indexOf('async function handleDemoRequest');
@@ -127,7 +138,7 @@ async function captureFetch(status = 200) {
   assert.ok(trialAlert > signupStart, 'trial signups alert from the signup handler');
   assert.ok(server.indexOf('wasNotActive=db.company.subscriptionStatus') < server.indexOf('subscriptionActivatedAlert'), 'Active transition is captured before the alert');
   assert.ok(server.indexOf("subscription.status==='trialing')db.company.subscriptionStatus='Incomplete'") < server.indexOf('subscriptionActivatedAlert'), 'paying alert fires after the founder-trialing adjustment, so founder trials do not false-positive');
-  assert.equal((server.match(/Founder alert failed/g) || []).length, 3, 'all three call sites are fire-and-forget');
+  assert.ok(server.includes('retryFounderRenewalReviews'), 'server schedules founder renewal reviews');
 
   console.log('founder alerts: ok');
 })().catch(error => { console.error(error); process.exit(1); });

@@ -31,15 +31,39 @@ services:
         sync: false
       - key: SUPABASE_SECRET_KEY
         sync: false
+      # Independent target binding for production-only recovery and cutover
+      # commands. This is the 20-character project ref, never a URL or key.
+      - key: PDL_PRODUCTION_SUPABASE_PROJECT_REF
+        sync: false
+      # DER/SPKI Ed25519 public key (base64). The independent backup runner
+      # keeps the private signing key; production can verify but cannot forge.
+      - key: PDL_RECOVERY_ATTESTATION_PUBLIC_KEY
+        sync: false
       - key: PDL_PUBLIC_URL
         value: https://app.prodailylink.com
       - key: RESEND_API_KEY
         sync: false
       - key: RESEND_FROM
         value: Pro Daily Link <support@prodailylink.com>
+      - key: RESEND_REPLY_TO
+        value: support@prodailylink.com
+      # Non-secret operator rotation labels bind independent verification to
+      # the exact runtime credential generation without hashing credentials.
+      - key: PDL_RESEND_RUNTIME_KEY_VERSION
+        sync: false
       - key: STRIPE_SECRET_KEY
         sync: false
       - key: STRIPE_WEBHOOK_SECRET
+        sync: false
+      - key: PDL_STRIPE_RUNTIME_KEY_VERSION
+        sync: false
+      - key: PDL_STRIPE_WEBHOOK_SECRET_VERSION
+        sync: false
+      # Dedicated portal configurations are validated before every portal
+      # session and by the independent provider-readiness monitor.
+      - key: STRIPE_PORTAL_CONFIG_STANDARD
+        sync: false
+      - key: STRIPE_PORTAL_CONFIG_FOUNDER
         sync: false
       - key: STRIPE_PRICE_STARTER
         sync: false
@@ -53,7 +77,41 @@ services:
         sync: false
       - key: STRIPE_PRICE_PRO_ANNUAL
         sync: false
+      - key: STRIPE_PRICE_FOUNDER_STARTER
+        sync: false
+      - key: STRIPE_PRICE_FOUNDER_STARTER_ANNUAL
+        sync: false
+      - key: STRIPE_PRICE_FOUNDER_GROWTH
+        sync: false
+      - key: STRIPE_PRICE_FOUNDER_GROWTH_ANNUAL
+        sync: false
+      - key: STRIPE_PRICE_FOUNDER_PRO
+        sync: false
+      - key: STRIPE_PRICE_FOUNDER_PRO_ANNUAL
+        sync: false
+      - key: STRIPE_PRICE_ASSISTED_SETUP
+        sync: false
+      - key: STRIPE_PRODUCT_STARTER
+        sync: false
+      - key: STRIPE_PRODUCT_GROWTH
+        sync: false
+      - key: STRIPE_PRODUCT_PRO
+        sync: false
+      - key: STRIPE_PRODUCT_FOUNDER_STARTER
+        sync: false
+      - key: STRIPE_PRODUCT_FOUNDER_GROWTH
+        sync: false
+      - key: STRIPE_PRODUCT_FOUNDER_PRO
+        sync: false
+      - key: STRIPE_PRODUCT_ASSISTED_SETUP
+        sync: false
+      # Only the independent provider monitor owns the matching private key.
+      # Render verifies its signed, target-bound readiness receipt.
+      - key: PDL_PROVIDER_ATTESTATION_PUBLIC_KEY
+        sync: false
       - key: OPENAI_API_KEY
         sync: false
       - key: SENTRY_DSN
+        sync: false
+      - key: PDL_SENTRY_RUNTIME_DSN_VERSION
         sync: false
