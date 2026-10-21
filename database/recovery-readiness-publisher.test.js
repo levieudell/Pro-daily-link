@@ -20,6 +20,7 @@ const companyA = '11111111-1111-4111-8111-111111111111';
 const companyB = '22222222-2222-4222-8222-222222222222';
 const nowIso = '2026-10-20T20:00:00.000Z';
 const nowMs = Date.parse(nowIso);
+const cliSourcePath = path.resolve('backup', 'source.json');
 const sha = value => crypto.createHash('sha256').update(String(value)).digest('hex');
 
 function recoveryEntry(seed, revision) {
@@ -144,15 +145,15 @@ function memoryStorage(hooks = {}) {
 
 async function main() {
   assert.equal(parseArgs([
-    'validate', '--source', 'C:\\backup\\source.json', '--production-target', projectRef
+    'validate', '--source', cliSourcePath, '--production-target', projectRef
   ]).command, 'validate');
   assert.equal(parseArgs([
-    'publish', '--source', 'C:\\backup\\source.json', '--production-target', projectRef,
+    'publish', '--source', cliSourcePath, '--production-target', projectRef,
     '--expected-attestation-sha256', 'a'.repeat(64), '--confirm-action', CONFIRMATION, '--apply'
   ]).apply, true);
-  assert.throws(() => parseArgs(['publish', '--source', 'C:\\backup\\source.json', '--production-target', projectRef]), /--apply/);
+  assert.throws(() => parseArgs(['publish', '--source', cliSourcePath, '--production-target', projectRef]), /--apply/);
   assert.throws(() => parseArgs([
-    'validate', '--source', 'C:\\backup\\source.json', '--production-target', projectRef, '--apply'
+    'validate', '--source', cliSourcePath, '--production-target', projectRef, '--apply'
   ]), /does not accept/);
 
   const built = buildAttestation(source(), productionTargetSha256(projectRef), nowMs);
