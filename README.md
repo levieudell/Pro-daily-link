@@ -4,7 +4,7 @@ A responsive, interactive MVP for construction field operations. It connects cus
 
 ## Run locally
 
-Start the included Node server (Node 20 or newer):
+Start the included Node server (Node 22 through 24):
 
 ```powershell
 npm start
@@ -63,7 +63,7 @@ To enable genuine AI report extraction, copy `.env.example` to `.env`, provide a
 
 ## Cloud demo
 
-The repository includes `render.yaml` for a Render web service. Secrets are entered in Render's environment settings and must never be committed. Set `PDL_SUPABASE_ENABLED=1` to use Supabase private storage and health checks. The included Blueprint runs with authentication enforcement disabled for a controlled product demo; do not use that setting for a public customer launch.
+The repository includes `render.yaml` for a Render web service. Secrets are entered in Render's environment settings and must never be committed. Set `PDL_SUPABASE_ENABLED=1` to use Supabase private storage and health checks. The included Blueprint requires authentication (`PDL_REQUIRE_AUTH=1`) and uses `/api/health/live` for Render's process-liveness probe; `/api/health` remains the fail-closed operational-readiness endpoint.
 
 This is a connected MVP. Public production launch still requires completing the PostgreSQL repository cutover, backup/restore validation, billing, and monitoring.
 

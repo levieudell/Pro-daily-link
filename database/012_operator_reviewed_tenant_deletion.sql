@@ -501,4 +501,3 @@ GRANT EXECUTE ON FUNCTION public.purge_tenant_repository(uuid,bigint,uuid)
 
 NOTIFY pgrst, 'reload schema';
 COMMIT;
-

@@ -81,4 +81,3 @@ async function staticTests(){
 }
 
 (async()=>{try{await retentionTests();await apiTests();await staticTests();console.log('Data retention and operator-reviewed deletion workflow tests passed')}finally{fs.rmSync(temp,{recursive:true,force:true})}})().catch(error=>{console.error(error);process.exitCode=1});
-
