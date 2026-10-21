@@ -52,32 +52,49 @@ async function assertFits(page, label) {
   assert.ok(box.scroll <= box.width + 1, `${label} overflows ${box.scroll} > ${box.width} ${JSON.stringify(box.offenders)}`);
 }
 
-function backdateOpenPunch(file, minutes) {
-  const db = JSON.parse(fs.readFileSync(file, 'utf8'));
-  const start = new Date(Date.now() - minutes * 60000 - 1500).toISOString();
-  for (const card of db.timeCards || []) if (card.inAt && !card.outAt) card.inAt = start;
-  for (const day of db.workdays || []) if (day.status === 'active') day.startedAt = start;
-  fs.writeFileSync(file, JSON.stringify(db));
+function sessionClient(base) {
+  const cookies = new Map();
+  return async (route, options = {}) => {
+    const response = await fetch(base + route, {
+      ...options,
+      headers: {
+        'Content-Type': 'application/json',
+        Cookie: [...cookies].map(([name, value]) => `${name}=${value}`).join('; '),
+        ...(options.headers || {})
+      }
+    });
+    for (const header of response.headers.getSetCookie()) {
+      const pair = header.split(';')[0];
+      const separator = pair.indexOf('=');
+      cookies.set(pair.slice(0, separator), pair.slice(separator + 1));
+    }
+    const contentType = response.headers.get('content-type') || '';
+    const data = contentType.includes('application/json') ? await response.json() : await response.text();
+    return { response, data };
+  };
 }
 
-async function settleOpenPunch(page, file, minutes) {
-  let detail = null;
-  for (let attempt = 0; attempt < 20; attempt += 1) {
-    backdateOpenPunch(file, minutes);
-    detail = await page.evaluate(async () => {
-      if (typeof refreshTimeCards === 'function') await refreshTimeCards();
-      const open = (typeof timeCards === 'undefined' ? [] : timeCards).filter(card => card && card.inAt && !card.outAt && !card.deletedAt);
-      return open.map(card => ({
-        projectId: Number(card.projectId),
-        date: card.date || '',
-        memberId: Number(card.memberId),
-        minutes: Math.floor((Date.now() - new Date(card.inAt).getTime()) / 60000)
-      }));
-    });
-    if (detail.some(card => card.minutes >= minutes)) return detail;
-    await new Promise(resolve => setTimeout(resolve, 500));
-  }
-  throw new Error('open punch stayed under a minute ' + JSON.stringify(detail));
+async function settleOpenPunch(page, ownerApi, minutes) {
+  const listed = await ownerApi('/api/time-cards');
+  assert.equal(listed.response.status, 200, `owner could not read time cards: ${JSON.stringify(listed.data)}`);
+  const card = listed.data.find(row => row && row.inAt && !row.outAt && !row.deletedAt);
+  assert.ok(card, `owner could not find the open punch: ${JSON.stringify(listed.data)}`);
+  const inAt = new Date(Date.now() - minutes * 60000 - 1500).toISOString();
+  const updated = await ownerApi(`/api/time-cards/${card.id}`, {
+    method: 'PATCH',
+    body: JSON.stringify({ inAt, reason: 'Backdate active punch for field browser test' })
+  });
+  assert.equal(updated.response.status, 200, `owner could not backdate the open punch: ${JSON.stringify(updated.data)}`);
+  return page.evaluate(async () => {
+    if (typeof refreshTimeCards === 'function') await refreshTimeCards();
+    const open = (typeof timeCards === 'undefined' ? [] : timeCards).filter(card => card && card.inAt && !card.outAt && !card.deletedAt);
+    return open.map(card => ({
+      projectId: Number(card.projectId),
+      date: card.date || '',
+      memberId: Number(card.memberId),
+      minutes: Math.floor((Date.now() - new Date(card.inAt).getTime()) / 60000)
+    }));
+  });
 }
 
 async function shot(page, name) {
@@ -198,6 +215,12 @@ async function openNav(page, name) {
       };
       poll();
     });
+    const ownerApi = sessionClient(`http://127.0.0.1:${port}`);
+    const ownerLogin = await ownerApi('/api/auth/login', {
+      method: 'POST',
+      body: JSON.stringify({ email: OWNER_EMAIL, password: OWNER_PASSWORD })
+    });
+    assert.equal(ownerLogin.response.status, 200, `owner API login failed: ${JSON.stringify(ownerLogin.data)}`);
     page = await browser.newPage();
     page.__port = port;
     await page.setViewport({ width: 390, height: 844, deviceScaleFactor: 2, isMobile: true, hasTouch: true });
@@ -259,8 +282,8 @@ async function openNav(page, name) {
     assert.equal(started.project, '3', 'clock-in stays on Cedar Grove');
     assert.equal(started.people.length, 1);
     await page.click('#confirm-start-day');
-    await page.waitForFunction(() => /CLOCKED IN/i.test(document.querySelector('#field-clock-status-label')?.textContent || ''), { timeout: 20000 });
-    const punch = await settleOpenPunch(page, path.join(root, 'db.json'), 8);
+    await page.waitForFunction(() => (document.querySelector('#field-clock-status-label')?.textContent || '').trim() === 'CLOCKED IN', { timeout: 20000 });
+    const punch = await settleOpenPunch(page, ownerApi, 8);
     assert.ok(punch.some(card => card.minutes >= 8 && card.projectId === 3), JSON.stringify(punch));
     await openNav(page, 'myday');
     await page.waitForSelector('#myday-page.active [data-assignment-daily]');
@@ -291,7 +314,7 @@ async function openNav(page, name) {
       return button && !button.hidden && job && job.getBoundingClientRect().height > 0;
     }, { timeout: 20000 });
     await assertClockOutClear(page, 'clock out vs today job');
-    await settleOpenPunch(page, path.join(root, 'db.json'), 8);
+    await settleOpenPunch(page, ownerApi, 8);
     await page.click('#report-next-step');
     await page.waitForFunction(() => {
       const button = document.querySelector('#report-next-step');
