@@ -4,6 +4,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const backupVerification = require('./database/backup-verification');
+const { tenantStorageNamespace } = require('./database/transactional-repository');
 
 delete process.env.RESEND_API_KEY;
 const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pdl-digest-'));
@@ -42,8 +43,9 @@ fs.writeFileSync(platformFile, JSON.stringify({
     backupSnapshot.company.persistence = {revision: 1};
     const backupBytes = Buffer.from(JSON.stringify(backupSnapshot));
     const backupHash = crypto.createHash('sha256').update(backupBytes).digest('hex');
+    const backupNamespace = tenantStorageNamespace(backupSnapshot);
     await backupVerification.createAndRecordVerification(backupSnapshot, {directory: path.join(tempDir, '.backup-verification'),
-      createBackup: async () => ({bucket: 'tenant-backups', objectKey: `${backupSnapshot.company.id}/synthetic.json`, hash: backupHash, bytes: backupBytes.length, verifiedAt: new Date().toISOString()})});
+      createBackup: async () => ({bucket: 'tenant-backups', objectKey: `${backupNamespace}/synthetic.json`, hash: backupHash, bytes: backupBytes.length, verifiedAt: new Date().toISOString()})});
 
     // Scheduling: every digest lands on Monday 08:00 America/Chicago.
     assert.equal(nextWeeklyDigestDue(new Date('2026-10-07T15:00:00Z')).getTime(), Date.UTC(2026, 9, 12, 13, 0), 'Wednesday -> Monday Oct 12, 08:00 CDT = 13:00 UTC');

@@ -1,6 +1,7 @@
 'use strict';
 
 const CONFIGURATION_ID = /^bpc_[A-Za-z0-9]{8,100}$/;
+const CONFIGURATION_EXPAND = Object.freeze(['features.subscription_update.products']);
 
 function failure(message, statusCode = 503) {
   return Object.assign(new Error(message), { statusCode });
@@ -93,4 +94,4 @@ function summary(company, env = process.env) {
   }
 }
 
-module.exports = { CONFIGURATION_ID, failure, founderAccount, portalPriceIds, priceIds, requiredStandardPriceIds, select, summary, validate };
+module.exports = { CONFIGURATION_EXPAND, CONFIGURATION_ID, failure, founderAccount, portalPriceIds, priceIds, requiredStandardPriceIds, select, summary, validate };

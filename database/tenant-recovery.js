@@ -11,6 +11,7 @@ const {
   readVerifiedTenantObjects,
   validateTenantRestoreSnapshot,
   validateTenantFinalRestoreSnapshot,
+  normalizeRecoveredCompanyLogo,
   isMissingStorageObjectError,
   digest
 } = require('./portable-backup');
@@ -375,6 +376,7 @@ function requireInitializedTenantRestoreTarget(before, companyId) {
 
 function prepareTenantRestore(snapshot, currentSnapshot = {}, restoredAt = new Date().toISOString()) {
   const restored = structuredClone(snapshot);
+  normalizeRecoveredCompanyLogo(restored);
   restored.sessions = [];
   restored.users = mergeForwardTenantIdentities(restored.users, currentSnapshot?.users, restoredAt);
   restored.subcontractorLinks = (restored.subcontractorLinks || []).map(link => {

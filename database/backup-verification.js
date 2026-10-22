@@ -3,6 +3,7 @@
 const crypto = require('node:crypto');
 const fs = require('node:fs');
 const path = require('node:path');
+const { tenantStorageNamespace } = require('./transactional-repository');
 
 const BACKUP_INTERVAL_MS = 24 * 60 * 60 * 1000;
 const FRESHNESS_MS = 36 * 60 * 60 * 1000;
@@ -51,7 +52,7 @@ function validVerification(value, companyId, now) {
   const time = milliseconds(value?.verifiedAt);
   return value?.method === 'upload-download-sha256' && Number.isFinite(time) && time <= now &&
     value.bucket === 'tenant-backups' && typeof value.objectKey === 'string' &&
-    value.objectKey.startsWith(String(companyId) + '/') && !value.objectKey.includes('..') &&
+    value.objectKey.startsWith(tenantStorageNamespace(companyId) + '/') && !value.objectKey.includes('..') &&
     /^[a-f0-9]{64}$/.test(value.sha256 || '') && Number.isSafeInteger(value.bytes) && value.bytes > 0 &&
     Number.isSafeInteger(value.sourceRevision) && value.sourceRevision >= 0 &&
     /^[a-f0-9]{64}$/.test(value.sourceContentHash || '');

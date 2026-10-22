@@ -191,7 +191,8 @@ async function createVerifiedBackup(snapshot, requestOptions = {}) {
   await ensurePrivateBucket('tenant-backups', ...MANAGED_PRIVATE_BUCKETS['tenant-backups'], requestOptions);
   const bytes = Buffer.from(JSON.stringify(snapshot));
   const hash = crypto.createHash('sha256').update(bytes).digest('hex');
-  const companyId = snapshot.company.id;
+  const { tenantStorageNamespace } = require('./transactional-repository');
+  const companyId = tenantStorageNamespace(snapshot);
   const stamp = new Date().toISOString().replace(/[:.]/g, '-');
   const objectKey = `${companyId}/${stamp}-${hash.slice(0, 12)}.json`;
   await upload('tenant-backups', objectKey, bytes, 'application/json', false, requestOptions);

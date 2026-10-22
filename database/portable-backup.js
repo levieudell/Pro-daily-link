@@ -4,7 +4,7 @@ const crypto = require('node:crypto');
 const fs = require('node:fs');
 const path = require('node:path');
 const supabase = require('./supabase');
-const { canonicalHash, databaseCompanyId } = require('./transactional-repository');
+const { canonicalHash, databaseCompanyId, tenantStorageNamespace } = require('./transactional-repository');
 
 const FORMAT = 'pdl-portable-backup-v1';
 const SNAPSHOT_SCHEMA = 'pdl-tenant-snapshot-v1';
@@ -280,14 +280,17 @@ function storageReferenceKind(value) {
   const normalized = trimmed.replaceAll('\\', '/');
   if (/^(?:\/\/|\/?uploads(?:\/|$)|\/?api\/(?:files|local-files)(?:\/|$)|file:\/\/|[a-z]:\/)/i.test(normalized)) return 'local';
   if (/^data:/i.test(normalized)) {
-    return raw === trimmed && /^data:[^,\r\n]*,/i.test(trimmed) ? null : 'external';
+    return raw === trimmed && /^data:[a-z0-9][a-z0-9!#$&^_.+-]*\/[a-z0-9][a-z0-9!#$&^_.+-]*(?:;[^,\r\n]*)?,[^\r\n]*$/i.test(trimmed) ? null : 'external';
   }
   if (/^[a-z][a-z0-9+.-]*:/i.test(normalized)) return 'external';
-  return null;
+  // An unknown string is not proof that the bytes are embedded in the
+  // snapshot. Treat every other non-empty form as unsupported rather than
+  // silently producing a recovery set that cannot recreate the asset.
+  return 'unsupported';
 }
 
 function collectStorageReferences(snapshot) {
-  const companyId = databaseCompanyId(snapshot?.company?.id);
+  const companyId = tenantStorageNamespace(snapshot);
   const references = new Map();
   const add = (asset, source) => {
     if (!asset || typeof asset !== 'object') return;
@@ -329,6 +332,23 @@ function collectStorageReferences(snapshot) {
     for (const proposal of project.estimateProposals || []) add(proposal.sourceFile, `projects:${project.id}:estimateProposals:${proposal.id}`);
   }
   return [...references.values()].sort((a, b) => `${a.bucket}/${a.objectKey}`.localeCompare(`${b.bucket}/${b.objectKey}`));
+}
+
+function normalizeRecoveredCompanyLogo(snapshot) {
+  const logo = snapshot?.company?.logo;
+  if (!logo || typeof logo !== 'object' || Array.isArray(logo)) return snapshot;
+  const reference = collectStorageReferences({ company: snapshot.company })
+    .find(candidate => candidate.source === 'company.logo');
+  if (!reference) return snapshot;
+  // The live logo endpoint reads the canonical bucket/objectKey fields. Older
+  // snapshots sometimes retained only the authenticated /api/files route (or
+  // storageBucket/storageKey aliases), which was exportable but unreadable
+  // after restore. Normalize the already-validated pointer before persistence.
+  logo.bucket = reference.bucket;
+  logo.objectKey = reference.objectKey;
+  delete logo.storageBucket;
+  delete logo.storageKey;
+  return snapshot;
 }
 
 async function createPortableBackup({
@@ -430,6 +450,7 @@ function verifyPortableBackup(directory, { expectedCompanyId = null } = {}) {
   verifyHashEntry(snapshotBytes, manifest.snapshot?.sha256, manifest.snapshot?.bytes, 'Tenant snapshot');
   const snapshot = JSON.parse(snapshotBytes.toString('utf8'));
   validateTenantSnapshot(snapshot);
+  const storageCompanyId = tenantStorageNamespace(snapshot);
   const contentHash = canonicalHash(snapshot);
   if (databaseCompanyId(snapshot.company?.id) !== companyId || contentHash !== manifest.snapshot?.canonicalSha256) throw new Error('Tenant snapshot identity or canonical SHA-256 verification failed.');
   const authorityMode = String(manifest.authority?.mode || '');
@@ -439,7 +460,7 @@ function verifyPortableBackup(directory, { expectedCompanyId = null } = {}) {
   const seenObjects = new Set(), seenFiles = new Set(), objectEntries = [];
   for (const object of manifest.objects || []) {
     const bucket = safeBucket(object.bucket);
-    const objectKey = safeObjectKey(object.objectKey, companyId);
+    const objectKey = safeObjectKey(object.objectKey, storageCompanyId);
     const key = `${bucket}/${objectKey}`;
     if (seenObjects.has(key)) throw new Error(`Duplicate tenant backup object: ${key}`);
     seenObjects.add(key);
@@ -560,6 +581,7 @@ module.exports = {
   validateTenantRestoreSnapshot,
   validateTenantFinalRestoreSnapshot,
   collectStorageReferences,
+  normalizeRecoveredCompanyLogo,
   createPortableBackup,
   verifyPortableBackup,
   readVerifiedTenantObjects,

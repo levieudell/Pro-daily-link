@@ -130,6 +130,11 @@ assert.throws(
   'the bucket segment is validated exactly as the live handler sees it and is never decoded into authority'
 );
 for (const unsupportedRoute of [
+  `photos/${companyId}/relative.jpg`,
+  `./photos/${companyId}/dot-relative.jpg`,
+  `../photos/${companyId}/parent-relative.jpg`,
+  `/assets/${companyId}/root-relative.jpg`,
+  ` ${companyId}/whitespace-relative.jpg`,
   ` /api/files/project-photos/${companyId}/whitespace.jpg`,
   `/api/files/project-photos/${companyId}/trailing-space.jpg `,
   `https://app.prodailylink.com/api/files/project-photos/${companyId}/absolute.jpg`,
@@ -139,7 +144,7 @@ for (const unsupportedRoute of [
 ]) {
   assert.throws(
     () => collectStorageReferences({ company: { id: companyId }, photos: [{ id: 33, url: unsupportedRoute }] }),
-    /(?:Non-portable (?:local|external) storage reference|Private storage route .* invalid)/,
+    /(?:Non-portable (?:local|external|unsupported) storage reference|Private storage route .* invalid)/,
     'whitespace-prefixed and absolute URLs do not silently bypass route validation'
   );
 }
@@ -152,7 +157,8 @@ assert.doesNotThrow(
 );
 for (const invalidInline of [
   ' data:image/png;base64,aW5saW5l',
-  'data:image/png;base64'
+  'data:image/png;base64',
+  'data:,payload-without-a-media-type'
 ]) {
   assert.throws(
     () => collectStorageReferences({ company: { id: companyId }, photos: [{ id: 35, dataUrl: invalidInline }] }),

@@ -151,7 +151,6 @@ function pageSource(moduleUrl, width) {
   <script>
     (function () {
       function fail(message) { throw new Error(message); }
-      function numericPixels(value) { return Number.parseFloat(value) || 0; }
       function rgba(value) {
         var match = String(value).match(/rgba?\\(([^)]+)\\)/);
         if (!match) fail('Could not parse computed color: ' + value);
@@ -213,14 +212,6 @@ function pageSource(moduleUrl, width) {
         if (rect.width < 44 || rect.height < 44) fail('Touch target below 44px: ' + label + ' measured ' + rect.width + 'x' + rect.height);
       });
 
-      var focusTarget = actionButtons[0];
-      focusTarget.focus({ preventScroll:true });
-      var focusStyle = getComputedStyle(focusTarget);
-      if (document.activeElement !== focusTarget || !focusTarget.matches(':focus-visible')) fail('Keyboard-focus target is not visibly focusable');
-      if (focusStyle.outlineStyle === 'none' || numericPixels(focusStyle.outlineWidth) < 3 || numericPixels(focusStyle.outlineOffset) < 2) {
-        fail('Keyboard focus outline is not visibly distinct');
-      }
-
       var surface = document.querySelector('.pdl-growth__card');
       if (getComputedStyle(surface).backgroundColor !== 'rgb(32, 38, 34)') fail('Dark theme surface variables were not applied');
       var mainText = document.querySelector('.pdl-growth__card h4');
@@ -237,8 +228,7 @@ function pageSource(moduleUrl, width) {
         actionCount:actionButtons.length,
         minimumTouchHeight:Math.min.apply(null, actionButtons.map(function (item) { return item.getBoundingClientRect().height; })),
         mainContrast:Number(mainContrast.toFixed(2)),
-        mutedContrast:Number(mutedContrast.toFixed(2)),
-        focusOutline:focusStyle.outlineWidth + ' ' + focusStyle.outlineStyle + ' / offset ' + focusStyle.outlineOffset
+        mutedContrast:Number(mutedContrast.toFixed(2))
       });
     }());
   </script>
@@ -389,10 +379,24 @@ async function runViewport(edge, tempRoot, width) {
 
     // Use the browser input domain, not a synthetic DOM KeyboardEvent, so this
     // verifies the focus-visible treatment reached through an actual Tab key.
-    await cdp.send('Runtime.evaluate', {
-      expression: `document.activeElement?.blur();document.body.tabIndex=-1;document.body.focus({preventScroll:true});true`,
+    const focusSetup = await cdp.send('Runtime.evaluate', {
+      expression: `(() => {
+        const target=document.querySelector('button[data-growth-action]');
+        if (!target) return {ready:false};
+        const sentinel=document.createElement('button');
+        sentinel.type='button';
+        sentinel.setAttribute('aria-label','Keyboard focus test start');
+        sentinel.tabIndex=0;
+        sentinel.style.cssText='position:fixed;left:0;top:0;width:1px;height:1px;padding:0;border:0;overflow:hidden;clip-path:inset(50%);white-space:nowrap;pointer-events:none';
+        target.before(sentinel);
+        sentinel.focus({preventScroll:true});
+        return {ready:document.activeElement===sentinel};
+      })()`,
       returnByValue: true
     }, sessionId);
+    if (!focusSetup.result?.value?.ready) {
+      throw new Error(`Edge ${width}px could not establish the keyboard-focus test sequence: ${JSON.stringify(focusSetup.result?.value || null)}`);
+    }
     await cdp.send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Tab', code: 'Tab', windowsVirtualKeyCode: 9, nativeVirtualKeyCode: 9 }, sessionId);
     await cdp.send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Tab', code: 'Tab', windowsVirtualKeyCode: 9, nativeVirtualKeyCode: 9 }, sessionId);
     const keyboard = await cdp.send('Runtime.evaluate', {
@@ -404,6 +408,7 @@ async function runViewport(edge, tempRoot, width) {
       throw new Error(`Edge ${width}px keyboard Tab focus was not visibly distinct: ${JSON.stringify(focus || null)}`);
     }
     result.keyboardAction = focus.action;
+    result.focusOutline = `${focus.outlineWidth}px ${focus.outlineStyle} / offset ${focus.outlineOffset}px`;
     return result;
   } finally {
     await cdp.close();

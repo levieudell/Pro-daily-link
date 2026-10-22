@@ -134,7 +134,11 @@ async function checkPortalConfiguration(stripe, kind, env = process.env) {
   catch { return { kind, status: 'blocked', reason: 'configuration-id-invalid' }; }
   if (!policy.configurationId) return { kind, status: 'blocked', reason: 'configuration-id-missing' };
   let configuration;
-  try { configuration = await stripe.billingPortal.configurations.retrieve(policy.configurationId); }
+  try {
+    configuration = await stripe.billingPortal.configurations.retrieve(policy.configurationId, {
+      expand: portalPolicy.CONFIGURATION_EXPAND
+    });
+  }
   catch (error) {
     const reason = providerAccessFailure(error);
     if (reason) return unavailablePortal(kind, reason);

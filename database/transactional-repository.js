@@ -20,6 +20,15 @@ function databaseCompanyId(snapshotOrId) {
   return stableUuid('legacy-company', String(value));
 }
 
+function tenantStorageNamespace(snapshotOrId) {
+  const value = typeof snapshotOrId === 'object' ? snapshotOrId?.company?.id : snapshotOrId;
+  if (/^[0-9a-f]{8}-[0-9a-f-]{27}$/i.test(String(value))) return String(value);
+  // Preserve the namespace used by the live file writer before transactional
+  // company UUIDs existed. Database row identity and Storage object identity
+  // intentionally use different legacy salts.
+  return stableUuid('company', String(value));
+}
+
 function recordKey(collection, row, index) {
   if (row && typeof row === 'object' && row.id != null) return `id:${String(row.id)}`;
   if (collection === 'sessions' && row?.tokenHash) return `token:${row.tokenHash}`;
@@ -124,5 +133,5 @@ class TransactionalTenantRepository {
   async close() { await this.pool.end(); }
 }
 
-module.exports = { TransactionalTenantRepository, RevisionConflictError, splitSnapshot, assembleSnapshot, canonicalHash, databaseCompanyId };
+module.exports = { TransactionalTenantRepository, RevisionConflictError, splitSnapshot, assembleSnapshot, canonicalHash, databaseCompanyId, tenantStorageNamespace };
 

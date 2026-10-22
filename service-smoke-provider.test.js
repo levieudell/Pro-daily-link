@@ -44,10 +44,29 @@ function response(value, status = 200) {
     [env.STRIPE_PORTAL_CONFIG_FOUNDER]: { id: env.STRIPE_PORTAL_CONFIG_FOUNDER, active: true, livemode: true,
       features: { subscription_update: { enabled: false, default_allowed_updates: [], products: [] } } }
   };
-  const stripe = { billingPortal: { configurations: { retrieve: async id => configurations[id] } } };
+  const retrievals = [];
+  const stripe = { billingPortal: { configurations: { retrieve: async (id, options) => {
+    retrievals.push({ id, options });
+    return configurations[id];
+  } } } };
   assert.equal((await checkPortalConfiguration(stripe, 'standard', env)).status, 'ready');
   assert.equal((await checkPortalConfiguration(stripe, 'founder', env)).status, 'ready');
+  assert.deepEqual(retrievals, [env.STRIPE_PORTAL_CONFIG_STANDARD, env.STRIPE_PORTAL_CONFIG_FOUNDER].map(id => ({
+    id,
+    options: { expand: ['features.subscription_update.products'] }
+  })), 'every portal validation retrieves the expanded price allowlist');
   assert.equal((await checkPortalConfiguration(stripe, 'standard', { ...env, STRIPE_PORTAL_CONFIG_STANDARD: '' })).status, 'blocked');
+
+  const unexpandedStandard = structuredClone(configurations[env.STRIPE_PORTAL_CONFIG_STANDARD]);
+  delete unexpandedStandard.features.subscription_update.products;
+  const unexpanded = await checkPortalConfiguration({ billingPortal: { configurations: {
+    retrieve: async (_id, options) => {
+      assert.deepEqual(options, { expand: ['features.subscription_update.products'] });
+      return unexpandedStandard;
+    }
+  } } }, 'standard', env);
+  assert.deepEqual(unexpanded, { kind: 'standard', status: 'blocked', reason: 'unsafe-price-change-configuration' },
+    'an unexpanded or missing portal allowlist must fail closed');
 
   configurations[env.STRIPE_PORTAL_CONFIG_FOUNDER].features.subscription_update.enabled = true;
   assert.equal((await checkPortalConfiguration(stripe, 'founder', env)).status, 'blocked');
