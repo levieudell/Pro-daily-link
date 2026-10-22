@@ -64,6 +64,6 @@
     "node": ">=22 <25"
   },
   "devDependencies": {
-    "parse5": "7.3.0"
+    "parse5": "8.0.1"
   }
 }
