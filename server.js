@@ -216,6 +216,118 @@ function writeDb(db){
     }
   }
 }
+const AUTH_SESSION_SECONDS=30*86400;
+const AUTH_SESSION_RENEWAL_WINDOW_MS=7*86400*1000;
+function authSession(snapshot,tokenHash,now=Date.now()){
+  const session=tokenHash&&(snapshot?.sessions||[]).find(row=>row.tokenHash===tokenHash&&Date.parse(row.expiresAt)>now);
+  const user=session&&(snapshot?.users||[]).find(row=>row.id===session.userId&&row.status==='Active');
+  return session&&user?{session,user}:null;
+}
+function authSessionNeedsRenewal(session,now=Date.now()){
+  const expiresAt=Date.parse(session?.expiresAt);
+  return Number.isFinite(expiresAt)&&expiresAt-now<=AUTH_SESSION_RENEWAL_WINDOW_MS;
+}
+function authSessionCookieSeconds(session,now=Date.now()){
+  const remaining=Math.floor((Date.parse(session?.expiresAt)-now)/1000);
+  return Math.max(1,Math.min(AUTH_SESSION_SECONDS,Number.isFinite(remaining)?remaining:1));
+}
+function revisionConflict(error){return error?.code==='PDL_REVISION_CONFLICT'||/PDL_REVISION_CONFLICT|revision conflict/i.test(String(error?.message||error||''))}
+function deferAuthSessionRenewal(context,snapshot,tokenHash,now,error){
+  const authenticated=authSession(snapshot,tokenHash,now);
+  if(!authenticated)return{authenticated:false};
+  context.db=snapshot;
+  console.error(`Session renewal deferred; the existing session remains valid. ${String(error?.message||error||'Persistence is busy')}`);
+  return{authenticated:true,...authenticated,deferred:true};
+}
+function renewedAuthSnapshot(source,tokenHash,expiresAt,now){
+  const snapshot=structuredClone(source),authenticated=authSession(snapshot,tokenHash,now);
+  if(!authenticated)return null;
+  authenticated.session.expiresAt=expiresAt;
+  snapshot.company.persistence={...(snapshot.company.persistence||{}),revision:Number(snapshot.company.persistence?.revision||0)+1,updatedAt:new Date(now).toISOString()};
+  return{snapshot,session:authenticated.session,user:authenticated.user};
+}
+function scheduleAuthRenewalBackup(context,snapshot,result){
+  if(context.backupPending||!backupVerification.backupDue(BACKUP_RECEIPT_DIRECTORY,snapshot.company.id))return;
+  context.backupPending=detachBackupTask(Promise.resolve(result)
+    .then(committed=>{if(committed?.deferred)return null;const source=committed.snapshot||snapshot;return backupVerification.createAndRecordVerification(source,{directory:BACKUP_RECEIPT_DIRECTORY,createBackup:supabase.createVerifiedBackup,sourceRevision:committed.revision,sourceContentHash:committed.contentHash||'',assertWrite:()=>maintenanceFence.assertWritesAllowed(process.env,{root:ROOT})})})
+    .then(async verification=>{if(!verification)return null;context.backup=verification;await mirrorBackupReceipt(snapshot.company.id);return verification}));
+}
+async function persistAuthSessionRenewal(context,tokenHash,now=Date.now()){
+  const expiresAt=new Date(now+AUTH_SESSION_SECONDS*1000).toISOString(),mode=transactionalMode(),cloudConfigured=supabase.configured();
+  if(context.transactionalPending)await context.transactionalPending;
+  if(mode==='primary'&&cloudConfigured){
+    let state={snapshot:context.db,revision:Number(context.transactionalRevision??0)};
+    for(let attempt=0;attempt<2;attempt+=1){
+      const prepared=renewedAuthSnapshot(state.snapshot,tokenHash,expiresAt,now);
+      if(!prepared)return{authenticated:false};
+      try{
+        maintenanceFence.assertWritesAllowed(process.env,{root:ROOT});
+        const committed=await supabase.saveTransactionalSnapshot(prepared.snapshot,state.revision);
+        context.db=prepared.snapshot;context.transactionalRevision=committed.revision;
+        try{mirrorTenantFile(context.file,prepared.snapshot)}catch(error){reportMirrorFailure('Tenant local mirror',error)}
+        try{maintenanceFence.assertWritesAllowed(process.env,{root:ROOT});await supabase.saveCompanySnapshot(prepared.snapshot)}catch(error){reportMirrorFailure('Tenant legacy cloud mirror',error)}
+        scheduleAuthRenewalBackup(context,prepared.snapshot,committed);
+        return{authenticated:true,...prepared};
+      }catch(error){
+        if(!revisionConflict(error))return deferAuthSessionRenewal(context,state.snapshot,tokenHash,now,error);
+        let latest=null;
+        try{latest=await supabase.loadTransactionalSnapshot(prepared.snapshot.company.id)}catch(loadError){return deferAuthSessionRenewal(context,state.snapshot,tokenHash,now,loadError)}
+        if(!latest)return deferAuthSessionRenewal(context,state.snapshot,tokenHash,now,error);
+        context.db=latest.snapshot;context.transactionalRevision=latest.revision;
+        const current=authSession(latest.snapshot,tokenHash,now);
+        if(!current)return{authenticated:false};
+        if(attempt)return deferAuthSessionRenewal(context,latest.snapshot,tokenHash,now,error);
+        state=latest;
+      }
+    }
+  }
+  const prepared=renewedAuthSnapshot(context.db,tokenHash,expiresAt,now);
+  if(!prepared)return{authenticated:false};
+  maintenanceFence.assertWritesAllowed(process.env,{root:ROOT});
+  if(!cloudConfigured){
+    context.db=prepared.snapshot;mirrorTenantFile(context.file,prepared.snapshot);
+    return{authenticated:true,...prepared};
+  }
+  let candidate=prepared.snapshot,committed={revision:Number(candidate.company.persistence?.revision||0),contentHash:''};
+  if(mode==='shadow'){
+    let expectedRevision=Number(context.transactionalRevision||0);
+    for(let attempt=0;attempt<2;attempt+=1){
+      try{
+        maintenanceFence.assertWritesAllowed(process.env,{root:ROOT});
+        committed=await supabase.saveTransactionalSnapshot(candidate,expectedRevision);
+        context.transactionalRevision=committed.revision;
+        break;
+      }catch(error){
+        if(!revisionConflict(error))return deferAuthSessionRenewal(context,context.db,tokenHash,now,error);
+        let latestTransactional=null,latestLegacy=null;
+        try{
+          [latestTransactional,latestLegacy]=await Promise.all([
+            supabase.loadTransactionalSnapshot(prepared.snapshot.company.id),
+            supabase.loadCompanySnapshot(prepared.snapshot.company.id)
+          ]);
+        }catch(loadError){return deferAuthSessionRenewal(context,context.db,tokenHash,now,loadError)}
+        if(!latestTransactional||!latestLegacy)return deferAuthSessionRenewal(context,context.db,tokenHash,now,error);
+        context.transactionalRevision=latestTransactional.revision;
+        const rebased=renewedAuthSnapshot(latestLegacy,tokenHash,expiresAt,now);
+        if(!rebased)return{authenticated:false};
+        if(attempt)return deferAuthSessionRenewal(context,latestLegacy,tokenHash,now,error);
+        candidate=rebased.snapshot;expectedRevision=latestTransactional.revision;
+      }
+    }
+  }
+  try{
+    const legacyCommit=/^[0-9a-f]{8}-[0-9a-f-]{27}$/i.test(String(candidate.company.id))
+      ?supabase.saveCompanySnapshot(candidate)
+      :supabase.saveSnapshot(stableUuid('legacy-company',candidate.company.id),candidate.company.name,candidate);
+    await legacyCommit;
+    context.db=candidate;mirrorTenantFile(context.file,candidate);
+  }catch(error){return deferAuthSessionRenewal(context,context.db,tokenHash,now,error)}
+  const result={...committed,snapshot:candidate};
+  scheduleAuthRenewalBackup(context,candidate,result);
+  const authenticated=authSession(candidate,tokenHash,now);
+  if(!authenticated)return{authenticated:false};
+  return{authenticated:true,...authenticated,snapshot:candidate};
+}
 async function loadPrimaryCloud(){if(!supabase.configured())return;try{const local=JSON.parse(fs.readFileSync(DB_FILE,'utf8')),snapshot=await supabase.loadSnapshot(stableUuid('legacy-company',local.company.id));if(snapshot?.company?.id===local.company.id){maintenanceFence.assertWritesAllowed(process.env,{root:ROOT});const tmp=DB_FILE+'.tmp';fs.writeFileSync(tmp,JSON.stringify(snapshot,null,2));fs.renameSync(tmp,DB_FILE)}}catch(error){console.error('Primary cloud load failed',error.message)}}
 async function backupAuthorityStates(){
   if(transactionalMode()!=='primary')return tenantDatabases().map(snapshot=>({snapshot,revision:Number(snapshot.company?.persistence?.revision||0),contentHash:null}));
@@ -2662,7 +2774,18 @@ async function api(req,res,url){
     if(!user||!user.emailVerificationExpiresAt||new Date(user.emailVerificationExpiresAt)<new Date())return json(res,401,{error:'This confirmation link is invalid or expired'});
     user.emailVerifiedAt=new Date().toISOString();delete user.emailVerificationTokenHash;delete user.emailVerificationExpiresAt;writeDb(db);return json(res,200,{ok:true,email:user.email})
   }
-  if(req.method==='GET'&&url.pathname==='/api/auth/me'){const db=readDb(),token=bearer(req)||cookie(req,'pdl_session'),tokenHash=token&&crypto.createHash('sha256').update(token).digest('hex'),session=(db.sessions||[]).find(row=>row.tokenHash===tokenHash&&new Date(row.expiresAt)>new Date()),user=session&&(db.users||[]).find(row=>row.id===session.userId&&row.status==='Active');if(!session||!user)return json(res,401,{error:'Authentication required'});const sessionSeconds=30*86400;if(!maintenanceReadOnly()){session.expiresAt=new Date(Date.now()+sessionSeconds*1000).toISOString();writeDb(db)}const secure=process.env.NODE_ENV==='production'?'; Secure':'';return jsonHeaders(res,200,{id:user.id,name:user.name,email:user.email,emailVerifiedAt:user.emailVerifiedAt||null,role:user.role==='foreman'?'field':user.role==='office'?'admin':user.role,accessRole:user.role==='office'?'admin':user.role,companyId:session.companyId,projectIds:user.projectIds||[],assignedCrews:user.assignedCrews||[],memberId:user.memberId||null,preferredLanguage:user.preferredLanguage||'en',preferences:user.preferences||{},permissions:user.permissions||{},timeCards:freshTimeCardsFlag(),templates:freshTemplatesFlag()},{'Set-Cookie':[`pdl_session=${token}; HttpOnly; SameSite=Strict; Path=/; Max-Age=${sessionSeconds}${secure}`,`pdl_company=${session.companyId}; SameSite=Strict; Path=/; Max-Age=${sessionSeconds}${secure}`]})}
+  if(req.method==='GET'&&url.pathname==='/api/auth/me'){
+    const db=readDb(),token=bearer(req)||cookie(req,'pdl_session'),tokenHash=token&&crypto.createHash('sha256').update(token).digest('hex'),now=Date.now();
+    let authenticated=authSession(db,tokenHash,now);
+    if(!authenticated)return json(res,401,{error:'Authentication required'});
+    if(!maintenanceReadOnly()&&authSessionNeedsRenewal(authenticated.session,now)){
+      const renewed=await persistAuthSessionRenewal(dbContext.getStore(),tokenHash,now);
+      if(!renewed.authenticated)return json(res,401,{error:'Authentication required'});
+      authenticated={session:renewed.session,user:renewed.user};
+    }
+    const{session,user}=authenticated,sessionSeconds=authSessionCookieSeconds(session,now),secure=process.env.NODE_ENV==='production'?'; Secure':'';
+    return jsonHeaders(res,200,{id:user.id,name:user.name,email:user.email,emailVerifiedAt:user.emailVerifiedAt||null,role:user.role==='foreman'?'field':user.role==='office'?'admin':user.role,accessRole:user.role==='office'?'admin':user.role,companyId:session.companyId,projectIds:user.projectIds||[],assignedCrews:user.assignedCrews||[],memberId:user.memberId||null,preferredLanguage:user.preferredLanguage||'en',preferences:user.preferences||{},permissions:user.permissions||{},timeCards:freshTimeCardsFlag(),templates:freshTemplatesFlag()},{'Set-Cookie':[`pdl_session=${token}; HttpOnly; SameSite=Strict; Path=/; Max-Age=${sessionSeconds}${secure}`,`pdl_company=${session.companyId}; SameSite=Strict; Path=/; Max-Age=${sessionSeconds}${secure}`]})
+  }
   if(req.method==='POST'&&url.pathname==='/api/auth/logout'){const db=readDb(),token=bearer(req)||cookie(req,'pdl_session'),tokenHash=token&&crypto.createHash('sha256').update(token).digest('hex');db.sessions=(db.sessions||[]).filter(row=>row.tokenHash!==tokenHash);writeDb(db);const secure=process.env.NODE_ENV==='production'?'; Secure':'';return jsonHeaders(res,200,{ok:true},{'Set-Cookie':[`pdl_session=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0${secure}`,`pdl_company=; SameSite=Strict; Path=/; Max-Age=0${secure}`]})}
   if(await handleAssistantAI(req,res,url))return;
   if(await handleProjectAssistant(req,res,url))return;
@@ -3464,7 +3587,79 @@ async function runPlatformRequest(req,res,url,requestId,handler){
 
 function publicPlatformContentRoute(req,url){return req.method==='GET'&&(url.pathname==='/api/help'||url.pathname==='/api/blog'||/^\/api\/blog\/[^/]+$/.test(url.pathname))}
 
-const server=http.createServer(async(req,res)=>{const requestId=crypto.randomUUID();try{secureHeaders(res);res.setHeader('X-Request-Id',requestId);const url=new URL(req.url,'http://localhost');if(blockStagingRecovery(req,res,url,json))return;if(req.method==='GET'&&url.pathname==='/api/health/live')return json(res,200,{ok:true,kind:'liveness',time:new Date().toISOString()});if(mcpHttp.matches(url))return mcpHttp.handle(req,res,url);const shortLink=req.method==='GET'&&/^\/[a-z0-9]$/.test(url.pathname);if(shortLink){res.writeHead(302,{Location:`/?utm_source=heycatch&utm_campaign=${url.pathname.slice(1)}`});return res.end()}if(url.pathname.startsWith('/api/')){if(!rateLimit(req,res,url))return;if(req.method==='GET'&&url.pathname==='/api/health')return await api(req,res,url);if(req.method==='GET'&&url.pathname==='/api/public/stats'){const stats=readPublicStats();return json(res,200,{dailies:stats.dailies,since:stats.since})}if(publicPlatformContentRoute(req,url))return await withPlatformQueue(()=>api(req,res,url));if(salesDemoRoute.test(url.pathname))return await handleSalesDemo(req,res,url);if(req.method==='POST'&&url.pathname==='/api/demo-requests')return await runPlatformRequest(req,res,url,requestId,()=>handleDemoRequest(req,res));if(url.pathname==='/api/platform/revenue')return await handlePlatformRevenue(req,res,url);if(/^\/api\/support-session\//.test(url.pathname))return await runPlatformRequest(req,res,url,requestId,()=>api(req,res,url));if(url.pathname.startsWith('/api/platform/'))return await runPlatformRequest(req,res,url,requestId,()=>api(req,res,url));if(req.method==='POST'&&url.pathname==='/api/signup')return await runPlatformRequest(req,res,url,requestId,()=>api(req,res,url));if(req.method==='POST'&&url.pathname==='/api/billing/webhook')return await handleStripeWebhook(req,res);if(req.method==='POST'&&url.pathname==='/api/auth/company'){const input=await body(req),companyId=await companyIdForEmail(input.email);return json(res,200,{companyId:companyId||null})}const guestToken=(req.method==='GET'||req.method==='POST')?url.pathname.match(/^\/api\/guest\/([a-f0-9]{48})(?:\/ticket-scan)?$/):null,changeOrderToken=(req.method==='GET'||req.method==='POST')?url.pathname.match(/^\/api\/change-order\/([A-Za-z0-9_-]+)(?:\/decision)?$/):null,database=guestToken?await guestRequestDatabase(req,url,guestToken[1]):changeOrderToken?await changeOrderRequestDatabase(req,url,changeOrderToken[1]):await authenticatedRequestDatabase(req);if(!database)return json(res,404,{error:guestToken?'This guest link is invalid or expired':changeOrderToken?'This link is invalid or expired':'Company workspace not found'});const companyId=String(database.db?.company?.id||JSON.parse(fs.readFileSync(database.file,'utf8')).company.id);if(assistantPath(url.pathname)){const pilotDb=freshestTenantSnapshot(database),{auth,status}=authenticateRequestAccount(req,pilotDb);if(!auth)return json(res,status,{error:'Authentication required'});if(!permittedCompany(pilotDb.company?.id))return json(res,403,{error:'Project assistant access is not enabled for this company.'})}if(req.method==='POST'&&/^\/api\/projects\/\d+\/assistant\/chat$/.test(url.pathname)||(req.method==='POST'&&url.pathname==='/api/assistant/interpret')||(req.method==='GET'&&url.pathname==='/api/assistant/context')){const context={...database,db:freshestTenantSnapshot(database),pending:[]};return await dbContext.run(context,()=>url.pathname.startsWith('/api/assistant/')?handleAssistantAI(req,res,url):handleProjectAssistant(req,res,url))}return await withTenantQueue(companyId,async()=>{database.db=freshestTenantSnapshot(database);const context={...database,pending:[],backup:null,deferResponse:transactionalMode()==='primary'};try{const result=await dbContext.run(context,()=>api(req,res,url));if(isCredentialAttempt(req,url)&&res.statusCode===401)recordAuthFailure(req);await Promise.all(context.pending);flushDeferredResponse(res,context);return result}catch(error){if(error.code==='PDL_REVISION_CONFLICT'||/PDL_REVISION_CONFLICT/.test(String(error.message))){if(!res.headersSent)return json(res,409,{error:'This company changed while you were saving. Nothing was overwritten. Refresh and try again.',code:'STALE_WRITE',requestId})}throw error}})}let requested=decodeURIComponent(url.pathname==='/'?'/landing.html':url.pathname==='/app'?'/index.html':url.pathname==='/favicon.ico'?'/assets/pro-daily-link-logo.png':/^\/guest\/[a-f0-9]{48}$/.test(url.pathname)?'/guest.html':url.pathname);if(requested.startsWith('/uploads/')){res.writeHead(307,{Location:'/api/local-files/'+requested.slice(9).split('/').map(encodeURIComponent).join('/'),'Cache-Control':'no-store'});return res.end()}let file=path.resolve(ROOT,'.'+requested);if(!isPublicFile(ROOT,file)||!file.startsWith(ROOT+path.sep)||!fs.existsSync(file)||fs.statSync(file).isDirectory()||!fs.realpathSync(file).startsWith(ROOT+path.sep)){res.writeHead(404);return res.end('Not found')}const extension=path.extname(file),mustRevalidate=['.html','.js','.css'].includes(extension);res.writeHead(200,{'Content-Type':MIME[extension]||'application/octet-stream','Cache-Control':mustRevalidate?'no-cache, no-store, must-revalidate':'public, max-age=3600'});fs.createReadStream(file).pipe(res)}catch(error){console.error(`[${requestId}]`,error);monitoring.captureRequestException(error,{requestId,method:req.method,route:req.url});if(!res.headersSent){if(error.code==='MAINTENANCE_READ_ONLY')return json(res,503,{error:error.publicMessage||maintenanceFence.PUBLIC_MESSAGE,code:'MAINTENANCE_READ_ONLY',requestId});json(res,error.statusCode||500,{error:error.statusCode===413?'Request is too large':error.statusCode===400?'Invalid request body':'Unexpected server error',requestId})}}});
+const server=http.createServer(async(req,res)=>{
+  const requestId=crypto.randomUUID();
+  try{
+    secureHeaders(res);
+    res.setHeader('X-Request-Id',requestId);
+    const url=new URL(req.url,'http://localhost');
+    if(blockStagingRecovery(req,res,url,json))return;
+    if(req.method==='GET'&&url.pathname==='/api/health/live')return json(res,200,{ok:true,kind:'liveness',time:new Date().toISOString()});
+    if(mcpHttp.matches(url))return mcpHttp.handle(req,res,url);
+    const shortLink=req.method==='GET'&&/^\/[a-z0-9]$/.test(url.pathname);
+    if(shortLink){res.writeHead(302,{Location:`/?utm_source=heycatch&utm_campaign=${url.pathname.slice(1)}`});return res.end()}
+    if(url.pathname.startsWith('/api/')){
+      if(!rateLimit(req,res,url))return;
+      if(req.method==='GET'&&url.pathname==='/api/health')return await api(req,res,url);
+      if(req.method==='GET'&&url.pathname==='/api/public/stats'){const stats=readPublicStats();return json(res,200,{dailies:stats.dailies,since:stats.since})}
+      if(publicPlatformContentRoute(req,url))return await withPlatformQueue(()=>api(req,res,url));
+      if(salesDemoRoute.test(url.pathname))return await handleSalesDemo(req,res,url);
+      if(req.method==='POST'&&url.pathname==='/api/demo-requests')return await runPlatformRequest(req,res,url,requestId,()=>handleDemoRequest(req,res));
+      if(url.pathname==='/api/platform/revenue')return await handlePlatformRevenue(req,res,url);
+      if(/^\/api\/support-session\//.test(url.pathname))return await runPlatformRequest(req,res,url,requestId,()=>api(req,res,url));
+      if(url.pathname.startsWith('/api/platform/'))return await runPlatformRequest(req,res,url,requestId,()=>api(req,res,url));
+      if(req.method==='POST'&&url.pathname==='/api/signup')return await runPlatformRequest(req,res,url,requestId,()=>api(req,res,url));
+      if(req.method==='POST'&&url.pathname==='/api/billing/webhook')return await handleStripeWebhook(req,res);
+      if(req.method==='POST'&&url.pathname==='/api/auth/company'){const input=await body(req),companyId=await companyIdForEmail(input.email);return json(res,200,{companyId:companyId||null})}
+      const guestToken=(req.method==='GET'||req.method==='POST')?url.pathname.match(/^\/api\/guest\/([a-f0-9]{48})(?:\/ticket-scan)?$/):null;
+      const changeOrderToken=(req.method==='GET'||req.method==='POST')?url.pathname.match(/^\/api\/change-order\/([A-Za-z0-9_-]+)(?:\/decision)?$/):null;
+      const locatedDatabase=guestToken?await guestRequestDatabase(req,url,guestToken[1]):changeOrderToken?await changeOrderRequestDatabase(req,url,changeOrderToken[1]):await authenticatedRequestDatabase(req);
+      if(!locatedDatabase)return json(res,404,{error:guestToken?'This guest link is invalid or expired':changeOrderToken?'This link is invalid or expired':'Company workspace not found'});
+      const companyId=String(locatedDatabase.db?.company?.id||JSON.parse(fs.readFileSync(locatedDatabase.file,'utf8')).company.id);
+      if(assistantPath(url.pathname)){
+        const pilotDb=freshestTenantSnapshot(locatedDatabase),{auth,status}=authenticateRequestAccount(req,pilotDb);
+        if(!auth)return json(res,status,{error:'Authentication required'});
+        if(!permittedCompany(pilotDb.company?.id))return json(res,403,{error:'Project assistant access is not enabled for this company.'})
+      }
+      if(req.method==='POST'&&/^\/api\/projects\/\d+\/assistant\/chat$/.test(url.pathname)||(req.method==='POST'&&url.pathname==='/api/assistant/interpret')||(req.method==='GET'&&url.pathname==='/api/assistant/context')){
+        const context={...locatedDatabase,db:freshestTenantSnapshot(locatedDatabase),pending:[]};
+        return await dbContext.run(context,()=>url.pathname.startsWith('/api/assistant/')?handleAssistantAI(req,res,url):handleProjectAssistant(req,res,url))
+      }
+      return await withTenantQueue(companyId,async()=>{
+        const database=await requestDatabase({headers:{'x-pdl-company':companyId}});
+        if(!database)return json(res,404,{error:guestToken?'This guest link is invalid or expired':changeOrderToken?'This link is invalid or expired':'Company workspace not found'});
+        database.db=freshestTenantSnapshot(database);
+        const context={...database,pending:[],backup:null,deferResponse:transactionalMode()==='primary'};
+        try{
+          const result=await dbContext.run(context,()=>api(req,res,url));
+          if(isCredentialAttempt(req,url)&&res.statusCode===401)recordAuthFailure(req);
+          await Promise.all(context.pending);
+          flushDeferredResponse(res,context);
+          return result
+        }catch(error){
+          if(error.code==='PDL_REVISION_CONFLICT'||/PDL_REVISION_CONFLICT/.test(String(error.message))){
+            if(!res.headersSent)return json(res,409,{error:'This company changed while you were saving. Nothing was overwritten. Refresh and try again.',code:'STALE_WRITE',requestId})
+          }
+          throw error
+        }
+      })
+    }
+    let requested=decodeURIComponent(url.pathname==='/'?'/landing.html':url.pathname==='/app'?'/index.html':url.pathname==='/favicon.ico'?'/assets/pro-daily-link-logo.png':/^\/guest\/[a-f0-9]{48}$/.test(url.pathname)?'/guest.html':url.pathname);
+    if(requested.startsWith('/uploads/')){res.writeHead(307,{Location:'/api/local-files/'+requested.slice(9).split('/').map(encodeURIComponent).join('/'),'Cache-Control':'no-store'});return res.end()}
+    let file=path.resolve(ROOT,'.'+requested);
+    if(!isPublicFile(ROOT,file)||!file.startsWith(ROOT+path.sep)||!fs.existsSync(file)||fs.statSync(file).isDirectory()||!fs.realpathSync(file).startsWith(ROOT+path.sep)){res.writeHead(404);return res.end('Not found')}
+    const extension=path.extname(file),mustRevalidate=['.html','.js','.css'].includes(extension);
+    res.writeHead(200,{'Content-Type':MIME[extension]||'application/octet-stream','Cache-Control':mustRevalidate?'no-cache, no-store, must-revalidate':'public, max-age=3600'});
+    fs.createReadStream(file).pipe(res)
+  }catch(error){
+    console.error(`[${requestId}]`,error);
+    monitoring.captureRequestException(error,{requestId,method:req.method,route:req.url});
+    if(!res.headersSent){
+      if(error.code==='MAINTENANCE_READ_ONLY')return json(res,503,{error:error.publicMessage||maintenanceFence.PUBLIC_MESSAGE,code:'MAINTENANCE_READ_ONLY',requestId});
+      json(res,error.statusCode||500,{error:error.statusCode===413?'Request is too large':error.statusCode===400?'Invalid request body':'Unexpected server error',requestId})
+    }
+  }
+});
 server.requestTimeout=30000;server.headersTimeout=15000;server.keepAliveTimeout=5000;
 if(require.main===module){monitoring.installShutdownFlush(server);Promise.all([loadPrimaryCloud(),initializePlatformPersistence()]).then(()=>server.listen(PORT,()=>{console.log(`Pro Daily Link running at http://localhost:${PORT}`);const backupBootTimer=setTimeout(()=>{startBackupSelfHeal()},3000);backupBootTimer.unref();const digestCheck=()=>maybeSendWeeklyHealthDigest().catch(error=>console.error('Weekly digest check failed',error.message));const digestTimer=setInterval(digestCheck,30*60000);digestTimer.unref();const digestBootTimer=setTimeout(digestCheck,15000);digestBootTimer.unref();const growthRetry=()=>retryPendingSignupGrowth().catch(error=>console.error('Signup growth retry check failed',error.message));const growthRetryTimer=setInterval(growthRetry,5*60000);growthRetryTimer.unref();const growthRetryBootTimer=setTimeout(growthRetry,5000);growthRetryBootTimer.unref();const assistedSetupRetry=()=>retryPendingAssistedSetup().catch(error=>console.error('Assisted setup retry check failed',error.message));const assistedSetupRetryTimer=setInterval(assistedSetupRetry,5*60000);assistedSetupRetryTimer.unref();const assistedSetupRetryBootTimer=setTimeout(assistedSetupRetry,7000);assistedSetupRetryBootTimer.unref();const founderRenewalRetry=()=>retryFounderRenewalReviews().catch(error=>console.error('Founder renewal review check failed',error.message));const founderRenewalTimer=setInterval(founderRenewalRetry,6*60*60000);founderRenewalTimer.unref();const founderRenewalBootTimer=setTimeout(founderRenewalRetry,13000);founderRenewalBootTimer.unref();const platformAuditRetry=()=>retryPendingPlatformAudits().catch(error=>console.error('Platform audit recovery check failed',error.message));const platformAuditRetryTimer=setInterval(platformAuditRetry,15*60000);platformAuditRetryTimer.unref();const platformAuditBootTimer=setTimeout(platformAuditRetry,9000);platformAuditBootTimer.unref();const deletionCleanupRetry=()=>withPlatformQueue(()=>retryPendingTenantDeletionCleanup()).catch(error=>console.error('Tenant deletion cleanup retry failed',error.message));const deletionCleanupTimer=setInterval(deletionCleanupRetry,15*60000);deletionCleanupTimer.unref();const deletionCleanupBootTimer=setTimeout(deletionCleanupRetry,10000);deletionCleanupBootTimer.unref();const retentionSweep=()=>sweepTenantRetention().catch(error=>console.error('Tenant retention sweep failed',error.message));const retentionTimer=setInterval(retentionSweep,6*60*60000);retentionTimer.unref();const retentionBootTimer=setTimeout(retentionSweep,11000);retentionBootTimer.unref()})).catch(error=>{console.error('Startup failed:',error.message);monitoring.captureException?.(error);process.exitCode=1})}
 module.exports={server,writeDb,writePlatform,mergeTenantSnapshots,localExtract,rekeyDuplicateAssignments,prepareWorkspace,buildActionCenter,crewHourFact,customerDataExport,canReadStoredAsset,maybeSendWeeklyHealthDigest,nextWeeklyDigestDue,weeklyHealthDigestModel,renderWeeklyHealthDigestEmail,restoreBackupReceipt,mirrorBackupReceipt,startBackupSelfHeal,retryPendingSignupGrowth,retryPendingAssistedSetup,retryFounderRenewalReviews,retryPendingPlatformAudits,retryPendingTenantDeletionCleanup,initializePlatformPersistence,platformRepositoryHealth,tenantRepositoryHealth,completeRecoveryHealth,collectOperationalHealth,operationalHealthRequirements,operationalTenantSnapshots,platformRevenueCompanies,purgeExpiredTicketFiles,sweepTenantRetention,removeTenantStoredObjects,tenantMirrorFile,removeTenantMirror,scrubTenantPlatformPii,tenantPlatformPiiReferences,persistTenantDeletionCleanupJob,executePermanentTenantDeletion,deletionRequestDto};

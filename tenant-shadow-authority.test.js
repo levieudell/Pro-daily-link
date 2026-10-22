@@ -126,13 +126,13 @@ async function sendWebhook(base, id) {
     assert.equal(fs.existsSync(tenantFile), false, 'test starts like a fresh Render instance with no tenant mirror');
 
     for (const route of ['/api/config', '/api/state', '/api/auth/me', '/api/company-activities', '/api/time-off-requests']) {
+      const writesBefore = transactionalExpectedRevisions.length;
       const result = await request(base, route);
       assert.equal(result.status, 200, `${route} must not depend on an ephemeral tenant file: ${JSON.stringify(result.data)}`);
       if (route === '/api/state') assert.equal(result.data.company.name, legacyName, 'shadow reads keep legacy Supabase authoritative');
+      if (route === '/api/auth/me') assert.equal(transactionalExpectedRevisions.length, writesBefore, 'an auth probe with more than seven days remaining stays read-only');
     }
-    assert.ok(transactionalExpectedRevisions.length >= 1, 'a session-renewal write reaches the transactional shadow');
-    assert.equal(transactionalExpectedRevisions[0], 7, 'the request carries the comparison revision into its shadow write');
-    assert.equal(fs.existsSync(tenantFile), true, 'the first acknowledged write heals the disposable local mirror');
+    assert.equal(fs.existsSync(tenantFile), true, 'workspace normalization still heals the disposable local mirror');
     assert.equal(JSON.parse(fs.readFileSync(tenantFile, 'utf8')).company.name, legacyName);
     assert.equal(legacy.company.name, legacyName);
     assert.equal(transactional.company.name, legacyName, 'shadow persistence follows legacy authority, not the divergent candidate');

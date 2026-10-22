@@ -199,32 +199,45 @@ async function verify(input = snapshot, extra = {}) {
     server = require('./server').server;
     await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
     const base = 'http://127.0.0.1:' + server.address().port;
+    let primaryState = null;
     const request = async (route, method = 'GET', input) => {
       const response = await realFetch(base + route, { method,
         headers: { Authorization: 'Bearer synthetic-owner-token', 'Content-Type': 'application/json', 'X-PDL-Company': companyId },
         ...(input === undefined ? {} : { body: JSON.stringify(input) }) });
       return { status: response.status, data: await response.json() };
     };
+    const forceSessionRenewal = () => {
+      const expiresAt = new Date(Date.now() + 60000).toISOString();
+      if (process.env.PDL_TRANSACTIONAL_DB === 'primary' && primaryState) {
+        primaryState.snapshot.sessions[0].expiresAt = expiresAt;
+        primaryState.contentHash = canonicalHash(primaryState.snapshot);
+        return;
+      }
+      const current = JSON.parse(fs.readFileSync(process.env.PDL_DB_FILE, 'utf8'));
+      current.sessions[0].expiresAt = expiresAt;
+      fs.writeFileSync(process.env.PDL_DB_FILE, JSON.stringify(current));
+    };
+    const renewingAuth = async () => { forceSessionRenewal(); return request('/api/auth/me'); };
     const health = async () => (await request('/api/health')).data.services.backup;
     assert.equal((await health()).lastVerifiedAt, null, 'legacy lastBackupAt must not be called verification');
     assert.equal((await health()).fresh, false);
     process.env.PDL_SUPABASE_ENABLED = '0';
     const beforeOffline = uploadCount;
-    assert.equal((await request('/api/auth/me')).status, 200);
+    assert.equal((await renewingAuth()).status, 200);
     assert.equal((await health()).fresh, false, 'local file save is not a verified cloud backup');
     assert.equal(uploadCount, beforeOffline);
     process.env.PDL_SUPABASE_ENABLED = '1';
     mode = 'upload-failure';
-    assert.equal((await request('/api/auth/me')).status, 200);
+    assert.equal((await renewingAuth()).status, 200);
     assert.equal((await health()).lastAttemptStatus, 'failed');
     assert.equal((await health()).fresh, false);
     const failedCount = uploadCount;
-    assert.equal((await request('/api/auth/me')).status, 200);
+    assert.equal((await renewingAuth()).status, 200);
     assert.equal(uploadCount, failedCount, 'failed verification uses bounded retry backoff');
     const failedReceipt = receipt(); failedReceipt.attempt.at = new Date(Date.now() - backup.RETRY_AFTER_MS - 100).toISOString(); overwriteReceipt(failedReceipt);
     mode = 'success';
     const saveBefore = saveCount;
-    assert.equal((await request('/api/auth/me')).status, 200);
+    assert.equal((await renewingAuth()).status, 200);
     assert.equal((await health()).fresh, true);
     assert.equal(saveCount, saveBefore + 1, 'recording verification does not add a customer snapshot write');
     assert.deepEqual(savedSnapshot.projectNotesTodos, snapshot.projectNotesTodos);
@@ -237,14 +250,14 @@ async function verify(input = snapshot, extra = {}) {
     const originalError = console.error, expectedErrors = [];
     console.error = (...args) => expectedErrors.push(args);
     try {
-      assert.equal((await request('/api/auth/me')).status, 200, 'snapshot-mode response timing is unchanged');
+      assert.equal((await renewingAuth()).status, 200, 'snapshot-mode response timing is unchanged');
       await new Promise(resolve => setTimeout(resolve, 10));
       assert.equal(uploadCount, beforeHeld, 'a rejected authoritative save never starts backup upload');
       assert.equal((await health()).fresh, false);
       assert.ok(expectedErrors.some(args => args.some(value => String(value).includes('Synthetic save failure'))), 'app storage rejection reached the server error handler');
     } finally { console.error = originalError; }
     mode = 'success';
-    assert.equal((await request('/api/auth/me')).status, 200);
+    assert.equal((await renewingAuth()).status, 200);
     assert.equal((await health()).fresh, true);
 
     const goodAt = (await health()).lastVerifiedAt;
@@ -263,7 +276,7 @@ async function verify(input = snapshot, extra = {}) {
     fs.rmSync(directory, { recursive: true, force: true });
     assert.equal((await health()).fresh, false, 'ephemeral receipt loss is conservatively unknown');
     assert.equal((await health()).lastVerifiedAt, null);
-    assert.equal((await request('/api/auth/me')).status, 200);
+    assert.equal((await renewingAuth()).status, 200);
     assert.equal((await health()).fresh, true, 'a later write can re-establish verified evidence');
 
     // Production primary writes must acknowledge the authoritative commit without
@@ -274,7 +287,7 @@ async function verify(input = snapshot, extra = {}) {
       save: supabase.saveTransactionalSnapshot,
       createBackup: supabase.createVerifiedBackup
     };
-    let primaryState = {
+    primaryState = {
       snapshot: JSON.parse(fs.readFileSync(process.env.PDL_DB_FILE, 'utf8')),
       revision: 40,
       contentHash: null
@@ -297,7 +310,7 @@ async function verify(input = snapshot, extra = {}) {
     process.on('unhandledRejection', recordUnhandled);
     try {
       const queueStartedAt = Date.now();
-      assert.equal((await request('/api/auth/me')).status, 200, 'the committed write does not wait for backup storage');
+      assert.equal((await renewingAuth()).status, 200, 'the committed write does not wait for backup storage');
       assert.equal((await request('/api/auth/me')).status, 200, 'a later same-tenant request is not trapped behind backup storage');
       assert.ok(Date.now() - queueStartedAt < 1000, 'both same-tenant requests complete before the detached backup deadline');
       assert.equal(hungBackupCalls, 1, 'in-flight coalescing prevents a duplicate backup');
