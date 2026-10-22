@@ -100,6 +100,15 @@ function storage() {
   assert.equal(timeout.reason, 'provider_readiness_unavailable', 'a blocked provider evidence read must fail closed within its deadline');
 
   assert.deepEqual(readiness.runtimeConfiguration(env, true), { email: true, billing: true, monitoring: true });
+  assert.equal(readiness.PRODUCT_KEYS.length, 7, 'the provider target binds all seven intended Stripe Products');
+  const duplicateProducts = { ...env, [readiness.PRODUCT_KEYS[1]]: env[readiness.PRODUCT_KEYS[0]] };
+  assert.throws(() => readiness.targetDigest(duplicateProducts), /target is incomplete/,
+    'two plans must never share one intended Stripe Product');
+  assert.equal(readiness.runtimeConfiguration(duplicateProducts, true).billing, false,
+    'runtime billing readiness must fail closed when intended Product IDs are not distinct');
+  await assert.rejects(() => readiness.publish({ report: greenReport(), env: duplicateProducts,
+    upload: provider.upload, download: provider.download, now }), /target is incomplete/,
+  'the independent verifier must not publish green evidence for a shared Product ID');
   for (const key of ['RESEND_API_KEY', 'STRIPE_WEBHOOK_SECRET', 'SENTRY_DSN']) {
     const local = { ...env }; delete local[key];
     const configured = readiness.runtimeConfiguration(local, key !== 'SENTRY_DSN');

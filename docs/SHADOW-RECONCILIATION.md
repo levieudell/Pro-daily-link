@@ -46,7 +46,7 @@ npm audit --omit=dev
 npm run test:shadow-reconciliation
 ```
 
-Acceptance requires every command to exit `0`; no unresolved high/critical dependency, secret, or security finding; and protected `main` requiring review plus passing checks.
+Acceptance requires every command to exit `0`; no unresolved high/critical dependency, secret, or security finding; and protected `main` requiring the pull-request path plus passing checks. The solo-founder branch policy does not require another person's approval, but it does not permit direct pushes, failed checks, or administrator bypass.
 
 Run the real database and recovery acceptance outside production:
 
@@ -105,13 +105,9 @@ Acceptance:
 - the controlled Sentry event is visible in the production Sentry project with `monitoring_verification=true`; and
 - the configured Sentry alert actually reaches the named on-call person. A successful SDK flush without a received alert is insufficient.
 
-With the named recipient and explicit approval for one test email, set `PDL_MONITOR_EMAIL_TO` in protected Render configuration and run:
+Record the owner's approval of the permanent monitor recipient and recurring controlled test message, set `PDL_MONITOR_EMAIL_TO` only in the protected `production-provider-readiness` GitHub environment, and manually dispatch `.github/workflows/provider-readiness.yml` from `main` for the initial acceptance run. The environment must have no required reviewers or wait timer, administrator bypass disabled, and deployment branches set to **Protected branches only** while `main` remains protected. The initial run and every six-hour scheduled run must start without per-run manual approval. Never place `PDL_MONITOR_EMAIL_TO`, `RESEND_MONITOR_API_KEY`, `STRIPE_MONITOR_KEY`, `SENTRY_MONITOR_AUTH_TOKEN`, or the provider attestation private key in Render, and never run the active readiness publisher from Render.
 
-```text
-npm run services:verify-email
-```
-
-Verify the message is `Delivered` in Resend and in the recipient inbox, and that Reply-To is `support@prodailylink.com`. Remove the temporary recipient variable if it is not the permanent monitor address.
+Require the workflow to finish green and publish a fresh signed provider-readiness attestation. Verify the message is `Delivered` in Resend and in the recipient inbox, Reply-To is `support@prodailylink.com`, and the resulting `/api/health` provider checks match the exact Render public target configuration. Keep the permanent monitor recipient only in the protected GitHub environment.
 
 In Stripe test mode, complete the documented synthetic checkout/webhook lifecycle. Require the expected test event, a `2xx` delivery to `/api/billing/webhook`, correct local subscription state, safe replay/idempotency, and no production charge. In live mode, only inspect the enabled endpoint, recent legitimate deliveries, and failure alert routing; do not create a live charge for this gate.
 

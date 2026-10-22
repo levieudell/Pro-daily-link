@@ -6,7 +6,7 @@ This is the release-blocking checklist. [`SHADOW-RECONCILIATION.md`](SHADOW-RECO
 
 - the exact release SHA passes `npm ci`, `npm run check`, `npm test`, `npm run security:scan`, `npm audit --omit=dev`, and `npm run test:shadow-reconciliation`;
 - every database migration and its privilege/integrity evidence pass in order;
-- protected `main` requires pull-request review and required passing checks;
+- protected `main` requires the pull-request path and required passing checks, with administrator bypass disabled; the solo-founder policy requires zero additional approvers rather than blocking on a second person;
 - real stale-write/concurrency acceptance passes against an approved synthetic tenant, and destructive deletion acceptance passes only on an empty disposable database with verified zero-row cleanup;
 - the public read load gate passes and matching Render CPU, memory, restart, and instance metrics are retained;
 - a fresh complete portable backup exists for every eligible tenant and for platform state, includes every referenced private Storage object, has an independently retained manifest SHA-256, is rehashed after transfer, and is protected from overwrite at an approved off-Render destination;

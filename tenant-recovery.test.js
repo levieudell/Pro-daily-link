@@ -4,9 +4,11 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const { canonicalHash } = require('./database/transactional-repository');
+const supabase = require('./database/supabase');
+const { canonicalHash, tenantStorageNamespace } = require('./database/transactional-repository');
 const { createPortableBackup, validateTenantRestoreSnapshot, validateTenantFinalRestoreSnapshot } = require('./database/portable-backup');
 const { parseArgs, execute, prepareTenantRestore, sanitizedCliFailure, sanitizedCliResult } = require('./database/tenant-recovery');
+const { tenantUuid, readCompanyLogo } = require('./server');
 
 const companyId = '11111111-1111-4111-8111-111111111111';
 const productionRef = 'p'.repeat(20);
@@ -685,6 +687,70 @@ assert.throws(
       command: 'export', companyId, output: finalFenceRoot, productionTarget: productionRef, disposableTarget: '', expectedServiceId: serviceId, expectedInstanceId: instanceId
     }, { repo: memoryRepository(current), download: exportStorage.download, now: restoreTime, env: productionEnv, fenceApi: sequenceFenceApi([fence, fence, changedFence]), maintenanceRoot: root }), /MAINTENANCE_FENCE_CHANGED/);
     assert.deepEqual(fs.readdirSync(finalFenceRoot), [], 'a fence loss after capture invalidates the otherwise complete set');
+
+    const logoKey = `${companyId}/branding/recovered-logo.png`;
+    const logoBytes = Buffer.from('recovered-company-logo');
+    const logoRoute = `/api/files/company-logos/${logoKey.split('/').map(encodeURIComponent).join('/')}`;
+    const logoTarget = {
+      company: { id: companyId, name: 'Logo Recovery Builders', logo: { url: logoRoute, contentType: 'image/png' } },
+      users: [{ id: 1, email: 'logo-owner@example.test', role: 'owner', status: 'Active' }],
+      sessions: [], projects: []
+    };
+    const logoBackup = await createPortableBackup({
+      snapshot: logoTarget,
+      destination: path.join(root, 'logo-source'),
+      authority: { mode: 'transactional-primary', repositoryRevision: 3, contentHash: canonicalHash(logoTarget) },
+      download: async (bucket, key) => {
+        assert.equal(oid(bucket, key), oid('company-logos', logoKey));
+        return response(logoBytes, 'image/png');
+      },
+      now: new Date('2026-10-20T14:00:00.000Z')
+    });
+    const logoCurrent = {
+      company: { id: companyId, name: 'Current Logo Recovery Builders' },
+      users: [{ id: 9, email: 'break-glass-logo@example.test', role: 'owner', status: 'Active', passwordHash: 'current-logo-hash', passwordSalt: 'current-logo-salt' }],
+      sessions: [], projects: []
+    };
+    const logoRepo = memoryRepository(logoCurrent, 3);
+    const logoStorage = memoryStorage();
+    await execute(restoreArgs(logoBackup.directory, path.join(root, 'logo-rollback'), logoBackup.manifestSha256, logoCurrent, 3), {
+      repo: logoRepo,
+      download: logoStorage.download,
+      upload: logoStorage.upload,
+      remove: logoStorage.remove,
+      now: new Date('2026-10-20T14:05:00.000Z'),
+      env: disposableEnv,
+      fenceApi: stableFenceApi
+    });
+    const logoRestored = (await logoRepo.load(companyId)).snapshot;
+    assert.equal(logoRestored.company.logo.bucket, 'company-logos', 'route-only logo is normalized before repository commit');
+    assert.equal(logoRestored.company.logo.objectKey, logoKey);
+    const originalConfigured = supabase.configured;
+    const originalDownload = supabase.download;
+    try {
+      supabase.configured = () => true;
+      supabase.download = logoStorage.download;
+      const readableLogo = await readCompanyLogo(logoRestored);
+      assert.deepEqual(readableLogo.bytes, logoBytes, 'the live company-logo reader can fetch the restored route-only logo');
+      assert.equal(readableLogo.contentType, 'image/png');
+
+      const legacyCompanyId = 'forged-built-legacy';
+      const legacyNamespace = tenantStorageNamespace(legacyCompanyId);
+      assert.equal(tenantUuid({ company: { id: legacyCompanyId } }), legacyNamespace, 'live storage and portable export share the legacy tenant namespace');
+      const legacyLogoBytes = Buffer.from('legacy-company-logo');
+      supabase.download = async (bucket, key) => {
+        assert.equal(bucket, 'company-logos');
+        assert.equal(key, `${legacyNamespace}/logo.png`);
+        return response(legacyLogoBytes, 'image/png');
+      };
+      const readableLegacyLogo = await readCompanyLogo({
+        company: { id: legacyCompanyId, logo: { bucket: 'company-logos', objectKey: `${legacyNamespace}/logo.png`, contentType: 'image/png' } }
+      });
+      assert.deepEqual(readableLegacyLogo.bytes, legacyLogoBytes, 'a legacy tenant reads from the same namespace the exporter validates');
+    } finally {
+      supabase.configured = originalConfigured;
+      supabase.download = originalDownload;
+    }
 
     assert.equal(canonicalHash(prepareTenantRestore(target, current, restoreTime.toISOString())), canonicalHash(prepareTenantRestore(target, current, restoreTime.toISOString())));
     console.log('Tenant recovery passed: target binding, exact tenant state, fenced export/restore, final object reads, conditional rollback, provider ambiguity, and sanitized evidence.');

@@ -59,6 +59,11 @@ function emailAddress(value, label) {
   return text;
 }
 
+function configuredDistinctValues(env, keys) {
+  const values = keys.map(key => String(env[key] || '').trim());
+  return values.every(Boolean) && new Set(values).size === keys.length;
+}
+
 function targetDigest(env = process.env) {
   const fields = {
     publicUrl: normalizePublicUrl(env.PDL_PUBLIC_URL),
@@ -73,8 +78,7 @@ function targetDigest(env = process.env) {
     products: PRODUCT_KEYS.map(key => [key, String(env[key] || '').trim()])
   };
   if (fields.stripeMode !== 'live' || !fields.standardPortal || !fields.founderPortal ||
-      fields.prices.some(([, value]) => !value) || fields.products.some(([, value]) => !value) ||
-      new Set(fields.prices.map(([, value]) => value)).size !== fields.prices.length) {
+      !configuredDistinctValues(env, PRICE_KEYS) || !configuredDistinctValues(env, PRODUCT_KEYS)) {
     throw fail('Production provider target is incomplete');
   }
   return sha256(Buffer.from(JSON.stringify(fields)));
@@ -197,8 +201,8 @@ function runtimeConfiguration(env = process.env, monitoringConfigured = false) {
   const validEmail = value => {
     try { emailAddress(value, 'email'); return true; } catch { return false; }
   };
-  const pricesConfigured = PRICE_KEYS.every(key => String(env[key] || '').trim());
-  const productsConfigured = PRODUCT_KEYS.every(key => String(env[key] || '').trim());
+  const pricesConfigured = configuredDistinctValues(env, PRICE_KEYS);
+  const productsConfigured = configuredDistinctValues(env, PRODUCT_KEYS);
   return {
     email: Boolean(String(env.RESEND_API_KEY || '').trim() && validEmail(env.RESEND_FROM) && validEmail(env.RESEND_REPLY_TO) &&
       validVersion('PDL_RESEND_RUNTIME_KEY_VERSION')),

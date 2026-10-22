@@ -34,7 +34,7 @@ global.fetch = async (url, options = {}) => {
   if (target.origin === 'https://in.heycatch.ai') return new Response(null, { status: 204 });
   assert.equal(target.origin, 'https://api.stripe.com', 'no unmocked external service');
   const pathname = target.pathname.slice(3), params = Object.fromEntries(new URLSearchParams(options.body));
-  calls.push({ pathname, method: options.method, params, key: options.headers?.['Idempotency-Key'] });
+  calls.push({ pathname, method: options.method, params, query: Object.fromEntries(target.searchParams), key: options.headers?.['Idempotency-Key'] });
   const reply = (value, status = 200) => new Response(JSON.stringify(value), { status });
   if (providerOutage) return reply({ error: { message: 'Synthetic outage' } }, 503);
   if (pathname.startsWith('/prices/')) return reply(prices[pathname.split('/').pop()]);
@@ -171,6 +171,9 @@ async function webhook(subscription, suffix) {
     assert.equal((await c.request('/api/billing')).data.planChange.mode, 'portal');
     const portal = await c.request('/api/billing/portal', 'POST', {});
     assert.equal(portal.status, 200); assert.equal(portal.data.url, 'https://billing.example.invalid/session');
+    const portalConfigurationCall = calls.findLast(call => call.pathname === `/billing_portal/configurations/${standardConfigId}`);
+    assert.deepEqual(portalConfigurationCall.query, { 'expand[]': 'features.subscription_update.products' },
+      'runtime portal validation retrieves the expanded price allowlist');
     const portalSessionCall = calls.findLast(call => call.pathname === '/billing_portal/sessions');
     assert.equal(portalSessionCall.params.configuration, standardConfigId);
     assert.equal(portalSessionCall.params.customer, trialing.customer);
@@ -187,6 +190,11 @@ async function webhook(subscription, suffix) {
     unsafeStandard.features.subscription_update.products[0].prices.push(process.env.STRIPE_PRICE_FOUNDER_STARTER);
     assert.throws(() => portalPolicy.validate(unsafeStandard, portalPolicy.select({}, process.env), portalPlans, process.env), /exactly the current/);
     delete process.env.STRIPE_PRICE_FOUNDER_STARTER;
+    const expandedProducts = portalConfigurations.get(standardConfigId).features.subscription_update.products;
+    delete portalConfigurations.get(standardConfigId).features.subscription_update.products;
+    assert.equal((await c.request('/api/billing/portal', 'POST', {})).status, 503,
+      'missing or unexpanded portal products fail closed before session creation');
+    portalConfigurations.get(standardConfigId).features.subscription_update.products = expandedProducts;
     portalConfigurations.get(standardConfigId).features.subscription_update.enabled = false;
     assert.equal((await c.request('/api/billing/portal', 'POST', {})).status, 503, 'misconfigured standard portal fails closed before session creation');
     portalConfigurations.get(standardConfigId).features.subscription_update.enabled = true;

@@ -3,7 +3,7 @@
 const path = require('node:path');
 const crypto = require('node:crypto');
 const supabase = require('./supabase');
-const { databaseCompanyId } = require('./transactional-repository');
+const { tenantStorageNamespace } = require('./transactional-repository');
 
 supabase.loadLocalEnv(path.resolve(__dirname, '..'));
 
@@ -17,7 +17,7 @@ async function list(prefix) {
   const snapshots = (await supabase.listCompanySnapshots()).filter(snapshot => snapshot?.company?.id && !snapshot.platform && !snapshot.company.archivedDuplicate && !snapshot.mcpOauth && snapshot.company.mcpConnector !== true);
   const results = [];
   for (const snapshot of snapshots) {
-    const prefix = databaseCompanyId(snapshot.company.id);
+    const prefix = tenantStorageNamespace(snapshot);
     const objects = await list(prefix);
     const newest = objects.find(item => item.name?.endsWith('.json'));
     if (!newest) { results.push({ company: snapshot.company.name, ok: false, reason: 'no backup found' }); continue; }

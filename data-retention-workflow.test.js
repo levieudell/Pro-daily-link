@@ -2,6 +2,7 @@ const assert=require('node:assert/strict');
 const fs=require('node:fs');
 const os=require('node:os');
 const path=require('node:path');
+const {databaseCompanyId,tenantStorageNamespace}=require('./database/transactional-repository');
 
 process.env.NODE_ENV='test';
 process.env.PDL_REQUIRE_AUTH='0';
@@ -54,10 +55,43 @@ async function retentionTests(){
   const storedDir=path.join(temp,'uploads','logos');fs.mkdirSync(storedDir,{recursive:true});const storedFile=path.join(storedDir,'tenant.png');fs.writeFileSync(storedFile,'logo');
   const objectId='44444444-4444-4444-8444-444444444444',storageSnapshot={company:{id:objectId,logo:{url:'/uploads/logos/tenant.png'}},photos:[{id:1,storageBucket:'project-photos',storageKey:`${objectId}/photo.jpg`}],projectPlans:[],projectTickets:[]};
   const objects=new Map([['project-photos',new Set([`${objectId}/photo.jpg`,`${objectId}/orphan.jpg`])]]),removedObjects=[];
-  const storage={configured:()=>true,listByPrefix:async bucket=>[...(objects.get(bucket)||[])].map(objectKey=>({bucket,objectKey})),remove:async(bucket,key)=>{removedObjects.push(`${bucket}/${key}`);objects.get(bucket)?.delete(key);return true}};
+  const storage={configured:()=>true,listByPrefix:async(bucket,prefix)=>[...(objects.get(bucket)||[])].filter(objectKey=>objectKey.startsWith(`${prefix}/`)).map(objectKey=>({bucket,objectKey})),remove:async(bucket,key)=>{removedObjects.push(`${bucket}/${key}`);objects.get(bucket)?.delete(key);return true}};
   const removed=await removeTenantStoredObjects(storageSnapshot,{storage,root:temp});
   assert.deepEqual(removedObjects.sort(),[`project-photos/${objectId}/orphan.jpg`,`project-photos/${objectId}/photo.jpg`]);assert.equal(removed.removed,3);assert.equal(fs.existsSync(storedFile),false);
   await assert.rejects(()=>removeTenantStoredObjects(storageSnapshot,{storage:{configured:()=>false},root:temp}),/Cloud storage is not configured/);
+
+  const legacyId='legacy-builder-account',legacyNamespace=tenantStorageNamespace(legacyId),legacyDatabaseId=databaseCompanyId(legacyId),legacySnapshot={
+    company:{id:legacyId},photos:[{id:2,storageBucket:'project-photos',storageKey:`${legacyId}/referenced-raw.jpg`}],projectPlans:[],projectTickets:[]
+  };
+  const legacyObjects=new Map([
+    ['project-photos',new Set([
+      `${legacyId}/referenced-raw.jpg`,`${legacyId}/orphan-raw.jpg`,
+      `${legacyNamespace}/orphan-canonical.jpg`,`${legacyDatabaseId}/orphan-transactional.jpg`,
+      'unrelated-tenant/keep.jpg'
+    ])],
+    ['tenant-backups',new Set([
+      `${legacyId}/old-raw-backup.json`,`${legacyNamespace}/new-canonical-backup.json`,
+      `${legacyDatabaseId}/old-transactional-backup.json`,'unrelated-tenant/keep.json'
+    ])]
+  ]),legacyRemoved=[];
+  const legacyStorage={
+    configured:()=>true,
+    listByPrefix:async(bucket,prefix)=>[...(legacyObjects.get(bucket)||[])].filter(objectKey=>objectKey.startsWith(`${prefix}/`)).map(objectKey=>({bucket,objectKey})),
+    remove:async(bucket,key)=>{legacyRemoved.push(`${bucket}/${key}`);legacyObjects.get(bucket)?.delete(key);return true}
+  };
+  const legacyResult=await removeTenantStoredObjects(legacySnapshot,{storage:legacyStorage,root:temp});
+  assert.deepEqual(legacyRemoved.sort(),[
+    `project-photos/${legacyDatabaseId}/orphan-transactional.jpg`,
+    `project-photos/${legacyId}/orphan-raw.jpg`,
+    `project-photos/${legacyId}/referenced-raw.jpg`,
+    `project-photos/${legacyNamespace}/orphan-canonical.jpg`,
+    `tenant-backups/${legacyDatabaseId}/old-transactional-backup.json`,
+    `tenant-backups/${legacyId}/old-raw-backup.json`,
+    `tenant-backups/${legacyNamespace}/new-canonical-backup.json`
+  ].sort(),'legacy deletion removes referenced and orphaned objects from every historical namespace');
+  assert.equal(legacyResult.total,7);
+  assert.deepEqual([...legacyObjects.get('project-photos')],['unrelated-tenant/keep.jpg'],'unrelated tenant photos remain untouched');
+  assert.deepEqual([...legacyObjects.get('tenant-backups')],['unrelated-tenant/keep.json'],'unrelated tenant backups remain untouched');
 }
 
 async function apiTests(){

@@ -6,7 +6,7 @@ const os = require('node:os');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
 const supabase = require('./database/supabase');
-const { canonicalHash } = require('./database/transactional-repository');
+const { canonicalHash, databaseCompanyId, tenantStorageNamespace } = require('./database/transactional-repository');
 const { parseArgs, collectStorageReferences, createPortableBackup, verifyPortableBackup, validateTenantSnapshot, validateTenantRestoreSnapshot, SNAPSHOT_SCHEMA, loadAuthoritativeTenantSnapshot, assertLegacyDirectExportAuthority, assertLegacyDirectExportMode, digest, sanitizedCliResult, sanitizedCliFailure } = require('./database/portable-backup');
 
 const id = '11111111-1111-1111-1111-111111111111';
@@ -47,13 +47,34 @@ assert.throws(() => parseArgs(['--company-id', id]), /independent destination/);
 assert.equal(collectStorageReferences(snapshot).length, 4);
 assert.throws(() => collectStorageReferences({ company: { id }, photos: [{ id: 9, storageBucket: 'project-photos', storageKey: 'another-tenant/photo.jpg' }] }), /cross-tenant/);
 assert.throws(() => collectStorageReferences({ company: { id }, photos: [{ id: 10, url: '/uploads/photo.jpg' }] }), /Non-portable local storage reference/);
+assert.deepEqual(
+  collectStorageReferences({ company: { id }, photos: [{ id: 10, url: `/api/files/project-photos/${id}/photo.jpg` }] }),
+  [{ bucket: 'project-photos', objectKey: `${id}/photo.jpg`, source: 'photos:10' }]
+);
+const legacyStorageId = tenantStorageNamespace('legacy-builder-account');
+assert.deepEqual(
+  collectStorageReferences({
+    company: { id: 'legacy-builder-account' },
+    photos: [{ id: 12, storageBucket: 'project-photos', storageKey: `${legacyStorageId}/photo.jpg` }]
+  }),
+  [{ bucket: 'project-photos', objectKey: `${legacyStorageId}/photo.jpg`, source: 'photos:12' }],
+  'legacy portable exports use the same Storage namespace as the live writer'
+);
+assert.throws(
+  () => collectStorageReferences({
+    company: { id: 'legacy-builder-account' },
+    photos: [{ id: 13, storageBucket: 'project-photos', storageKey: `${databaseCompanyId('legacy-builder-account')}/photo.jpg` }]
+  }),
+  /cross-tenant/,
+  'a transactional database UUID is not silently substituted for the legacy Storage namespace'
+);
 assert.throws(() => assertLegacyDirectExportMode('primary'), error => error.code === 'PDL_TENANT_BACKUP_PRIMARY_REQUIRES_RECOVERY');
 assert.equal(assertLegacyDirectExportMode('shadow'), 'shadow');
 const primaryFailure = sanitizedCliFailure(Object.assign(new Error('do not leak this'), { code: 'PDL_TENANT_BACKUP_PRIMARY_REQUIRES_RECOVERY' }));
 assert.equal(primaryFailure.code, 'PDL_TENANT_BACKUP_PRIMARY_REQUIRES_RECOVERY');
 assert.equal(primaryFailure.message.includes('do not leak this'), false);
 for (const localReference of [
-  '\\uploads\\photo.jpg', '//fileserver/photo.jpg', '/api/files/project-photos/photo.jpg',
+  '\\uploads\\photo.jpg', '//fileserver/photo.jpg',
   '/api/local-files/project-photos/photo.jpg', 'file:///tmp/photo.jpg', 'C:\\photos\\photo.jpg'
 ]) {
   assert.throws(
@@ -132,6 +153,25 @@ function rewriteSnapshotAndManifest(directory, replacement) {
     assert.ok(fs.existsSync(path.join(result.directory, 'manifest.sha256')));
     assert.equal(verifyPortableBackup(result.directory, { expectedCompanyId: id }).ok, true);
     assert.equal(JSON.stringify(sanitizedCliResult(result)).includes(result.directory), false, 'CLI output must not expose absolute backup paths');
+
+    const legacyAlias = 'legacy-builder-account';
+    const legacyObjectKey = `${tenantStorageNamespace(legacyAlias)}/photo.jpg`;
+    const legacyNamespaceSnapshot = {
+      company: { id: legacyAlias, name: 'Legacy Namespace Builders' },
+      users: [{ id: 1, email: 'legacy-owner@example.test', role: 'owner', status: 'Active' }],
+      photos: [{ id: 1, storageBucket: 'project-photos', storageKey: legacyObjectKey }]
+    };
+    const legacyNamespaceBackup = await createPortableBackup({
+      snapshot: legacyNamespaceSnapshot,
+      destination: directory,
+      download: async (bucket, key) => {
+        assert.equal(`${bucket}/${key}`, `project-photos/${legacyObjectKey}`);
+        return { arrayBuffer: async () => Buffer.from('legacy-photo'), headers: { get: () => 'image/jpeg' } };
+      },
+      now: new Date('2026-10-04T12:00:15.000Z')
+    });
+    assert.equal(legacyNamespaceBackup.manifest.companyId, databaseCompanyId(legacyAlias), 'manifest identity remains the transactional database UUID');
+    assert.equal(verifyPortableBackup(legacyNamespaceBackup.directory, { expectedCompanyId: legacyAlias }).ok, true, 'legacy Storage namespace survives export and verification');
 
     const legacySnapshot = { ...snapshot, users: legacyUsers };
     const legacyBackup = await createPortableBackup({

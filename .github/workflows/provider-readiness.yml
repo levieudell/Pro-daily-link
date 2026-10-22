@@ -15,7 +15,7 @@ concurrency:
 jobs:
   verify:
     # Scheduled runs execute from the default branch. Manual runs are also
-    # main-only and must pass the protected environment's required reviewers.
+    # main-only and must pass the protected environment controls.
     if: github.ref == 'refs/heads/main'
     environment: production-provider-readiness
     runs-on: ubuntu-latest

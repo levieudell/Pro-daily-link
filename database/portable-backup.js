@@ -4,7 +4,7 @@ const crypto = require('node:crypto');
 const fs = require('node:fs');
 const path = require('node:path');
 const supabase = require('./supabase');
-const { canonicalHash, databaseCompanyId } = require('./transactional-repository');
+const { canonicalHash, databaseCompanyId, tenantStorageNamespace } = require('./transactional-repository');
 
 const FORMAT = 'pdl-portable-backup-v1';
 const SNAPSHOT_SCHEMA = 'pdl-tenant-snapshot-v1';
@@ -52,8 +52,9 @@ function safeBucket(value) {
 }
 
 function safeObjectKey(value, companyId) {
-  const key = String(value || '').replaceAll('\\', '/').replace(/^\/+/, '');
-  if (!key || key.endsWith('/') || key.includes('../') || key.split('/').includes('..') || /[\u0000-\u001f\u007f]/.test(key) || !key.startsWith(`${companyId}/`)) {
+  const key = String(value || '');
+  const segments = key.split('/');
+  if (!key || key.startsWith('/') || key.endsWith('/') || key.includes('\\') || key.includes('//') || segments.includes('.') || segments.includes('..') || /[\u0000-\u001f\u007f]/.test(key) || !key.startsWith(`${companyId}/`)) {
     throw new Error('Tenant storage object key is invalid or cross-tenant.');
   }
   return key;
@@ -250,25 +251,76 @@ function parseArgs(argv = process.argv.slice(2)) {
   return { companyId, output };
 }
 
+function privateStorageReferenceFromRoute(value, companyId, source) {
+  const route = String(value || '');
+  if (!route.startsWith('/api/files')) return null;
+  const match = /^\/api\/files\/([^/]+)\/(.+)$/.exec(route);
+  if (!match || route !== route.trim() || /[?#]/.test(route)) {
+    throw new Error(`Private storage route in ${source} is invalid.`);
+  }
+  let objectKey;
+  try {
+    objectKey = match[2].split('/').map(decodeURIComponent).join('/');
+  } catch {
+    throw new Error(`Private storage route in ${source} has invalid encoding.`);
+  }
+  return {
+    // The live route matches the bucket segment before decoding it. Preserve
+    // that behavior so encoded bucket aliases cannot become backup authority.
+    bucket: safeBucket(match[1]),
+    objectKey: safeObjectKey(objectKey, companyId),
+    source
+  };
+}
+
+function storageReferenceKind(value) {
+  const raw = String(value || '');
+  if (!raw) return null;
+  const trimmed = raw.trim();
+  const normalized = trimmed.replaceAll('\\', '/');
+  if (/^(?:\/\/|\/?uploads(?:\/|$)|\/?api\/(?:files|local-files)(?:\/|$)|file:\/\/|[a-z]:\/)/i.test(normalized)) return 'local';
+  if (/^data:/i.test(normalized)) {
+    return raw === trimmed && /^data:[a-z0-9][a-z0-9!#$&^_.+-]*\/[a-z0-9][a-z0-9!#$&^_.+-]*(?:;[^,\r\n]*)?,[^\r\n]*$/i.test(trimmed) ? null : 'external';
+  }
+  if (/^[a-z][a-z0-9+.-]*:/i.test(normalized)) return 'external';
+  // An unknown string is not proof that the bytes are embedded in the
+  // snapshot. Treat every other non-empty form as unsupported rather than
+  // silently producing a recovery set that cannot recreate the asset.
+  return 'unsupported';
+}
+
 function collectStorageReferences(snapshot) {
-  const companyId = databaseCompanyId(snapshot?.company?.id);
+  const companyId = tenantStorageNamespace(snapshot);
   const references = new Map();
   const add = (asset, source) => {
     if (!asset || typeof asset !== 'object') return;
     const bucket = asset.storageBucket ?? asset.bucket;
     const objectKey = asset.storageKey ?? asset.objectKey;
-    if (!bucket && !objectKey) {
-      const localUrl = [asset.url, asset.dataUrl, asset.downloadUrl]
-        .map(value => String(value || '').replaceAll('\\', '/'))
-        .find(value => /^(?:\/\/|\/?uploads\/|\/?api\/(?:files|local-files)\/|file:\/\/|[a-z]:\/)/i.test(value));
-      if (localUrl) {
-        throw new Error(`Non-portable local storage reference in ${source}: ${localUrl}. Migrate this object to private Storage before exporting.`);
+    const urlValues = [asset.url, asset.dataUrl, asset.downloadUrl].filter(value => value != null && String(value) !== '');
+    const routes = [];
+    for (const value of urlValues) {
+      const reference = privateStorageReferenceFromRoute(value, companyId, source);
+      if (reference) routes.push(reference);
+      else {
+        const kind = storageReferenceKind(value);
+        if (kind) throw new Error(`Non-portable ${kind} storage reference in ${source}. Migrate this object to private Storage before exporting.`);
       }
+    }
+    if (!bucket && !objectKey) {
+      if (!routes.length) return;
+      const [reference] = routes;
+      if (routes.some(candidate => candidate.bucket !== reference.bucket || candidate.objectKey !== reference.objectKey)) {
+        throw new Error(`Conflicting private storage routes in ${source}.`);
+      }
+      references.set(`${reference.bucket}/${reference.objectKey}`, reference);
       return;
     }
     if (!bucket || !objectKey) throw new Error(`Incomplete private storage reference in ${source}.`);
     const key = safeObjectKey(objectKey, companyId);
     const reference = { bucket: safeBucket(bucket), objectKey: key, source };
+    if (routes.some(candidate => candidate.bucket !== reference.bucket || candidate.objectKey !== reference.objectKey)) {
+      throw new Error(`Conflicting private storage routes in ${source}.`);
+    }
     references.set(`${reference.bucket}/${reference.objectKey}`, reference);
   };
   add(snapshot.company?.logo, 'company.logo');
@@ -280,6 +332,23 @@ function collectStorageReferences(snapshot) {
     for (const proposal of project.estimateProposals || []) add(proposal.sourceFile, `projects:${project.id}:estimateProposals:${proposal.id}`);
   }
   return [...references.values()].sort((a, b) => `${a.bucket}/${a.objectKey}`.localeCompare(`${b.bucket}/${b.objectKey}`));
+}
+
+function normalizeRecoveredCompanyLogo(snapshot) {
+  const logo = snapshot?.company?.logo;
+  if (!logo || typeof logo !== 'object' || Array.isArray(logo)) return snapshot;
+  const reference = collectStorageReferences({ company: snapshot.company })
+    .find(candidate => candidate.source === 'company.logo');
+  if (!reference) return snapshot;
+  // The live logo endpoint reads the canonical bucket/objectKey fields. Older
+  // snapshots sometimes retained only the authenticated /api/files route (or
+  // storageBucket/storageKey aliases), which was exportable but unreadable
+  // after restore. Normalize the already-validated pointer before persistence.
+  logo.bucket = reference.bucket;
+  logo.objectKey = reference.objectKey;
+  delete logo.storageBucket;
+  delete logo.storageKey;
+  return snapshot;
 }
 
 async function createPortableBackup({
@@ -381,6 +450,7 @@ function verifyPortableBackup(directory, { expectedCompanyId = null } = {}) {
   verifyHashEntry(snapshotBytes, manifest.snapshot?.sha256, manifest.snapshot?.bytes, 'Tenant snapshot');
   const snapshot = JSON.parse(snapshotBytes.toString('utf8'));
   validateTenantSnapshot(snapshot);
+  const storageCompanyId = tenantStorageNamespace(snapshot);
   const contentHash = canonicalHash(snapshot);
   if (databaseCompanyId(snapshot.company?.id) !== companyId || contentHash !== manifest.snapshot?.canonicalSha256) throw new Error('Tenant snapshot identity or canonical SHA-256 verification failed.');
   const authorityMode = String(manifest.authority?.mode || '');
@@ -390,7 +460,7 @@ function verifyPortableBackup(directory, { expectedCompanyId = null } = {}) {
   const seenObjects = new Set(), seenFiles = new Set(), objectEntries = [];
   for (const object of manifest.objects || []) {
     const bucket = safeBucket(object.bucket);
-    const objectKey = safeObjectKey(object.objectKey, companyId);
+    const objectKey = safeObjectKey(object.objectKey, storageCompanyId);
     const key = `${bucket}/${objectKey}`;
     if (seenObjects.has(key)) throw new Error(`Duplicate tenant backup object: ${key}`);
     seenObjects.add(key);
@@ -511,6 +581,7 @@ module.exports = {
   validateTenantRestoreSnapshot,
   validateTenantFinalRestoreSnapshot,
   collectStorageReferences,
+  normalizeRecoveredCompanyLogo,
   createPortableBackup,
   verifyPortableBackup,
   readVerifiedTenantObjects,
