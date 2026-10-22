@@ -233,4 +233,3 @@ function cookieMaxAge(value) { return Number(String(value).match(/Max-Age=(\d+)/
     fs.rmSync(temp, { recursive: true, force: true });
   }
 })().catch(error => { console.error(error); process.exitCode = 1; });
-
