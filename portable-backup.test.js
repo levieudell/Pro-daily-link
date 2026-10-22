@@ -47,13 +47,17 @@ assert.throws(() => parseArgs(['--company-id', id]), /independent destination/);
 assert.equal(collectStorageReferences(snapshot).length, 4);
 assert.throws(() => collectStorageReferences({ company: { id }, photos: [{ id: 9, storageBucket: 'project-photos', storageKey: 'another-tenant/photo.jpg' }] }), /cross-tenant/);
 assert.throws(() => collectStorageReferences({ company: { id }, photos: [{ id: 10, url: '/uploads/photo.jpg' }] }), /Non-portable local storage reference/);
+assert.deepEqual(
+  collectStorageReferences({ company: { id }, photos: [{ id: 10, url: `/api/files/project-photos/${id}/photo.jpg` }] }),
+  [{ bucket: 'project-photos', objectKey: `${id}/photo.jpg`, source: 'photos:10' }]
+);
 assert.throws(() => assertLegacyDirectExportMode('primary'), error => error.code === 'PDL_TENANT_BACKUP_PRIMARY_REQUIRES_RECOVERY');
 assert.equal(assertLegacyDirectExportMode('shadow'), 'shadow');
 const primaryFailure = sanitizedCliFailure(Object.assign(new Error('do not leak this'), { code: 'PDL_TENANT_BACKUP_PRIMARY_REQUIRES_RECOVERY' }));
 assert.equal(primaryFailure.code, 'PDL_TENANT_BACKUP_PRIMARY_REQUIRES_RECOVERY');
 assert.equal(primaryFailure.message.includes('do not leak this'), false);
 for (const localReference of [
-  '\\uploads\\photo.jpg', '//fileserver/photo.jpg', '/api/files/project-photos/photo.jpg',
+  '\\uploads\\photo.jpg', '//fileserver/photo.jpg',
   '/api/local-files/project-photos/photo.jpg', 'file:///tmp/photo.jpg', 'C:\\photos\\photo.jpg'
 ]) {
   assert.throws(

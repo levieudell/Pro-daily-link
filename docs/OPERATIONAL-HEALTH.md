@@ -52,7 +52,7 @@ Configure these GitHub Actions secrets for the independent job:
 
 - Supabase evidence storage: `SUPABASE_URL`, `SUPABASE_SECRET_KEY`, and `PDL_PRODUCTION_SUPABASE_PROJECT_REF`.
 - Signing: `PDL_PROVIDER_ATTESTATION_PRIVATE_KEY` (PKCS8 Ed25519 DER, base64) and its matching `PDL_PROVIDER_ATTESTATION_PUBLIC_KEY` (SPKI Ed25519 DER, base64).
-- Stripe read-only verification: `STRIPE_MONITOR_KEY`, both `STRIPE_PORTAL_CONFIG_STANDARD` and `STRIPE_PORTAL_CONFIG_FOUNDER`, all six standard price IDs, all six founder price IDs, `STRIPE_PRICE_ASSISTED_SETUP`, and the seven intended Product IDs.
+- Stripe read-only verification: `STRIPE_MONITOR_KEY`, both `STRIPE_PORTAL_CONFIG_STANDARD` and `STRIPE_PORTAL_CONFIG_FOUNDER`, all six standard price IDs, all six founder price IDs, `STRIPE_PRICE_ASSISTED_SETUP`, and seven distinct intended Product IDs (one Product per standard, founder, and assisted-setup plan).
 - Controlled email verification: `RESEND_MONITOR_API_KEY` and `PDL_MONITOR_EMAIL_TO`.
 - Controlled Sentry verification: `SENTRY_DSN`, `SENTRY_MONITOR_AUTH_TOKEN`, `SENTRY_ORG`, and `SENTRY_PROJECT`.
 

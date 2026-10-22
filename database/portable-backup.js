@@ -52,8 +52,9 @@ function safeBucket(value) {
 }
 
 function safeObjectKey(value, companyId) {
-  const key = String(value || '').replaceAll('\\', '/').replace(/^\/+/, '');
-  if (!key || key.endsWith('/') || key.includes('../') || key.split('/').includes('..') || /[\u0000-\u001f\u007f]/.test(key) || !key.startsWith(`${companyId}/`)) {
+  const key = String(value || '');
+  const segments = key.split('/');
+  if (!key || key.startsWith('/') || key.endsWith('/') || key.includes('\\') || key.includes('//') || segments.includes('.') || segments.includes('..') || /[\u0000-\u001f\u007f]/.test(key) || !key.startsWith(`${companyId}/`)) {
     throw new Error('Tenant storage object key is invalid or cross-tenant.');
   }
   return key;
@@ -250,6 +251,41 @@ function parseArgs(argv = process.argv.slice(2)) {
   return { companyId, output };
 }
 
+function privateStorageReferenceFromRoute(value, companyId, source) {
+  const route = String(value || '');
+  if (!route.startsWith('/api/files')) return null;
+  const match = /^\/api\/files\/([^/]+)\/(.+)$/.exec(route);
+  if (!match || route !== route.trim() || /[?#]/.test(route)) {
+    throw new Error(`Private storage route in ${source} is invalid.`);
+  }
+  let objectKey;
+  try {
+    objectKey = match[2].split('/').map(decodeURIComponent).join('/');
+  } catch {
+    throw new Error(`Private storage route in ${source} has invalid encoding.`);
+  }
+  return {
+    // The live route matches the bucket segment before decoding it. Preserve
+    // that behavior so encoded bucket aliases cannot become backup authority.
+    bucket: safeBucket(match[1]),
+    objectKey: safeObjectKey(objectKey, companyId),
+    source
+  };
+}
+
+function storageReferenceKind(value) {
+  const raw = String(value || '');
+  if (!raw) return null;
+  const trimmed = raw.trim();
+  const normalized = trimmed.replaceAll('\\', '/');
+  if (/^(?:\/\/|\/?uploads(?:\/|$)|\/?api\/(?:files|local-files)(?:\/|$)|file:\/\/|[a-z]:\/)/i.test(normalized)) return 'local';
+  if (/^data:/i.test(normalized)) {
+    return raw === trimmed && /^data:[^,\r\n]*,/i.test(trimmed) ? null : 'external';
+  }
+  if (/^[a-z][a-z0-9+.-]*:/i.test(normalized)) return 'external';
+  return null;
+}
+
 function collectStorageReferences(snapshot) {
   const companyId = databaseCompanyId(snapshot?.company?.id);
   const references = new Map();
@@ -257,18 +293,31 @@ function collectStorageReferences(snapshot) {
     if (!asset || typeof asset !== 'object') return;
     const bucket = asset.storageBucket ?? asset.bucket;
     const objectKey = asset.storageKey ?? asset.objectKey;
-    if (!bucket && !objectKey) {
-      const localUrl = [asset.url, asset.dataUrl, asset.downloadUrl]
-        .map(value => String(value || '').replaceAll('\\', '/'))
-        .find(value => /^(?:\/\/|\/?uploads\/|\/?api\/(?:files|local-files)\/|file:\/\/|[a-z]:\/)/i.test(value));
-      if (localUrl) {
-        throw new Error(`Non-portable local storage reference in ${source}: ${localUrl}. Migrate this object to private Storage before exporting.`);
+    const urlValues = [asset.url, asset.dataUrl, asset.downloadUrl].filter(value => value != null && String(value) !== '');
+    const routes = [];
+    for (const value of urlValues) {
+      const reference = privateStorageReferenceFromRoute(value, companyId, source);
+      if (reference) routes.push(reference);
+      else {
+        const kind = storageReferenceKind(value);
+        if (kind) throw new Error(`Non-portable ${kind} storage reference in ${source}. Migrate this object to private Storage before exporting.`);
       }
+    }
+    if (!bucket && !objectKey) {
+      if (!routes.length) return;
+      const [reference] = routes;
+      if (routes.some(candidate => candidate.bucket !== reference.bucket || candidate.objectKey !== reference.objectKey)) {
+        throw new Error(`Conflicting private storage routes in ${source}.`);
+      }
+      references.set(`${reference.bucket}/${reference.objectKey}`, reference);
       return;
     }
     if (!bucket || !objectKey) throw new Error(`Incomplete private storage reference in ${source}.`);
     const key = safeObjectKey(objectKey, companyId);
     const reference = { bucket: safeBucket(bucket), objectKey: key, source };
+    if (routes.some(candidate => candidate.bucket !== reference.bucket || candidate.objectKey !== reference.objectKey)) {
+      throw new Error(`Conflicting private storage routes in ${source}.`);
+    }
     references.set(`${reference.bucket}/${reference.objectKey}`, reference);
   };
   add(snapshot.company?.logo, 'company.logo');
