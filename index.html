@@ -11,6 +11,7 @@
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Oswald:wght@500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="styles.css?v=20261014-review3-20261017-fieldreview1-office1-mobile3-20261019-schedule1" />
   <link rel="stylesheet" href="estimate-mobile.css" />
+  <link rel="stylesheet" href="safety-pm-ui.css?v=20261026-mvp1" />
   <link rel="stylesheet" href="project-notes-ui.css?v=20261005-notes-focus" />
   <link rel="stylesheet" href="project-assistant-ui.css?v=20261007-assistant-draft" />
   <link rel="stylesheet" href="design-system.css?v=20261021-field-clock-button1" />
@@ -41,6 +42,7 @@
         <button class="nav-item field-only" data-page="myday"><span>☀</span> My day</button>
         <button class="nav-item field-only" data-page="fieldday"><span>◷</span> Time</button>
         <button class="nav-item" data-page="reports"><span>≡</span> Daily reports <em id="report-count" hidden>0</em></button>
+        <button type="button" class="nav-item" id="open-safety-pm"><span aria-hidden="true">✓</span> Safety today</button>
         <p class="nav-section-label office-only">Work</p>
         <button class="nav-item office-only" data-page="projects"><span>⌂</span> Projects</button>
         <button class="nav-item office-only" data-page="customers"><span>▤</span> Customers</button>
@@ -264,6 +266,7 @@
   <dialog id="report-modal">
     <form method="dialog" id="report-form">
       <div class="modal-header"><div><p class="eyebrow">FIELD REPORT</p><h2 id="report-modal-title">Create daily report</h2><p id="report-work-date" class="report-work-date" aria-live="polite"></p></div><button type="button" id="close-report" class="close-button" value="cancel" aria-label="Close daily report">×</button></div>
+      <button type="button" class="secondary small" id="report-open-safety">Safety checks &amp; hazards</button>
       <div class="report-steps"><span class="active" data-step-dot="1"><b>1</b> Field notes & photos</span><i></i><span data-step-dot="2"><b>2</b> Production & labor</span></div>
       <div id="report-draft-choice" class="draft-choice" hidden><div><strong>Saved draft found</strong><p id="report-draft-summary"></p></div><div><button type="button" class="secondary" id="report-start-fresh">Start fresh</button><button type="button" class="primary" id="report-resume-draft">Resume draft</button></div></div>
       <div class="report-step active" data-report-step="1">
@@ -558,5 +561,6 @@
   <script src="project-assistant-chat.js?v=20261007-natural-names"></script>
   <script src="project-assistant-access.js?v=20261008-forged-built-pilot"></script>
   <script src="project-assistant-ui.js?v=20261008-forged-built-pilot"></script>
+  <script src="safety-pm-ui.js?v=20261026-mvp1"></script>
 </body>
 </html>
