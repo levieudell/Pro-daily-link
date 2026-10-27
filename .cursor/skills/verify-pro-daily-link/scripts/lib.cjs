@@ -239,41 +239,45 @@ function pageHooks() {
   window.webkitSpeechRecognition = FakeSpeechRecognition;
   try { delete window.MediaRecorder; } catch { /* non-configurable in this browser */ }
   window.MediaRecorder = undefined;
-  const state = window.__pdlOldScreen || { armed: false, hits: [], reviewSeenAt: null, samples: 0, installed: false };
+  const state = window.__pdlOldScreen || { armed: true, hits: [], reviewSeenAt: null, samples: 0, installed: false };
+  state.armed = true;
   window.__pdlOldScreen = state;
   function installOldScreenWatch() {
     if (state.installed || !document.documentElement) return;
     function visible(el) {
-      if (!el) return false;
+      if (!el || !el.isConnected) return false;
       const style = getComputedStyle(el);
-      if (style.display === 'none' || style.visibility === 'hidden') return false;
+      if (style.display === 'none' || style.visibility === 'hidden' || Number(style.opacity) === 0) return false;
       const rect = el.getBoundingClientRect();
       return rect.width > 0 && rect.height > 0;
+    }
+    function legacyPaint() {
+      const end = document.querySelector('#end-day-modal');
+      const oldEnd = Boolean(end && end.open === true && visible(end));
+      let oldHeading = false;
+      const candidates = [];
+      if (end) candidates.push(end);
+      document.querySelectorAll('label, h2, p, button, legend').forEach(node => candidates.push(node));
+      for (const node of candidates) {
+        if (!/What was completed\?/i.test(node.textContent || '')) continue;
+        if (visible(node)) { oldHeading = true; break; }
+      }
+      return { oldEnd, oldHeading };
     }
     function sample(reason) {
       state.samples += 1;
       const review = document.querySelector('#field-review-cards');
       const reviewVisible = Boolean(review) && !review.hidden && visible(review);
       if (reviewVisible && state.reviewSeenAt == null) state.reviewSeenAt = performance.now();
-      if (!state.armed || state.reviewSeenAt != null || state.hits.length >= 12) return;
-      const end = document.querySelector('#end-day-modal');
-      const notesStep = document.querySelector('[data-report-step="1"]');
-      const notes = document.querySelector('#field-notes');
-      const oldEnd = Boolean(end && end.open && visible(end));
-      const oldHeading = Boolean(oldEnd && /What was completed\?/i.test(end.innerText || ''));
-      const oldNotes = Boolean(oldEnd && visible(document.querySelector('#end-day-notes')));
-      const oldConfirm = Boolean(oldEnd && visible(document.querySelector('#confirm-end-day')));
-      const notesFirst = Boolean(visible(notesStep) && notesStep.classList.contains('active') && visible(notes) && !reviewVisible);
-      if (oldEnd || oldHeading || oldNotes || oldConfirm || notesFirst) {
+      if (!state.armed || state.hits.length >= 12) return;
+      const paint = legacyPaint();
+      if (paint.oldEnd || paint.oldHeading) {
         state.hits.push({
           reason,
           at: Math.round(performance.now()),
-          oldEnd,
-          oldHeading,
-          oldNotes,
-          oldConfirm,
-          notesFirst,
-          stepActive: notesStep?.classList.contains('active') === true
+          oldEnd: paint.oldEnd,
+          oldHeading: paint.oldHeading,
+          reviewVisible
         });
       }
     }

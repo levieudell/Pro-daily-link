@@ -14,7 +14,7 @@ Use the one-note daily. Tap `#report-next-step` (Done on the phone layout). The 
 
 `node .cursor/skills/verify-pro-daily-link/scripts/drive.cjs --journey 3`
 
-The driver waits 125 seconds after clock-in so `elapsedMinutes` is at least two, then clocks out, enters the sensible note (by voice when journey 2 is in the same run, otherwise by typing into `#field-notes`), and taps Done. It reads `[data-review-labor]` and `.production-hours`, reads the closed time card from `/api/state`, and compares the minute sum with the punch. Displayed hours must equal `displayHoursForMinutes` in `scripts/lib.cjs`, the same largest-remainder rule as `splitLargestRemainder` in `field-daily-scope.js`.
+The driver waits 125 seconds after clock-in so `elapsedMinutes` is at least two, then clocks out, enters the sensible note (by voice when journey 2 is in the same run, otherwise by typing into `#field-notes`), and taps Done. It reads minutes and `.production-hours` on `.production-entry` rows that have minutes, reads the closed time card from `/api/state`, and compares that minute sum with the punch. Displayed hours on those rows must equal `displayHoursForMinutes` in `scripts/lib.cjs`, the same largest-remainder rule as `splitLargestRemainder` in `field-daily-scope.js`. A zero-minute unmatched row, such as the equipment pad before it is marked extra, is not part of that split.
 
 ## Gotchas
 

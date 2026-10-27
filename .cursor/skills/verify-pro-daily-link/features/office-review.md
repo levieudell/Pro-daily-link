@@ -14,7 +14,7 @@ The field user sends the daily (`#save-report`). Sign out from the profile butto
 
 `node .cursor/skills/verify-pro-daily-link/scripts/drive.cjs --journey 5`
 
-The driver sends from the field session, signs out through the profile dialog, and signs in as the owner. It taps `[data-report="<id>"]` for the report just sent. Pass requires `[data-approve-report]` disabled with "Mark each extra-work item Billable or Not billable to approve", the equipment pad text inside `.extra-work-office` and not in the rest of `#report-detail`, then `#office-decision` set to `non_billable`, Approve enabled, and after reload `extraWork[].billable === false` with status Approved.
+Edit reopens the daily on the notes step, so the driver taps Done again and then `#save-report`. It signs out through the profile dialog and signs in as the owner. It taps `[data-report="<id>"]` for the report just sent. Pass requires `[data-approve-report]` disabled with "Mark each extra-work item Billable or Not billable to approve", the equipment pad inside `.extra-work-office` and absent from the PRODUCTION line list. The AI summary may still quote the original note. Then `#office-decision` is set to `non_billable`, Approve enables, and after reload `extraWork[].billable === false` with status Approved.
 
 ## Gotchas
 

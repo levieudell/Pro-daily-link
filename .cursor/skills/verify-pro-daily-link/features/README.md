@@ -4,7 +4,7 @@ Each file is one staging journey. Run them with `node .cursor/skills/verify-pro-
 
 | Journey | File | End state |
 | --- | --- | --- |
-| 1 | clock-in-out.md | Review cards are the first clock-out paint |
+| 1 | clock-in-out.md | Notes, then review, with no paint of `#end-day-modal` |
 | 2 | one-note-daily.md | Spoken transcript is in the note, and the known garbage transcript is rejected |
 | 3 | production-vs-estimate.md | Curb and gutter quantities match, and labor minutes sum to the punch |
 | 4 | extra-work-picks.md | Extra work needs no quantity, survives reopen, and stays off the production list |

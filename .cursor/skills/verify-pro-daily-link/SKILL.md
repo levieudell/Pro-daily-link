@@ -9,6 +9,8 @@ Drive the real field and office UI on hosted staging. The repo's browser harness
 
 Staging: `https://pdl-staging.onrender.com`. Demo tenant `DEMO | Alder Ridge Builders`, field user and owner from `staging-seed.js`. Passwords come from `PDL_STAGING_FIELD_PASSWORD` and `PDL_STAGING_OWNER_PASSWORD`. Never write those values into this skill, a commit, or a report. The passwords local e2e tests pass to a server they spawn are not the hosted staging passwords.
 
+Hosted `pdl-staging` is not in `render.yaml`. On boot, `server.js` lines 69–76 call `ensureStagingDatabase` only when `PDL_STAGING` is `1`. That function (`staging-seed.js` lines 146–152) rewrites the JSON store from `buildStagingDb` (lines 41–48). `passwordOrThrow` (lines 30–34) reads `PDL_STAGING_OWNER_PASSWORD` and `PDL_STAGING_FIELD_PASSWORD` and refuses a value shorter than 10 characters. The owner and field users are written at lines 114–117. The store keeps scrypt hashes, not the plaintext. The Render service needs `PDL_STAGING`, `PDL_STAGING_OWNER_PASSWORD`, and `PDL_STAGING_FIELD_PASSWORD`. The verification process needs the same two password names in its own environment. No password belongs in git. Do not copy the local e2e literals into Render.
+
 ## Launch
 
 From the repo root, with both password env vars set and `PDL_TEST_CHROME` pointing at Chrome:
@@ -44,11 +46,17 @@ Journeys: `1` clock-in and clock-out, `2` one-note voice daily, `3` production v
 Phone page: 390x844, `isMobile`, `hasTouch`. Selectors used:
 
 - Clock: `#start-day-button`, `#start-day-modal`, `#start-day-project` value `3` (DEMO Cedar Grove Clinic), `#start-day-members`, `#confirm-start-day`
-- Old clock-out screen, which must not paint before the review: `#end-day-modal` open, visible "What was completed?", `#end-day-notes`, `#confirm-end-day`, and `[data-report-step="1"].active` with visible `#field-notes` before `#field-review-cards` is visible
+- Legacy clock-out screen, which fails the journey if it paints: `#end-day-modal` open and visible, or the visible text "What was completed?" (`index.html` lines 513–527). The notes step (`#field-notes`) and then the review is the intended one-note flow and is not a failure.
 - Daily: `#report-modal`, `#field-notes`, `#voice-notes`, `#report-next-step`, `#field-review-cards`, `#field-scope-flags`, `[data-flag-choice="extra"]`, `#save-report`, `#report-sent-modal`
 - Office: `[data-report]`, `[data-approve-report]`, `.extra-work-office`, `#office-decision`
 
-Journey 1 arms a MutationObserver and a per-frame sampler, installed at document start, at the moment Clock out is tapped. Any old-screen hit before `#field-review-cards` is visible fails the journey. Do not drop that assertion to make the journey pass.
+Journey 1 arms a MutationObserver and a per-frame sampler on every document, from navigation start through the review. A hit is a visible `#end-day-modal` or a visible "What was completed?" label. Text inside the closed dialog is not a hit. A solo journey 1 run taps Done so the watch includes the review. Do not drop that assertion to make the journey pass.
+
+```bash
+node .cursor/skills/verify-pro-daily-link/scripts/drive.cjs --stale-cache
+```
+
+`--stale-cache` is a separate probe. The app registers `/sw.js` only when `location.protocol === 'https:'` (`register-service-worker.js` line 3). Pinned `app.js?v=...` is cache-first (`sw.js`, cache `pdl-shell-v1`). The probe registers that worker on a secure context, writes a clock-out build that calls `#end-day-modal.showModal()` into the cache, and reloads. The probe passes only when that cached script runs and the watcher records the legacy paint. It does not replace the fresh-load result.
 
 Journey 2 taps `#voice-notes`. The page hook removes `MediaRecorder` before app scripts so `startVoiceNotes` in `app.js` takes the `SpeechRecognition` branch, then delivers one final result through `recognition.onresult`. The test does not assign `#field-notes`. A note containing `Cars Our supply now Cars final` fails the journey.
 

@@ -20,4 +20,4 @@ Before any page script, the phone hook deletes `MediaRecorder`. `startVoiceNotes
 
 ## Gotchas
 
-Hosted staging often has no `OPENAI_API_KEY` (`services.ai` false). A real microphone upload would not transcribe. The SpeechRecognition branch is the path that can still land a transcript through the real handler. If `MediaRecorder` cannot be removed and the app starts a recording, the journey fails. Do not paste the transcript into the textarea to hide that. Journey 1 may already have failed because the notes step painted first; journey 2 still speaks on that step.
+Hosted staging often has no `OPENAI_API_KEY` (`services.ai` false). A real microphone upload would not transcribe. The SpeechRecognition branch is the path that can still land a transcript through the real handler. If `MediaRecorder` cannot be removed and the app starts a recording, the journey fails. Do not paste the transcript into the textarea to hide that. Journey 2 speaks on the notes step, which is the intended first screen after clock-out.

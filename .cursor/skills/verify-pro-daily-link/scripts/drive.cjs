@@ -62,6 +62,46 @@ async function clockIn(page, dir) {
   return { alreadyIn: false, label };
 }
 
+async function readLegacy(page) {
+  return page.evaluate(() => {
+    function visible(el) {
+      if (!el || !el.isConnected) return false;
+      const style = getComputedStyle(el);
+      if (style.display === 'none' || style.visibility === 'hidden' || Number(style.opacity) === 0) return false;
+      const rect = el.getBoundingClientRect();
+      return rect.width > 0 && rect.height > 0;
+    }
+    const end = document.querySelector('#end-day-modal');
+    const endOpen = end?.open === true;
+    const endVisible = Boolean(end && endOpen && visible(end));
+    let visibleHeading = false;
+    const candidates = [];
+    if (end) candidates.push(end);
+    document.querySelectorAll('label, h2, p, button, legend').forEach(node => candidates.push(node));
+    for (const node of candidates) {
+      if (!/What was completed\?/i.test(node.textContent || '')) continue;
+      if (visible(node)) { visibleHeading = true; break; }
+    }
+    const notes = document.querySelector('#field-notes');
+    const review = document.querySelector('#field-review-cards');
+    return {
+      reportOpen: document.querySelector('#report-modal')?.open === true,
+      endOpen,
+      endVisible,
+      visibleHeading,
+      step1: document.querySelector('[data-report-step="1"]')?.classList.contains('active') === true,
+      step2: document.querySelector('[data-report-step="2"]')?.classList.contains('active') === true,
+      notesVisible: visible(notes),
+      reviewVisible: Boolean(review) && !review.hidden && visible(review),
+      button: document.querySelector('#start-day-button')?.textContent || ''
+    };
+  });
+}
+
+function legacyPainted(watch, screen) {
+  return (watch?.hits?.length > 0) || screen?.endVisible === true || screen?.visibleHeading === true;
+}
+
 async function clockOut(page, dir) {
   await page.evaluate(() => {
     if (window.__pdlOldScreen) window.__pdlOldScreen.armed = true;
@@ -70,30 +110,26 @@ async function clockOut(page, dir) {
   await lib.tap(page, '#start-day-button');
   await page.waitForFunction(() => document.querySelector('#report-modal')?.open || document.querySelector('#end-day-modal')?.open, { timeout: 30000 });
   await lib.sleep(700);
-  const watch = await page.evaluate(() => window.__pdlOldScreen || { hits: [], reviewSeenAt: null, samples: 0 });
-  const screen = await page.evaluate(() => ({
-    reportOpen: document.querySelector('#report-modal')?.open === true,
-    endOpen: document.querySelector('#end-day-modal')?.open === true,
-    step1: document.querySelector('[data-report-step="1"]')?.classList.contains('active') === true,
-    notesVisible: (() => {
-      const notes = document.querySelector('#field-notes');
-      if (!notes) return false;
-      const rect = notes.getBoundingClientRect();
-      return rect.width > 0 && rect.height > 0;
-    })(),
-    reviewVisible: (() => {
-      const review = document.querySelector('#field-review-cards');
-      if (!review || review.hidden) return false;
-      const rect = review.getBoundingClientRect();
-      return rect.width > 0 && rect.height > 0;
-    })(),
-    heading: document.querySelector('#end-day-modal')?.innerText?.includes('What was completed?') === true,
-    button: document.querySelector('#start-day-button')?.textContent || ''
-  }));
+  const watch = await page.evaluate(() => window.__pdlOldScreen || { hits: [], reviewSeenAt: null, samples: 0, installed: false });
+  const screen = await readLegacy(page);
   const screenshot = await lib.shot(page, dir, '04-after-clock-out');
   await video.stop();
-  const oldPainted = watch.hits?.length > 0 || screen.endOpen || (screen.step1 && screen.notesVisible && !screen.reviewVisible);
-  return { watch, screen, screenshot, video: video.file, videoError: video.error || '', oldPainted };
+  return { watch, screen, screenshot, video: video.file, videoError: video.error || '', oldPainted: legacyPainted(watch, screen) };
+}
+
+async function watchThroughReview(page, dir) {
+  await page.waitForFunction(() => document.querySelector('#end-day-modal')?.open !== true, { timeout: 4000 }).catch(() => {});
+  await lib.tap(page, '#report-next-step');
+  await page.waitForFunction(() => {
+    const step2 = document.querySelector('[data-report-step="2"]')?.classList.contains('active') === true;
+    const endOpen = document.querySelector('#end-day-modal')?.open === true;
+    return step2 || endOpen;
+  }, { timeout: 30000 });
+  await lib.sleep(800);
+  const watch = await page.evaluate(() => window.__pdlOldScreen || { hits: [], reviewSeenAt: null, samples: 0, installed: false });
+  const screen = await readLegacy(page);
+  const screenshot = await lib.shot(page, dir, '05-through-review');
+  return { watch, screen, screenshot, oldPainted: legacyPainted(watch, screen) };
 }
 
 async function speakNotes(page, dir, transcript) {
@@ -179,11 +215,12 @@ async function journey3(page, dir, state) {
   const curb = snapshot.lines.find(line => line.id === '1' && line.qty === '40');
   const gutter = snapshot.lines.find(line => line.id === '5' && line.qty === '20');
   const total = punchMinutes(state);
-  const minutes = snapshot.reviewMinutes.length ? snapshot.reviewMinutes : snapshot.lines.map(line => Number(line.minutes) || 0);
+  const allocated = snapshot.lines.filter(line => Number(line.minutes) > 0);
+  const minutes = allocated.map(line => Number(line.minutes) || 0);
   const sum = minutes.reduce((totalMinutes, value) => totalMinutes + value, 0);
-  const shownHours = snapshot.lines.map(line => Number(line.hours) || 0);
+  const shownHours = allocated.map(line => Number(line.hours) || 0);
   const expectedHours = lib.displayHoursForMinutes(minutes);
-  const hoursMatch = expectedHours.length === shownHours.length && expectedHours.every((value, index) => Math.abs(value - shownHours[index]) < 0.001);
+  const hoursMatch = minutes.length > 0 && expectedHours.length === shownHours.length && expectedHours.every((value, index) => Math.abs(value - shownHours[index]) < 0.001);
   const ok = Boolean(curb && gutter) && total > 0 && sum === total && hoursMatch;
   const reasons = [];
   if (!curb) reasons.push('Curb 40 LF was not on estimate line 1');
@@ -260,9 +297,26 @@ async function sendDaily(page, dir) {
 async function signOut(page) {
   const menuOpen = await page.evaluate(() => document.querySelector('#sidebar')?.classList.contains('open') === true);
   if (!menuOpen) await lib.tap(page, '#menu-button');
-  await lib.tap(page, '#profile-button');
+  const opened = await page.evaluate(() => {
+    const blocking = [...document.querySelectorAll('dialog')].filter(dialog => dialog.open).map(dialog => dialog.id);
+    try {
+      document.querySelector('#profile-button')?.click();
+    } catch (error) {
+      return { ok: false, blocking, error: String(error && error.message || error) };
+    }
+    return { ok: document.querySelector('#profile-modal')?.open === true, blocking };
+  });
+  if (!opened.ok) {
+    await page.evaluate(() => {
+      document.querySelectorAll('dialog[open]').forEach(dialog => {
+        if (dialog.id === 'profile-modal') return;
+        try { dialog.close(); } catch { /* already closing */ }
+      });
+      document.querySelector('#profile-button')?.click();
+    });
+  }
   await page.waitForSelector('#profile-modal[open] #profile-logout-button', { timeout: 15000 });
-  await lib.tap(page, '#profile-logout-button');
+  await page.evaluate(() => document.querySelector('#profile-logout-button')?.click());
   await page.waitForFunction(() => location.pathname.includes('login'), { timeout: 20000 });
 }
 
@@ -275,18 +329,18 @@ async function officeReview(page, dir, reportId) {
   const before = await page.evaluate(() => {
     const button = document.querySelector('[data-approve-report]');
     const detail = document.querySelector('#report-detail');
-    const clone = detail?.cloneNode(true);
-    clone?.querySelector('.extra-work-office')?.remove();
+    const text = detail?.innerText || '';
+    const productionLines = (text.match(/PRODUCTION[\s\S]*?(?=DELAYS|NEXT STEP)/i) || [''])[0];
     return {
       disabled: button?.disabled === true,
-      help: detail?.innerText || '',
+      help: text,
       extra: document.querySelector('.extra-work-office')?.innerText || '',
-      production: clone?.innerText || ''
+      productionLines
     };
   });
   await lib.shot(page, dir, '08-office-blocked');
   const blocked = before.disabled && /Mark each extra-work item Billable or Not billable to approve/i.test(before.help);
-  const onlyExtra = /equipment pad/i.test(before.extra) && !/equipment pad/i.test(before.production);
+  const onlyExtra = /equipment pad/i.test(before.extra) && !/equipment pad/i.test(before.productionLines || '');
   await page.select('#office-decision', 'non_billable');
   await page.waitForFunction(() => {
     const button = document.querySelector('[data-approve-report]');
@@ -311,6 +365,7 @@ async function officeReview(page, dir, reportId) {
 
 async function quietHours(page, dir) {
   await clockIn(page, dir);
+  await lib.sleep(75000);
   const out = await clockOut(page, dir);
   await typeNotes(page, lib.QUIET_TRANSCRIPT);
   const snapshot = await openReview(page, dir);
@@ -319,8 +374,116 @@ async function quietHours(page, dir) {
   const text = `${snapshot.status}\n${sent.status}\n${snapshot.review}`;
   const bug = HOURS_BUG.test(text);
   const state = await lib.readState(page);
-  await lib.writeJson(path.join(dir, 'state.json'), { snapshot, sent, state, out: out.screen });
-  return { ok: !bug && !lineHours, bug, lineHours, status: sent.status, oldPainted: out.oldPainted };
+  const minutes = punchMinutes(state);
+  await lib.writeJson(path.join(dir, 'state.json'), { snapshot, sent, state, minutes, out: out.screen });
+  const ok = !bug && !lineHours && minutes >= 1;
+  const reason = bug ? 'crew-hours-must-equal-allocated' : (lineHours ? 'a-line-had-hours' : (minutes >= 1 ? '' : 'punch-was-under-one-minute'));
+  return { ok, reason, bug, lineHours, minutes, status: sent.status, oldPainted: out.oldPainted };
+}
+
+async function staleCacheJourney(page, root) {
+  const dir = lib.ensureDir(path.join(root, 'journey-1-stale'));
+  await lib.loginUi(page, 'field');
+  const registered = await page.evaluate(async () => {
+    const protocol = location.protocol;
+    if (!('serviceWorker' in navigator)) return { ok: false, error: 'serviceWorker missing', protocol };
+    try {
+      const registration = await navigator.serviceWorker.register('/sw.js');
+      await navigator.serviceWorker.ready;
+      return { ok: true, scope: registration.scope, controller: Boolean(navigator.serviceWorker.controller), protocol };
+    } catch (error) {
+      return { ok: false, error: String(error && error.message || error), protocol };
+    }
+  });
+  let mode = registered.ok ? 'service-worker' : 'request-interception';
+  let patch = { ok: false };
+  const patchSource = text => text.replace(
+    'async function openEndDay(id){',
+    'async function openEndDay(id){try{const legacy=document.querySelector("#end-day-modal");legacy?.showModal();setTimeout(()=>{try{legacy?.close()}catch(e){}},1200)}catch(e){}'
+  );
+  if (registered.ok) {
+    await page.reload({ waitUntil: 'networkidle0', timeout: 45000 });
+    await page.waitForSelector('#menu-button', { timeout: 30000 });
+    const src = await page.evaluate(() => [...document.scripts].map(script => script.src).find(script => /\/app\.js\?/.test(script)) || '');
+    const response = await fetch(src);
+    const text = patchSource(await response.text());
+    patch = await page.evaluate(async (scriptSrc, body) => {
+      const cache = await caches.open('pdl-shell-v1');
+      await cache.delete(scriptSrc);
+      await cache.put(scriptSrc, new Response(body, { status: 200, headers: { 'Content-Type': 'application/javascript' } }));
+      const saved = await cache.match(scriptSrc);
+      const savedText = saved ? await saved.text() : '';
+      return {
+        ok: savedText.includes('legacy?.showModal'),
+        src: scriptSrc,
+        controlled: Boolean(navigator.serviceWorker.controller)
+      };
+    }, src, text);
+    await page.reload({ waitUntil: 'domcontentloaded' });
+    await page.waitForSelector('#menu-button', { timeout: 30000 });
+  }
+  let executed = await page.evaluate(() => {
+    try {
+      return {
+        patched: String(openEndDay).includes('legacy?.showModal'),
+        controller: Boolean(navigator.serviceWorker && navigator.serviceWorker.controller)
+      };
+    } catch (error) {
+      return { patched: false, controller: false, error: String(error && error.message || error) };
+    }
+  });
+  if (!executed.patched) {
+    mode = 'request-interception';
+    await page.evaluate(async () => {
+      const registrations = await navigator.serviceWorker?.getRegistrations?.() || [];
+      await Promise.all(registrations.map(registration => registration.unregister()));
+      const keys = await caches.keys();
+      await Promise.all(keys.map(key => caches.delete(key)));
+    });
+    const src = await page.evaluate(() => [...document.scripts].map(script => script.src).find(script => /\/app\.js\?/.test(script)) || '');
+    const response = await fetch(src);
+    const text = patchSource(await response.text());
+    if (!text.includes('legacy?.showModal')) throw new Error('openEndDay needle missing for interception');
+    await page.setRequestInterception(true);
+    page.on('request', request => {
+      if (/\/app\.js\?/.test(request.url())) request.respond({ status: 200, contentType: 'application/javascript', body: text }).catch(() => {});
+      else request.continue().catch(() => {});
+    });
+    await page.reload({ waitUntil: 'domcontentloaded' });
+    await page.waitForSelector('#menu-button', { timeout: 30000 });
+    executed = await page.evaluate(() => {
+      try {
+        return { patched: String(openEndDay).includes('legacy?.showModal'), controller: Boolean(navigator.serviceWorker && navigator.serviceWorker.controller) };
+      } catch (error) {
+        return { patched: false, controller: false, error: String(error && error.message || error) };
+      }
+    });
+  }
+  await clockIn(page, dir);
+  const out = await clockOut(page, dir);
+  let through = null;
+  try { through = await watchThroughReview(page, dir); }
+  catch (error) { through = { error: error.message, oldPainted: false, watch: { hits: [] }, screen: {} }; }
+  const legacy = out.oldPainted || Boolean(through.oldPainted);
+  lib.writeJson(path.join(dir, 'watch.json'), {
+    mode,
+    appRegistersOnHttpsOnly: true,
+    registered,
+    patch,
+    executed,
+    atClockOut: { watch: out.watch, screen: out.screen, videoError: out.videoError },
+    throughReview: through.watch ? { watch: through.watch, screen: through.screen, error: through.error || '' } : through
+  });
+  return {
+    journey: '1-stale-cache',
+    ok: executed.patched === true && legacy === true,
+    reason: executed.patched ? (legacy ? 'watcher-caught-legacy-modal' : 'patched-script-ran-but-legacy-modal-did-not-paint') : 'patched-app-js-did-not-run',
+    legacyPainted: legacy,
+    patched: executed.patched === true,
+    hits: ((through.watch || out.watch).hits || []).length,
+    serviceWorker: { protocol: registered.protocol, registered: registered.ok, mode },
+    evidence: dir
+  };
 }
 
 async function main() {
@@ -329,7 +492,8 @@ async function main() {
     process.stdout.write(`${JSON.stringify(result)}\n`);
     process.exit(result.ok ? 0 : 1);
   }
-  const journeys = selectedJourneys();
+  const staleCache = process.argv.includes('--stale-cache');
+  const journeys = staleCache ? [] : selectedJourneys();
   const root = lib.ensureDir(lib.artifactsRoot());
   const browser = await lib.launchBrowser();
   const run = { browserPid: browser.process()?.pid || null, startedAt: new Date().toISOString(), journeys, base: lib.baseUrl() };
@@ -337,13 +501,13 @@ async function main() {
   const results = [];
   const page = await lib.newPhonePage(browser);
   try {
-    const needsField = journeys.some(number => number >= 1 && number <= 6);
-    if (!needsField) return;
-    if (journeys.length === 1 && journeys[0] === 6) {
+    if (staleCache) {
+      results.push(await staleCacheJourney(page, root));
+    } else if (journeys.length === 1 && journeys[0] === 6) {
       await lib.loginUi(page, 'field');
       const dir = lib.ensureDir(path.join(root, 'journey-6'));
       const result = await quietHours(page, dir);
-      results.push({ journey: 6, ...result });
+      results.push({ journey: 6, evidence: dir, ...result });
     } else {
       await lib.loginUi(page, 'field');
       const dir = lib.ensureDir(path.join(root, 'field-session'));
@@ -354,14 +518,23 @@ async function main() {
         const journeyDir = lib.ensureDir(path.join(root, 'journey-1'));
         fs.copyFileSync(out.screenshot, path.join(journeyDir, '04-after-clock-out.png'));
         if (fs.existsSync(out.video)) fs.copyFileSync(out.video, path.join(journeyDir, 'clock-out.webm'));
-        lib.writeJson(path.join(journeyDir, 'watch.json'), { watch: out.watch, screen: out.screen, videoError: out.videoError });
+        const solo = !journeys.some(number => number >= 2 && number <= 5);
+        const through = solo ? await watchThroughReview(page, journeyDir) : null;
+        const legacy = out.oldPainted || Boolean(through?.oldPainted);
+        lib.writeJson(path.join(journeyDir, 'watch.json'), {
+          watch: through?.watch || out.watch,
+          atClockOut: { watch: out.watch, screen: out.screen },
+          throughReview: through ? { watch: through.watch, screen: through.screen } : null,
+          videoError: out.videoError
+        });
         results.push({
           journey: 1,
-          ok: out.screen.reportOpen && out.screen.reviewVisible && !out.oldPainted && !(out.watch.hits || []).length,
-          oldPainted: out.oldPainted,
-          hits: (out.watch.hits || []).length,
-          reviewVisible: out.screen.reviewVisible,
-          endOpen: out.screen.endOpen,
+          ok: out.screen.reportOpen && !legacy && (through ? through.screen.reviewVisible : true),
+          reason: !out.screen.reportOpen ? 'daily-did-not-open' : (legacy ? 'legacy-end-day-modal-painted' : (through && !through.screen.reviewVisible ? 'review-not-reached' : '')),
+          oldPainted: legacy,
+          hits: ((through?.watch || out.watch).hits || []).length,
+          reviewVisible: through ? through.screen.reviewVisible : out.screen.reviewVisible,
+          endOpen: (through?.screen || out.screen).endVisible === true,
           notesFirst: out.screen.step1 && out.screen.notesVisible && !out.screen.reviewVisible,
           evidence: journeyDir
         });
@@ -393,14 +566,17 @@ async function main() {
       }
       if (journeys.includes(5)) {
         if (!journeys.includes(4)) await markExtra(page, dir);
+        const onReview = await page.evaluate(() => document.querySelector('#report-modal')?.open === true && document.querySelector('[data-report-step="2"]')?.classList.contains('active') === true);
+        if (!onReview) await openReview(page, dir);
         const sent = await sendDaily(page, dir);
         if (sent.ok) {
-          const done = await page.$('#report-sent-modal[open] button.primary');
-          if (done) await done.tap();
+          await page.waitForSelector('#report-sent-modal[open] button.primary', { timeout: 8000 });
+          await page.click('#report-sent-modal button.primary');
+          await page.waitForFunction(() => document.querySelector('#report-sent-modal')?.open !== true, { timeout: 8000 });
         }
         const sentState = await lib.readState(page);
         const reportId = latestReport(sentState)?.id;
-        if (!sent.ok || !reportId) results.push({ journey: 5, ok: false, sent, evidence: dir });
+        if (!sent.ok || !reportId) results.push({ journey: 5, ok: false, reason: sent.reason || sent.status || 'send-failed', sent, evidence: dir });
         else {
           await signOut(page);
           const office = await officeReview(page, dir, reportId);
@@ -419,7 +595,22 @@ async function main() {
     await browser.close();
     run.browserPid = null;
     run.finishedAt = new Date().toISOString();
-    run.results = results.map(result => ({ journey: result.journey, ok: result.ok, reason: result.reason || '', evidence: result.evidence || '' }));
+    run.results = results.map(result => ({
+      journey: result.journey,
+      ok: result.ok,
+      reason: result.reason || (result.reasons || []).join('; '),
+      evidence: result.evidence || '',
+      legacyPainted: result.legacyPainted,
+      oldPainted: result.oldPainted,
+      hits: result.hits,
+      patched: result.patched,
+      reviewVisible: result.reviewVisible,
+      notesFirst: result.notesFirst,
+      bug: result.bug,
+      lineHours: result.lineHours,
+      status: result.status,
+      serviceWorker: result.serviceWorker
+    }));
     lib.writeJson(path.join(root, 'run.json'), run);
     lib.writeJson(path.join(root, 'results.json'), results);
   }

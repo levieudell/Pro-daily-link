@@ -13,7 +13,7 @@ Clock in and clock out on Cedar Grove. Type "Walked the site and talked with the
 
 `node .cursor/skills/verify-pro-daily-link/scripts/drive.cjs --journey 6`
 
-The driver types that note, taps Done, taps `#save-report`, and reads `#report-submit-status` plus the modal text. Pass requires the hours-equality sentence to be absent and no production row to have a quantity or hours. A line with hours means this was not the zero-line case; the journey fails rather than passing on a different daily.
+The driver waits 75 seconds after clock-in so the punch is one minute, which displays as 0.02 h, then types that note, taps Done, taps `#save-report`, and reads `#report-submit-status` plus the modal text. Pass requires the hours-equality sentence to be absent and no production row to have a quantity or hours. A line with hours means this was not the zero-line case; the journey fails rather than passing on a different daily. A zero-minute punch is also a failure, because it never reaches the 0.02 h crew total in the sentence.
 
 ## Gotchas
 
