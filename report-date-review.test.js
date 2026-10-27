@@ -56,7 +56,7 @@ const context={
   reportLaborTotals:()=>({crew:0,allocated:0}),suggestReportHourSplit(){},
   updateReportGaps(){calls.gaps++;$('#report-gaps').className='report-gaps complete';$('#report-gaps').innerHTML='Ready'},
   reportLaborReviewWarnings:()=>[],reportLaborReviewMarkup:()=>'',
-  timeCardsOn:()=>false,api(){throw new Error('Lifecycle test must not make network calls')},
+  timeCardsOn:()=>false,safetyRecordMode:()=>false,superintendentActor:()=>false,api(){throw new Error('Lifecycle test must not make network calls')},
   renderReportJobContext(){},addReportMapLink(){},clearTimeCardDerivedReportLabor(){},
   loadReportWeather(){},applyReportType(){},showReportMessage(){}
 };

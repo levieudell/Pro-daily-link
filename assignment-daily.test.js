@@ -7,7 +7,7 @@ const date='2026-10-08',rows=[{id:1,projectId:11,date,crew:'Crew A',activity:'Fi
  {id:2,projectId:11,date,crew:'Crew B',activity:'Second scope',start:'12:00',end:'16:00',memberIds:[7]},
  {id:3,projectId:22,date,crew:'Other crew',activity:'Restricted scope',memberIds:[8]}];
 let opens=0,messages=[];
-const context={$,$$:()=>[],projects:[{id:11,name:'Synthetic Job'}],assignments:structuredClone(rows),currentRole:'field',currentUser:{id:1,memberId:7,role:'field'},team:[],editingReportId:null,reportSourceAssignmentId:null,
+const context={$,$$:()=>[],projects:[{id:11,name:'Synthetic Job'}],assignments:structuredClone(rows),currentRole:'field',currentUser:{id:1,memberId:7,role:'field'},team:[],editingReportId:null,reportSourceAssignmentId:null,superintendentActor:()=>false,
  companyTodayIso:()=>date,escapeHtml:String,displayTime:String,populateReportLabor(){},reportWorkSuggestions:()=>[],
  openReportBeforeSimpleFieldUx(report,options){opens++;$('#report-modal').open=true;$('#report-project').value=String(report?.project??options.projectIndex??0);$('#report-date').value=report?.dateIso||options.dateIso||date;},
  updateReportReviewDateBanner(){},addReportMapLink(){},clearTimeCardDerivedReportLabor(){},refreshReportLaborFromTimeCards(){},loadReportWeather(){},notify(message){messages.push(message);},

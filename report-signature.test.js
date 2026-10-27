@@ -31,7 +31,7 @@ const c={$,$$:selector=>selector==='dialog'?[node('#report-modal')]:[],document:
  renderReportCustomFields(){},showReportStep(){},offerOfflineReportDraft(){},unmeasuredWorkSuggestions:()=>[],
  addProductionRow(){},DailyWorkExtraction:{groundReviewSuggestions:rows=>rows},statusClass:()=>'',reportWorkDate:()=> 'Oct 1',
  reportWorkLong:()=> 'October 1, 2026',reportSubmittedOn:()=>null,timeCardsOn:()=>false,templatesOn:()=>false,
- reportLaborTotals:()=>({crew:0,allocated:0,balanced:true}),noteLaborUnassigned:()=>0,dailyTemplatePayload:()=>({}),
+ reportLaborTotals:()=>({crew:0,allocated:0,balanced:true}),noteLaborUnassigned:()=>0,dailyTemplatePayload:()=>({}),safetyRecordMode:()=>false,superintendentActor:()=>false,
  reportWorkSuggestions:()=>[],offlineReportDraftKey:()=> 'report-1',offlineReportStorageKey:key=>key,
  localStorage:{removeItem:key=>storage.delete(key)},clearActiveReportRecovery(){},rememberActiveReport(){},
  renderProjectCards(){},showPage(){},syncActionCenter:async()=>{},notify(){},
