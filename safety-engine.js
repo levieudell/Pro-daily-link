@@ -36,6 +36,10 @@ function exactDate(value) { if (typeof value !== 'string' || !validDate(value)) 
 function inferredState(project) {
   // Parse the state suffix, never a street name. This is a conservative address
   // hint, not geocoding; an unrecognized address needs explicit confirmation.
+  for (const value of [project?.siteState, project?.addressState, project?.state]) {
+    const code = String(value || '').trim().toUpperCase();
+    if (/^(AL|AK|AZ|AR|CA|CO|CT|DE|FL|GA|HI|ID|IL|IN|IA|KS|KY|LA|ME|MD|MA|MI|MN|MS|MO|MT|NE|NV|NH|NJ|NM|NY|NC|ND|OH|OK|OR|PA|RI|SC|SD|TN|TX|UT|VT|VA|WA|WV|WI|WY|DC)$/.test(code)) return code;
+  }
   const address = String(project?.site || project?.address || '').trim();
   const postal = address.match(/(?:^|[,\s])(AL|AK|AZ|AR|CA|CO|CT|DE|FL|GA|HI|ID|IL|IN|IA|KS|KY|LA|ME|MD|MA|MI|MN|MS|MO|MT|NE|NV|NH|NJ|NM|NY|NC|ND|OH|OK|OR|PA|RI|SC|SD|TN|TX|UT|VT|VA|WA|WV|WI|WY|DC)\s*(?:\d{5}(?:-\d{4})?)?(?:\s*,?\s*(?:USA|United States))?\s*$/i);
   if (postal) return postal[1].toUpperCase();
@@ -43,13 +47,19 @@ function inferredState(project) {
   if (full) return ({ oregon: 'OR', washington: 'WA', california: 'CA' })[full[1].toLowerCase()];
   return '';
 }
-function profileFor(project) {
+function storedProfileFor(project) {
   const stored = project.safetyProfile;
   return stored ? clone(stored) : { revision: 0, enabled: false, state: inferredState(project), employer: '', activities: [] };
 }
-function coverageFor(project) {
-  const state = profileFor(project).state, detected = inferredState(project);
-  return state === 'OR' && (!detected || detected === state) ? 'oregon-starter' : 'manual-review';
+function profileFor(project, company) {
+  const profile = storedProfileFor(project), detected = inferredState(project), employer = String(company?.name || '').trim();
+  profile.state = detected;
+  profile.employer = employer;
+  return profile;
+}
+function coverageFor(project, company) {
+  const state = profileFor(project, company).state, detected = inferredState(project);
+  return state === 'OR' && detected === state ? 'oregon-starter' : 'manual-review';
 }
 function ownDays(db, projectId) { return (db.safetyDays || []).filter(day => day.companyId === db.company.id && day.projectId === projectId); }
 function dayFor(db, projectId, date) { return ownDays(db, projectId).find(day => day.date === date); }
@@ -62,7 +72,7 @@ function scheduleContext(db, projectId, date) {
     .sort((a, b) => String(a.id).localeCompare(String(b.id)));
 }
 function dayContext(db, project, date) {
-  const profile = profileFor(project), schedule = scheduleContext(db, project.id, date), activities = new Set(profile.activities);
+  const profile = profileFor(project, db.company), schedule = scheduleContext(db, project.id, date), activities = new Set(profile.activities);
   const words = schedule.map(row => `${row.task} ${row.instructions}`).join(' ');
   for (const [activity, pattern] of Object.entries({ roofing: /\broof(?:ing|er|ers)?\b/i, excavation: /\b(?:excavat\w*|trench\w*|digging)\b/i, framing: /\bfram(?:e|ing|ers?)\b/i, demolition: /\b(?:demolition|demo|demolish\w*)\b/i })) if (pattern.test(words)) activities.add(activity);
   return { profile, schedule, activities: [...activities].sort(), fingerprint: hash({ profile, schedule, ruleVersion: VERSION, address: String(project.site || project.address || '') }) };
@@ -107,14 +117,14 @@ function summarize(db, project, date, day) {
     .flatMap(row => (row.checks || []).filter(item => ['fail', 'deferred'].includes(item.status) && !(row.hazards || []).some(hazard => hazard.sourceCheckId === item.id)));
   const unresolved = unlinkedFailures.length + hazards.length;
   const undocumentedHazards = hazards.some(row => !row.action || !row.owner || !row.dueDate || row.workStopped !== true);
-  const supported = coverageFor(project) === 'oregon-starter';
+  const supported = coverageFor(project, db.company) === 'oregon-starter';
   const canSubmit = Boolean(day && !stale && supported && pending === 0 && !undocumentedHazards);
   return { pending, unresolved, canSubmit, readyForWork: canSubmit && unresolved === 0, stale,
     error: !supported ? 'This jurisdiction needs a reviewed rule pack before safety finalization.' : stale ? 'Generate or refresh today’s checks after the work, profile or schedule changed.' : pending ? 'Address every required safety check before finalizing the daily.' : undocumentedHazards ? 'Record stopped work, action, owner and due date for every open hazard.' : null };
 }
 function safetyGate(db, projectId, date) {
   const project = (db.projects || []).find(row => Number(row.id) === Number(projectId));
-  if (!project || !profileFor(project).enabled) return { enabled: false, canSubmit: true, readyForWork: false, pending: 0, unresolved: 0 };
+  if (!project || !profileFor(project, db.company).enabled) return { enabled: false, canSubmit: true, readyForWork: false, pending: 0, unresolved: 0 };
   if (!validDate(date)) return { enabled: true, canSubmit: false, readyForWork: false, pending: 1, unresolved: 0, error: 'A valid daily work date is required.' };
   return { enabled: true, ...summarize(db, project, date, dayFor(db, project.id, date)) };
 }
@@ -136,26 +146,30 @@ function createSafetyHandler({ readDb, writeDb, body, json, authenticatedUser, c
       if (!ROLES.has(user.role)) return reply(403, { error: 'Project team permission required' });
       const projectId = Number(route[1]), project = Number.isSafeInteger(projectId) && (db.projects || []).find(row => Number(row.id) === projectId);
       if (!project || project.archived || !canAccessProject(db, user, projectId)) return reply(404, { error: 'Project not found' });
-      const canManage = MANAGERS.has(user.role), profile = profileFor(project);
+      const canManage = MANAGERS.has(user.role), profile = profileFor(project, db.company);
       if (req.method === 'GET' && !route[2]) {
         const date = exactDate(url.searchParams.get('date'));
-        return reply(200, { profile, catalog: clone(CATALOG), date, day: projectedDay(db, project, date, dayFor(db, projectId, date)), coverage: coverageFor(project), notice: COVERAGE_NOTICE, inferredState: inferredState(project), canManage, openHazards: unresolvedHazards(db, projectId, date) });
+        return reply(200, { profile, catalog: clone(CATALOG), date, day: projectedDay(db, project, date, dayFor(db, projectId, date)), coverage: coverageFor(project, db.company), notice: COVERAGE_NOTICE, inferredState: inferredState(project), canManage, openHazards: unresolvedHazards(db, projectId, date) });
       }
       const input = await body(req);
       if (req.method === 'PUT' && route[2] === 'profile' && !route[3]) {
         if (!canManage) return reply(403, { error: 'PM or office permission required to configure safety' });
         inputKeys(input, ['revision', 'enabled', 'state', 'employer', 'activities']); revision(input, profile.revision);
-        if (typeof input.enabled !== 'boolean' || typeof input.state !== 'string' || !/^[A-Z]{2}$/.test(input.state)) throw fail('Confirm the job state and whether safety checks are enabled');
+        if (typeof input.enabled !== 'boolean') throw fail('Confirm whether safety checks are enabled');
+        if (Object.hasOwn(input, 'state') && (typeof input.state !== 'string' || input.state && !/^[A-Z]{2}$/.test(input.state))) throw fail('Use a valid two-letter project state');
+        if (Object.hasOwn(input, 'employer')) text(input.employer, 'responsible employer', 200);
         if (!Array.isArray(input.activities) || input.activities.length > CATALOG.length || input.activities.some(id => !CATALOG.some(item => item.id === id))) throw fail('Choose supported work activities');
         const detected = inferredState(project);
-        if (detected && detected !== input.state) throw fail('The selected jurisdiction conflicts with the project address. Correct the address before enabling safety.');
-        const employer = text(input.employer, 'responsible employer', 200);
-        if (input.enabled && !employer) throw fail('Name the responsible employer');
-        const next = { revision: profile.revision + 1, enabled: input.enabled, state: input.state, employer, activities: [...new Set(input.activities)].sort() };
-        if (JSON.stringify({ ...next, revision: 0 }) === JSON.stringify({ ...profile, revision: 0 })) return reply(200, { profile });
+        if (detected && input.state && input.state !== detected) throw fail('The project address changed. Refresh safety setup to use its current jurisdiction.');
+        const employer = text(db.company?.name, 'company account name', 200);
+        if (input.enabled && !employer) throw fail('Add the company name in Company settings before enabling safety.');
+        if (input.enabled && !detected) throw fail('Add a recognizable state to the project address before enabling safety.');
+        const next = { revision: profile.revision + 1, enabled: input.enabled, state: detected, employer, activities: [...new Set(input.activities)].sort() };
+        const stored = storedProfileFor(project);
+        if (JSON.stringify({ ...next, revision: 0 }) === JSON.stringify({ ...stored, revision: 0 })) return reply(200, { profile });
         project.safetyProfile = next;
         project.safetyProfileHistory ||= [];
-        project.safetyProfileHistory.push({ at: new Date().toISOString(), by: user.name, userId: user.id, before: profile, after: clone(next) });
+        project.safetyProfileHistory.push({ at: new Date().toISOString(), by: user.name, userId: user.id, before: stored, after: clone(next) });
         writeDb(db); return reply(200, { profile: next });
       }
       if (req.method === 'POST' && route[2] === 'days' && !route[3]) {
@@ -163,7 +177,7 @@ function createSafetyHandler({ readDb, writeDb, body, json, authenticatedUser, c
         inputKeys(input, ['date', 'revision']); const date = exactDate(input.date), existing = dayFor(db, projectId, date), context = dayContext(db, project, date);
         revision(input, existing?.revision || 0);
         if (existing?.fingerprint === context.fingerprint) return reply(200, projectedDay(db, project, date, existing));
-        const next = { id: `${projectId}:${date}`, companyId: db.company.id, projectId, date, revision: (existing?.revision || 0) + 1, ruleVersion: VERSION, coverage: coverageFor(project), activities: context.activities,
+        const next = { id: `${projectId}:${date}`, companyId: db.company.id, projectId, date, revision: (existing?.revision || 0) + 1, ruleVersion: VERSION, coverage: coverageFor(project, db.company), activities: context.activities,
           fingerprint: context.fingerprint, checks: checksFor(context.activities), hazards: clone(existing?.hazards || []), history: clone(existing?.history || []) };
         audit(next, user, existing ? 'Checks refreshed after work or applicability changed' : 'Checks generated', existing ? { checks: existing.checks, fingerprint: existing.fingerprint } : null, { checks: next.checks, fingerprint: next.fingerprint });
         db.safetyDays ||= [];
