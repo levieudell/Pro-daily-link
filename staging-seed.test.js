@@ -73,7 +73,7 @@ const indexHtml = fs.readFileSync(__dirname + '/index.html', 'utf8');
 const loginHtml = fs.readFileSync(__dirname + '/login.html', 'utf8');
 const stagingBanner = fs.readFileSync(__dirname + '/staging-banner.js', 'utf8');
 assert.match(indexHtml, /src="staging-banner\.js"/);
-assert.match(loginHtml, /src="staging-banner\.js"/);
+assert.match(loginHtml, /src="staging-banner\.js\?v=\d{8}-[a-z0-9-]+"/);
 assert.match(stagingBanner, /config\.staging/);
 assert.match(stagingBanner, /STAGING/);
 
