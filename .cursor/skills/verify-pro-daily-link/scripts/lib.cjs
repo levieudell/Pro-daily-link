@@ -239,9 +239,10 @@ function pageHooks() {
   window.webkitSpeechRecognition = FakeSpeechRecognition;
   try { delete window.MediaRecorder; } catch { /* non-configurable in this browser */ }
   window.MediaRecorder = undefined;
-  if (!window.__pdlOldScreen) {
-    const state = { armed: false, hits: [], reviewSeenAt: null, samples: 0 };
-    window.__pdlOldScreen = state;
+  const state = window.__pdlOldScreen || { armed: false, hits: [], reviewSeenAt: null, samples: 0, installed: false };
+  window.__pdlOldScreen = state;
+  function installOldScreenWatch() {
+    if (state.installed || !document.documentElement) return;
     function visible(el) {
       if (!el) return false;
       const style = getComputedStyle(el);
@@ -252,7 +253,7 @@ function pageHooks() {
     function sample(reason) {
       state.samples += 1;
       const review = document.querySelector('#field-review-cards');
-      const reviewVisible = visible(review) && !review.hidden;
+      const reviewVisible = Boolean(review) && !review.hidden && visible(review);
       if (reviewVisible && state.reviewSeenAt == null) state.reviewSeenAt = performance.now();
       if (!state.armed || state.reviewSeenAt != null || state.hits.length >= 12) return;
       const end = document.querySelector('#end-day-modal');
@@ -276,13 +277,20 @@ function pageHooks() {
         });
       }
     }
-    const observer = new MutationObserver(() => sample('mutation'));
-    observer.observe(document.documentElement, { subtree: true, childList: true, attributes: true, attributeFilter: ['class', 'open', 'hidden', 'style'] });
-    (function frame() {
-      sample('frame');
-      requestAnimationFrame(frame);
-    })();
+    try {
+      const observer = new MutationObserver(() => sample('mutation'));
+      observer.observe(document.documentElement, { subtree: true, childList: true, attributes: true, attributeFilter: ['class', 'open', 'hidden', 'style'] });
+      (function frame() {
+        sample('frame');
+        state.frame = requestAnimationFrame(frame);
+      })();
+      state.installed = true;
+    } catch (error) {
+      state.installError = String(error && error.message || error);
+    }
   }
+  installOldScreenWatch();
+  document.addEventListener('DOMContentLoaded', installOldScreenWatch);
 }
 
 async function newPhonePage(browser) {

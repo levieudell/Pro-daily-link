@@ -114,8 +114,15 @@ async function speakNotes(page, dir, transcript) {
   }
   const verdict = lib.noteVerdict(notes, transcript);
   await lib.shot(page, dir, '02-transcript');
-  const stillListening = await page.evaluate(() => document.querySelector('#voice-notes')?.getAttribute('aria-pressed') === 'true');
-  if (stillListening) await lib.tap(page, '#voice-notes');
+  const stop = await page.evaluate(() => {
+    const button = document.querySelector('#voice-notes');
+    if (!button || button.getAttribute('aria-pressed') !== 'true') return null;
+    button.scrollIntoView({ block: 'center' });
+    const rect = button.getBoundingClientRect();
+    if (rect.width < 2 || rect.height < 2) return { hidden: true };
+    return { x: rect.x + rect.width / 2, y: rect.y + rect.height / 2 };
+  });
+  if (stop?.x) await page.touchscreen.tap(stop.x, stop.y);
   await video.stop();
   return { ok: verdict.ok, reason: verdict.reason, notes, video: video.file, videoError: video.error || '' };
 }

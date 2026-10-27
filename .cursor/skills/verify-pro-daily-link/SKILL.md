@@ -7,7 +7,7 @@ description: Drive the Pro Daily Link field clock, one-note daily, voice notes, 
 
 Drive the real field and office UI on hosted staging. The repo's browser harness is puppeteer-core (the same driver as `field-clockout-parse-e2e.test.js`), at phone size 390x844 with touch. Playwright is not installed in this repo.
 
-Staging: `https://pdl-staging.onrender.com`. Demo tenant `DEMO | Alder Ridge Builders`, field user and owner from `staging-seed.js`. Passwords come from `PDL_STAGING_FIELD_PASSWORD` and `PDL_STAGING_OWNER_PASSWORD`. Never write those values into this skill, a commit, or a report.
+Staging: `https://pdl-staging.onrender.com`. Demo tenant `DEMO | Alder Ridge Builders`, field user and owner from `staging-seed.js`. Passwords come from `PDL_STAGING_FIELD_PASSWORD` and `PDL_STAGING_OWNER_PASSWORD`. Never write those values into this skill, a commit, or a report. The passwords local e2e tests pass to a server they spawn are not the hosted staging passwords.
 
 ## Launch
 
