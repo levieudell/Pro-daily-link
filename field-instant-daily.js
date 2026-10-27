@@ -14,6 +14,130 @@ var fieldScopeFlags=[];
     if(typeof updateReportContextSummary==='function')updateReportContextSummary();
     modal?.classList.toggle('field-manual-entry',compact&&!fieldScopeFlags.length&&![...$$('.production-entry')].some(row=>row.dataset.aiFilled==='true'));
     if(!compact){const flags=$('#field-scope-flags'),cards=$('#field-review-cards');if(flags)flags.hidden=true;if(cards)cards.hidden=true}
+    placeDailyTools();
+  }
+  function placeDailyTools(){
+    const tools=$('#field-daily-tools'),home=$('#field-daily-tools-home');
+    if(!tools||!home)return;
+    if(!fieldCompact()){if(tools.parentElement!==home)home.append(tools);return}
+    const step=document.querySelector('#report-form .report-step.active');
+    if(!step)return;
+    if(step.dataset.reportStep==='2'){
+      const anchor=$('#field-scope-flags');
+      if(anchor&&anchor.parentElement===step)anchor.before(tools);
+      else{const actions=step.querySelector(':scope > .modal-actions');if(actions)actions.before(tools);else step.append(tools)}
+    }else if(tools.parentElement!==home)home.append(tools);
+  }
+  const previewUrls=[];
+  const reportPhotoFiles=[];
+  const uploadedPhotoFiles=new WeakSet();
+  const filesDescriptor=typeof HTMLInputElement==='function'?Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'files'):null;
+  let photoFilesBridged=false;
+  function nativePhotoFiles(input){
+    if(!input)return [];
+    if(filesDescriptor?.get)return [...filesDescriptor.get.call(input)];
+    return [...(input.files||[])];
+  }
+  function pendingPhotoFiles(){return reportPhotoFiles.filter(file=>!uploadedPhotoFiles.has(file))}
+  function ownedPhotoFileList(){
+    const transfer=new DataTransfer();
+    for(const file of pendingPhotoFiles())transfer.items.add(file);
+    return transfer.files;
+  }
+  function bridgeReportPhotoFiles(input){
+    if(!input||input.dataset.photoListBridge==='1'||!filesDescriptor?.get)return;
+    try{
+      Object.defineProperty(input,'files',{
+        configurable:true,
+        enumerable:true,
+        get(){return fieldCompact()?ownedPhotoFileList():filesDescriptor.get.call(input)},
+        set(value){if(filesDescriptor.set)filesDescriptor.set.call(input,value)}
+      });
+      input.dataset.photoListBridge='1';
+      photoFilesBridged=true;
+    }catch{}
+  }
+  function publishReportPhotoFiles(){
+    if(photoFilesBridged||!fieldCompact())return;
+    const input=$('#report-photos');
+    if(!input||!filesDescriptor?.set)return;
+    filesDescriptor.set.call(input,ownedPhotoFileList());
+  }
+  function clearReportPhotoFiles(){
+    reportPhotoFiles.length=0;
+    const input=$('#report-photos');
+    if(input)input.value='';
+  }
+  function sameOpenDaily(report,context){
+    if(!fieldCompact()||!reportPhotoFiles.length)return false;
+    const project=Number($('#report-project')?.value),date=String($('#report-date')?.value||'');
+    if(report?.id&&editingReportId&&Number(editingReportId)===Number(report.id))return true;
+    const nextProject=report?.project??context?.projectIndex,nextDate=String(report?.dateIso||context?.dateIso||'');
+    return Boolean(date&&nextDate===date&&Number.isFinite(Number(nextProject))&&Number(nextProject)===project);
+  }
+  function renderReportPhotoPreview(){
+    const host=$('#report-photo-preview'),input=$('#report-photos');
+    if(!host)return;
+    for(const url of previewUrls){try{URL.revokeObjectURL(url)}catch{}}
+    previewUrls.length=0;
+    const files=fieldCompact()?reportPhotoFiles.slice():nativePhotoFiles(input);
+    host.replaceChildren();
+    if(!fieldCompact()||!files.length){host.hidden=true;return}
+    host.hidden=false;
+    const spanish=typeof preferredLanguage!=='undefined'&&preferredLanguage==='es';
+    files.forEach((file,index)=>{
+      const thumb=document.createElement('span');
+      thumb.className='report-photo-thumb';
+      const img=document.createElement('img'),url=URL.createObjectURL(file);
+      previewUrls.push(url);
+      img.src=url;
+      img.alt='Daily photo';
+      const remove=document.createElement('button');
+      remove.type='button';
+      remove.className='report-photo-remove';
+      remove.setAttribute('aria-label',spanish?'Quitar foto':'Remove photo');
+      remove.addEventListener('click',()=>{reportPhotoFiles.splice(index,1);renderReportPhotoPreview()});
+      thumb.append(img,remove);
+      host.append(thumb);
+    });
+    const count=document.createElement('span');
+    count.className='report-photo-count';
+    count.textContent=files.length===1?(spanish?'1 foto':'1 photo'):(spanish?files.length+' fotos':files.length+' photos');
+    host.append(count);
+  }
+  function onReportPhotosChange(){
+    const input=$('#report-photos');
+    if(fieldCompact()&&input){
+      const picked=nativePhotoFiles(input);
+      if(picked.length)reportPhotoFiles.push(...picked);
+      if(photoFilesBridged)input.value='';
+      else publishReportPhotoFiles();
+    }
+    renderReportPhotoPreview();
+  }
+  const photoInput=$('#report-photos');
+  bridgeReportPhotoFiles(photoInput);
+  photoInput?.addEventListener('change',onReportPhotosChange,true);
+  if(typeof reportRecoverySnapshot==='function'){
+    const snapshotBefore=reportRecoverySnapshot;
+    reportRecoverySnapshot=function(){publishReportPhotoFiles();return snapshotBefore()};
+  }
+  if(typeof reportHasUnsavedInput==='function'){
+    const unsavedBefore=reportHasUnsavedInput;
+    reportHasUnsavedInput=function(){publishReportPhotoFiles();return unsavedBefore()};
+  }
+  if(typeof saveDailyReport==='function'){
+    const savePhotosBefore=saveDailyReport;
+    saveDailyReport=async function(status,saveOptions){publishReportPhotoFiles();const pending=pendingPhotoFiles();const saved=await savePhotosBefore(status,saveOptions);if(saved&&pending.length){for(const file of pending)uploadedPhotoFiles.add(file)}return saved};
+  }
+  function openManualExtraFlag(){
+    if(!fieldScopeFlags.some(flag=>flag&&flag.reason==='stated_extra'&&!flag.decision)){
+      fieldScopeFlags.push({id:`stated_extra:manual:${Date.now()}`,kind:'extra',reason:'stated_extra',source:'field-button',description:'Extra work',quantity:null,unit:'',estimateItemId:null,createsChange:false,decision:null,extra_work:false,who_asked:'',message:'Confirm this is extra work, or mark it as normal scope. The office decides whether it is billable.'});
+      fieldScopeFlags=stampFlags(fieldScopeFlags);
+    }
+    if($('#report-form')?.getAttribute('data-current-step')!=='2'&&typeof showReportStep==='function')showReportStep(2);
+    else{renderFlags();polishFieldDaily()}
+    (document.querySelector('#field-scope-flags .field-extra-ask')||$('#field-scope-flags'))?.scrollIntoView?.({block:'center'});
   }
   function groundedText(value){const text=String(value||'').trim();return text&&!/^needs confirmation[.!\s]*$/i.test(text)?text:''}
   function nextStepText(value){const text=groundedText(value);if(!text)return '';if(typeof FieldDailyScope!=='undefined'&&FieldDailyScope.tidyNext)return FieldDailyScope.tidyNext(text);return text.replace(/^(?:next\s*step|next)\s*:\s*/i,'').trim()}
@@ -600,9 +724,11 @@ var fieldScopeFlags=[];
         if(fieldCompact()&&!clockHoursPresent()&&fieldHoursReview?.total>0&&typeof applyNoteLaborEvidence==='function')applyNoteLaborEvidence(draft.laborEvidence?.total>0?draft.laborEvidence:{total:fieldHoursReview.total,headcount:fieldHoursReview.headcount,perPerson:fieldHoursReview.perPerson});
         else if(fieldCompact()&&!clockHoursPresent()&&draft?.laborEvidence&&typeof applyNoteLaborEvidence==='function'&&!fieldHoursReview?.ask)applyNoteLaborEvidence(draft.laborEvidence);
         harvestFlagAnswers();
+        const keptManual=fieldScopeFlags.filter(flag=>flag&&flag.source==='field-button');
         fieldScopeFlags=stampFlags(typeof FieldDailyScope!=='undefined'&&FieldDailyScope.mergeScopeFlags?FieldDailyScope.mergeScopeFlags(fieldScopeFlags,draft?.scopeReview?.flags||[]):(draft?.scopeReview?.flags||[]).map(flag=>({...flag,decision:null,createsChange:false,who_asked:String(flag.who_asked||'')})));
         restoreHeldChoices();
         if(draft?.changesCreated)fieldScopeFlags=[];
+        for(const flag of keptManual){if(!fieldScopeFlags.some(row=>String(row?.id)===String(flag.id)))fieldScopeFlags.push(flag)}
       }
     }catch{
       if(!current())return;
@@ -628,6 +754,14 @@ var fieldScopeFlags=[];
       }
       if(button){button.disabled=false;button.textContent=doneLabel}
     }
+  }
+  const flagButton=$('#flag-extra-work');
+  if(flagButton){
+    const officeFlag=flagButton.onclick;
+    flagButton.onclick=function(event){
+      if(!fieldCompact())return officeFlag?.call(this,event);
+      openManualExtraFlag();
+    };
   }
   const nextButton=$('#report-next-step');
   if(nextButton){
@@ -669,7 +803,7 @@ var fieldScopeFlags=[];
   }
   if(typeof openReport==='function'){
     const openBefore=openReport;
-    openReport=function(report=null,context={}){reviewGeneration++;fieldScopeFlags=[];fieldHoursReview=null;reviewedNotesKey='';const result=openBefore(report,context);if(fieldCompact()&&Array.isArray(report?.officeReview?.reportedLabor)){for(const row of report.officeReview.reportedLabor){const input=$('[data-labor-member="'+Number(row.memberId)+'"]');if(input){input.value=row.hours==null?'':String(row.hours);input.dataset.manualHours='true';delete input.dataset.timecardDerived}}}if($('#report-next-step'))$('#report-next-step').disabled=false;if(dailyCompact()){const loadedSummary=String($('#report-summary')?.value||'').trim(),loadedNotes=String($('#field-notes')?.value||'').trim(),hasProduction=(report?.productionEntries||[]).some(row=>row&&row.extra_work!==true&&String(row.description||'').trim()),hasResolution=(report?.scopeFlags||[]).some(flag=>flag&&flag.decision)||(report?.extraWork||[]).some(item=>item&&item.extra_work===true);if(loadedNotes&&((officeCompact()&&hasProduction)||hasResolution||(loadedSummary&&(!/^field work recorded:/i.test(loadedSummary)||hasProduction))))reviewedNotesKey=loadedNotes;if(officeCompact()&&report?.productionEntries?.length&&typeof addProductionRow==='function'){$('#production-rows').innerHTML='';report.productionEntries.forEach(entry=>addProductionRow({...entry,laborManual:entry.laborManual===true||Number(entry.laborHours)>0,laborMinutes:entry.laborMinutes??Math.round((Number(entry.laborHours)||0)*60)}))}const saved=(report?.productionEntries||[]).some(row=>row&&((row.estimateItemId!=null&&String(row.estimateItemId)!=='')||Number(row.quantity)>0));if(report?.workSuggestions?.length&&!saved&&$('#production-rows'))$('#production-rows').innerHTML='';const draft=typeof readOfflineDraft==='function'&&typeof offlineReportDraftKey==='function'?readOfflineDraft(offlineReportDraftKey()):null;if(Array.isArray(report?.scopeFlags)&&report.scopeFlags.length)fieldScopeFlags=stampFlags(report.scopeFlags);else if(Array.isArray(draft?.scopeFlags)&&String(draft.notes||'').trim()&&String(draft.notes||'').trim()===String($('#field-notes')?.value||'').trim())fieldScopeFlags=stampFlags(draft.scopeFlags)}restoreResolvedExtras(report);dropEmptyLines();dropRawProductionRows();bindLaborAllocation();polishFieldDaily();renderFlags();if(report?.id&&!(typeof restoringActiveReport!=='undefined'&&restoringActiveReport)&&typeof clearRestoreBanner==='function')clearRestoreBanner();if(dailyCompact()&&$('#report-form')?.getAttribute('data-current-step')==='2')renderFieldReview();return result};
+    openReport=function(report=null,context={}){reviewGeneration++;fieldScopeFlags=[];fieldHoursReview=null;reviewedNotesKey='';if(!sameOpenDaily(report,context))clearReportPhotoFiles();const result=openBefore(report,context);if(fieldCompact()&&Array.isArray(report?.officeReview?.reportedLabor)){for(const row of report.officeReview.reportedLabor){const input=$('[data-labor-member="'+Number(row.memberId)+'"]');if(input){input.value=row.hours==null?'':String(row.hours);input.dataset.manualHours='true';delete input.dataset.timecardDerived}}}if($('#report-next-step'))$('#report-next-step').disabled=false;if(dailyCompact()){const loadedSummary=String($('#report-summary')?.value||'').trim(),loadedNotes=String($('#field-notes')?.value||'').trim(),hasProduction=(report?.productionEntries||[]).some(row=>row&&row.extra_work!==true&&String(row.description||'').trim()),hasResolution=(report?.scopeFlags||[]).some(flag=>flag&&flag.decision)||(report?.extraWork||[]).some(item=>item&&item.extra_work===true);if(loadedNotes&&((officeCompact()&&hasProduction)||hasResolution||(loadedSummary&&(!/^field work recorded:/i.test(loadedSummary)||hasProduction))))reviewedNotesKey=loadedNotes;if(officeCompact()&&report?.productionEntries?.length&&typeof addProductionRow==='function'){$('#production-rows').innerHTML='';report.productionEntries.forEach(entry=>addProductionRow({...entry,laborManual:entry.laborManual===true||Number(entry.laborHours)>0,laborMinutes:entry.laborMinutes??Math.round((Number(entry.laborHours)||0)*60)}))}const saved=(report?.productionEntries||[]).some(row=>row&&((row.estimateItemId!=null&&String(row.estimateItemId)!=='')||Number(row.quantity)>0));if(report?.workSuggestions?.length&&!saved&&$('#production-rows'))$('#production-rows').innerHTML='';const draft=typeof readOfflineDraft==='function'&&typeof offlineReportDraftKey==='function'?readOfflineDraft(offlineReportDraftKey()):null;if(Array.isArray(report?.scopeFlags)&&report.scopeFlags.length)fieldScopeFlags=stampFlags(report.scopeFlags);else if(Array.isArray(draft?.scopeFlags)&&String(draft.notes||'').trim()&&String(draft.notes||'').trim()===String($('#field-notes')?.value||'').trim())fieldScopeFlags=stampFlags(draft.scopeFlags)}restoreResolvedExtras(report);dropEmptyLines();dropRawProductionRows();bindLaborAllocation();polishFieldDaily();renderReportPhotoPreview();renderFlags();if(report?.id&&!(typeof restoringActiveReport!=='undefined'&&restoringActiveReport)&&typeof clearRestoreBanner==='function')clearRestoreBanner();if(dailyCompact()&&$('#report-form')?.getAttribute('data-current-step')==='2')renderFieldReview();return result};
   }
   if(typeof showReportStep==='function'){
     const stepBefore=showReportStep;
