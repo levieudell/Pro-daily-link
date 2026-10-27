@@ -1,5 +1,5 @@
 const $=selector=>document.querySelector(selector);
-const params=new URLSearchParams(location.search),requestedPlan=params.get('plan');
+const params=new URLSearchParams(location.search),requestedPlan=params.get('plan'),requestedCycle=params.get('cycle')==='monthly'?'monthly':'annual';
 const signupAttribution={
   utmSource:String(params.get('utm_source')||'').trim().slice(0,160),
   utmMedium:String(params.get('utm_medium')||'').trim().slice(0,160),
@@ -124,6 +124,7 @@ $('#signup').onsubmit=async event=>{
 };
 
 if(planWasRequested)document.querySelector(`[name="plan"][value="${requestedPlan}"]`).checked=true;
+document.querySelector(`[name="billingCycle"][value="${requestedCycle}"]`).checked=true;
 recommend();
 showStep(1);
 
