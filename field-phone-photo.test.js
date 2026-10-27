@@ -55,7 +55,7 @@ async function reveal(page, selector) {
   await page.evaluate(sel => {
     const el = document.querySelector(sel);
     const scroller = document.querySelector('#report-modal form');
-    el?.scrollIntoView({ block: 'center' });
+    el?.scrollIntoView({ block: 'center', behavior: 'instant' });
     const actions = document.querySelector('.report-step.active .modal-actions');
     if (!el || !scroller || !actions) return;
     const overlap = el.getBoundingClientRect().bottom - actions.getBoundingClientRect().top;
@@ -198,16 +198,30 @@ function assertReachable(box, label) {
     assert.equal(legacyBefore.open, false);
     assert.equal(/What was completed\?/.test(legacyBefore.text), false);
 
-    await reveal(page, '#report-photos');
-    const point = await page.$eval('#report-photos', el => {
-      const box = el.getBoundingClientRect();
-      return { x: box.left + box.width / 2, y: box.top + box.height / 2, width: el.offsetWidth, height: el.offsetHeight, opacity: getComputedStyle(el).opacity };
-    });
-    assert.ok(point.width >= 48 && point.height >= 48, JSON.stringify(point));
-    const [chooser] = await Promise.all([
-      page.waitForFileChooser({ timeout: 5000 }),
-      page.mouse.click(point.x, point.y)
-    ]);
+    let chooser;
+    let lastClick = null;
+    for (let attempt = 0; attempt < 3 && !chooser; attempt += 1) {
+      await reveal(page, '#report-photos');
+      await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+      const point = await page.$eval('#report-photos', el => {
+        const box = el.getBoundingClientRect();
+        const x = Math.round(box.left + box.width / 2);
+        const y = Math.round(box.top + box.height / 2);
+        const hit = document.elementFromPoint(x, y);
+        return { x, y, width: el.offsetWidth, height: el.offsetHeight, opacity: getComputedStyle(el).opacity, hitId: hit?.id || '', hitTag: hit?.tagName || '' };
+      });
+      lastClick = point;
+      assert.ok(point.width >= 48 && point.height >= 48, JSON.stringify(point));
+      assert.equal(point.hitId, 'report-photos', `photo tap missed the file input ${JSON.stringify(point)}`);
+      try {
+        const pending = page.waitForFileChooser({ timeout: 4000 });
+        await page.mouse.click(point.x, point.y);
+        chooser = await pending;
+      } catch (error) {
+        if (attempt === 2) throw error;
+      }
+    }
+    assert.ok(chooser, JSON.stringify(lastClick));
     assert.equal(chooser.isMultiple(), true);
     await chooser.accept([photo]);
     await page.waitForSelector('#report-photo-preview img', { timeout: 5000 });
