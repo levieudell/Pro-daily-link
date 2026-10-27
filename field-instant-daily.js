@@ -2,8 +2,8 @@ var fieldScopeFlags=[];
 (function(){
   if(typeof document==='undefined'||typeof $!=='function')return;
   const textFields=[['#report-summary','Summary'],['#report-materials','Materials'],['#report-equipment','Equipment'],['#report-delays','Delays'],['#report-safety','Safety']];
-  function fieldCompact(){return typeof currentRole!=='undefined'&&currentRole==='field'&&$('#report-type')?.value!=='superintendent'}
-  function officeCompact(){return typeof currentRole!=='undefined'&&currentRole==='office'&&$('#report-type')?.value!=='superintendent'}
+  function fieldCompact(){return typeof fieldNoteCompact==='function'?fieldNoteCompact():typeof currentRole!=='undefined'&&currentRole==='field'&&$('#report-type')?.value!=='superintendent'}
+  function officeCompact(){return typeof officeNoteCompact==='function'?officeNoteCompact():typeof currentRole!=='undefined'&&currentRole==='office'&&$('#report-type')?.value!=='superintendent'}
   function dailyCompact(){return fieldCompact()||officeCompact()}
   function escapeText(value){return typeof escapeHtml==='function'?escapeHtml(value):String(value??'')}
   function polishFieldDaily(){

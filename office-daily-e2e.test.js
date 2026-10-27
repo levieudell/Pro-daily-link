@@ -79,9 +79,9 @@ async function run(){
   await page.waitForFunction(()=>$('#report-form').getAttribute('data-current-step')==='2'&&!$('#report-next-step').disabled);
   assert.equal(await visible(page,'#report-more'),true);assert.equal(await visible(page,'.labor-fieldset'),true);
   await page.evaluate(()=>{api=window.__api;$('#report-modal').close();openReport();$('#report-type').value='superintendent';$('#report-type').dispatchEvent(new Event('change',{bubbles:true}));});
-  assert.equal(await page.$eval('#report-modal',e=>e.classList.contains('report-field-compact')),false,'superintendent unchanged');
-  assert.equal(await visible(page,'#superintendent-safety'),false,'superintendent safety is on second step');
-  await page.evaluate(()=>$('#report-next-step').click());assert.equal(await visible(page,'#superintendent-safety'),true);
+  assert.equal(await page.$eval('#report-type',e=>e.value),'production','ordinary daily stays on the note flow');
+  assert.equal(await page.$eval('#report-modal',e=>e.classList.contains('report-office-compact')),true,'office note flow stays compact');
+  assert.equal(await visible(page,'#superintendent-safety'),false,'safety log is not the daily form');
   // No-activity office dailies retain the existing submission path.
   await page.evaluate(()=>{$('#report-modal').close();openReport();});
   await page.waitForFunction(()=>reportLaborLoadedKey===reportLaborSelectionKey());
@@ -140,7 +140,7 @@ async function run(){
    assert.equal(await page.$eval('#field-notes',el=>el.value),'Typed notes. Dictated once.',action);
   }
   await page.evaluate(()=>{api=window.__voiceApi;});
-  assert.deepEqual(errors,[]);console.log('Office daily browser flow passed: compact create/review, office controls, raw punch exclusion, draft/edit/reopen, required fields, stale AI, manual fallback, superintendent.');
+  assert.deepEqual(errors,[]);console.log('Office daily browser flow passed: compact create/review, office controls, raw punch exclusion, draft/edit/reopen, required fields, stale AI, manual fallback, daily type stays on the note flow.');
  }catch(error){if(page){console.error('Office failure:',error);console.error(await page.evaluate(()=>({step:$('#report-form')?.getAttribute('data-current-step'),status:$('#report-submit-status')?.textContent,toast:$('#toast')?.textContent,notes:$('#field-notes')?.value})).catch(()=>({}))); fs.mkdirSync(shotRoot,{recursive:true});await page.screenshot({path:path.join(shotRoot,'office-failure.png')}).catch(()=>{})}console.error(log.slice(-2500));throw error}
  finally{if(browser)await browser.close();child.kill();await new Promise(resolve=>child.exitCode!==null?resolve():child.once('exit',resolve));fs.rmSync(root,{recursive:true,force:true})}
 }
