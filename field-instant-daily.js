@@ -42,9 +42,14 @@ var fieldScopeFlags=[];
       const img=document.createElement('img'),url=URL.createObjectURL(file);
       previewUrls.push(url);
       img.src=url;
-      img.alt=file.name||'Selected photo';
+      img.alt='Daily photo';
       host.append(img);
     }
+    const count=document.createElement('span');
+    count.className='report-photo-count';
+    const spanish=typeof preferredLanguage!=='undefined'&&preferredLanguage==='es';
+    count.textContent=files.length===1?(spanish?'1 foto':'1 photo'):(spanish?files.length+' fotos':files.length+' photos');
+    host.append(count);
   }
   $('#report-photos')?.addEventListener('change',renderReportPhotoPreview);
   function openManualExtraFlag(){

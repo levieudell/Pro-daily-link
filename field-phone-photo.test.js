@@ -227,9 +227,42 @@ function assertReachable(box, label) {
     await page.waitForSelector('#report-photo-preview img', { timeout: 5000 });
     const preview = await page.$eval('#report-photo-preview img', el => ({ alt: el.alt, src: el.src.slice(0, 24), width: el.getBoundingClientRect().width }));
     assert.match(preview.src, /^blob:/);
+    assert.equal(preview.alt, 'Daily photo');
     assert.ok(preview.width >= 48, JSON.stringify(preview));
     const chosenCount = await page.$eval('#report-photos', el => el.files.length);
     assert.equal(chosenCount, 1);
+    assert.equal(await page.$eval('.report-photo-count', el => el.textContent), '1 photo');
+    const photoChrome = await page.evaluate(() => {
+      const input = document.querySelector('#report-photos');
+      const style = getComputedStyle(input);
+      const tools = document.querySelector('#field-daily-tools')?.innerText || '';
+      return {
+        fontSize: style.fontSize,
+        color: style.color,
+        opacity: style.opacity,
+        tools
+      };
+    });
+    assert.equal(photoChrome.fontSize, '0px', JSON.stringify(photoChrome));
+    assert.equal(photoChrome.color, 'rgba(0, 0, 0, 0)', JSON.stringify(photoChrome));
+    assert.ok(Number(photoChrome.opacity) > 0, JSON.stringify(photoChrome));
+    assert.equal(/daily\.jpg|no file chosen|choose file/i.test(photoChrome.tools), false, photoChrome.tools);
+    const clearance = await page.evaluate(() => {
+      const form = document.querySelector('#report-modal form');
+      form.scrollTop = form.scrollHeight;
+      const actions = document.querySelector('.report-step.active .modal-actions').getBoundingClientRect();
+      const helper = document.querySelector('#report-photos-field .input-help').getBoundingClientRect();
+      const preview = document.querySelector('#report-photo-preview').getBoundingClientRect();
+      return {
+        helperBottom: Math.round(helper.bottom),
+        previewBottom: Math.round(preview.bottom),
+        actionsTop: Math.round(actions.top),
+        atEnd: form.scrollTop >= form.scrollHeight - form.clientHeight - 1
+      };
+    });
+    assert.equal(clearance.atEnd, true, JSON.stringify(clearance));
+    assert.ok(clearance.helperBottom <= clearance.actionsTop - 8, `helper under Done ${JSON.stringify(clearance)}`);
+    assert.ok(clearance.previewBottom <= clearance.actionsTop - 8, `photos under Done ${JSON.stringify(clearance)}`);
     await shot(page, 'c1-photo-chosen-390.png');
 
     await reveal(page, '#flag-extra-work');
