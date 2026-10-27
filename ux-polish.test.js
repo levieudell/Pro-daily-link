@@ -73,7 +73,7 @@ assert.match(about, /Every day brought the same chase/);
 assert.doesNotMatch(read('landing.css'), /footer-founder/);
 assert.doesNotMatch(read('public-content.css'), /story-marker|founder-proof/);
 assert.match(read('public-content.css'), /\.founder-story\{max-width:760px/);
-assert.match(read('public-content.css'), /\.landing-founder\{display:block\}/);
+assert.match(read('public-content.css'), /\.landing-founder\{display:block;width:100%;min-width:0\}/);
 for (const file of ['vs/raken.html', 'vs/procore.html', 'vs/paper-daily-logs.html']) {
   assert.doesNotMatch(read(file), /since he was 9|footer-founder|age 9/i, file);
 }
