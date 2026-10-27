@@ -17,12 +17,24 @@ Object.assign(process.env, {
 const { server } = require('../server');
 const db = JSON.parse(fs.readFileSync(process.env.PDL_DB_FILE, 'utf8'));
 db.company.name = 'DEMO | PDL Safety Lab';
+db.company.features ||= {};
+db.company.features.templates = true;
+db.dailyTemplates = [{
+  id: 'synthetic-inspection', name: 'Synthetic pre-start inspection', category: 'inspection',
+  description: 'A short project-assigned inspection used only by the disposable Safety demo.', locked: false,
+  requirements: { photo: false, signature: false, acknowledgement: false }, assignment: { crewNames: [], workTypes: [] },
+  versions: [{ version: 1, name: 'Synthetic pre-start inspection', createdAt: new Date().toISOString(), createdBy: 'Synthetic fixture', fields: [
+    { id: 'access-condition', label: 'Is site access acceptable?', type: 'yesno', required: true, help: '', options: [] },
+    { id: 'inspection-notes', label: 'Inspection notes', type: 'longtext', required: false, help: '', options: [] }
+  ] }]
+}];
 const owner = db.users.find(user => user.role === 'owner');
 owner.email = 'pm@example.invalid'; owner.name = 'Demo project manager';
 owner.emailVerifiedAt = new Date().toISOString();
 const trades = [['roofing'], ['excavation'], ['framing', 'demolition']];
 for (const [index, project] of db.projects.entries()) {
   project.safetyProfile = { revision: 1, enabled: true, state: 'OR', employer: 'Demo responsible employer', activities: trades[index % trades.length] };
+  project.templateIds = ['standard', 'synthetic-inspection'];
 }
 fs.writeFileSync(process.env.PDL_DB_FILE, JSON.stringify(db, null, 2));
 fs.writeFileSync(process.env.PDL_PLATFORM_FILE, JSON.stringify({ users: [], sessions: [], notes: [] }));

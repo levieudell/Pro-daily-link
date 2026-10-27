@@ -62,7 +62,7 @@ async function start() {
   });
 }
 
-const harness = `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>PDL Safety acceptance</title><link rel="stylesheet" href="/styles.css"><link rel="stylesheet" href="/design-system.css"><link rel="stylesheet" href="/safety-pm-ui.css"></head><body><button id="open-safety-pm">Safety today</button><div id="report-list"></div><div id="report-detail"></div><script>
+const harness = `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>PDL Safety acceptance</title><link rel="stylesheet" href="/styles.css"><link rel="stylesheet" href="/design-system.css"><link rel="stylesheet" href="/safety-pm-ui.css"></head><body><button id="open-safety-pm" data-open-safety-pm>Safety today</button><div id="report-list"></div><div id="report-detail"></div><script>
 let currentUser=${JSON.stringify(user)},company=${JSON.stringify(company)},projects=${JSON.stringify(projects)},photos=${JSON.stringify(photos)},currentRole='office',reports=[];
 function signedInCompanyId(){return company.id}
 function companyTodayIso(){return '${date}'}
