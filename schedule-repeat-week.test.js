@@ -15,7 +15,7 @@ assert.match(appSource,/\$\('#repeat-week-confirm'\)\.onclick=confirmRepeatWeek/
 assert.match(appSource,/repeatWeekButton\.hidden=!canManageSchedule\(\)\|\|scheduleView==='month'/,'button hidden for field users and month view');
 assert.match(appSource,/const weekday=row\.date\?new Date/,'blank skipped-row dates never render as Invalid Date');
 assert.match(appSource,/reason=scheduleCopy\(row\.reason\|\|''\)/,'skipped-row reasons are translated before date and reason are composed');
-assert.match(index,/app\.js\?v=20261016-voice2/,'cache version carries the bumped release marker (suffix changes per release)');
+assert.match(index,/app\.js\?v=\d{8}-[a-z0-9-]+/i,'cache version carries a dated release marker');
 // Client helper (pure): the source window is the 7 days before the viewed week.
 const lines=appSource.split('\n');
 function code(name){const start=lines.findIndex(l=>l.startsWith(`function ${name}(`));assert.ok(start>=0,name);assert.ok(lines[start].trimEnd().endsWith('}'),name+' must be single-line for extraction');return lines[start]}

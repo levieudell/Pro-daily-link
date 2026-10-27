@@ -7,6 +7,7 @@ const assert = require('node:assert/strict'), fs = require('node:fs'), vm = requ
 
 const app = fs.readFileSync('app.js', 'utf8');
 const offline = fs.readFileSync('offline.js', 'utf8');
+const companyId = '11111111-1111-4111-8111-111111111111';
 
 // ---------- Static contracts ----------
 assert.match(app, /PDLOffline\.enqueuePhotos\(\{files:encoded/, 'uploadPhotos stashes offline photos through the queue');
@@ -33,14 +34,14 @@ function makeCacheHarness(){
   };
   return { caches: { open: async () => store }, store };
 }
-function loadQueue(online, fetchImpl, storage, cachesImpl){
+function loadQueue(online, fetchImpl, storage, cachesImpl, identity={companyId,userId:1}){
   const handlers = {};
   const sandbox = {
     // readyState 'loading' keeps the module's boot-time auto-drain from
     // racing the explicit drain() calls in these tests.
     window: null, document: { readyState: 'loading', addEventListener(){} },
     navigator: { onLine: online }, localStorage: storage, fetch: fetchImpl,
-    Response, setTimeout, console,
+    Response, setTimeout, console, currentUser:identity.userId==null?null:{id:identity.userId}, signedInCompanyId:()=>identity.companyId,
     ...(cachesImpl ? { caches: cachesImpl } : {})
   };
   sandbox.window = { addEventListener: (name, fn) => { handlers[name] = fn; } };
@@ -149,6 +150,40 @@ const photoPayload = (tag, linkTag) => ({ files: [{ name: 'a.jpg', type: 'image/
     assert.equal(result.sent, 0);
     assert.equal(calls.length, 1, 'the photo upload is not attempted before its parent daily exists');
     assert.equal(PDLOffline.queuedCount(), 2, 'both entries stay queued in order');
+  }
+
+  // 7) queued photo evidence belongs only to the authenticated company + user
+  {
+    const storage = makeStorage(), harness = makeCacheHarness(), calls = [];
+    const first = loadQueue(false, async () => { throw new Error('offline'); }, storage, harness.caches, {companyId:'tenant-a',userId:10});
+    await first.PDLOffline.enqueuePhotos({...photoPayload('seven','gone-tag'),reportId:null,siteVisitId:'10000000-0000-4000-8000-000000000001'});
+    const second = loadQueue(true, async url => { calls.push(url); return {ok:true,status:201,json:async()=>[]}; }, storage, harness.caches, {companyId:'tenant-b',userId:20});
+    assert.equal(second.PDLOffline.queuedCount(),0,'another account cannot see queued photo evidence');
+    await second.PDLOffline.drain();
+    assert.equal(calls.length,0,'another account cannot upload queued photo evidence');
+    assert.equal(first.PDLOffline.queuedCount(),1,'the original account still owns its saved photo');
+  }
+
+  // 8) rejected visit photos remain recoverable and visibly need attention
+  {
+    const storage = makeStorage(), harness = makeCacheHarness();
+    const { PDLOffline } = loadQueue(true, async () => ({ok:false,status:409,json:async()=>({error:'Visit changed'})}), storage, harness.caches);
+    await PDLOffline.enqueuePhotos({...photoPayload('eight','gone-tag'),reportId:null,siteVisitId:'10000000-0000-4000-8000-000000000001'});
+    const result=await PDLOffline.drain();
+    assert.equal(result.remaining,1);
+    assert.equal(PDLOffline.issueCount(),1,'the refusal is shown as a recovery issue');
+    assert.equal(harness.store._blobs.size,1,'the original photo bytes remain available for retry');
+  }
+
+  // 9) missing device photo bytes are retained as an honest recovery issue
+  {
+    const storage = makeStorage(), harness = makeCacheHarness();
+    const { PDLOffline } = loadQueue(true, async () => { throw new Error('must not upload'); }, storage, harness.caches);
+    const entry=await PDLOffline.enqueuePhotos({...photoPayload('nine','gone-tag'),reportId:null,siteVisitId:'10000000-0000-4000-8000-000000000001'});
+    await harness.store.delete(entry.cacheKey);
+    await PDLOffline.drain();
+    assert.equal(PDLOffline.issueCount(),1);
+    assert.match(PDLOffline.issuesForVisit('10000000-0000-4000-8000-000000000001')[0].error,/could not be found/i);
   }
 
   console.log('offline photos: ok');
