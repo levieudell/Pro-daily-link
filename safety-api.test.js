@@ -33,7 +33,7 @@ function fixture(companyId) {
     company: { id: companyId, name: 'Synthetic safety company', demo: true, timezone: 'America/Los_Angeles', features: {} },
     projects: [101, 102].map(id => ({ id, name: `Synthetic project ${id}`, site: '100 Synthetic Way, Portland, OR 97201', status: 'Active', customerId: 1, estimateItems: [] })),
     customers: [{ id: 1, name: 'Synthetic customer' }],
-    team: [11, 12].map(id => ({ id, name: `Synthetic member ${id}`, crew: 'Safety crew', role: 'Crew member' })),
+    team: [11, 12].map(id => ({ id, name: `Synthetic member ${id}`, crew: 'Safety crew', role: 'Crew member' })).concat({ id: 13, name: 'Synthetic member 13', crew: 'Other crew', role: 'Crew member' }),
     assignments: [{ id: 1, projectId: 101, memberIds: [11, 12], crew: 'Safety crew', date, start: '08:00', end: '16:00', task: 'Roofing work' }],
     users,
     sessions: users.map(user => ({ userId: user.id, companyId, tokenHash: hash(token(companyId, user.id)), expiresAt: '2099-01-01T00:00:00Z' })),
@@ -85,13 +85,13 @@ async function expectStatus(status, ...args) {
   return result.data;
 }
 const profileInput = (revision = 0, extra = {}) => ({ revision, enabled: true, state: 'OR', employer: 'Synthetic responsible employer', activities: ['roofing'], ...extra });
-const reportInput = status => ({ projectId: 101, project: 0, dateIso: date, notes: 'Synthetic roofing work and inspection notes.', status, reportType: 'superintendent', extracted: { reportType: 'superintendent' }, productionEntries: [], laborEntries: [] });
+const reportInput = status => ({ projectId: 101, project: 0, dateIso: date, sourceAssignmentId: 1, notes: 'Synthetic roofing work and inspection notes.', status, reportType: 'superintendent', extracted: { reportType: 'superintendent' }, productionEntries: [], laborEntries: [] });
 const pass = (day, check, extra = {}) => ({ revision: day.revision, status: 'pass', inspector: 'Synthetic inspector', notes: 'Synthetic inspection evidence recorded before work.', ...(check.requiresCompetentPerson ? { competentPerson: 'Synthetic designated competent person' } : {}), ...extra });
 
 (async () => {
   try {
     await startServer();
-    for (const asset of ['/safety-pm-ui.js', '/safety-pm-ui.css']) assert.equal((await fetch(base + asset)).status, 200, 'public UI asset: ' + asset);
+    for (const asset of ['/safety-pm-ui.js', '/safety-pm-ui.css', '/safety-workspace-ui.js', '/safety-workspace-ui.css']) assert.equal((await fetch(base + asset)).status, 200, 'public UI asset: ' + asset);
     for (const asset of ['/safety-engine.js', '/safety-api.test.js']) assert.equal((await fetch(base + asset)).status, 404, 'server-only safety file: ' + asset);
     await expectStatus(401, 'GET', safety(101) + '?date=' + date, null);
     await expectStatus(401, 'GET', safety(101) + '?date=' + date, 8);
@@ -111,7 +111,7 @@ const pass = (day, check, extra = {}) => ({ revision: day.revision, status: 'pas
     const guestBlocked = await expectStatus(409, 'POST', `/api/guest/${guestToken}?c=${companyA}`, null, { notes: 'Synthetic subcontractor work', startedAt: date + 'T08:00:00Z', endedAt: date + 'T16:00:00Z', crewCount: 2, tickets: [] });
     assert.equal(guestBlocked.code, 'SAFETY_CHECKS_REQUIRED', 'subcontractor guest report cannot bypass safety gate');
     assert.equal(JSON.parse(fs.readFileSync(dbFile, 'utf8')).reports.length, 0, 'blocked guest submission does not persist a report');
-    const draft = await expectStatus(201, 'POST', '/api/reports', 1, { ...reportInput('Draft'), extracted: { reportType: 'superintendent', safetyEvidence: { ruleVersion: 'FORGED_CLIENT_EVIDENCE', checks: [{ status: 'pass' }] } } });
+    const draft = await expectStatus(201, 'POST', '/api/reports', 1, { ...reportInput('Draft'), sourceAssignmentId: null, extracted: { reportType: 'superintendent', safetyEvidence: { ruleVersion: 'FORGED_CLIENT_EVIDENCE', checks: [{ status: 'pass' }] } } });
     assert.equal(draft.status, 'Draft', 'incomplete safety must not block preserving a draft');
     assert.equal(Object.hasOwn(draft, 'safetyEvidence'), false, 'forged extracted safety evidence is stripped from new Draft');
     assert.equal(Object.hasOwn(JSON.parse(fs.readFileSync(dbFile, 'utf8')).reports.find(row => row.id === draft.id), 'safetyEvidence'), false, 'forged Draft evidence is not persisted');
@@ -152,6 +152,17 @@ const pass = (day, check, extra = {}) => ({ revision: day.revision, status: 'pas
     assert.equal(submitted.safetyEvidence.dayRevision, day.revision);
     assert.equal(JSON.stringify(submitted.safetyEvidence).includes('FOREIGN_TENANT_SENTINEL'), false, 'foreign same-project/date row cannot leak into daily evidence');
     assert.equal(submitted.safetyEvidence.summary.unresolved, 1, 'daily retains the unresolved condition honestly');
+    const spoofedCrew = await expectStatus(201, 'POST', '/api/reports', 1, { ...reportInput('Submitted'), sourceAssignmentId: null, crew: 'Safety crew', clientTag: 'synthetic-spoofed-crew', notes: 'No assigned labor or assignment is attached to this synthetic record.' });
+    const mixedCrew = await expectStatus(201, 'POST', '/api/reports', 1, { ...reportInput('Submitted'), laborEntries: [{ memberId: 11, hours: 4 }, { memberId: 13, hours: 4 }], productionEntries: [{ description: 'Synthetic roofing work', quantity: 1, unit: 'EA', laborHours: 8 }], clientTag: 'synthetic-mixed-crew', notes: 'This synthetic report contains one assigned and one unassigned crew member.' });
+    const managerState = await expectStatus(200, 'GET', '/api/state', 3);
+    assert.ok(managerState.reports.some(report => report.id === submitted.id), 'assigned PM sees a safety or toolbox record linked to the assigned crew even without labor rows');
+    assert.ok(!managerState.reports.some(report => report.id === draft.id), 'unassigned no-labor draft is not exposed merely because the PM can access the project');
+    assert.ok(!managerState.reports.some(report => report.id === spoofedCrew.id), 'a client-supplied crew label cannot expose an unassigned no-labor report to a PM');
+    assert.ok(!managerState.reports.some(report => report.id === mixedCrew.id), 'a mixed-crew report is not exposed when any labor belongs outside the PM’s assigned crews');
+    await expectStatus(403, 'PATCH', `/api/reports/${spoofedCrew.id}`, 3, { notes: 'A hidden report must not be editable by guessed ID.' });
+    await expectStatus(403, 'PATCH', `/api/reports/${spoofedCrew.id}/approve`, 3, {});
+    await expectStatus(403, 'DELETE', `/api/reports/${spoofedCrew.id}`, 3, { reason: 'Synthetic authorization check' });
+    await expectStatus(403, 'PATCH', `/api/reports/${mixedCrew.id}`, 3, { notes: 'Mixed-crew reports must remain outside PM write scope.' });
     const capturedSafety = structuredClone(submitted.safetyEvidence);
     day = await expectStatus(200, 'PATCH', `${dayRoute(101)}/checks/${check.id}`, 4, pass(day, check));
     const savedReport = JSON.parse(fs.readFileSync(dbFile, 'utf8')).reports.find(row => row.id === submitted.id);

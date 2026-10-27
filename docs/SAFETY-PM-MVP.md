@@ -4,7 +4,7 @@ This adds an opt-in safety workflow to the existing PDL daily report. It is an O
 
 ## Product workflow
 
-1. Open **Safety today**, choose a project and work date.
+1. Open **Safety** from the main navigation. The overview shows the selected project's documentation status, checks recorded, open follow-ups, toolbox talks and assigned forms without claiming the site is safe or compliant. Choose a project and work date once; the **Today**, **Toolbox talks**, **Forms** and **Records** tabs keep the rest of the workflow focused.
 2. A PM with daily-report access, admin or owner confirms the state and responsible employer, selects the project's trades, and enables the profile. Recognizable state suffixes in the address are checked against that selection. Ambiguous addresses require explicit confirmation; this is not geocoding or complete jurisdiction determination.
 3. Generate the day's checks. Profile trades and recognized assignment/project-schedule tasks add starter checks. An explicit scope/conditions check is always included; unrecognized activity does not establish supported coverage.
 4. Record the inspector and actual findings for every response. Excavation inspection requires a named competent person. Names alone do not verify qualification, authority or presence. Required inspection timing is shown before work and when conditions change; the software does not control physical work commencement.
@@ -12,6 +12,8 @@ This adds an opt-in safety workflow to the existing PDL daily report. It is an O
 6. A failed/deferred check creates a persistent hazard follow-up. A subsequent pass does not close that hazard; PM/office verification is required. Open hazards carry across days. Corrective updates remain possible when a checklist becomes stale or the profile is disabled.
 7. Draft reports and clock-out remain available. An enabled project's final report creation, edit, office approval and subcontractor guest submission must pass the server-side documentation gate. Missing or stale checks block finalization even if configurable forms are disabled.
 8. A documented failure/deferral can accompany a submitted report only with findings, corrective action, owner, due date and stopped-work evidence. It remains unresolved. A completed documentation gate is not a hazard-free result.
+
+Toolbox talks, inspections, incidents and assigned safety forms continue to use the existing daily-report and template records. The Safety workspace aggregates those scoped records; it does not copy them into a second store. **Complete today's checks** and **Flag a hazard** reopen the focused project/day workflow, while forms and talks open the established daily-report flow. Project-manager and field visibility remains limited by the existing project and tenant authorization rules.
 
 Every saved change has an actor, timestamp and before/after history. Every submitted daily captures its own check/rule/hazard snapshot, including earlier unresolved hazards; later edits do not rewrite that evidence. Changes to profile, address or schedule invalidate the old checklist until refreshed, retaining prior answers in history.
 
@@ -58,7 +60,7 @@ npm ci
 npm run demo:safety
 ```
 
-The demo binds only to `127.0.0.1:4326`, uses a new temporary synthetic workspace and prints a one-run password for `pm@example.invalid`. Open the printed login URL, then **Safety today**. Every restart creates fresh data. No production credentials or database files are needed. An alternative port can be supplied with `npm run demo:safety -- --port=4327`.
+The demo binds only to `127.0.0.1:4326`, uses a new temporary synthetic workspace and prints a one-run password for `pm@example.invalid`. Open the printed login URL, then **Safety**. The overview-first workspace is the normal navigation destination; its Today actions open the focused checklist and hazard workflow. Every restart creates fresh data. No production credentials or database files are needed. An alternative port can be supplied with `npm run demo:safety -- --port=4327`.
 
 ```sh
 npm run check
@@ -67,7 +69,7 @@ npm run test:safety:browser
 npm test
 ```
 
-Browser acceptance requires an available Playwright runtime and Chromium/Edge. `PDL_PLAYWRIGHT_MODULE` and `PDL_BROWSER_PATH` can select them. It exercises the real safety API and UI component with isolated synthetic data, saves desktop/mobile screenshots to `output/`, and blocks external browser requests. It is separate from the normal CI suite because the repository does not install Playwright by default.
+`npm run test:safety` includes pure Safety workspace regressions for report/project selection, assigned-form filtering, open-hazard de-duplication and every overview status priority, in addition to the engine and HTTP acceptance suites. Browser acceptance requires an available Playwright runtime and Chromium/Edge. `PDL_PLAYWRIGHT_MODULE` and `PDL_BROWSER_PATH` can select them. It exercises the real safety API and UI component with isolated synthetic data, saves desktop/mobile screenshots to `output/`, and blocks external browser requests. It is separate from the normal CI suite because the repository does not install Playwright by default.
 
 No schema migration is required. `safetyDays` uses the existing tenant snapshot/transactional collection persistence, is omitted from broad `/api/state` projections, and is exposed only by scoped safety endpoints or owner export. Existing backups preserve the full collection; company/project authorization and optimistic revisions apply to all safety writes.
 

@@ -197,6 +197,7 @@
       await api(path, { method, body: JSON.stringify(input), signal: state.controller.signal });
       if (!current(state)) return;
       await load(state, { drafts, message });
+      window.dispatchEvent(new CustomEvent('pdl:safety-updated', { detail: { projectId: state.projectId, date: state.date } }));
     } catch (error) {
       if (!current(state)) return;
       if (error.status === 409) {
@@ -304,7 +305,7 @@
 
   document.addEventListener('click', event => {
     if (event.target.closest('#logout-button,#profile-logout-button,#subscription-lock-logout')) { close(); return; }
-    const opener = event.target.closest('#open-safety-pm,#report-open-safety,[data-open-safety-pm]');
+    const opener = event.target.closest('#report-open-safety,[data-open-safety-pm]');
     if (!opener) return;
     event.preventDefault();
     const reportSelect = document.getElementById('report-project'), reportDate = document.getElementById('report-date');
