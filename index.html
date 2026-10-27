@@ -9,7 +9,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Oswald:wght@500;600;700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="styles.css?v=20261014-review3-20261017-fieldreview1-office1-mobile3-20261019-schedule1" />
+  <link rel="stylesheet" href="styles.css?v=20261014-review3-20261017-fieldreview1-office1-mobile3-20261019-schedule1-c1photo" />
   <link rel="stylesheet" href="estimate-mobile.css" />
   <link rel="stylesheet" href="safety-pm-ui.css?v=20261026-safetyv3" />
   <link rel="stylesheet" href="safety-workspace-ui.css?v=20261026-safetyv3" />
@@ -295,7 +295,7 @@
         <input type="hidden" id="report-weather" /><input type="hidden" id="report-temperature" />
         </details>
         <label id="field-notes-label">Tell us what happened today<textarea id="field-notes" rows="8" placeholder="Example: Concrete crew poured 86 yards on the east foundation with 3 people for 8 hours. Pump arrived 45 minutes late…"></textarea></label>
-        <div class="note-tools" id="field-note-tools"><button type="button" id="voice-notes">🎙 Speak notes</button><button type="button" id="flag-extra-work">＋ Flag extra work</button><button type="button" data-note-chip="No delays today. ">No delays</button><button type="button" data-note-chip="No safety incidents. ">No incidents</button><button type="button" data-note-chip="Tomorrow we plan to ">Tomorrow</button></div>
+        <div class="note-tools" id="field-note-tools"><button type="button" id="voice-notes">🎙 Speak notes</button><button type="button" data-note-chip="No delays today. ">No delays</button><button type="button" data-note-chip="No safety incidents. ">No incidents</button><button type="button" data-note-chip="Tomorrow we plan to ">Tomorrow</button></div>
         <section id="voice-capture-panel" class="voice-capture-panel" aria-labelledby="voice-capture-title" hidden>
           <div class="voice-capture-circle" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 10v2a7 7 0 0 0 14 0v-2M12 19v3M8 22h8"/></svg></div>
           <h3 id="voice-capture-title">Listening…</h3>
@@ -304,7 +304,7 @@
         </section>
         <p class="voice-status" id="voice-status" role="status" aria-live="polite" hidden></p>
         <div class="autosave-status" id="autosave-status">Notes save automatically on this device</div>
-        <label>Daily photos<input type="file" id="report-photos" accept="image/jpeg,image/png,image/webp" multiple /><small class="input-help">Add progress, material, issue, or completed-work photos.</small></label><label id="report-photo-tags-field">Photo tags<input id="report-photo-tags" placeholder="progress, concrete, east wall"><small class="input-help">Separate tags with commas. Date and time are added automatically.</small></label>
+        <div id="field-daily-tools-home"><div id="field-daily-tools"><div class="note-tools"><button type="button" id="flag-extra-work">＋ Flag extra work</button></div><label id="report-photos-field"><span class="daily-photos-hit">Daily photos<input type="file" id="report-photos" accept="image/*" capture="environment" multiple /></span><small class="input-help">Add progress, material, issue, or completed-work photos.</small></label><span id="report-photo-preview" class="report-photo-preview" hidden></span><label id="report-photo-tags-field">Photo tags<input id="report-photo-tags" placeholder="progress, concrete, east wall"><small class="input-help">Separate tags with commas. Date and time are added automatically.</small></label></div></div>
         <button type="button" class="ai-button" id="ai-convert"><span>✦</span><b>Suggest lines from notes</b><small>Sends these notes to AI. Nothing is added until you accept each suggestion.</small></button>
         <p id="field-ai-disclosure" class="field-ai-disclosure">Notes are processed by AI to fill your report.</p>
         <div class="modal-actions"><button type="button" id="cancel-report" value="cancel" class="secondary">Cancel</button><button type="button" class="secondary" id="save-report-draft">Save notes as draft</button><button type="button" class="primary" id="report-next-step">Next: production & labor →</button></div>
@@ -561,7 +561,7 @@
   <script src="schedule-approved-labor.js?v=20261008-approved-evidence"></script>
   <script src="app.js?v=20261026-pm-site-visit3"></script>
   <script src="field-daily-scope.js?v=20261017-fieldreview1"></script>
-  <script src="field-instant-daily.js?v=20261017-fieldreview1-office1-entry2"></script>
+  <script src="field-instant-daily.js?v=20261017-fieldreview1-office1-entry2-c1photo"></script>
   <script src="estimate-mobile.js"></script>
   <script src="time-approval-controls.js?v=20261007-pay-presets-person-total"></script>
   <script src="company-settings-tabs.js?v=20261004-pay-periods"></script>

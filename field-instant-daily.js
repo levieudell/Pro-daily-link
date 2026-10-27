@@ -14,6 +14,47 @@ var fieldScopeFlags=[];
     if(typeof updateReportContextSummary==='function')updateReportContextSummary();
     modal?.classList.toggle('field-manual-entry',compact&&!fieldScopeFlags.length&&![...$$('.production-entry')].some(row=>row.dataset.aiFilled==='true'));
     if(!compact){const flags=$('#field-scope-flags'),cards=$('#field-review-cards');if(flags)flags.hidden=true;if(cards)cards.hidden=true}
+    placeDailyTools();
+  }
+  function placeDailyTools(){
+    const tools=$('#field-daily-tools'),home=$('#field-daily-tools-home');
+    if(!tools||!home)return;
+    if(!fieldCompact()){if(tools.parentElement!==home)home.append(tools);return}
+    const step=document.querySelector('#report-form .report-step.active');
+    if(!step)return;
+    if(step.dataset.reportStep==='2'){
+      const anchor=$('#field-scope-flags');
+      if(anchor&&anchor.parentElement===step)anchor.before(tools);
+      else{const actions=step.querySelector(':scope > .modal-actions');if(actions)actions.before(tools);else step.append(tools)}
+    }else if(tools.parentElement!==home)home.append(tools);
+  }
+  const previewUrls=[];
+  function renderReportPhotoPreview(){
+    const host=$('#report-photo-preview'),input=$('#report-photos');
+    if(!host)return;
+    for(const url of previewUrls){try{URL.revokeObjectURL(url)}catch{}}
+    previewUrls.length=0;
+    const files=input?.files?[...input.files]:[];
+    host.replaceChildren();
+    if(!fieldCompact()||!files.length){host.hidden=true;return}
+    host.hidden=false;
+    for(const file of files){
+      const img=document.createElement('img'),url=URL.createObjectURL(file);
+      previewUrls.push(url);
+      img.src=url;
+      img.alt=file.name||'Selected photo';
+      host.append(img);
+    }
+  }
+  $('#report-photos')?.addEventListener('change',renderReportPhotoPreview);
+  function openManualExtraFlag(){
+    if(!fieldScopeFlags.some(flag=>flag&&flag.reason==='stated_extra'&&!flag.decision)){
+      fieldScopeFlags.push({id:`stated_extra:manual:${Date.now()}`,kind:'extra',reason:'stated_extra',source:'field-button',description:'Extra work',quantity:null,unit:'',estimateItemId:null,createsChange:false,decision:null,extra_work:false,who_asked:'',message:'Confirm this is extra work, or mark it as normal scope. The office decides whether it is billable.'});
+      fieldScopeFlags=stampFlags(fieldScopeFlags);
+    }
+    if($('#report-form')?.getAttribute('data-current-step')!=='2'&&typeof showReportStep==='function')showReportStep(2);
+    else{renderFlags();polishFieldDaily()}
+    (document.querySelector('#field-scope-flags .field-extra-ask')||$('#field-scope-flags'))?.scrollIntoView?.({block:'center'});
   }
   function groundedText(value){const text=String(value||'').trim();return text&&!/^needs confirmation[.!\s]*$/i.test(text)?text:''}
   function nextStepText(value){const text=groundedText(value);if(!text)return '';if(typeof FieldDailyScope!=='undefined'&&FieldDailyScope.tidyNext)return FieldDailyScope.tidyNext(text);return text.replace(/^(?:next\s*step|next)\s*:\s*/i,'').trim()}
@@ -600,9 +641,11 @@ var fieldScopeFlags=[];
         if(fieldCompact()&&!clockHoursPresent()&&fieldHoursReview?.total>0&&typeof applyNoteLaborEvidence==='function')applyNoteLaborEvidence(draft.laborEvidence?.total>0?draft.laborEvidence:{total:fieldHoursReview.total,headcount:fieldHoursReview.headcount,perPerson:fieldHoursReview.perPerson});
         else if(fieldCompact()&&!clockHoursPresent()&&draft?.laborEvidence&&typeof applyNoteLaborEvidence==='function'&&!fieldHoursReview?.ask)applyNoteLaborEvidence(draft.laborEvidence);
         harvestFlagAnswers();
+        const keptManual=fieldScopeFlags.filter(flag=>flag&&flag.source==='field-button');
         fieldScopeFlags=stampFlags(typeof FieldDailyScope!=='undefined'&&FieldDailyScope.mergeScopeFlags?FieldDailyScope.mergeScopeFlags(fieldScopeFlags,draft?.scopeReview?.flags||[]):(draft?.scopeReview?.flags||[]).map(flag=>({...flag,decision:null,createsChange:false,who_asked:String(flag.who_asked||'')})));
         restoreHeldChoices();
         if(draft?.changesCreated)fieldScopeFlags=[];
+        for(const flag of keptManual){if(!fieldScopeFlags.some(row=>String(row?.id)===String(flag.id)))fieldScopeFlags.push(flag)}
       }
     }catch{
       if(!current())return;
@@ -628,6 +671,14 @@ var fieldScopeFlags=[];
       }
       if(button){button.disabled=false;button.textContent=doneLabel}
     }
+  }
+  const flagButton=$('#flag-extra-work');
+  if(flagButton){
+    const officeFlag=flagButton.onclick;
+    flagButton.onclick=function(event){
+      if(!fieldCompact())return officeFlag?.call(this,event);
+      openManualExtraFlag();
+    };
   }
   const nextButton=$('#report-next-step');
   if(nextButton){
@@ -669,7 +720,7 @@ var fieldScopeFlags=[];
   }
   if(typeof openReport==='function'){
     const openBefore=openReport;
-    openReport=function(report=null,context={}){reviewGeneration++;fieldScopeFlags=[];fieldHoursReview=null;reviewedNotesKey='';const result=openBefore(report,context);if(fieldCompact()&&Array.isArray(report?.officeReview?.reportedLabor)){for(const row of report.officeReview.reportedLabor){const input=$('[data-labor-member="'+Number(row.memberId)+'"]');if(input){input.value=row.hours==null?'':String(row.hours);input.dataset.manualHours='true';delete input.dataset.timecardDerived}}}if($('#report-next-step'))$('#report-next-step').disabled=false;if(dailyCompact()){const loadedSummary=String($('#report-summary')?.value||'').trim(),loadedNotes=String($('#field-notes')?.value||'').trim(),hasProduction=(report?.productionEntries||[]).some(row=>row&&row.extra_work!==true&&String(row.description||'').trim()),hasResolution=(report?.scopeFlags||[]).some(flag=>flag&&flag.decision)||(report?.extraWork||[]).some(item=>item&&item.extra_work===true);if(loadedNotes&&((officeCompact()&&hasProduction)||hasResolution||(loadedSummary&&(!/^field work recorded:/i.test(loadedSummary)||hasProduction))))reviewedNotesKey=loadedNotes;if(officeCompact()&&report?.productionEntries?.length&&typeof addProductionRow==='function'){$('#production-rows').innerHTML='';report.productionEntries.forEach(entry=>addProductionRow({...entry,laborManual:entry.laborManual===true||Number(entry.laborHours)>0,laborMinutes:entry.laborMinutes??Math.round((Number(entry.laborHours)||0)*60)}))}const saved=(report?.productionEntries||[]).some(row=>row&&((row.estimateItemId!=null&&String(row.estimateItemId)!=='')||Number(row.quantity)>0));if(report?.workSuggestions?.length&&!saved&&$('#production-rows'))$('#production-rows').innerHTML='';const draft=typeof readOfflineDraft==='function'&&typeof offlineReportDraftKey==='function'?readOfflineDraft(offlineReportDraftKey()):null;if(Array.isArray(report?.scopeFlags)&&report.scopeFlags.length)fieldScopeFlags=stampFlags(report.scopeFlags);else if(Array.isArray(draft?.scopeFlags)&&String(draft.notes||'').trim()&&String(draft.notes||'').trim()===String($('#field-notes')?.value||'').trim())fieldScopeFlags=stampFlags(draft.scopeFlags)}restoreResolvedExtras(report);dropEmptyLines();dropRawProductionRows();bindLaborAllocation();polishFieldDaily();renderFlags();if(report?.id&&!(typeof restoringActiveReport!=='undefined'&&restoringActiveReport)&&typeof clearRestoreBanner==='function')clearRestoreBanner();if(dailyCompact()&&$('#report-form')?.getAttribute('data-current-step')==='2')renderFieldReview();return result};
+    openReport=function(report=null,context={}){reviewGeneration++;fieldScopeFlags=[];fieldHoursReview=null;reviewedNotesKey='';const result=openBefore(report,context);if(fieldCompact()&&Array.isArray(report?.officeReview?.reportedLabor)){for(const row of report.officeReview.reportedLabor){const input=$('[data-labor-member="'+Number(row.memberId)+'"]');if(input){input.value=row.hours==null?'':String(row.hours);input.dataset.manualHours='true';delete input.dataset.timecardDerived}}}if($('#report-next-step'))$('#report-next-step').disabled=false;if(dailyCompact()){const loadedSummary=String($('#report-summary')?.value||'').trim(),loadedNotes=String($('#field-notes')?.value||'').trim(),hasProduction=(report?.productionEntries||[]).some(row=>row&&row.extra_work!==true&&String(row.description||'').trim()),hasResolution=(report?.scopeFlags||[]).some(flag=>flag&&flag.decision)||(report?.extraWork||[]).some(item=>item&&item.extra_work===true);if(loadedNotes&&((officeCompact()&&hasProduction)||hasResolution||(loadedSummary&&(!/^field work recorded:/i.test(loadedSummary)||hasProduction))))reviewedNotesKey=loadedNotes;if(officeCompact()&&report?.productionEntries?.length&&typeof addProductionRow==='function'){$('#production-rows').innerHTML='';report.productionEntries.forEach(entry=>addProductionRow({...entry,laborManual:entry.laborManual===true||Number(entry.laborHours)>0,laborMinutes:entry.laborMinutes??Math.round((Number(entry.laborHours)||0)*60)}))}const saved=(report?.productionEntries||[]).some(row=>row&&((row.estimateItemId!=null&&String(row.estimateItemId)!=='')||Number(row.quantity)>0));if(report?.workSuggestions?.length&&!saved&&$('#production-rows'))$('#production-rows').innerHTML='';const draft=typeof readOfflineDraft==='function'&&typeof offlineReportDraftKey==='function'?readOfflineDraft(offlineReportDraftKey()):null;if(Array.isArray(report?.scopeFlags)&&report.scopeFlags.length)fieldScopeFlags=stampFlags(report.scopeFlags);else if(Array.isArray(draft?.scopeFlags)&&String(draft.notes||'').trim()&&String(draft.notes||'').trim()===String($('#field-notes')?.value||'').trim())fieldScopeFlags=stampFlags(draft.scopeFlags)}restoreResolvedExtras(report);dropEmptyLines();dropRawProductionRows();bindLaborAllocation();polishFieldDaily();renderReportPhotoPreview();renderFlags();if(report?.id&&!(typeof restoringActiveReport!=='undefined'&&restoringActiveReport)&&typeof clearRestoreBanner==='function')clearRestoreBanner();if(dailyCompact()&&$('#report-form')?.getAttribute('data-current-step')==='2')renderFieldReview();return result};
   }
   if(typeof showReportStep==='function'){
     const stepBefore=showReportStep;
