@@ -62,9 +62,21 @@ assert.match(server, /field_template_draft/);
 assert.match(server, /function scopedTemplateList/);
 assert.match(server, /TEMPLATE_PHOTO_REQUIRED/);
 assert.match(server, /This form is not assigned to the selected project/);
-assert.match(landing, /I've been running equipment since I was 9/);
+assert.doesNotMatch(landing, /I've been running equipment since I was 9/);
 assert.doesNotMatch(landing, /Built by a guy who's been running equipment since he was 9, for the people doing the work\./);
-assert.doesNotMatch(landing, /hero-founder/);
+assert.doesNotMatch(landing, /hero-founder|footer-founder|founder-proof|since he was 9|since age 9|age 9/i);
+assert.match(landing, /<h2>BUILT FROM THE FIELD<\/h2>/);
+assert.match(landing, /Lost tickets\. Late paperwork\./);
+assert.doesNotMatch(about, /since I was 9|since he was 9|since age 9|age 9|story-marker/i);
+assert.match(about, /content="Why Pro Daily Link was built\."/);
+assert.match(about, /Every day brought the same chase/);
+assert.doesNotMatch(read('landing.css'), /footer-founder/);
+assert.doesNotMatch(read('public-content.css'), /story-marker|founder-proof/);
+assert.match(read('public-content.css'), /\.founder-story\{max-width:760px/);
+assert.match(read('public-content.css'), /\.landing-founder\{display:block\}/);
+for (const file of ['vs/raken.html', 'vs/procore.html', 'vs/paper-daily-logs.html']) {
+  assert.doesNotMatch(read(file), /since he was 9|footer-founder|age 9/i, file);
+}
 assert.doesNotMatch(landing, /25 years|contractor with/);
 assert.doesNotMatch(about, /25 years|built by a contractor/i);
 assert.match(landing, /\/about\.html/);
