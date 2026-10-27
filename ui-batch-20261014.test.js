@@ -1,8 +1,8 @@
 'use strict';
-// UI batch 2026-10-14: (1) real 800 weight for DM Sans on public pages so
-// Chrome stops synthesizing faux-bold buttons, (2) Messages screen overflow
-// guards, (3) all six project-detail tab buttons render synchronously and
-// async layers only update counts — no more tabs popping in late.
+// UI batch 2026-10-14: (1) real bold weight so buttons are not faux-bold,
+// (2) Messages screen overflow guards, (3) all six project-detail tab buttons
+// render synchronously and async layers only update counts — no more tabs popping in late.
+// Brand v1.0 moved marketing and auth pages from DM Sans onto self-hosted Inter (including 800).
 const assert = require('node:assert/strict'), fs = require('node:fs');
 
 const landing = fs.readFileSync('landing.html', 'utf8');
@@ -11,11 +11,20 @@ const signup = fs.readFileSync('signup.html', 'utf8');
 const guest = fs.readFileSync('guest.html', 'utf8');
 const styles = fs.readFileSync('styles.css', 'utf8');
 const app = fs.readFileSync('app.js', 'utf8');
+const brandFonts = fs.readFileSync('assets/brand-fonts.css', 'utf8');
 
-// 1) Public pages load the true DM Sans 800 weight used by their stylesheets.
-for (const [name, html] of [['landing', landing], ['login', login], ['signup', signup], ['guest', guest]]) {
-  assert.match(html, /family=DM\+Sans:wght@400;500;600;700;800/, `${name}.html must load DM Sans 800`);
+// 1) Marketing and auth pages load real Inter 700/800. Guest stays on DM Sans 800.
+for (const [name, html] of [['landing', landing], ['login', login], ['signup', signup]]) {
+  assert.match(html, /brand-fonts\.css/, `${name}.html must load self-hosted Inter and Anton`);
 }
+assert.match(brandFonts, /font-family:Anton/);
+assert.match(brandFonts, /font-weight:700/);
+assert.match(brandFonts, /font-weight:800/);
+assert.match(fs.readFileSync('login.css', 'utf8'), /font-family:Inter,sans-serif/);
+assert.match(fs.readFileSync('signup.css', 'utf8'), /font-family:Inter,sans-serif/);
+assert.doesNotMatch(fs.readFileSync('login.css', 'utf8'), /Arial/);
+assert.doesNotMatch(fs.readFileSync('signup.css', 'utf8'), /Arial/);
+assert.match(guest, /family=DM\+Sans:wght@400;500;600;700;800/, 'guest.html must load DM Sans 800');
 
 // 2) Messages screen stays inside its cards at any viewport width.
 assert.match(styles, /\.msg-new-panel select\{width:100%;max-width:100%;min-width:0\}/, 'project select must fill its grid cell instead of overflowing');
