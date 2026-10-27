@@ -1,5 +1,6 @@
 'use strict';
 // Clock in opens #start-day-modal on the first tap from My Day and from Time.
+// Clock out from My Day and Time ends the day on the first tap and opens the daily.
 const assert = require('node:assert/strict');
 const { spawn } = require('node:child_process');
 const fs = require('node:fs');
@@ -50,6 +51,51 @@ async function tap(page, selector) {
   await page.touchscreen.tap(point.x, point.y);
 }
 
+async function clockIn(page) {
+  await page.waitForSelector('#start-day-modal[open] #start-day-members input', { timeout: 10000 });
+  const started = await page.evaluate(() => {
+    const project = document.querySelector('#start-day-project');
+    for (const box of document.querySelectorAll('#start-day-members input')) {
+      const label = box.closest('label')?.textContent || '';
+      const keep = /Jordan Reed/i.test(label);
+      if (box.checked !== keep) box.click();
+    }
+    return {
+      project: project?.value || '',
+      people: [...document.querySelectorAll('#start-day-members input:checked')].map(box => box.closest('label')?.innerText || '')
+    };
+  });
+  assert.equal(started.project, '3', 'clock-in stays on Cedar Grove');
+  assert.equal(started.people.length, 1, JSON.stringify(started.people));
+  await page.click('#confirm-start-day');
+  await page.waitForFunction(() => {
+    const button = document.querySelector('#start-day-button');
+    const modal = document.querySelector('#start-day-modal');
+    return button && /Clock out/i.test(button.textContent || '') && modal && !modal.open;
+  }, { timeout: 20000 });
+}
+
+async function assertDailyOpened(page, from) {
+  await page.waitForSelector('#report-modal[open] #field-notes', { timeout: 20000 });
+  await page.waitForFunction(() => document.querySelector('#report-form')?.getAttribute('data-current-step') === '1', { timeout: 10000 });
+  const landed = await page.evaluate(() => ({
+    step: document.querySelector('#report-form')?.getAttribute('data-current-step'),
+    photos: Boolean(document.querySelector('#report-modal[open] .daily-photos-hit')),
+    endOpen: Boolean(document.querySelector('#end-day-modal')?.open),
+    painted: window.__endDayPainted === true,
+    title: document.querySelector('#report-modal-title')?.textContent?.trim() || '',
+    page: document.querySelector('.page.active')?.id || '',
+    clock: document.querySelector('#start-day-button')?.textContent?.trim() || ''
+  }));
+  assert.equal(landed.step, '1', from);
+  assert.equal(landed.photos, true, from);
+  assert.equal(landed.endOpen, false, from);
+  assert.equal(landed.painted, false, from);
+  assert.equal(landed.title, 'Verify daily report', from);
+  assert.equal(landed.page, 'reports-page', from);
+  assert.equal(landed.clock, 'Clock in', `${from} ended the workday`);
+}
+
 (async () => {
   assert.ok(fs.existsSync(CHROME), `Chrome is required (${CHROME})`);
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'pdl-clock-tap-'));
@@ -89,6 +135,23 @@ async function tap(page, selector) {
       args: ['--no-sandbox', '--disable-dev-shm-usage', '--disable-gpu']
     });
     const page = await browser.newPage();
+    await page.evaluateOnNewDocument(() => {
+      try {
+        localStorage.setItem('pdl-analytics-consent', 'declined');
+        localStorage.setItem('pdl-field-tip', 'dismissed');
+      } catch {}
+      window.__endDayPainted = false;
+      const watch = () => {
+        const modal = document.querySelector('#end-day-modal');
+        if (!modal || modal.dataset.watched === '1') return;
+        modal.dataset.watched = '1';
+        const mark = () => { if (modal.open) window.__endDayPainted = true; };
+        mark();
+        new MutationObserver(mark).observe(modal, { attributes: true, attributeFilter: ['open'] });
+      };
+      document.addEventListener('DOMContentLoaded', watch);
+      setInterval(watch, 50);
+    });
     await page.setViewport({ width: 390, height: 844, isMobile: true, hasTouch: true });
     page.on('dialog', async dialog => { await dialog.dismiss(); });
     await login(page, port);
@@ -110,7 +173,28 @@ async function tap(page, selector) {
     await tap(page, '#start-day-button');
     await page.waitForSelector('#start-day-modal[open]', { timeout: 5000 });
     assert.equal(await page.$eval('.page.active', el => el.id), 'fieldday-page');
-    console.log('Clock in opened on the first tap from My Day and Time.');
+
+    await clockIn(page);
+    await page.evaluate(() => document.querySelector('.nav-item[data-page="myday"]').click());
+    await page.waitForSelector('#myday-page.active [data-start-day]', { timeout: 10000 });
+    assert.equal(await page.$eval('[data-start-day]', el => el.textContent.trim()), 'Clock out');
+    assert.equal(await page.$eval('#report-modal', el => el.open), false);
+    await tap(page, '[data-start-day]');
+    await assertDailyOpened(page, 'My Day Clock out');
+
+    await page.evaluate(() => document.querySelector('#report-modal').close());
+    await page.waitForFunction(() => !document.querySelector('#report-modal').open);
+    await page.evaluate(() => document.querySelector('.nav-item[data-page="fieldday"]').click());
+    await page.waitForSelector('#fieldday-page.active #start-day-button', { timeout: 10000 });
+    assert.equal(await page.$eval('#start-day-button', el => el.textContent.trim()), 'Clock in');
+    await tap(page, '#start-day-button');
+    await page.waitForSelector('#start-day-modal[open]', { timeout: 5000 });
+    assert.equal(await page.$eval('.page.active', el => el.id), 'fieldday-page');
+    await clockIn(page);
+    assert.equal(await page.$eval('#fieldday-page.active #start-day-button', el => el.textContent.trim()), 'Clock out');
+    await tap(page, '#start-day-button');
+    await assertDailyOpened(page, 'Time Clock out');
+    console.log('Clock in and Clock out opened on the first tap from My Day and Time.');
   } finally {
     if (browser) await browser.close().catch(() => {});
     child.kill();
