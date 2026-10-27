@@ -29,9 +29,11 @@ window.pdlWorkspaceGate = (async () => {
   } catch {
     // No connection at all: if this device has a cached workspace, open it
     // offline instead of bouncing to the sign-in page.
-    if (localStorage.getItem('pdl-last-state')) {
+    const companyId=localStorage.getItem('pdl-company-id')||'',userId=localStorage.getItem('pdl-user-id')||'',scope=`${encodeURIComponent(companyId)}:${encodeURIComponent(userId)}`;
+    if (companyId && userId && localStorage.getItem(`pdl-last-state:${scope}`)) {
       document.documentElement.classList.add('workspace-authenticated');
       window.pdlOfflineBoot = true;
+      window.pdlOfflineScope = { companyId, userId };
       return true;
     }
     location.replace('/');

@@ -27,7 +27,7 @@ assert.match(serviceWorkerRegistration, /navigator\.serviceWorker\.register\('\/
 assert.equal([index, app, offline, workspaceGate, serviceWorkerRegistration]
   .filter(source => /navigator\.serviceWorker\.register\('\/sw\.js'\)/.test(source)).length, 1,
   'the service worker has one registration owner');
-assert.ok(workspaceGate.includes("localStorage.getItem('pdl-last-state')"), 'external workspace gate opens the cached state when offline');
+assert.match(workspaceGate, /pdl-last-state:\$\{scope\}/, 'external workspace gate opens only the remembered account scope when offline');
 assert.match(sw, /url\.pathname\.startsWith\('\/api\/'\)\)/, 'service worker never caches API responses');
 assert.match(sw, /caches\.match\(APP_PAGE\)/, 'service worker serves the cached app page for navigations');
 assert.match(app, /window\.PDLOffline\.loadState\(\)/, 'api() falls back to the cached state for GET /api/state');
@@ -35,24 +35,40 @@ assert.match(app, /window\.PDLOffline\.saveState\(data\)/, 'successful state loa
 assert.match(app, /window\.PDLOffline\.enqueue\(method,path,options\.body\)/, 'eligible offline mutations are queued');
 assert.match(app, /queuedError\.queued=true/, 'queued throws are marked so callers could special-case');
 assert.match(app, /\(typeof navigator==='undefined'\|\|!navigator\.onLine\)&&typeof window!=='undefined'&&window\.PDLOffline/, 'offline check runs before the 36s wake poll');
-assert.match(app, /PDLOffline\.queuedCount\(\)/, 'the connection banner counts queued changes');
+assert.match(app, /offlineApi\?\.queuedCount\?\.\(\)/, 'the connection banner counts queued changes');
 assert.match(server, /clientTag=String\(input\.clientTag\|\|''\)\.trim\(\)\.slice\(0,64\)/, 'server reads the client tag');
 assert.ok((server.match(/clientTag/g) || []).length >= 4, 'clientTag dedupe on reports and workdays start');
 
 // ---------- Queue semantics (synthetic VM) ----------
 function makeStorage(){ const map = new Map(); return { getItem:k=>map.has(k)?map.get(k):null, setItem:(k,v)=>map.set(k,String(v)), removeItem:k=>map.delete(k), _map:map }; }
-function loadQueue(online, fetchImpl){
-  const storage = makeStorage(), handlers = {};
+function loadQueue(online, fetchImpl, storage=makeStorage(), identity={companyId,userId:1}){
+  const handlers = {};
   const sandbox = {
-    window: null, document: { readyState: 'complete', addEventListener(){} },
+    window: null, document: { readyState: 'loading', addEventListener(){} },
     navigator: { onLine: online }, localStorage: storage, fetch: fetchImpl,
-    setTimeout, console
+    setTimeout, console, currentUser:identity.userId==null?null:{id:identity.userId}, signedInCompanyId:()=>identity.companyId
   };
-  sandbox.window = { addEventListener: (name, fn) => { handlers[name] = fn; } };
+  sandbox.window = { addEventListener: (name, fn) => { handlers[name] = fn; },pdlOfflineBoot:Boolean(identity.offlineBoot),pdlOfflineScope:identity.offlineBoot?{companyId:identity.companyId,userId:identity.rememberedUserId||identity.userId}:undefined };
   sandbox.window.addEventListener = (name, fn) => { handlers[name] = fn; };
   vm.createContext(sandbox);
   vm.runInContext(offline, sandbox);
   return { PDLOffline: sandbox.window.PDLOffline, handlers, storage };
+}
+{
+  const storage=makeStorage(),calls=[];
+  const first=loadQueue(false,async()=>{throw new Error('offline')},storage,{companyId:'tenant-a',userId:10});
+  first.PDLOffline.enqueue('POST','/api/reports','{"notes":"tenant A"}');
+  const second=loadQueue(true,async url=>{calls.push(url);return{ok:true,status:200,json:async()=>({id:1})}},storage,{companyId:'tenant-b',userId:20});
+  assert.equal(second.PDLOffline.queuedCount(),0,'another account cannot see a prior account queue');
+  void second.PDLOffline.drain();
+  assert.equal(calls.length,0);
+  const signedOut=loadQueue(true,async url=>{calls.push(url);return{ok:true,status:200,json:async()=>({id:1})}},storage,{companyId:'tenant-a',userId:null});
+  assert.equal(signedOut.PDLOffline.queuedCount(),0,'a remembered company without a live authenticated user cannot replay work');
+  const liveAgain=loadQueue(false,async()=>{throw new Error('offline')},storage,{companyId:'tenant-a',userId:10});
+  liveAgain.PDLOffline.saveState({company:{id:'tenant-a'},currentUser:{id:10},projects:[]});
+  const offlineBoot=loadQueue(false,async()=>{throw new Error('offline')},storage,{companyId:'tenant-a',userId:null,offlineBoot:true,rememberedUserId:10});
+  assert.equal(offlineBoot.PDLOffline.loadState().currentUser.id,10,'offline boot can read only the explicitly remembered account cache');
+  assert.equal(offlineBoot.PDLOffline.queuedCount(),0,'offline boot still cannot replay mutations before live authentication');
 }
 {
   const { PDLOffline } = loadQueue(false, async () => { throw new Error('offline'); });

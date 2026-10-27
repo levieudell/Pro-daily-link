@@ -13,7 +13,7 @@ assert.match(index,/name="mark-off-paid"/,'paid/unpaid choice exists');
 assert.match(appSource,/\$\('#mark-off-save'\)\.onclick=saveMarkOff/,'save wired');
 assert.match(appSource,/openAssignment\(\{memberId:\+cell\.dataset\.scheduleMember,date:cell\.dataset\.scheduleDate\}\)/,'open schedule cells route directly into the assignment composer');
 assert.match(appSource,/assignment-mark-off'[\s\S]*leaveAssignmentForDayTool\(openMarkOff\)/,'the assignment composer keeps a contextual mark-off action with a discard guard');
-assert.match(index,/app\.js\?v=20261016-voice2/,'cache version carries the bumped release marker (suffix changes per release)');
+assert.match(index,/app\.js\?v=\d{8}-[a-z0-9-]+/i,'cache version carries a dated release marker');
 // Live API against a real server boot.
 const root=fs.mkdtempSync(path.join(os.tmpdir(),'pdl-markoff-')),companyId='ccddccdd-ccdd-4cc4-8cc8-ccddccddeeff',ownerToken='synthetic-markoff-owner';
 const utc=new Date(),today=`${utc.getUTCFullYear()}-${String(utc.getUTCMonth()+1).padStart(2,'0')}-${String(utc.getUTCDate()).padStart(2,'0')}`;

@@ -21,8 +21,10 @@ assert.equal(isPublicFile(process.cwd(), path.join(process.cwd(), 'project-sched
 assert.match(server, /require\('\.\/project-schedule'\)/);
 assert.ok(server.includes('projectTasksRoute = url.pathname.match'), 'project tasks collection route');
 assert.ok(server.includes('projectTaskRoute = url.pathname.match'), 'single task route');
-assert.match(server, /'projectTasks','projectEvents','projectMessages'\]/, 'test-customer purge covers project tasks, events, and messages');
-assert.match(server, /'projectEvents','projectMessages'\]/, 'test-customer purge covers project events and messages');
+const purgeSource = server.slice(server.indexOf('function purgeKnownTestCustomer'), server.indexOf('function prepareWorkspace'));
+for (const collection of ['projectTasks', 'projectEvents', 'projectMessages']) {
+  assert.ok(purgeSource.includes(`'${collection}'`), `test-customer purge covers ${collection}`);
+}
 assert.ok(server.includes('projectEventsRoute = url.pathname.match'), 'project events collection route');
 assert.ok(server.includes('projectEventRoute = url.pathname.match'), 'single event route');
 assert.ok(server.includes("filter(event=>scope.allowedIds.has(event.projectId))"), 'field workspace scopes events');

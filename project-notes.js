@@ -97,7 +97,7 @@ function createProjectNotesHandler({ readDb, writeDb, body, json, authenticatedU
     const projectId = Number(route[1]);
     const project = Number.isSafeInteger(projectId) && (db.projects || []).find(row => Number(row.id) === projectId);
     if (!project || !canAccessProject(db, user, projectId)) return reply(404, { error: 'Project not found' });
-    const ownRows = (db.projectNotesTodos || []).filter(row => row.companyId === db.company.id && Number(row.projectId) === projectId);
+    const ownRows = (db.projectNotesTodos || []).filter(row => row.companyId === db.company.id && Number(row.projectId) === projectId && (!['field','foreman'].includes(user.role) || row.visibility !== 'office'));
     const itemId = route[2];
 
     if (req.method === 'GET' && !itemId) return reply(200, { projectId, items: ownRows.map(presentItem) });

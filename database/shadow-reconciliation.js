@@ -38,6 +38,8 @@ const SAFE_COLLECTION_NAMES = new Set([
   'onboardingOrders',
   'photos',
   'platformAuditOutbox',
+  'projectNotesTodos',
+  'projectSiteVisits',
   'projectEvents',
   'projectMessages',
   'projectPlans',
@@ -46,6 +48,7 @@ const SAFE_COLLECTION_NAMES = new Set([
   'projects',
   'reportingExports',
   'reports',
+  'safetyDays',
   'sessions',
   'subcontractorLinks',
   'subcontractors',
@@ -55,6 +58,10 @@ const SAFE_COLLECTION_NAMES = new Set([
   'tenantDeletionCleanupJobs',
   'timeCards',
   'timeOffRequests',
+  'payPeriods',
+  'payPeriodExports',
+  'assistantConfirmations',
+  'companyActivityCodes',
   'users',
   'workdays'
 ]);

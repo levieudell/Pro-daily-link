@@ -17,7 +17,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 
 const PRICE = Object.freeze({ model: 'gpt-5.4-mini', input: 0.75, output: 4.5, source: 'https://developers.openai.com/api/docs/models/gpt-5.4-mini' });
-const FEATURES = Object.freeze(['daily-extract', 'estimate-import', 'ticket-scan', 'template-draft', 'assistant-proposal', 'daily-transcribe']);
+const FEATURES = Object.freeze(['daily-extract', 'estimate-import', 'ticket-scan', 'template-draft', 'assistant-proposal', 'daily-transcribe', 'site-visit-organize']);
 const RETENTION_DAYS = 120;
 
 const defaultModel = () => process.env.OPENAI_MODEL || PRICE.model;

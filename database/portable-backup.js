@@ -30,7 +30,7 @@ const TENANT_COLLECTIONS = new Set([
   'estimateImports', 'projectPlans', 'projectTickets', 'projectEvents',
   'projectMessages', 'projectTasks', 'reportingExports', 'auditLog',
   'payPeriods', 'payPeriodExports', 'projectNotesTodos', 'assistantConfirmations',
-  'companyActivityCodes'
+  'companyActivityCodes', 'safetyDays', 'projectSiteVisits'
 ]);
 const digest = bytes => crypto.createHash('sha256').update(bytes).digest('hex');
 
@@ -176,6 +176,31 @@ function validateTenantSnapshot(snapshot, { activationSafe = false } = {}) {
   }
   if (!snapshot.users.some(user => user.role === 'owner' && user.status === 'Active')) {
     throw new Error('Tenant snapshot must retain at least one active owner.');
+  }
+  const companyId = String(snapshot.company.id), projectIds = new Set((snapshot.projects || []).map(project => String(project.id))), userIds = new Set(snapshot.users.map(user => String(user.id))), photos = new Map((snapshot.photos || []).map(photo => [String(photo.id), photo])), visits = new Map((snapshot.projectSiteVisits || []).map(visit => [String(visit.id), visit]));
+  for (const [index, visit] of (snapshot.projectSiteVisits || []).entries()) {
+    if (String(visit.companyId || '') !== companyId) throw new Error(`Tenant site visit ${index} belongs to a different company.`);
+    if (!projectIds.has(String(visit.projectId))) throw new Error(`Tenant site visit ${index} references a missing project.`);
+    if (visit.startedByUserId != null && !userIds.has(String(visit.startedByUserId))) throw new Error(`Tenant site visit ${index} references a missing user.`);
+    if (!Array.isArray(visit.entries)) throw new Error(`Tenant site visit ${index} must contain an evidence array.`);
+    for (const [entryIndex, entry] of visit.entries.entries()) {
+      if (!entry || typeof entry !== 'object' || Array.isArray(entry)) throw new Error(`Tenant site visit ${index} contains invalid evidence at index ${entryIndex}.`);
+      if (entry.createdByUserId != null && !userIds.has(String(entry.createdByUserId))) throw new Error(`Tenant site visit ${index} evidence ${entryIndex} references a missing user.`);
+      if (!Array.isArray(entry.photoIds || [])) throw new Error(`Tenant site visit ${index} evidence ${entryIndex} has invalid photo links.`);
+      for (const photoId of entry.photoIds || []) {
+        const photo = photos.get(String(photoId)), photoProjectId = photo?.projectId ?? (Number.isInteger(Number(photo?.project)) ? snapshot.projects?.[Number(photo.project)]?.id : null);
+        if (!photo) throw new Error(`Tenant site visit ${index} evidence ${entryIndex} references a missing photo.`);
+        if (String(photoProjectId) !== String(visit.projectId) || String(photo.siteVisitId || '') !== String(visit.id)) throw new Error(`Tenant site visit ${index} evidence ${entryIndex} references a photo from another project or visit.`);
+      }
+    }
+  }
+  for (const [index, photo] of (snapshot.photos || []).entries()) {
+    if (!photo.siteVisitId) continue;
+    const visit = visits.get(String(photo.siteVisitId)), photoProjectId = photo.projectId ?? (Number.isInteger(Number(photo.project)) ? snapshot.projects?.[Number(photo.project)]?.id : null);
+    if (!visit || String(visit.projectId) !== String(photoProjectId)) throw new Error(`Tenant photo ${index} references a missing or different site visit.`);
+  }
+  for (const [index, safetyDay] of (snapshot.safetyDays || []).entries()) {
+    if (String(safetyDay.companyId || '') !== companyId || !projectIds.has(String(safetyDay.projectId))) throw new Error(`Tenant safety day ${index} has an invalid tenant or project link.`);
   }
   return snapshot;
 }

@@ -23,6 +23,7 @@ process.env.PDL_PLATFORM_KEY = 'test-platform-key-32-characters-minimum';
 const {server} = require('./server');
 const base = 'http://127.0.0.1:4203';
 const platformKey = process.env.PDL_PLATFORM_KEY;
+const minimalPngData = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Y9ZQMcAAAAASUVORK5CYII=';
 
 async function request(route, options = {}) {
   const headers = {'Content-Type': 'application/json', ...(options.headers || {})};
@@ -225,7 +226,7 @@ server.listen(4203, async () => {
     const missingAcknowledgement = await request(`/api/reports/${safetyDraft.data.id}`, {method: 'PATCH', headers: auth, body: JSON.stringify({status: 'Needs review', signature: 'Levi Foreman', productionEntries: [], laborEntries: [], customFields: {'crew-acknowledgement': false}})});
     assert.equal(missingAcknowledgement.response.status, 400);
     assert.match(missingAcknowledgement.data.error, /acknowledgement/i);
-    const photoUpload = await request('/api/photos', {method: 'POST', headers: auth, body: JSON.stringify({projectId: pinnedProject.data.id, reportId: safetyDraft.data.id, source: 'field', files: [{name: 'safety.png', type: 'image/png', data: 'data:image/png;base64,dGVzdA=='}]})});
+    const photoUpload = await request('/api/photos', {method: 'POST', headers: auth, body: JSON.stringify({projectId: pinnedProject.data.id, reportId: safetyDraft.data.id, source: 'field', files: [{name: 'safety.png', type: 'image/png', data: minimalPngData}]})});
     assert.equal(photoUpload.response.status, 201);
     const safetySubmit = await request(`/api/reports/${safetyDraft.data.id}`, {method: 'PATCH', headers: auth, body: JSON.stringify({status: 'Needs review', signature: 'Levi Foreman', productionEntries: [], laborEntries: [], customFields: {'crew-acknowledgement': true}})});
     assert.equal(safetySubmit.response.status, 200, safetySubmit.data?.error);
@@ -277,7 +278,7 @@ server.listen(4203, async () => {
     assert.equal(fieldTemplates.data.templates.some(template => String(template.id) === String(unrelated.data.id)), false);
     assert.equal((await request('/api/daily-templates', {method: 'POST', headers: fieldAuth, body: JSON.stringify({name: 'Field built', fields: [{label: 'Note', type: 'text'}]})})).response.status, 403);
     assert.equal((await request('/api/daily-templates/generate', {method: 'POST', headers: fieldAuth, body: JSON.stringify({prompt: 'Build a safety form with hazards and controls'})})).response.status, 403);
-    const crossProjectPhoto = await request('/api/photos', {method: 'POST', headers: auth, body: JSON.stringify({projectId: 1, reportId: safetyDraft.data.id, source: 'office', files: [{name: 'wrong-project.png', type: 'image/png', data: 'data:image/png;base64,dGVzdA=='}]})});
+    const crossProjectPhoto = await request('/api/photos', {method: 'POST', headers: auth, body: JSON.stringify({projectId: 1, reportId: safetyDraft.data.id, source: 'office', files: [{name: 'wrong-project.png', type: 'image/png', data: minimalPngData}]})});
     assert.equal(crossProjectPhoto.response.status, 400);
     assert.match(crossProjectPhoto.data.error, /this project/i);
 
