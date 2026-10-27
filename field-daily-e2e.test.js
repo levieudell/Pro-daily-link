@@ -260,14 +260,8 @@ async function openNav(page, name) {
     await page.waitForSelector('#myday-page.active [data-start-day]', { timeout: 20000 });
     await assertFits(page, 'dashboard 390');
     await page.click('[data-start-day]');
-    await page.waitForSelector('#start-day-button', { visible: true });
+    await page.waitForSelector('#start-day-modal[open] #start-day-members input', { timeout: 20000 });
     await assertFits(page, 'clock-in 390');
-    for (let attempt = 0; attempt < 4; attempt += 1) {
-      await page.evaluate(() => document.querySelector('#start-day-button')?.click());
-      const opened = await page.waitForSelector('#start-day-modal[open] #start-day-members input', { timeout: 8000 }).then(() => true).catch(() => false);
-      if (opened) break;
-      if (attempt === 3) await page.waitForSelector('#start-day-modal[open] #start-day-members input', { timeout: 20000 });
-    }
     const started = await page.evaluate(() => {
       const project = document.querySelector('#start-day-project');
       const selected = project?.selectedOptions?.[0]?.textContent || '';
