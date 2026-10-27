@@ -9,7 +9,22 @@ const os = require('node:os');
 const path = require('node:path');
 const { spawn } = require('node:child_process');
 const { once } = require('node:events');
-const { reportSafetyEvidenceMarkup } = require('./safety-pm-ui');
+const { reportSafetyEvidenceMarkup, responsibleEmployer, jurisdictionFromProject } = require('./safety-pm-ui');
+
+assert.equal(
+  responsibleEmployer({ name: 'Demo Builder' }, { employer: 'Old saved company name' }),
+  'Demo Builder',
+  'the current company account name is authoritative over a stale saved safety profile'
+);
+assert.equal(
+  responsibleEmployer({ name: '' }, { employer: 'Saved fallback employer' }),
+  '',
+  'a stale saved employer cannot replace a missing company-account name'
+);
+assert.equal(jurisdictionFromProject({ site: '100 Synthetic Way, Portland, OR 97201' }, { state: 'WA' }), 'OR', 'postal project address controls jurisdiction');
+assert.equal(jurisdictionFromProject({ address: '12 Harbor Ave, Seattle, Washington 98101' }, { state: 'OR' }), 'WA', 'full state names in project addresses are understood');
+assert.equal(jurisdictionFromProject({ site: 'Address not entered' }, { state: 'OR' }), '', 'a saved jurisdiction cannot replace an incomplete project address');
+assert.equal(jurisdictionFromProject({ site: 'Remote work site' }, {}), '', 'an unknown address never guesses a jurisdiction');
 
 assert.equal(reportSafetyEvidenceMarkup({}), '', 'reports without saved evidence must not gain a safety certification');
 const maliciousEvidence = reportSafetyEvidenceMarkup({ safetyEvidence: { dayRevision: 3, ruleVersion: '<img src=x onerror=alert(1)>', checks: [{ title: '<script>bad()</script>', status: 'fail', inspector: '<b>name</b>', notes: '<iframe>' }], hazards: [], carriedHazards: [{ observation: '<img>', status: 'open', date: '2026-10-25' }], summary: { unresolved: 2 } } }, 101);
@@ -95,10 +110,14 @@ async function responseAfter(page, pathPart, action, method) {
     const dialog = page.locator('#safety-pm-dialog');
     await dialog.locator('[data-safety-profile]').waitFor();
     const profile = dialog.locator('[data-safety-profile]');
-    await profile.locator('[name="employer"]').fill('Demo Builder');
+    assert.equal(await profile.locator('[name="employer"]').inputValue(), company.name, 'project setup auto-fills the signed-in company name');
+    assert.equal(await profile.locator('[name="state"]').inputValue(), 'OR', 'project setup auto-selects Oregon from the project address');
     await profile.locator('[name="activities"][value="roofing"]').check();
     await profile.locator('[name="enabled"]').check();
-    await responseAfter(page, '/safety/profile', () => profile.getByRole('button', { name: 'Save project setup' }).click(), 'PUT');
+    const profileSave = await responseAfter(page, '/safety/profile', () => profile.getByRole('button', { name: 'Save project setup' }).click(), 'PUT');
+    const savedProfile = await profileSave.json();
+    assert.equal(savedProfile.profile.employer, company.name, 'the server receives the company-account employer without retyping it');
+    assert.equal(savedProfile.profile.state, 'OR', 'the server receives the project-address jurisdiction without reselecting it');
     await dialog.getByRole('button', { name: 'Prepare checks', exact: true }).waitFor();
     await responseAfter(page, '/safety/days', () => dialog.getByRole('button', { name: 'Prepare checks', exact: true }).click(), 'POST');
     await dialog.locator('[data-safety-check="scope-confirmation"]').waitFor({ state: 'attached' });

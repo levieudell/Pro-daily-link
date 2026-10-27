@@ -6,7 +6,26 @@
   const TRADES = ['roofing', 'excavation', 'framing', 'demolition'];
   const LABELS = { roofing: 'Roofing', excavation: 'Excavation', framing: 'Framing', demolition: 'Demolition' };
   const STATUS = { pending: 'Needs check', pass: 'Checked', fail: 'Failed — unresolved', deferred: 'Deferred — unresolved', not_applicable: 'Not applicable' };
+  const STATE_CODES = /^(AL|AK|AZ|AR|CA|CO|CT|DE|FL|GA|HI|ID|IL|IN|IA|KS|KY|LA|ME|MD|MA|MI|MN|MS|MO|MT|NE|NV|NH|NJ|NM|NY|NC|ND|OH|OK|OR|PA|RI|SC|SD|TN|TX|UT|VT|VA|WA|WV|WI|WY|DC)$/;
+  const STATE_LABELS = { OR: 'Oregon — starter coverage', WA: 'Washington — manual review needed', CA: 'California — manual review needed' };
   const esc = value => String(value ?? '').replace(/[&<>"']/g, character => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[character]));
+  const responsibleEmployer = (account, profile = {}) => account
+    ? String(account.name || '').trim()
+    : String(profile?.employer || '').trim();
+  function jurisdictionFromProject(project, profile = {}) {
+    for (const value of [project?.siteState, project?.addressState, project?.state]) {
+      const code = String(value || '').trim().toUpperCase();
+      if (STATE_CODES.test(code)) return code;
+    }
+    const address = String(project?.site || project?.address || '').trim();
+    const postal = address.match(/(?:^|[,\s])(AL|AK|AZ|AR|CA|CO|CT|DE|FL|GA|HI|ID|IL|IN|IA|KS|KY|LA|ME|MD|MA|MI|MN|MS|MO|MT|NE|NV|NH|NJ|NM|NY|NC|ND|OH|OK|OR|PA|RI|SC|SD|TN|TX|UT|VT|VA|WA|WV|WI|WY|DC)\s*(?:\d{5}(?:-\d{4})?)?(?:\s*,?\s*(?:USA|United States))?\s*$/i);
+    if (postal) return postal[1].toUpperCase();
+    const full = address.match(/\b(Oregon|Washington|California)(?:\s+\d{5}(?:-\d{4})?)?(?:\s*,?\s*(?:USA|United States))?\s*$/i);
+    if (full) return ({ oregon: 'OR', washington: 'WA', california: 'CA' })[full[1].toLowerCase()];
+    if (project) return '';
+    const fallback = String(profile?.state || '').trim().toUpperCase();
+    return STATE_CODES.test(fallback) ? fallback : '';
+  }
   const sourceLink = source => {
     const value = typeof source === 'string' ? source : source?.url;
     try { const url = new URL(value); return url.protocol === 'https:' ? `<a href="${esc(url.href)}" target="_blank" rel="noopener noreferrer">Read the rule source ↗</a>` : ''; } catch { return ''; }
@@ -29,7 +48,7 @@
 
   // Exposed only for plain renderer tests; Node never initializes a browser session.
   if (typeof module !== 'undefined' && module.exports) {
-    module.exports = { esc, sourceLink, statusLabel, catalogRows, unresolved, reportSafetyEvidenceMarkup };
+    module.exports = { esc, sourceLink, statusLabel, catalogRows, unresolved, reportSafetyEvidenceMarkup, responsibleEmployer, jurisdictionFromProject };
     return;
   }
 
@@ -121,7 +140,16 @@
   function profileMarkup(state) {
     const profile = state.data.profile || {}, configured = profile.enabled === true;
     if (!state.data.canManage) return !configured ? '<div class="safety-empty"><h3>Safety checks are not enabled here yet</h3><p>Ask the project manager or account owner to confirm the project’s safety setup.</p></div>' : '';
-    return `<details class="safety-setup" ${configured ? '' : 'open'}><summary>Project safety setup <span>${configured ? 'Enabled' : 'Set up this project'}</span></summary><form data-form-key="profile" data-safety-profile data-revision="${esc(profile.revision || 0)}"><p>Choose the work actually performed. Scheduled activities can add checks; the daily scope check confirms field changes.</p><div class="safety-grid">${fields([['employer', 'Employer responsible for this record', 'text', true]], { employer: profile.employer || (typeof company === 'undefined' ? '' : company?.name) })}<label>Job jurisdiction<select name="state"><option value="OR" ${profile.state === 'OR' ? 'selected' : ''}>Oregon — starter coverage</option>${profile.state && profile.state !== 'OR' ? `<option value="${esc(profile.state)}" selected>${esc(profile.state)} — manual review needed</option>` : ''}</select></label></div><fieldset><legend>Work on this project</legend><div class="safety-trades">${TRADES.map(trade => `<label class="safety-checkbox"><input type="checkbox" name="activities" value="${trade}" ${(profile.activities || []).includes(trade) ? 'checked' : ''}><span>${LABELS[trade]}</span></label>`).join('')}</div></fieldset><label class="safety-checkbox"><input name="enabled" type="checkbox" ${configured ? 'checked' : ''}><span>Require safety documentation for this project’s daily reports</span></label><p class="safety-help">Verify the job’s jurisdiction. These starter checks do not cover every hazard or employer program. A setup change requires a fresh review of affected daily checks.</p><button class="primary" type="submit">Save project setup</button></form></details>`;
+    const project = projectList().find(row => Number(row.id) === Number(state.projectId));
+    const account = typeof company === 'undefined' ? null : company, accountEmployer = String(account?.name || '').trim();
+    const employer = responsibleEmployer(account, profile);
+    const inferred = String(state.data.inferredState || '').trim().toUpperCase();
+    const jurisdiction = inferred || jurisdictionFromProject(project, profile);
+    const stateLabel = inferred ? (STATE_LABELS[jurisdiction] || `${jurisdiction} — manual review needed`) : jurisdiction ? `${jurisdiction} — saved setup; address needs confirmation` : 'State not found in project address';
+    const address = String(project?.site || project?.address || '').trim();
+    const stateHelp = inferred ? `From project address${address ? ` · ${esc(address)}` : ''}` : 'Add the state to the project address before enabling safety.';
+    const employerHelp = accountEmployer ? 'From Company settings' : 'Add the company name in Company settings before enabling safety.';
+    return `<details class="safety-setup" ${configured ? '' : 'open'}><summary>Project safety setup <span>${configured ? 'Enabled' : 'Set up this project'}</span></summary><form data-form-key="profile" data-safety-profile data-revision="${esc(profile.revision || 0)}"><p>Choose the work actually performed. Scheduled activities can add checks; the daily scope check confirms field changes.</p><div class="safety-grid"><label>Employer responsible for this record<input name="employer" type="text" value="${esc(employer)}" readonly required aria-describedby="safety-employer-source"><small class="safety-help" id="safety-employer-source">${employerHelp}</small></label><label>Job jurisdiction<input name="state" type="hidden" value="${esc(jurisdiction)}"><input type="text" value="${esc(stateLabel)}" readonly aria-describedby="safety-jurisdiction-source"><small class="safety-help" id="safety-jurisdiction-source">${stateHelp}</small></label></div><fieldset><legend>Work on this project</legend><div class="safety-trades">${TRADES.map(trade => `<label class="safety-checkbox"><input type="checkbox" name="activities" value="${trade}" ${(profile.activities || []).includes(trade) ? 'checked' : ''}><span>${LABELS[trade]}</span></label>`).join('')}</div></fieldset><label class="safety-checkbox"><input name="enabled" type="checkbox" ${configured ? 'checked' : ''}><span>Require safety documentation for this project’s daily reports</span></label><p class="safety-help">Company and jurisdiction stay synced with Company settings and the project address. These starter checks do not cover every hazard or employer program. A setup change requires a fresh review of affected daily checks.</p><button class="primary" type="submit">Save project setup</button></form></details>`;
   }
 
   function demoMarkup(state) {

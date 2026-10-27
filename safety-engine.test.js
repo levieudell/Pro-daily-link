@@ -8,7 +8,7 @@ const owner = { id: 1, name: 'PM One', companyId: 'tenant-one', status: 'Active'
 const field = { ...owner, id: 2, name: 'Field Two', role: 'field' };
 const pm = { ...owner, id: 3, role: 'project_manager', projectIds: [101] };
 function fixture() {
-  return { company: { id: 'tenant-one' }, projects: [{ id: 101, name: 'Oak site', site: '100 Main St, Portland, OR 97201' }, { id: 102, site: 'Seattle, WA 98101' }],
+  return { company: { id: 'tenant-one', name: 'Synthetic Contractor' }, projects: [{ id: 101, name: 'Oak site', site: '100 Main St, Portland, OR 97201' }, { id: 102, site: 'Seattle, WA 98101' }],
     assignments: [{ id: 1, projectId: 101, date, task: 'Roofing west wing', memberIds: [1] }], photos: [{ id: 1, project: 0 }, { id: 2, projectId: 102 }], safetyDays: [] };
 }
 function harness() {
@@ -53,6 +53,9 @@ async function complete(h, overrides = {}, workDate = date) {
   assert.equal((await h.call('GET', '?date=2026-02-30')).status, 400);
   assert.equal((await h.call('GET', `?date=${date}`, undefined, pm, 102)).status, 404);
   assert.equal((await h.call('PUT', '/profile', {}, field)).status, 403);
+  const defaults = await h.call('GET', `?date=${date}`);
+  assert.equal(defaults.data.profile.employer, h.db.company.name, 'responsible employer comes from the company account');
+  assert.equal(defaults.data.profile.state, 'OR', 'jurisdiction comes from the project address');
   assert.equal((await h.enable()).status, 200);
   assert.equal(safetyGate(h.db, 101, date).canSubmit, false, 'enabled day cannot bypass missing generated checks');
   assert.equal(safetyGate(h.db, 101, 'not-a-date').canSubmit, false);
@@ -105,13 +108,29 @@ async function complete(h, overrides = {}, workDate = date) {
   assert.ok(verified.data.history.length > 5);
 
   const other = harness();
-  assert.equal((await other.enable(['roofing'], 'OR', 102)).status, 400, 'address jurisdiction conflict blocked');
-  assert.equal((await other.enable(['roofing'], 'WA', 102)).status, 200);
+  assert.equal((await other.enable(['roofing'], 'OR', 102)).status, 400, 'a stale client must refresh instead of overriding the project address');
+  const derivedWashington = await other.enable(['roofing'], 'WA', 102);
+  assert.equal(derivedWashington.status, 200);
+  assert.equal(derivedWashington.data.profile.state, 'WA', 'Washington is derived from the project address');
+  assert.equal(derivedWashington.data.profile.employer, other.db.company.name, 'client employer is not authoritative');
   const unsupported = await other.call('POST', '/days', { date, revision: 0 }, owner, 102);
   assert.equal(unsupported.status, 201); assert.equal(unsupported.data.coverage, 'manual-review'); assert.equal(unsupported.data.summary.canSubmit, false);
   assert.equal(safetyGate(other.db, 101, date).enabled, false, 'other disabled project unchanged');
   const texas = harness(); texas.db.projects[0].site = '123 Oregon Avenue, Austin, TX 78701';
-  assert.equal((await texas.enable(['roofing'], 'OR')).status, 400, 'a Texas address cannot be confirmed as Oregon');
+  assert.equal((await texas.enable(['roofing'], 'OR')).status, 400, 'a stale Oregon value cannot override a Texas project address');
+  const derivedTexas = await texas.enable(['roofing'], 'TX');
+  assert.equal(derivedTexas.status, 200); assert.equal(derivedTexas.data.profile.state, 'TX', 'a Texas address cannot be saved as Oregon');
+  assert.equal((await texas.call('GET', `?date=${date}`)).data.coverage, 'manual-review');
+  const unknown = harness(); unknown.db.projects[0].site = 'Remote work site';
+  assert.equal((await unknown.enable(['roofing'], 'OR')).status, 400, 'safety cannot be enabled by guessing when the project address has no state');
+  const unnamed = harness(); unnamed.db.company.name = '';
+  assert.equal((await unnamed.enable()).status, 400, 'safety cannot be enabled without the company account name');
+  const renamed = harness(); await renamed.enable(); await renamed.generate(); await complete(renamed);
+  assert.equal(safetyGate(renamed.db, 101, date).canSubmit, true);
+  renamed.db.company.name = 'Renamed Contractor';
+  const renamedRead = await renamed.call('GET', `?date=${date}`);
+  assert.equal(renamedRead.data.profile.employer, 'Renamed Contractor', 'company rename is reflected without stale profile text');
+  assert.equal(safetyGate(renamed.db, 101, date).canSubmit, false, 'company rename invalidates prior safety signoff');
   const isolated = harness(); await isolated.enable();
   isolated.db.safetyDays.push({ ...first.data, companyId: 'tenant-other', date, projectId: 101 });
   assert.equal((await isolated.call('GET', `?date=${date}`)).data.day, null, 'foreign tenant records omitted');
@@ -125,6 +144,7 @@ async function complete(h, overrides = {}, workDate = date) {
   assert.equal(safetyGate(tasks.db, 101, date).canSubmit, false, 'project schedule changes invalidate old responses');
   tasks.db.projects[0].site = '100 Main St, Seattle, WA 98101';
   const moved = await tasks.call('GET', `?date=${date}`);
+  assert.equal(moved.data.profile.state, 'WA', 'project move updates the displayed jurisdiction');
   assert.equal(moved.data.coverage, 'manual-review', 'later address changes cannot keep Oregon coverage');
   const overnight = harness(); await overnight.enable(); await overnight.generate(); await complete(overnight);
   let original = overnight.db.safetyDays[0];
