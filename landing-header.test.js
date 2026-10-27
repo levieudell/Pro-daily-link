@@ -26,7 +26,8 @@ for (const file of pages) {
     const sheet = /rel="stylesheet"/.test(tag);
     const script = /^<script\b/.test(tag) && /\bsrc=/.test(tag);
     if (!sheet && !script) continue;
-    assert.match(tag, new RegExp(`\\?v=${V}(?:["'])`), `${file} pins ${tag}`);
+    const pin = /public-content\.css/.test(tag) ? '20261027-public2' : V;
+    assert.match(tag, new RegExp(`\\?v=${pin}(?:["'])`), `${file} pins ${tag}`);
   }
   if (headerPages.includes(file)) {
     assert.match(html, new RegExp(`src="/public-header\\.js\\?v=${V}" defer`), `${file} loads the header fitter from head`);
