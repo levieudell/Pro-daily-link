@@ -20,6 +20,11 @@ Companies with the Templates feature enabled can maintain multiple versioned fie
 - Photo, signature, and explicit acknowledgement requirements are checked before submission. Drafts may remain incomplete.
 - Safety templates always require human review. The feature supports a company safety program and recordkeeping, but it does not certify OSHA or legal compliance.
 
+The dedicated Safety workspace uses a three-part field flow—Today, Follow-up,
+and Records—with server-owned actors and timestamps, focused hazard and toolbox
+talk capture, verified corrective-action closure, and printable project records.
+See [Safety v3 product, evidence, permission, and release rules](docs/SAFETY-V3.md).
+
 Supported question types are short text, long text, number, yes/no, multiple choice, date, and acknowledgement checkbox. Project, date, crew, report photos, and foreman signature remain first-class report controls rather than duplicate custom questions.
 
 Then open `http://localhost:4173`. Data is stored in `data/db.json`.

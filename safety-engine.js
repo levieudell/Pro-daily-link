@@ -18,7 +18,6 @@ const CATALOG = Object.freeze([
   { id: 'demolition', label: 'Demolition', description: 'Pre-demolition survey, utilities and safe work sequence.', source: SOURCES.demolition, version: VERSION }
 ]);
 const ROLES = new Set(['owner', 'admin', 'project_manager', 'foreman', 'field']);
-const MANAGERS = new Set(['owner', 'admin', 'project_manager']);
 const STATUSES = new Set(['pending', 'pass', 'fail', 'deferred', 'not_applicable']);
 const COVERAGE_NOTICE = 'Oregon starter coverage only. Confirm actual work, site conditions and additional requirements with your safety lead. Completed records do not certify OSHA compliance or authorize unsafe work.';
 const clone = value => structuredClone(value);
@@ -65,7 +64,7 @@ function ownDays(db, projectId) { return (db.safetyDays || []).filter(day => day
 function dayFor(db, projectId, date) { return ownDays(db, projectId).find(day => day.date === date); }
 function scheduleContext(db, projectId, date) {
   const assignments = (db.assignments || []).filter(row => Number(row.projectId) === projectId && row.date === date)
-    .map(row => ({ kind: 'assignment', id: row.id, task: String(row.task || row.name || ''), instructions: String(row.instructions || row.notes || ''), start: row.start || '', end: row.end || '', memberIds: [...(row.memberIds || [])].map(Number).sort((a, b) => a - b) }));
+    .map(row => ({ kind: 'assignment', id: row.id, task: String(row.activity || row.task || row.name || ''), instructions: String(row.instructions || row.notes || ''), start: row.start || '', end: row.end || '', memberIds: [...(row.memberIds || [])].map(Number).sort((a, b) => a - b) }));
   const tasks = (db.projectTasks || []).filter(row => Number(row.projectId) === projectId && validDate(row.startDate) && row.startDate <= date && validDate(row.endDate || row.startDate) && (row.endDate || row.startDate) >= date && !row.deletedAt)
     .map(row => ({ kind: 'projectTask', id: row.id, task: String(row.name || row.task || ''), instructions: `${row.description || ''} ${row.instructions || ''}`, start: row.startDate, end: row.endDate || row.startDate, memberIds: [...(row.memberIds || [])].map(Number).sort((a, b) => a - b) }));
   return [...assignments, ...tasks]
@@ -105,6 +104,9 @@ function checkComplete(row) {
   if (['fail', 'deferred'].includes(row.status) && (!row.notes || !row.action || !row.owner || !row.dueDate || row.workStopped !== true)) return false;
   return true;
 }
+function scheduledMemberIds(db, projectId, date) {
+  return new Set(scheduleContext(db, projectId, date).flatMap(row => row.memberIds || []).map(Number).filter(Number.isSafeInteger));
+}
 function unresolvedHazards(db, projectId, date) { return ownDays(db, projectId).filter(day => day.date <= date).flatMap(day => (day.hazards || []).filter(row => row.status !== 'verified').map(row => ({ ...clone(row), date: day.date, dayRevision: day.revision }))); }
 function summarize(db, project, date, day) {
   const context = dayContext(db, project, date), stale = !day || day.fingerprint !== context.fingerprint;
@@ -120,7 +122,7 @@ function summarize(db, project, date, day) {
   const supported = coverageFor(project, db.company) === 'oregon-starter';
   const canSubmit = Boolean(day && !stale && supported && pending === 0 && !undocumentedHazards);
   return { pending, unresolved, canSubmit, readyForWork: canSubmit && unresolved === 0, stale,
-    error: !supported ? 'This jurisdiction needs a reviewed rule pack before safety finalization.' : stale ? 'Generate or refresh today’s checks after the work, profile or schedule changed.' : pending ? 'Address every required safety check before finalizing the daily.' : undocumentedHazards ? 'Record stopped work, action, owner and due date for every open hazard.' : null };
+    error: !supported ? 'This jurisdiction needs a reviewed rule pack before safety finalization.' : stale ? 'Generate or refresh today’s checks after the work, profile or schedule changed.' : pending ? 'Address every required safety check before finalizing the daily.' : undocumentedHazards ? 'Record how people were protected, the immediate action, owner and due date for every open hazard.' : null };
 }
 function safetyGate(db, projectId, date) {
   const project = (db.projects || []).find(row => Number(row.id) === Number(projectId));
@@ -132,12 +134,20 @@ function projectedDay(db, project, date, day) { return day ? { ...clone(day), su
 function audit(day, user, action, before, after) {
   day.history.push({ action, at: new Date().toISOString(), by: user.name, userId: user.id, before: clone(before), after: clone(after) });
 }
+function talkAuditSnapshot(row) {
+  if (!row) return null;
+  // Never embed prior corrections inside a new correction. Besides obscuring the
+  // record, recursively cloning that history would make every amendment grow
+  // the tenant snapshot geometrically.
+  const { corrections, history, ...snapshot } = row;
+  return clone(snapshot);
+}
 function revision(input, current) {
   if (!Number.isSafeInteger(input.revision) || input.revision !== current) throw fail('Safety record changed. Refresh and review before saving again.', 409, 'SAFETY_REVISION_CONFLICT');
 }
-function createSafetyHandler({ readDb, writeDb, body, json, authenticatedUser, canAccessProject }) {
+function createSafetyHandler({ readDb, writeDb, body, json, authenticatedUser, canAccessProject, canAccessDate = () => true }) {
   return async function handleSafety(req, res, url) {
-    const route = url.pathname.match(/^\/api\/projects\/(\d+)\/safety(?:\/(profile|days)(?:\/([^/]+))?(?:\/(checks|hazards)(?:\/([^/]+))?)?)?$/);
+    const route = url.pathname.match(/^\/api\/projects\/(\d+)\/safety(?:\/(profile|days)(?:\/([^/]+))?(?:\/(checks|hazards|talks)(?:\/([^/]+))?)?)?$/);
     if (!route) return false;
     const reply = (status, data) => { json(res, status, data); return true; };
     try {
@@ -146,10 +156,13 @@ function createSafetyHandler({ readDb, writeDb, body, json, authenticatedUser, c
       if (!ROLES.has(user.role)) return reply(403, { error: 'Project team permission required' });
       const projectId = Number(route[1]), project = Number.isSafeInteger(projectId) && (db.projects || []).find(row => Number(row.id) === projectId);
       if (!project || project.archived || !canAccessProject(db, user, projectId)) return reply(404, { error: 'Project not found' });
-      const canManage = MANAGERS.has(user.role), profile = profileFor(project, db.company);
+      const canManage = ['owner', 'admin'].includes(user.role) || user.role === 'project_manager' && user.permissions?.manageSafety === true;
+      const canVerify = ['owner', 'admin'].includes(user.role) || user.role === 'project_manager' && user.permissions?.verifySafety === true;
+      const profile = profileFor(project, db.company);
       if (req.method === 'GET' && !route[2]) {
         const date = exactDate(url.searchParams.get('date'));
-        return reply(200, { profile, catalog: clone(CATALOG), date, day: projectedDay(db, project, date, dayFor(db, projectId, date)), coverage: coverageFor(project, db.company), notice: COVERAGE_NOTICE, inferredState: inferredState(project), canManage, openHazards: unresolvedHazards(db, projectId, date) });
+        if (!canAccessDate(db, user, projectId, date, req.method)) return reply(404, { error: 'Safety record not found' });
+        return reply(200, { profile, catalog: clone(CATALOG), date, day: projectedDay(db, project, date, dayFor(db, projectId, date)), coverage: coverageFor(project, db.company), notice: COVERAGE_NOTICE, inferredState: inferredState(project), canManage, canVerify, openHazards: unresolvedHazards(db, projectId, date) });
       }
       const input = await body(req);
       if (req.method === 'PUT' && route[2] === 'profile' && !route[3]) {
@@ -175,10 +188,11 @@ function createSafetyHandler({ readDb, writeDb, body, json, authenticatedUser, c
       if (req.method === 'POST' && route[2] === 'days' && !route[3]) {
         if (!profile.enabled) return reply(409, { error: 'Enable the project safety profile before recording checks' });
         inputKeys(input, ['date', 'revision']); const date = exactDate(input.date), existing = dayFor(db, projectId, date), context = dayContext(db, project, date);
+        if (!canAccessDate(db, user, projectId, date, req.method)) return reply(404, { error: 'Safety record not found' });
         revision(input, existing?.revision || 0);
         if (existing?.fingerprint === context.fingerprint) return reply(200, projectedDay(db, project, date, existing));
         const next = { id: `${projectId}:${date}`, companyId: db.company.id, projectId, date, revision: (existing?.revision || 0) + 1, ruleVersion: VERSION, coverage: coverageFor(project, db.company), activities: context.activities,
-          fingerprint: context.fingerprint, checks: checksFor(context.activities), hazards: clone(existing?.hazards || []), history: clone(existing?.history || []) };
+          fingerprint: context.fingerprint, checks: checksFor(context.activities), hazards: clone(existing?.hazards || []), talks: clone(existing?.talks || []), history: clone(existing?.history || []) };
         audit(next, user, existing ? 'Checks refreshed after work or applicability changed' : 'Checks generated', existing ? { checks: existing.checks, fingerprint: existing.fingerprint } : null, { checks: next.checks, fingerprint: next.fingerprint });
         db.safetyDays ||= [];
         if (existing) db.safetyDays[db.safetyDays.indexOf(existing)] = next; else db.safetyDays.push(next);
@@ -186,6 +200,7 @@ function createSafetyHandler({ readDb, writeDb, body, json, authenticatedUser, c
       }
       if (route[2] !== 'days' || !route[3]) return reply(405, { error: 'Method not allowed' });
       const date = exactDate(route[3]), day = dayFor(db, projectId, date);
+      if (!canAccessDate(db, user, projectId, date, req.method)) return reply(404, { error: 'Safety record not found' });
       if (!day) return reply(404, { error: 'Generate the safety day first' });
       revision(input, day.revision);
       if (req.method === 'PATCH' && route[4] === 'checks' && route[5]) {
@@ -195,11 +210,18 @@ function createSafetyHandler({ readDb, writeDb, body, json, authenticatedUser, c
         const row = day.checks.find(item => item.id === route[5]); if (!row) return reply(404, { error: 'Safety check not found' });
         if (!STATUSES.has(input.status) || input.workStopped != null && typeof input.workStopped !== 'boolean') throw fail('Choose a valid check status and stopped-work response');
         const next = { ...row, status: input.status };
-        for (const name of ['notes', 'inspector', 'competentPerson', 'action', 'owner', 'dueDate']) next[name] = text(input[name], name, name === 'notes' || name === 'action' ? 1500 : 200);
+        for (const name of ['notes', 'competentPerson', 'action', 'owner', 'dueDate']) next[name] = text(input[name], name, name === 'notes' || name === 'action' ? 1500 : 200);
+        // A deliberate "Looks good" action is the attestation. The authenticated
+        // actor and server time are authoritative; clients cannot forge either.
+        next.inspector = user.name;
+        next.recordedBy = user.name;
+        next.recordedByUserId = user.id;
+        next.recordedAt = new Date().toISOString();
+        if (next.status === 'pass' && !next.notes) next.notes = 'Checked; no issue observed at the time of this check.';
         if (next.dueDate) exactDate(next.dueDate);
         next.workStopped = input.workStopped === true;
         if (next.status !== 'pending' && !checkComplete(next)) throw fail('Record the inspector and findings for every response. Failed/deferred checks need a reason, corrective action, owner, due date and stopped work; inspection checks need a competent person.');
-        audit(day, user, 'Check response recorded', row, next); day.checks[day.checks.indexOf(row)] = { ...next, updatedAt: new Date().toISOString(), updatedBy: user.name, updatedByUserId: user.id };
+        audit(day, user, 'Check response recorded', row, next); day.checks[day.checks.indexOf(row)] = { ...next, updatedAt: next.recordedAt, updatedBy: user.name, updatedByUserId: user.id };
         if (['fail', 'deferred'].includes(next.status)) {
           const linked = day.hazards.find(hazard => hazard.sourceCheckId === row.id), before = linked ? clone(linked) : null;
           const followup = { ...(linked || {}), id: linked?.id || `check-${hash([date, row.id]).slice(0, 24)}`, sourceCheckId: row.id, sourceDate: date,
@@ -223,7 +245,7 @@ function createSafetyHandler({ readDb, writeDb, body, json, authenticatedUser, c
         inputKeys(input, ['revision', 'status', 'verification', 'action', 'owner', 'dueDate', 'workStopped']);
         const row = day.hazards.find(item => item.id === route[5]); if (!row) return reply(404, { error: 'Hazard not found' });
         if (!['open', 'corrected', 'verified'].includes(input.status)) throw fail('Choose a valid hazard status');
-        if (input.status === 'verified' && !canManage) return reply(403, { error: 'PM or office verification required' });
+        if (input.status === 'verified' && !canVerify) return reply(403, { error: 'Safety verification permission required' });
         const next = { ...row, status: input.status };
         if (Object.hasOwn(input, 'workStopped')) {
           if (typeof input.workStopped !== 'boolean') throw fail('Record whether work is stopped');
@@ -235,6 +257,55 @@ function createSafetyHandler({ readDb, writeDb, body, json, authenticatedUser, c
         if (next.status === 'verified') Object.assign(next, { verifiedAt: new Date().toISOString(), verifiedBy: user.name, verifiedByUserId: user.id });
         else { delete next.verifiedAt; delete next.verifiedBy; delete next.verifiedByUserId; }
         audit(day, user, 'Hazard status changed', row, next); day.hazards[day.hazards.indexOf(row)] = next; day.revision++;
+      } else if (req.method === 'POST' && route[4] === 'talks' && !route[5]) {
+        inputKeys(input, ['revision', 'topic', 'notes', 'language', 'attendeeIds']);
+        const topic = text(input.topic, 'toolbox talk topic', 300), notes = text(input.notes, 'toolbox talk notes', 2000);
+        if (!topic) throw fail('Enter the toolbox talk topic');
+        if (!['en', 'es'].includes(input.language)) throw fail('Choose English or Spanish for the toolbox talk');
+        if (!Array.isArray(input.attendeeIds) || input.attendeeIds.length > 100) throw fail('Choose the workers who were present');
+        const attendeeIds = [...new Set(input.attendeeIds.map(Number))];
+        if (!attendeeIds.length || attendeeIds.some(id => !Number.isSafeInteger(id))) throw fail('Choose at least one valid worker who was present');
+        const scheduled = scheduledMemberIds(db, projectId, date);
+        if (attendeeIds.some(id => !scheduled.has(id))) throw fail('Toolbox talk attendees must be scheduled on this project and date');
+        const roster = attendeeIds.map(memberId => {
+          const member = (db.team || []).find(row => Number(row.id) === memberId);
+          if (!member) throw fail('Choose active workers from this project schedule');
+          return { memberId, name: text(member.name, 'worker name', 200), crew: text(member.crew, 'crew name', 200) };
+        });
+        const recordedAt = new Date().toISOString();
+        const row = { id: crypto.randomUUID(), topic, notes, language: input.language, attendees: roster,
+          presenter: user.name, presenterUserId: user.id, recordedAt, createdAt: recordedAt };
+        day.talks ||= [];
+        day.talks.push(row);
+        audit(day, user, 'Toolbox talk recorded', null, row);
+        day.revision++;
+      } else if (req.method === 'PATCH' && route[4] === 'talks' && route[5]) {
+        inputKeys(input, ['revision', 'action', 'reason', 'topic', 'notes', 'language', 'attendeeIds']);
+        const row = (day.talks || []).find(item => item.id === route[5]);
+        if (!row) return reply(404, { error: 'Toolbox talk not found' });
+        if (!canManage && Number(row.presenterUserId) !== Number(user.id)) return reply(403, { error: 'Only the presenter or a safety manager can correct this toolbox talk' });
+        const reason = text(input.reason, 'correction reason', 500);
+        if (!reason) throw fail('Explain why this toolbox talk record is being corrected');
+        const before = talkAuditSnapshot(row), correctedAt = new Date().toISOString();
+        if (input.action === 'void') {
+          if (row.voidedAt) return reply(409, { error: 'This toolbox talk is already voided' });
+          row.voidedAt = correctedAt; row.voidedBy = user.name; row.voidedByUserId = user.id; row.voidReason = reason;
+        } else if (input.action === 'amend') {
+          const topic = text(input.topic, 'toolbox talk topic', 300), notes = text(input.notes, 'toolbox talk notes', 2000);
+          if (!topic) throw fail('Enter the corrected toolbox talk topic');
+          if (!['en', 'es'].includes(input.language)) throw fail('Choose English or Spanish for the toolbox talk');
+          if (!Array.isArray(input.attendeeIds) || input.attendeeIds.length > 100) throw fail('Choose the corrected attendance');
+          const attendeeIds = [...new Set(input.attendeeIds.map(Number))], scheduled = scheduledMemberIds(db, projectId, date);
+          if (!attendeeIds.length || attendeeIds.some(id => !Number.isSafeInteger(id) || !scheduled.has(id))) throw fail('Corrected attendees must be scheduled on this project and date');
+          const attendees = attendeeIds.map(memberId => { const member = (db.team || []).find(item => Number(item.id) === memberId); if (!member) throw fail('Choose active workers from this project schedule'); return { memberId, name: text(member.name, 'worker name', 200), crew: text(member.crew, 'crew name', 200) }; });
+          row.initial ||= { topic: row.topic, notes: row.notes, language: row.language, attendees: clone(row.attendees || []), presenter: row.presenter, recordedAt: row.recordedAt || row.createdAt };
+          Object.assign(row, { topic, notes, language: input.language, attendees, amendedAt: correctedAt, amendedBy: user.name, amendedByUserId: user.id });
+        } else throw fail('Choose amend or void for this toolbox talk');
+        const after = talkAuditSnapshot(row);
+        row.corrections ||= [];
+        row.corrections.push({ action: input.action, reason, at: correctedAt, by: user.name, userId: user.id, before, after });
+        audit(day, user, input.action === 'void' ? 'Toolbox talk voided' : 'Toolbox talk corrected', before, after);
+        day.revision++;
       } else return reply(405, { error: 'Method not allowed' });
       writeDb(db); return reply(200, projectedDay(db, project, date, day));
     } catch (error) {

@@ -2,20 +2,25 @@
 
 const assert = require('node:assert/strict');
 const { VERSION, inferredState, safetyGate, createSafetyHandler, checksFor } = require('./safety-engine');
+const { applySafetyEvidence } = require('./safety-report-policy');
 
 const date = '2026-10-26';
 const owner = { id: 1, name: 'PM One', companyId: 'tenant-one', status: 'Active', role: 'owner' };
 const field = { ...owner, id: 2, name: 'Field Two', role: 'field' };
-const pm = { ...owner, id: 3, role: 'project_manager', projectIds: [101] };
+const pm = { ...owner, id: 3, role: 'project_manager', projectIds: [101], permissions: { viewDailies: true, manageSafety: true, verifySafety: true } };
+const readOnlyPm = { ...owner, id: 4, role: 'project_manager', projectIds: [101], permissions: { viewDailies: true } };
+const setupPm = { ...readOnlyPm, id: 5, permissions: { viewDailies: true, manageSafety: true } };
 function fixture() {
   return { company: { id: 'tenant-one', name: 'Synthetic Contractor' }, projects: [{ id: 101, name: 'Oak site', site: '100 Main St, Portland, OR 97201' }, { id: 102, site: 'Seattle, WA 98101' }],
+    team: [{ id: 1, name: 'Roofer One', crew: 'Roof crew' }, { id: 2, name: 'Other Worker', crew: 'Other crew' }],
     assignments: [{ id: 1, projectId: 101, date, task: 'Roofing west wing', memberIds: [1] }], photos: [{ id: 1, project: 0 }, { id: 2, projectId: 102 }], safetyDays: [] };
 }
-function harness() {
+function harness(options = {}) {
   let db = fixture(), writes = 0;
   const handler = createSafetyHandler({ readDb: () => db, writeDb: next => { db = structuredClone(next); writes++; }, body: async req => req.input,
     json: (res, status, data) => Object.assign(res, { status, data }), authenticatedUser: req => req.user,
-    canAccessProject: (_db, user, projectId) => user.role === 'owner' || user.role === 'admin' || (user.role === 'project_manager' ? user.projectIds.includes(projectId) : projectId === 101) });
+    canAccessProject: (_db, user, projectId) => user.role === 'owner' || user.role === 'admin' || (user.role === 'project_manager' ? user.projectIds.includes(projectId) : projectId === 101),
+    canAccessDate: options.canAccessDate });
   async function call(method, suffix = '', input, user = owner, projectId = 101) {
     const res = {}; const matched = await handler({ method, input, user }, res, new URL(`http://localhost/api/projects/${projectId}/safety${suffix}`));
     assert.equal(matched, true); return res;
@@ -53,6 +58,15 @@ async function complete(h, overrides = {}, workDate = date) {
   assert.equal((await h.call('GET', '?date=2026-02-30')).status, 400);
   assert.equal((await h.call('GET', `?date=${date}`, undefined, pm, 102)).status, 404);
   assert.equal((await h.call('PUT', '/profile', {}, field)).status, 403);
+  assert.equal((await h.call('PUT', '/profile', { revision: 0, enabled: true, state: 'OR', employer: 'ignored', activities: ['roofing'] }, readOnlyPm)).status, 403, 'read-only PM cannot configure safety');
+  assert.equal((await h.call('GET', `?date=${date}`, undefined, readOnlyPm)).data.canManage, false);
+  const delegatedSetup = harness();
+  assert.equal((await delegatedSetup.call('PUT', '/profile', { revision: 0, enabled: true, state: 'OR', employer: 'ignored', activities: ['roofing'] }, setupPm)).status, 200, 'manageSafety permits PM setup');
+  assert.equal((await delegatedSetup.call('GET', `?date=${date}`, undefined, setupPm)).data.canVerify, false, 'setup permission does not imply verification');
+  const dateScoped = harness({ canAccessDate: (_db, user, _projectId, workDate) => user.role !== 'field' || workDate === date });
+  await dateScoped.enable();
+  assert.equal((await dateScoped.call('GET', `?date=2026-10-27`, undefined, field)).status, 404, 'field safety reads are date-scoped');
+  assert.equal((await dateScoped.call('POST', '/days', { date: '2026-10-27', revision: 0 }, field)).status, 404, 'field safety writes are date-scoped');
   const defaults = await h.call('GET', `?date=${date}`);
   assert.equal(defaults.data.profile.employer, h.db.company.name, 'responsible employer comes from the company account');
   assert.equal(defaults.data.profile.state, 'OR', 'jurisdiction comes from the project address');
@@ -68,13 +82,43 @@ async function complete(h, overrides = {}, workDate = date) {
   assert.equal((await h.call('PATCH', `/days/${date}/checks/site-walk`, { revision: 1, status: 'pass', inspector: 'PM', updatedBy: 'spoof' })).status, 400);
   assert.equal((await h.call('PATCH', `/days/${date}/checks/site-walk`, { revision: 1, status: 'fail', inspector: 'PM' })).status, 400);
   assert.equal((await h.call('PATCH', `/days/${date}/checks/site-walk`, { revision: 1, status: 'not_applicable', inspector: 'PM' })).status, 400);
-  assert.equal((await h.call('PATCH', `/days/${date}/checks/site-walk`, { revision: 1, status: 'pass' })).status, 400);
-  assert.equal((await h.call('PATCH', `/days/${date}/checks/site-walk`, { revision: 1, status: 'pass', inspector: 'PM' })).status, 400, 'a pass needs actual findings, not just a named inspector');
-  assert.equal((await h.call('PATCH', `/days/${date}/checks/scope-confirmation`, { revision: 1, status: 'pass', inspector: 'PM' })).status, 400, 'actual work scope needs human evidence');
+  const oneTap = harness(); await oneTap.enable(); await oneTap.generate();
+  const oneTapPass = await oneTap.call('PATCH', `/days/${date}/checks/site-walk`, { revision: 1, status: 'pass', inspector: 'Forged inspector' }, field);
+  assert.equal(oneTapPass.status, 200, 'a deliberate clean check is one API action');
+  const recordedPass = oneTapPass.data.checks.find(row => row.id === 'site-walk');
+  assert.equal(recordedPass.inspector, field.name, 'authenticated actor is the inspector of record');
+  assert.equal(recordedPass.recordedByUserId, field.id);
+  assert.match(recordedPass.notes, /no issue observed/i, 'clean checks retain a truthful standard observation');
   await complete(h);
   assert.equal(safetyGate(h.db, 101, date).canSubmit, true);
   assert.equal(safetyGate(h.db, 101, date).readyForWork, true);
   let rev = h.db.safetyDays[0].revision;
+  assert.equal((await h.call('POST', `/days/${date}/talks`, { revision: rev, topic: 'Roof edges and openings', notes: 'Reviewed access and stop-work expectations.', language: 'en', attendeeIds: [2] }, field)).status, 400, 'unscheduled workers cannot be placed on a project talk roster');
+  assert.equal((await h.call('POST', `/days/${date}/talks`, { revision: rev, topic: 'Roof edges', notes: '', language: 'en', attendeeIds: [1], presenter: 'Forged presenter' }, field)).status, 400, 'clients cannot forge presenter identity');
+  const talkResult = await h.call('POST', `/days/${date}/talks`, { revision: rev, topic: 'Roof edges and openings', notes: 'Reviewed access and stop-work expectations.', language: 'en', attendeeIds: [1] }, field);
+  assert.equal(talkResult.status, 200);
+  assert.equal(talkResult.data.talks[0].presenter, field.name);
+  assert.equal(talkResult.data.talks[0].presenterUserId, field.id);
+  assert.deepEqual(talkResult.data.talks[0].attendees.map(row => row.memberId), [1]);
+  const originalTalk = structuredClone(talkResult.data.talks[0]);
+  const amendedTalk = await h.call('PATCH', `/days/${date}/talks/${originalTalk.id}`, { revision: talkResult.data.revision, action: 'amend', reason: 'Clarified the topic after review', topic: 'Roof edges, openings, and rescue', notes: 'Reviewed access, rescue, and stop-work expectations.', language: 'en', attendeeIds: [1] }, field);
+  assert.equal(amendedTalk.status, 200);
+  assert.equal(amendedTalk.data.talks[0].initial.topic, originalTalk.topic, 'correction retains the original toolbox talk');
+  assert.equal(amendedTalk.data.talks[0].corrections.at(-1).by, field.name);
+  const twiceAmendedTalk = await h.call('PATCH', `/days/${date}/talks/${originalTalk.id}`, { revision: amendedTalk.data.revision, action: 'amend', reason: 'Corrected the attendance after supervisor review', topic: 'Roof edges, openings, rescue, and access', notes: 'Reviewed access, rescue, openings, and stop-work expectations.', language: 'en', attendeeIds: [1] }, field);
+  assert.equal(twiceAmendedTalk.status, 200);
+  assert.equal(twiceAmendedTalk.data.talks[0].corrections.length, 2);
+  for (const correction of twiceAmendedTalk.data.talks[0].corrections) {
+    assert.equal(Object.hasOwn(correction.before, 'corrections'), false, 'correction before snapshot is flat');
+    assert.equal(Object.hasOwn(correction.after, 'corrections'), false, 'correction after snapshot is flat');
+    assert.equal(Object.hasOwn(correction.before, 'history'), false, 'correction snapshot does not embed history');
+    assert.equal(Object.hasOwn(correction.after, 'history'), false, 'correction snapshot does not embed history');
+  }
+  const correctionAudit = twiceAmendedTalk.data.history.at(-1);
+  assert.equal(Object.hasOwn(correctionAudit.before, 'corrections'), false, 'day audit uses the bounded talk snapshot');
+  assert.equal(Object.hasOwn(correctionAudit.after, 'corrections'), false, 'day audit cannot recursively clone talk corrections');
+  assert.equal((await h.call('PATCH', `/days/${date}/talks/${originalTalk.id}`, { revision: twiceAmendedTalk.data.revision, action: 'void', reason: 'Not delivered' }, { ...field, id: 99 })).status, 403, 'another field user cannot void the presenter record');
+  rev = twiceAmendedTalk.data.revision;
   let failed = await h.call('PATCH', `/days/${date}/checks/roofing-protection`, { revision: rev, status: 'deferred', inspector: 'PM One', notes: 'Anchor not inspected', action: 'Keep roof work stopped until inspected', owner: 'Roof foreman', dueDate: date, workStopped: false });
   assert.equal(failed.status, 400);
   failed = await h.call('PATCH', `/days/${date}/checks/roofing-protection`, { revision: rev, status: 'deferred', inspector: 'PM One', notes: 'Anchor not inspected', action: 'Keep roof work stopped until inspected', owner: 'Roof foreman', dueDate: date, workStopped: true });
@@ -106,6 +150,20 @@ async function complete(h, overrides = {}, workDate = date) {
   const verified = await h.call('PATCH', `/days/${date}/hazards/${hazardId}`, { revision: corrected.data.revision, status: 'verified', verification: 'PM inspected guard attachment' }, pm);
   assert.equal(verified.status, 200); assert.equal(verified.data.summary.unresolved, 0); assert.equal(verified.data.hazards.find(row => row.id === hazardId).verifiedByUserId, pm.id);
   assert.ok(verified.data.history.length > 5);
+
+  const submittedReport = { project: 0, dateIso: date, status: 'Submitted', foreman: 'Forged client submitter', history: [{ action: 'Submitted', by: 'Forged client submitter', at: new Date().toISOString() }] };
+  assert.equal(applySafetyEvidence(h.db, submittedReport, owner), null);
+  const submissionEvidence = structuredClone(submittedReport.safetyEvidence);
+  assert.equal(submissionEvidence.company.name, h.db.company.name);
+  assert.equal(submissionEvidence.project.name, h.db.projects[0].name);
+  assert.equal(submissionEvidence.project.jurisdiction, 'OR');
+  assert.equal(submissionEvidence.talks.length, 1);
+  assert.deepEqual(submissionEvidence.submittedBy, { id: owner.id, name: owner.name, role: owner.role }, 'snapshot attribution comes only from the trusted actor');
+  h.db.safetyDays[0].revision++;
+  h.db.safetyDays[0].hazards.push({ id: 'after-submit', status: 'open', observation: 'Later condition', action: 'Stopped', owner: 'PM', dueDate: date, workStopped: true });
+  submittedReport.status = 'Approved';
+  assert.equal(applySafetyEvidence(h.db, submittedReport), null, 'approval may validate current safety state');
+  assert.deepEqual(submittedReport.safetyEvidence, submissionEvidence, 'approval and later safety changes cannot rewrite submission evidence');
 
   const other = harness();
   assert.equal((await other.enable(['roofing'], 'OR', 102)).status, 400, 'a stale client must refresh instead of overriding the project address');
@@ -142,6 +200,10 @@ async function complete(h, overrides = {}, workDate = date) {
   assert.equal((await tasks.generate()).data.checks.length, 6, 'project schedule and crew assignments both add activities');
   await complete(tasks); tasks.db.projectTasks[0].name = 'Demolition';
   assert.equal(safetyGate(tasks.db, 101, date).canSubmit, false, 'project schedule changes invalidate old responses');
+  const scheduledActivity = harness(); await scheduledActivity.enable([]);
+  scheduledActivity.db.assignments[0].activity = 'Excavation at the east trench';
+  scheduledActivity.db.assignments[0].instructions = '';
+  assert.ok((await scheduledActivity.generate()).data.checks.some(check => check.activity === 'excavation'), 'assignment activity automatically adds the relevant safety checks');
   tasks.db.projects[0].site = '100 Main St, Seattle, WA 98101';
   const moved = await tasks.call('GET', `?date=${date}`);
   assert.equal(moved.data.profile.state, 'WA', 'project move updates the displayed jurisdiction');

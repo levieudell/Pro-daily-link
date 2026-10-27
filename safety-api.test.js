@@ -24,10 +24,13 @@ const dayRoute = project => `${safety(project)}/days/${date}`;
 function fixture(companyId) {
   const users = [
     { id: 1, role: 'owner' }, { id: 2, role: 'admin' },
-    { id: 3, role: 'project_manager', projectIds: [101], assignedCrews: ['Safety crew'], permissions: { viewDailies: true, approveDailies: true, scheduleCrews: true } },
+    { id: 3, role: 'project_manager', projectIds: [101], assignedCrews: ['Safety crew'], permissions: { viewDailies: true, approveDailies: true, scheduleCrews: true, manageSafety: true, verifySafety: true } },
     { id: 4, role: 'foreman', memberId: 11 }, { id: 5, role: 'field', memberId: 12 },
     { id: 6, role: 'project_manager', projectIds: [101], assignedCrews: ['Safety crew'], permissions: {} },
-    { id: 7, role: 'guest' }, { id: 8, role: 'owner', status: 'Inactive' }
+    { id: 7, role: 'guest' }, { id: 8, role: 'owner', status: 'Inactive' },
+    { id: 9, role: 'project_manager', projectIds: [101], assignedCrews: ['Safety crew'], permissions: { viewDailies: true } },
+    { id: 10, role: 'project_manager', projectIds: [101], assignedCrews: ['Safety crew'], permissions: { viewDailies: true, manageSafety: true } },
+    { id: 11, role: 'project_manager', projectIds: [101], assignedCrews: ['Safety crew'], permissions: { viewDailies: true, verifySafety: true } }
   ].map(user => ({ companyId, status: 'Active', name: `Synthetic safety user ${user.id}`, email: `safety${user.id}@example.invalid`, ...user }));
   return {
     company: { id: companyId, name: 'Synthetic safety company', demo: true, timezone: 'America/Los_Angeles', features: {} },
@@ -104,17 +107,30 @@ const pass = (day, check, extra = {}) => ({ revision: day.revision, status: 'pas
     const setup = await expectStatus(200, 'PUT', safety(101) + '/profile', 1, profileInput());
     assert.equal(setup.profile.revision, 1);
     await expectStatus(409, 'PUT', safety(101) + '/profile', 1, profileInput());
+    const readOnlySafety = await expectStatus(200, 'GET', safety(101) + '?date=' + date, 9);
+    assert.equal(readOnlySafety.canManage, false); assert.equal(readOnlySafety.canVerify, false);
+    await expectStatus(403, 'PUT', safety(101) + '/profile', 9, profileInput(1));
+    assert.equal((await expectStatus(200, 'PUT', safety(101) + '/profile', 10, profileInput(1))).profile.revision, 1, 'manageSafety PM may configure without a spurious rewrite');
+    const verifierView = await expectStatus(200, 'GET', safety(101) + '?date=' + date, 11);
+    assert.equal(verifierView.canManage, false); assert.equal(verifierView.canVerify, true);
     let read = await expectStatus(200, 'GET', safety(101) + '?date=' + date, 3);
     assert.equal(read.day, null); assert.equal(read.canManage, true); assert.equal(read.coverage, 'oregon-starter');
+    await expectStatus(404, 'GET', safety(101) + '?date=2026-10-27', 5);
+    await expectStatus(404, 'POST', safety(101) + '/days', 5, { date: '2026-10-27', revision: 0 });
     const gated = await expectStatus(409, 'POST', '/api/reports', 1, reportInput('Submitted'));
     assert.equal(gated.code, 'SAFETY_CHECKS_REQUIRED', 'server gate is enforced with templates disabled');
-    const guestBlocked = await expectStatus(409, 'POST', `/api/guest/${guestToken}?c=${companyA}`, null, { notes: 'Synthetic subcontractor work', startedAt: date + 'T08:00:00Z', endedAt: date + 'T16:00:00Z', crewCount: 2, tickets: [] });
-    assert.equal(guestBlocked.code, 'SAFETY_CHECKS_REQUIRED', 'subcontractor guest report cannot bypass safety gate');
-    assert.equal(JSON.parse(fs.readFileSync(dbFile, 'utf8')).reports.length, 0, 'blocked guest submission does not persist a report');
-    const draft = await expectStatus(201, 'POST', '/api/reports', 1, { ...reportInput('Draft'), sourceAssignmentId: null, extracted: { reportType: 'superintendent', safetyEvidence: { ruleVersion: 'FORGED_CLIENT_EVIDENCE', checks: [{ status: 'pass' }] } } });
+    const guestDaily = await expectStatus(201, 'POST', `/api/guest/${guestToken}?c=${companyA}`, null, { notes: 'Synthetic subcontractor work', startedAt: date + 'T08:00:00Z', endedAt: date + 'T16:00:00Z', crewCount: 2, tickets: [] });
+    assert.ok(guestDaily.reportId, 'an external employer can submit its scoped daily without attesting the host contractor safety check');
+    const storedGuest = JSON.parse(fs.readFileSync(dbFile, 'utf8')).reports.find(row => row.id === guestDaily.reportId);
+    assert.equal(storedGuest.externalSafetyScope.type, 'external_subcontractor');
+    assert.deepEqual(storedGuest.externalSafetyScope.submittedBy, { id: 'subcontractor:1', name: 'Synthetic subcontractor', role: 'subcontractor' }, 'guest evidence identifies the server-resolved subcontractor');
+    assert.equal(Object.hasOwn(storedGuest, 'safetyEvidence'), false, 'external daily is not mislabeled as host-contractor safety evidence');
+    const draft = await expectStatus(201, 'POST', '/api/reports', 1, { ...reportInput('Draft'), sourceAssignmentId: null, extracted: { reportType: 'superintendent', safetyEvidence: { ruleVersion: 'FORGED_CLIENT_EVIDENCE', checks: [{ status: 'pass' }] }, externalSafetyScope: { type: 'external_subcontractor', submittedBy: { id: 999, name: 'Forged external submitter', role: 'subcontractor' } } } });
     assert.equal(draft.status, 'Draft', 'incomplete safety must not block preserving a draft');
     assert.equal(Object.hasOwn(draft, 'safetyEvidence'), false, 'forged extracted safety evidence is stripped from new Draft');
+    assert.equal(Object.hasOwn(draft, 'externalSafetyScope'), false, 'authenticated reports cannot forge an external-employer evidence boundary');
     assert.equal(Object.hasOwn(JSON.parse(fs.readFileSync(dbFile, 'utf8')).reports.find(row => row.id === draft.id), 'safetyEvidence'), false, 'forged Draft evidence is not persisted');
+    assert.equal(Object.hasOwn(JSON.parse(fs.readFileSync(dbFile, 'utf8')).reports.find(row => row.id === draft.id), 'externalSafetyScope'), false, 'forged external evidence is not persisted');
     assert.equal((await expectStatus(409, 'PATCH', `/api/reports/${draft.id}`, 1, { ...reportInput('Submitted'), updatedAt: draft.updatedAt })).code, 'SAFETY_CHECKS_REQUIRED');
     assert.equal((await expectStatus(409, 'PATCH', `/api/reports/${draft.id}/approve`, 1, {})).code, 'SAFETY_CHECKS_REQUIRED');
     let day = await expectStatus(201, 'POST', safety(101) + '/days', 4, { date, revision: 0 });
@@ -122,17 +138,29 @@ const pass = (day, check, extra = {}) => ({ revision: day.revision, status: 'pas
     assert.equal(day.summary.canSubmit, false);
     assert.deepEqual(await expectStatus(200, 'POST', safety(101) + '/days', 4, { date, revision: day.revision }), day, 'unchanged generation is idempotent');
     const firstCheck = day.checks[0];
-    await expectStatus(400, 'PATCH', `${dayRoute(101)}/checks/${firstCheck.id}`, 4, { revision: day.revision, status: 'pass' });
     await expectStatus(400, 'PATCH', `${dayRoute(101)}/checks/${firstCheck.id}`, 4, { ...pass(day, firstCheck), updatedByUserId: 1 });
     const oldRevision = day.revision;
-    day = await expectStatus(200, 'PATCH', `${dayRoute(101)}/checks/${firstCheck.id}`, 4, pass(day, firstCheck));
+    day = await expectStatus(200, 'PATCH', `${dayRoute(101)}/checks/${firstCheck.id}`, 4, { revision: day.revision, status: 'pass', inspector: 'Forged inspector' });
     await expectStatus(409, 'PATCH', `${dayRoute(101)}/checks/${firstCheck.id}`, 4, { ...pass(day, firstCheck), revision: oldRevision });
     assert.equal(day.checks[0].updatedByUserId, 4, 'actor comes from authenticated account');
+    assert.equal(day.checks[0].inspector, 'Synthetic safety user 4', 'client cannot forge the inspector of record');
+    assert.match(day.checks[0].notes, /no issue observed/i, 'one-tap clean check retains a standard observation');
     const concurrent = await Promise.all(['First synthetic reviewer', 'Second synthetic reviewer'].map(inspector => request('PATCH', `${dayRoute(101)}/checks/${firstCheck.id}`, 4, { ...pass(day, firstCheck), inspector })));
     assert.deepEqual(concurrent.map(result => result.status).sort(), [200, 409], 'parallel edits have one winner and one stale conflict');
     day = concurrent.find(result => result.status === 200).data;
     for (const check of day.checks.filter(check => check.status === 'pending')) day = await expectStatus(200, 'PATCH', `${dayRoute(101)}/checks/${check.id}`, 4, pass(day, check));
     assert.equal(day.summary.canSubmit, true); assert.equal(day.summary.readyForWork, true);
+    await expectStatus(400, 'POST', `${dayRoute(101)}/talks`, 4, { revision: day.revision, topic: 'Roof edge protection', notes: '', language: 'en', attendeeIds: [13] });
+    await expectStatus(400, 'POST', `${dayRoute(101)}/talks`, 4, { revision: day.revision, topic: 'Roof edge protection', notes: '', language: 'en', attendeeIds: [11], presenter: 'Forged presenter' });
+    day = await expectStatus(200, 'POST', `${dayRoute(101)}/talks`, 4, { revision: day.revision, topic: 'Roof edge protection', notes: 'Reviewed access, openings, and stop-work expectations.', language: 'en', attendeeIds: [11, 12] });
+    assert.equal(day.talks[0].presenter, 'Synthetic safety user 4');
+    assert.equal(day.talks[0].presenterUserId, 4);
+    assert.deepEqual(day.talks[0].attendees.map(row => row.memberId), [11, 12]);
+    const originalTalk = structuredClone(day.talks[0]);
+    day = await expectStatus(200, 'PATCH', `${dayRoute(101)}/talks/${originalTalk.id}`, 4, { revision: day.revision, action: 'amend', reason: 'Corrected the topic after field review', topic: 'Roof edges, openings, and rescue', notes: 'Reviewed access, openings, rescue, and stop-work expectations.', language: 'en', attendeeIds: [11, 12] });
+    assert.equal(day.talks[0].initial.topic, originalTalk.topic, 'toolbox talk correction preserves the original record');
+    assert.equal(day.talks[0].corrections.at(-1).reason, 'Corrected the topic after field review');
+    await expectStatus(400, 'PATCH', `${dayRoute(101)}/talks/${originalTalk.id}`, 4, { revision: day.revision, action: 'void', reason: '' });
     await expectStatus(400, 'POST', `${dayRoute(101)}/hazards`, 4, { revision: day.revision, observation: 'Synthetic unguarded hole', location: 'Synthetic west roof', photoId: 2 });
     day = await expectStatus(200, 'POST', `${dayRoute(101)}/hazards`, 4, { revision: day.revision, observation: '<img src=x onerror=alert(1)> Synthetic unguarded hole', location: 'Synthetic west roof', photoId: 1 });
     assert.equal(day.summary.canSubmit, false, 'undocumented open hazard blocks finalization');
@@ -147,11 +175,26 @@ const pass = (day, check, extra = {}) => ({ revision: day.revision, status: 'pas
     assert.equal(day.summary.canSubmit, true, 'documented unresolved condition can be recorded in daily');
     assert.equal(day.summary.readyForWork, false, 'deferred check never becomes clearance to work');
     assert.equal(day.summary.unresolved, 1);
-    const submitted = await expectStatus(201, 'POST', '/api/reports', 1, { ...reportInput('Submitted'), clientTag: 'synthetic-safety-accepted' });
+    const submitted = await expectStatus(201, 'POST', '/api/reports', 1, { ...reportInput('Submitted'), foreman: 'Forged client submitter', clientTag: 'synthetic-safety-accepted' });
     assert.notEqual(submitted.status, 'Draft');
     assert.equal(submitted.safetyEvidence.dayRevision, day.revision);
+    assert.equal(submitted.safetyEvidence.company.name, 'Synthetic safety company');
+    assert.equal(submitted.safetyEvidence.company.timezone, 'America/Los_Angeles');
+    assert.equal(submitted.safetyEvidence.project.name, 'Synthetic project 101');
+    assert.equal(submitted.safetyEvidence.project.address, '100 Synthetic Way, Portland, OR 97201');
+    assert.equal(submitted.safetyEvidence.project.jurisdiction, 'OR');
+    assert.equal(submitted.safetyEvidence.talks.length, 1);
+    assert.equal(submitted.safetyEvidence.submittedBy.id, 1, 'submission evidence attributes the authenticated account');
+    assert.equal(submitted.safetyEvidence.submittedBy.name, 'Synthetic safety user 1', 'client foreman cannot forge the safety submitter name');
+    assert.equal(submitted.safetyEvidence.submittedBy.role, 'owner', 'submission evidence retains the authenticated role');
     assert.equal(JSON.stringify(submitted.safetyEvidence).includes('FOREIGN_TENANT_SENTINEL'), false, 'foreign same-project/date row cannot leak into daily evidence');
     assert.equal(submitted.safetyEvidence.summary.unresolved, 1, 'daily retains the unresolved condition honestly');
+    const patchDraft = await expectStatus(201, 'POST', '/api/reports', 1, { ...reportInput('Draft'), sourceAssignmentId: null, notes: 'Synthetic report saved first and submitted by a different authenticated office user.' });
+    const patchedSubmission = await expectStatus(200, 'PATCH', `/api/reports/${patchDraft.id}`, 2, { status: 'Submitted', notes: patchDraft.notes, updatedAt: patchDraft.updatedAt, foreman: 'Forged PATCH submitter' });
+    assert.deepEqual(patchedSubmission.safetyEvidence.submittedBy, { id: 2, name: 'Synthetic safety user 2', role: 'admin' }, 'Draft-to-Submitted PATCH attributes the authenticated actor');
+    const approvalDraft = await expectStatus(201, 'POST', '/api/reports', 1, { ...reportInput('Draft'), sourceAssignmentId: null, notes: 'Synthetic report approved directly from Draft by an authenticated administrator.' });
+    const approvedFromDraft = await expectStatus(200, 'PATCH', `/api/reports/${approvalDraft.id}/approve`, 2, {});
+    assert.deepEqual(approvedFromDraft.safetyEvidence.submittedBy, { id: 2, name: 'Synthetic safety user 2', role: 'admin' }, 'direct approval captures the authenticated approver as the first safety submitter');
     const spoofedCrew = await expectStatus(201, 'POST', '/api/reports', 1, { ...reportInput('Submitted'), sourceAssignmentId: null, crew: 'Safety crew', clientTag: 'synthetic-spoofed-crew', notes: 'No assigned labor or assignment is attached to this synthetic record.' });
     const mixedCrew = await expectStatus(201, 'POST', '/api/reports', 1, { ...reportInput('Submitted'), laborEntries: [{ memberId: 11, hours: 4 }, { memberId: 13, hours: 4 }], productionEntries: [{ description: 'Synthetic roofing work', quantity: 1, unit: 'EA', laborHours: 8 }], clientTag: 'synthetic-mixed-crew', notes: 'This synthetic report contains one assigned and one unassigned crew member.' });
     const managerState = await expectStatus(200, 'GET', '/api/state', 3);
@@ -165,6 +208,13 @@ const pass = (day, check, extra = {}) => ({ revision: day.revision, status: 'pas
     await expectStatus(403, 'PATCH', `/api/reports/${mixedCrew.id}`, 3, { notes: 'Mixed-crew reports must remain outside PM write scope.' });
     const capturedSafety = structuredClone(submitted.safetyEvidence);
     day = await expectStatus(200, 'PATCH', `${dayRoute(101)}/checks/${check.id}`, 4, pass(day, check));
+    const correctedReport = await expectStatus(200, 'PATCH', `/api/reports/${submitted.id}`, 1, { notes: 'Office note corrected without rewriting submitted safety evidence.', status: 'Submitted' });
+    assert.deepEqual(correctedReport.safetyEvidence, capturedSafety, 'editing a submitted report preserves its original safety snapshot');
+    assert.equal((await expectStatus(409, 'PATCH', `/api/reports/${submitted.id}`, 1, { dateIso: '2026-10-25', status: 'Submitted' })).code, 'SAFETY_RECORD_IMMUTABLE');
+    assert.equal((await expectStatus(409, 'PATCH', `/api/reports/${submitted.id}`, 1, { status: 'Draft' })).code, 'SAFETY_RECORD_IMMUTABLE');
+    assert.equal((await expectStatus(409, 'DELETE', `/api/reports/${submitted.id}`, 1, { reason: 'Synthetic destructive-delete check' })).code, 'SAFETY_RECORD_IMMUTABLE');
+    const approvedReport = await expectStatus(200, 'PATCH', `/api/reports/${submitted.id}/approve`, 1, {});
+    assert.deepEqual(approvedReport.safetyEvidence, capturedSafety, 'approval preserves the original submission safety snapshot');
     const savedReport = JSON.parse(fs.readFileSync(dbFile, 'utf8')).reports.find(row => row.id === submitted.id);
     assert.deepEqual(savedReport.safetyEvidence, capturedSafety, 'later safety responses do not rewrite the submitted daily evidence');
     const beforeRestart = await expectStatus(200, 'GET', safety(101) + '?date=' + date, 1);
