@@ -106,7 +106,11 @@ function assertReachable(box, label) {
   assert.equal(JPEG[1], 0xd8);
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'pdl-phone-photo-'));
   const photo = path.join(root, 'daily.jpg');
+  const second = path.join(root, 'second.jpg');
+  const third = path.join(root, 'third.jpg');
   fs.writeFileSync(photo, JPEG);
+  fs.writeFileSync(second, JPEG);
+  fs.writeFileSync(third, JPEG);
   const port = await freePort();
   const env = {
     ...process.env,
@@ -198,39 +202,43 @@ function assertReachable(box, label) {
     assert.equal(legacyBefore.open, false);
     assert.equal(/What was completed\?/.test(legacyBefore.text), false);
 
-    let chooser;
-    let lastClick = null;
-    for (let attempt = 0; attempt < 3 && !chooser; attempt += 1) {
-      await reveal(page, '#report-photos');
-      await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
-      const point = await page.$eval('#report-photos', el => {
-        const box = el.getBoundingClientRect();
-        const x = Math.round(box.left + box.width / 2);
-        const y = Math.round(box.top + box.height / 2);
-        const hit = document.elementFromPoint(x, y);
-        return { x, y, width: el.offsetWidth, height: el.offsetHeight, opacity: getComputedStyle(el).opacity, hitId: hit?.id || '', hitTag: hit?.tagName || '' };
-      });
-      lastClick = point;
-      assert.ok(point.width >= 48 && point.height >= 48, JSON.stringify(point));
-      assert.equal(point.hitId, 'report-photos', `photo tap missed the file input ${JSON.stringify(point)}`);
-      try {
-        const pending = page.waitForFileChooser({ timeout: 4000 });
-        await page.mouse.click(point.x, point.y);
-        chooser = await pending;
-      } catch (error) {
-        if (attempt === 2) throw error;
+    async function acceptPhotos(files) {
+      let chooser;
+      let lastClick = null;
+      for (let attempt = 0; attempt < 3 && !chooser; attempt += 1) {
+        await reveal(page, '#report-photos');
+        await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+        const point = await page.$eval('#report-photos', el => {
+          const box = el.getBoundingClientRect();
+          const x = Math.round(box.left + box.width / 2);
+          const y = Math.round(box.top + box.height / 2);
+          const hit = document.elementFromPoint(x, y);
+          return { x, y, width: el.offsetWidth, height: el.offsetHeight, opacity: getComputedStyle(el).opacity, hitId: hit?.id || '', hitTag: hit?.tagName || '' };
+        });
+        lastClick = point;
+        assert.ok(point.width >= 48 && point.height >= 48, JSON.stringify(point));
+        assert.equal(point.hitId, 'report-photos', `photo tap missed the file input ${JSON.stringify(point)}`);
+        try {
+          const pending = page.waitForFileChooser({ timeout: 4000 });
+          await page.mouse.click(point.x, point.y);
+          chooser = await pending;
+        } catch (error) {
+          if (attempt === 2) throw error;
+        }
       }
+      assert.ok(chooser, JSON.stringify(lastClick));
+      assert.equal(chooser.isMultiple(), true);
+      await chooser.accept(files);
     }
-    assert.ok(chooser, JSON.stringify(lastClick));
-    assert.equal(chooser.isMultiple(), true);
-    await chooser.accept([photo]);
+    await acceptPhotos([photo]);
     await page.waitForSelector('#report-photo-preview img', { timeout: 5000 });
     const preview = await page.$eval('#report-photo-preview img', el => ({ alt: el.alt, src: el.src.slice(0, 24), width: el.getBoundingClientRect().width }));
     assert.match(preview.src, /^blob:/);
     assert.equal(preview.alt, 'Daily photo');
     assert.ok(preview.width >= 48, JSON.stringify(preview));
-    const chosenCount = await page.$eval('#report-photos', el => el.files.length);
-    assert.equal(chosenCount, 1);
+    const chosen = await page.$eval('#report-photos', el => ({ count: el.files.length, value: el.value }));
+    assert.equal(chosen.count, 1);
+    assert.equal(chosen.value, '');
     assert.equal(await page.$eval('.report-photo-count', el => el.textContent), '1 photo');
     const photoChrome = await page.evaluate(() => {
       const input = document.querySelector('#report-photos');
@@ -265,6 +273,96 @@ function assertReachable(box, label) {
     assert.ok(clearance.previewBottom <= clearance.actionsTop - 8, `photos under Done ${JSON.stringify(clearance)}`);
     await shot(page, 'c1-photo-chosen-390.png');
 
+    await acceptPhotos([second, third]);
+    await page.waitForFunction(() => document.querySelectorAll('#report-photo-preview img').length === 3);
+    assert.equal(await page.$eval('.report-photo-count', el => el.textContent), '3 photos');
+    const accumulated = await page.evaluate(() => {
+      const input = document.querySelector('#report-photos');
+      const native = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'files').get.call(input);
+      const names = reportRecoverySnapshot().photoNames;
+      const key = offlineReportDraftKey();
+      writeOfflineDraft(key, 'Forms are up on the east wall.');
+      const draft = readOfflineDraft(key);
+      const count = draft.photoNames.length;
+      const notice = `Your notes were restored. Reattach ${count} photo${count === 1 ? '' : 's'} before submitting: ${draft.photoNames.join(', ')}`;
+      localStorage.removeItem(offlineReportStorageKey(key));
+      return {
+        value: input.value,
+        native: native.length,
+        owned: input.files.length,
+        names,
+        draftNames: draft.photoNames,
+        notice,
+        title: document.querySelector('#report-modal-title')?.textContent || ''
+      };
+    });
+    assert.equal(accumulated.value, '', 'the file input stays clear so the same photo can be picked again');
+    assert.equal(accumulated.native, 0);
+    assert.equal(accumulated.owned, 3);
+    assert.deepEqual(accumulated.draftNames, accumulated.names);
+    assert.equal(accumulated.names.length, 3);
+    assert.match(accumulated.notice, /Reattach 3 photos before submitting: daily\.jpg, second\.jpg, third\.jpg/);
+    const clockOut = await page.evaluate(async () => {
+      const projectId = projects[+$('#report-project').value].id;
+      const memberId = Number(currentUser.memberId);
+      let active = workdays.find(row => row && row.status === 'active' && (row.memberIds || []).map(Number).includes(memberId));
+      if (!active) {
+        active = await api('/api/workdays/start', { method: 'POST', body: JSON.stringify({ projectId, memberIds: [memberId] }) });
+        workdays.push(active);
+      }
+      $('#report-crew').dispatchEvent(new Event('change', { bubbles: true }));
+      return { id: active.id, hidden: $('#field-clock-out')?.hidden !== false, text: $('#field-clock-out')?.textContent || '' };
+    });
+    assert.equal(clockOut.hidden, false, JSON.stringify(clockOut));
+    await page.click('#field-clock-out');
+    await page.waitForFunction(memberId => !workdays.some(row => row && row.status === 'active' && (row.memberIds || []).map(Number).includes(memberId)), { timeout: 20000 }, await page.evaluate(() => Number(currentUser.memberId)));
+    const verified = await page.evaluate(() => ({
+      open: $('#report-modal').open === true,
+      title: $('#report-modal-title')?.textContent || '',
+      files: $('#report-photos').files.length,
+      names: reportRecoverySnapshot().photoNames,
+      count: document.querySelector('.report-photo-count')?.textContent || '',
+      endOpen: Boolean($('#end-day-modal')?.open)
+    }));
+    assert.equal(verified.open, true, JSON.stringify(verified));
+    assert.equal(verified.endOpen, false, JSON.stringify(verified));
+    assert.equal(verified.files, 3, JSON.stringify(verified));
+    assert.deepEqual(verified.names, ['daily.jpg', 'second.jpg', 'third.jpg'], JSON.stringify(verified));
+    assert.equal(verified.count, '3 photos');
+    const verifyOpen = await page.evaluate(() => {
+      const report = reports.find(row => Number(row.id) === Number(editingReportId));
+      if (!report) return { missing: true, editingReportId };
+      openReport(report);
+      return {
+        title: $('#report-modal-title')?.textContent || '',
+        files: $('#report-photos').files.length,
+        names: reportRecoverySnapshot().photoNames,
+        count: document.querySelector('.report-photo-count')?.textContent || ''
+      };
+    });
+    assert.equal(verifyOpen.missing, undefined, JSON.stringify(verifyOpen));
+    assert.equal(verifyOpen.title, 'Verify daily report', JSON.stringify(verifyOpen));
+    assert.equal(verifyOpen.files, 3, JSON.stringify(verifyOpen));
+    assert.deepEqual(verifyOpen.names, ['daily.jpg', 'second.jpg', 'third.jpg'], JSON.stringify(verifyOpen));
+    assert.equal(verifyOpen.count, '3 photos');
+    const removeBox = await page.$eval('.report-photo-remove', el => ({
+      width: el.offsetWidth,
+      height: el.offsetHeight,
+      label: el.getAttribute('aria-label')
+    }));
+    assert.ok(removeBox.width >= 44 && removeBox.height >= 44, JSON.stringify(removeBox));
+    assert.equal(removeBox.label, 'Remove photo');
+    await reveal(page, '.report-photo-remove');
+    await page.click('.report-photo-remove');
+    await page.waitForFunction(() => document.querySelectorAll('#report-photo-preview img').length === 2 && document.querySelector('.report-photo-count')?.textContent === '2 photos');
+    const afterRemove = await page.evaluate(() => ({
+      owned: document.querySelector('#report-photos').files.length,
+      names: reportRecoverySnapshot().photoNames
+    }));
+    assert.equal(afterRemove.owned, 2);
+    assert.deepEqual(afterRemove.names, ['second.jpg', 'third.jpg']);
+    await shot(page, 'c1-photos-kept-390.png');
+
     await reveal(page, '#flag-extra-work');
     await page.click('#flag-extra-work');
     await page.waitForSelector('#field-scope-flags [data-flag-choice="yes"]', { timeout: 5000 });
@@ -297,26 +395,43 @@ function assertReachable(box, label) {
     }
     await shot(page, 'c1-sent-390.png');
     await page.click('#report-sent-modal button.primary');
-    await page.waitForSelector('#report-detail img.report-photo', { timeout: 20000 });
+    try {
+      await page.waitForFunction(() => document.querySelectorAll('#report-detail img.report-photo').length === 2, { timeout: 20000 });
+    } catch (error) {
+      const info = await page.evaluate(() => ({
+        shown: document.querySelectorAll('#report-detail img.report-photo').length,
+        stored: (typeof photos === 'undefined' ? [] : photos).map(photo => photo.reportId)
+      }));
+      throw new Error(`${error.message}\n${JSON.stringify(info)}`);
+    }
     const shown = await page.evaluate(async () => {
-      const image = document.querySelector('#report-detail img.report-photo');
-      const src = image?.getAttribute('src') || '';
-      const response = src ? await fetch(src) : null;
-      const bytes = response ? new Uint8Array(await response.arrayBuffer()) : [];
+      const images = [...document.querySelectorAll('#report-detail img.report-photo')];
+      const rows = [];
+      for (const image of images) {
+        const src = image.getAttribute('src') || '';
+        const response = src ? await fetch(src) : null;
+        const bytes = response ? new Uint8Array(await response.arrayBuffer()) : [];
+        rows.push({
+          src,
+          ok: response?.ok || false,
+          type: response?.headers.get('content-type') || '',
+          size: bytes.length,
+          jpeg: bytes[0] === 0xff && bytes[1] === 0xd8
+        });
+      }
       return {
-        src,
-        ok: response?.ok || false,
-        type: response?.headers.get('content-type') || '',
-        size: bytes.length,
-        jpeg: bytes[0] === 0xff && bytes[1] === 0xd8,
+        rows,
         endOpen: Boolean(document.querySelector('#end-day-modal')?.open),
         painted: window.__endDayPainted === true
       };
     });
-    assert.match(shown.src, /\/uploads\//);
-    assert.equal(shown.ok, true, JSON.stringify(shown));
-    assert.match(shown.type, /image\/jpeg/);
-    assert.equal(shown.jpeg, true, JSON.stringify(shown));
+    assert.equal(shown.rows.length, 2, JSON.stringify(shown));
+    for (const row of shown.rows) {
+      assert.match(row.src, /\/uploads\//);
+      assert.equal(row.ok, true, JSON.stringify(row));
+      assert.match(row.type, /image\/jpeg/);
+      assert.equal(row.jpeg, true, JSON.stringify(row));
+    }
     assert.equal(shown.endOpen, false);
     assert.equal(shown.painted, false);
     await page.evaluate(() => document.querySelector('#report-detail img.report-photo')?.scrollIntoView({ block: 'center' }));
