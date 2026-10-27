@@ -26,7 +26,9 @@ async function assertOfficeEntry(page,selector,label){
  assert.equal(result.compact,true,label);assert.equal(result.type,'production',label);assert.equal(result.details,false,label);assert.equal(result.next,'Done',label);assert.equal(result.notesVisible,true,label+' notes visible');assert.equal(result.voiceVisible,true,label+' voice visible');assert.equal(result.clock,false,label);
  await page.click('#report-context-summary');await page.waitForSelector('#report-project',{visible:true});
  await page.select('#report-type','superintendent');
- assert.equal(await page.$eval('#report-modal',el=>el.classList.contains('report-office-compact')),false,label+' superintendent');assert.equal(await page.$eval('#report-context-details',el=>el.open),true,label+' superintendent details open');
+ assert.equal(await page.$eval('#report-type',el=>el.value),'production',label+' daily stays production');
+ assert.equal(await page.$eval('#report-modal',el=>el.classList.contains('report-office-compact')),true,label+' note flow');
+ assert.equal(await page.$eval('#superintendent-safety',el=>el.hidden),true,label+' safety hidden');
  await page.click('#close-report');await page.waitForFunction(()=>!document.querySelector('#report-modal').open);
 }
 async function checkOfficeLayout(page,width,height,shot){
@@ -103,6 +105,6 @@ async function checkOfficeLayout(page,width,height,shot){
    assert.deepEqual(errors,[]);await context.close();
   }
   assert.equal(JSON.parse(fs.readFileSync(file)).reports.length,reportCount,'entry-point tests never create records');
-  console.log('Office actual buttons: owner/admin, mobile/desktop, fresh/restored session, dashboard/reports, notes/voice visible and superintendent escape passed. No report writes.');
+  console.log('Office actual buttons: owner/admin, mobile/desktop, fresh/restored session, dashboard/reports, notes/voice visible and daily type stays on the note flow. No report writes.');
  }finally{await browser?.close();child.kill();await new Promise(resolve=>child.exitCode!=null?resolve():child.once('exit',resolve));fs.rmSync(root,{recursive:true,force:true})}
 })().catch(error=>{console.error(error);process.exitCode=1});

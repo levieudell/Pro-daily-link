@@ -26,7 +26,7 @@ assert.doesNotMatch(source,/Add a quick note about what happened today before co
 assert.doesNotMatch(source,/Needs acknowledgement/);
 assert.match(source,/New assignment/);
 assert.match(source,/upcomingCard\|\|ack\?'':`<button type="button" class="secondary acknowledge-assignment"/);
-assert.match(source,/const fieldHours=typeof currentRole!=='undefined'&&currentRole==='field',scheduled=fieldHours\|\|total\?\[]:scheduledReportLabor/);
+assert.match(source,/const fieldHours=typeof currentRole!=='undefined'&&currentRole==='field'&&!superintendentActor\(\),scheduled=fieldHours\|\|total\?\[]:scheduledReportLabor/);
 assert.match(source,/fieldOfflineDraftAction\(draft/);
 assert.match(source,/action==='discard'\)/);
 assert.match(source,/row\.source!=='schedule'/);
