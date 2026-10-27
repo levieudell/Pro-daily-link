@@ -83,7 +83,9 @@ async function controlBox(page, selector) {
       visibility: style.visibility,
       opacity: Number(style.opacity),
       covered,
-      viewport: window.innerWidth
+      viewport: window.innerWidth,
+      offsetWidth: el.offsetWidth,
+      offsetHeight: el.offsetHeight
     };
   }, selector);
 }
@@ -93,7 +95,7 @@ function assertReachable(box, label) {
   assert.notEqual(box.display, 'none', `${label} is display:none ${JSON.stringify(box)}`);
   assert.notEqual(box.visibility, 'hidden', label);
   assert.ok(box.opacity > 0, `${label} is transparent ${JSON.stringify(box)}`);
-  assert.ok(box.width >= 48 && box.height >= 48, `${label} tap target ${JSON.stringify(box)}`);
+  assert.ok(box.offsetWidth >= 48 && box.offsetHeight >= 48, `${label} tap target ${JSON.stringify(box)}`);
   assert.ok(box.left >= -1 && box.right <= box.viewport + 1, `${label} is off-screen ${JSON.stringify(box)}`);
   assert.equal(box.covered, false, `${label} sits under the step actions ${JSON.stringify(box)}`);
 }
@@ -199,7 +201,7 @@ function assertReachable(box, label) {
     await reveal(page, '#report-photos');
     const point = await page.$eval('#report-photos', el => {
       const box = el.getBoundingClientRect();
-      return { x: box.left + box.width / 2, y: box.top + box.height / 2, width: box.width, height: box.height, opacity: getComputedStyle(el).opacity };
+      return { x: box.left + box.width / 2, y: box.top + box.height / 2, width: el.offsetWidth, height: el.offsetHeight, opacity: getComputedStyle(el).opacity };
     });
     assert.ok(point.width >= 48 && point.height >= 48, JSON.stringify(point));
     const [chooser] = await Promise.all([
