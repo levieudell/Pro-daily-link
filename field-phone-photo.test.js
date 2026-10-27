@@ -251,8 +251,16 @@ function assertReachable(box, label) {
     try {
       await page.waitForSelector('#report-sent-modal[open]', { timeout: 20000 });
     } catch (error) {
-      const status = await page.$eval('#report-submit-status', el => el.textContent || '').catch(() => '');
-      throw new Error(`${error.message}\n${status}\n${log.slice(-2000)}`);
+      const status = await page.evaluate(() => ({
+        status: document.querySelector('#report-submit-status')?.textContent || '',
+        step: document.querySelector('#report-form')?.getAttribute('data-current-step') || '',
+        files: document.querySelector('#report-photos')?.files?.length || 0,
+        send: document.querySelector('#save-report')?.textContent || '',
+        disabled: Boolean(document.querySelector('#save-report')?.disabled),
+        open: Boolean(document.querySelector('#report-modal')?.open),
+        flags: document.querySelector('#field-scope-flags')?.innerText || ''
+      })).catch(() => ({}));
+      throw new Error(`${error.message}\n${JSON.stringify(status)}\n${log.slice(-1200)}`);
     }
     await shot(page, 'c1-sent-390.png');
     await page.click('#report-sent-modal button.primary');

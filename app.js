@@ -1503,7 +1503,7 @@ function restoreRecoveredReportFields(draft){
   if(draft.photoNames?.length)showReportMessage(`Your notes were restored. Reattach ${draft.photoNames.length} photo${draft.photoNames.length===1?'':'s'} before submitting: ${draft.photoNames.join(', ')}`);
 }
 async function restoreInterruptedReport(){
-  if(restoringActiveReport)return;const recovery=activeReportRecovery();if(!recovery)return;if(String(recovery.companyId||'')!==String(signedInCompanyId()||company?.id||'')||String(recovery.userId||'')!==String(currentUser?.id||'')){sessionStorage.removeItem(ACTIVE_REPORT_RECOVERY_KEY);return}
+  if(restoringActiveReport||$('#report-modal')?.open)return;const recovery=activeReportRecovery();if(!recovery)return;if(String(recovery.companyId||'')!==String(signedInCompanyId()||company?.id||'')||String(recovery.userId||'')!==String(currentUser?.id||'')){sessionStorage.removeItem(ACTIVE_REPORT_RECOVERY_KEY);return}
   const projectIndex=projects.findIndex(project=>String(project.id)===String(recovery.projectId));if(projectIndex<0){sessionStorage.removeItem(ACTIVE_REPORT_RECOVERY_KEY);return}const draft=readOfflineDraft(recovery.reportId?`report-${recovery.reportId}`:`project-${projects[projectIndex].id}`);if(!hasOfflineReportContent(draft)){sessionStorage.removeItem(ACTIVE_REPORT_RECOVERY_KEY);return}
   restoringActiveReport=true;
   try{
