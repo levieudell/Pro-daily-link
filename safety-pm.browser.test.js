@@ -27,10 +27,36 @@ assert.equal(jurisdictionFromProject({ site: 'Address not entered' }, { state: '
 assert.equal(jurisdictionFromProject({ site: 'Remote work site' }, {}), '', 'an unknown address never guesses a jurisdiction');
 
 assert.equal(reportSafetyEvidenceMarkup({}), '', 'reports without saved evidence must not gain a safety certification');
-const maliciousEvidence = reportSafetyEvidenceMarkup({ safetyEvidence: { dayRevision: 3, ruleVersion: '<img src=x onerror=alert(1)>', checks: [{ title: '<script>bad()</script>', status: 'fail', inspector: '<b>name</b>', notes: '<iframe>' }], hazards: [], carriedHazards: [{ observation: '<img>', status: 'open', date: '2026-10-25' }], summary: { unresolved: 2 } } }, 101);
+const maliciousEvidence = reportSafetyEvidenceMarkup({ safetyEvidence: { dayRevision: 3, ruleVersion: '<img src=x onerror=alert(1)>', checks: [{ title: '<script>bad()</script>', status: 'fail', inspector: '<b>name</b>', notes: '<iframe>' }], talks: [{ topic: '<svg onload=alert(1)>', language: 'en', presenter: '<b>presenter</b>', attendees: [{ name: '<i>worker</i>' }] }], hazards: [], carriedHazards: [{ observation: '<img>', status: 'open', date: '2026-10-25' }], summary: { unresolved: 2 } } }, 101);
 assert.match(maliciousEvidence, /2 unresolved/);
 assert.match(maliciousEvidence, /&lt;script&gt;/);
-assert.doesNotMatch(maliciousEvidence, /<script>|<img|<iframe>/);
+assert.match(maliciousEvidence, /Toolbox talks \(1\)/);
+assert.match(maliciousEvidence, /Presenter-reported attendance/);
+assert.doesNotMatch(maliciousEvidence, /<script>|<img|<iframe>|<svg|<i>/);
+
+const immutableSpanishReport = { dateIso: '2026-10-26', safetyEvidence: {
+  date: '2026-10-26', dayRevision: 7, ruleVersion: 'or-safety-v3', capturedAt: '2026-10-26T17:30:00Z',
+  checks: [{ id: 'site-walk', title: 'Recorrido del sitio', status: 'fail', recordedBy: 'Pat', competentPerson: 'Alex', notes: 'Abertura sin cubrir', action: 'Se aisló el área', owner: 'Alex', dueDate: '2026-10-27' }],
+  talks: [
+    { topic: 'Protección contra caídas', language: 'es', presenter: 'Pat', attendees: [{ name: 'Alex' }], amendedAt: '2026-10-26T17:00:00Z', amendedBy: 'Pat' },
+    { topic: 'Registro duplicado', language: 'en', presenter: 'Pat', attendees: [], voidedAt: '2026-10-26T17:10:00Z', voidedBy: 'Morgan', voidReason: 'Duplicado' }
+  ],
+  hazards: [{ observation: 'Abertura', status: 'corrected', date: '2026-10-26', location: '', action: 'Cubierta', owner: '', dueDate: '2026-10-27', verification: 'Pendiente', workStopped: true }],
+  carriedHazards: [], summary: { unresolved: 2 }
+} };
+const immutableSpanishSnapshot = structuredClone(immutableSpanishReport);
+const spanishEvidence = reportSafetyEvidenceMarkup(immutableSpanishReport, 101, 'es');
+assert.match(spanishEvidence, /EVIDENCIA DIARIA GUARDADA/);
+assert.match(spanishEvidence, /Registro de seguridad al enviarse/);
+assert.match(spanishEvidence, /2 sin resolver/);
+assert.match(spanishEvidence, /Respuestas de inspección \(1\)/);
+assert.match(spanishEvidence, /Charlas de seguridad \(2\)/);
+assert.match(spanishEvidence, /Registro anulado/);
+assert.match(spanishEvidence, /original conservado en el historial de auditoría/);
+assert.match(spanishEvidence, /Peligros y seguimiento pendiente \(1\)/);
+assert.match(spanishEvidence, /Abrir registro de seguridad actual/);
+assert.doesNotMatch(spanishEvidence, /Safety record at submission|SAVED DAILY EVIDENCE|Open current safety record/);
+assert.deepEqual(immutableSpanishReport, immutableSpanishSnapshot, 'localizing saved evidence never rewrites the immutable report snapshot');
 
 let chromium;
 for (const dependency of ['playwright', process.env.PDL_PLAYWRIGHT_MODULE, path.join(os.homedir(), '.cache', 'codex-runtimes', 'codex-primary-runtime', 'dependencies', 'node', 'node_modules', 'playwright')].filter(Boolean)) {
@@ -65,7 +91,8 @@ fs.writeFileSync(path.join(temp, 'platform.json'), JSON.stringify({ users: [], s
 let child, browser, base, log = '';
 
 async function start() {
-  const env = { ...process.env, PDL_DB_FILE: dbFile, PDL_PLATFORM_FILE: path.join(temp, 'platform.json'), PDL_REQUIRE_AUTH: '1', PDL_SUPABASE_ENABLED: '0', PDL_TRANSACTIONAL_DB: 'off', PDL_PLATFORM_TRANSACTIONAL_DB: 'off', PDL_EMAIL_DEV_MODE: '1', NODE_ENV: 'test' };
+  const dependencyRoot = [path.resolve(__dirname, 'node_modules'), path.resolve(__dirname, '..', 'backoffice-command-center-worktree', 'node_modules'), path.resolve(__dirname, '..', 'repo', 'node_modules')].find(folder => fs.existsSync(path.join(folder, 'stripe')) && fs.existsSync(path.join(folder, '@heycatch', 'sdk'))) || path.resolve(__dirname, '..', 'node_modules');
+  const env = { ...process.env, NODE_PATH: [dependencyRoot, process.env.NODE_PATH].filter(Boolean).join(path.delimiter), PDL_DB_FILE: dbFile, PDL_PLATFORM_FILE: path.join(temp, 'platform.json'), PDL_REQUIRE_AUTH: '1', PDL_SUPABASE_ENABLED: '0', PDL_TRANSACTIONAL_DB: 'off', PDL_PLATFORM_TRANSACTIONAL_DB: 'off', PDL_EMAIL_DEV_MODE: '1', NODE_ENV: 'test' };
   for (const key of ['PDL_STAGING', 'SENTRY_DSN', 'RESEND_API_KEY', 'OPENAI_API_KEY', 'STRIPE_SECRET_KEY', 'STRIPE_WEBHOOK_SECRET', 'DATABASE_URL']) delete env[key];
   child = spawn(process.execPath, ['-e', "const {server}=require('./server');server.listen(0,'127.0.0.1',()=>console.log('SAFETY_BROWSER_PORT='+server.address().port));"], { cwd: __dirname, env, stdio: ['ignore', 'pipe', 'pipe'] });
   await new Promise((resolve, reject) => {
@@ -78,7 +105,7 @@ async function start() {
 }
 
 const harness = `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>PDL Safety acceptance</title><link rel="stylesheet" href="/styles.css"><link rel="stylesheet" href="/design-system.css"><link rel="stylesheet" href="/safety-pm-ui.css"></head><body><button id="open-safety-pm" data-open-safety-pm>Safety today</button><div id="report-list"></div><div id="report-detail"></div><script>
-let currentUser=${JSON.stringify(user)},company=${JSON.stringify(company)},projects=${JSON.stringify(projects)},photos=${JSON.stringify(photos)},currentRole='office',reports=[];
+let currentUser=${JSON.stringify(user)},company=${JSON.stringify(company)},projects=${JSON.stringify(projects)},photos=${JSON.stringify(photos)},team=${JSON.stringify(db.team)},assignments=${JSON.stringify(db.assignments)},currentRole='office',reports=[];
 function signedInCompanyId(){return company.id}
 function companyTodayIso(){return '${date}'}
 function renderEverything(){}
@@ -113,65 +140,74 @@ async function responseAfter(page, pathPart, action, method) {
     assert.equal(await profile.locator('[name="employer"]').inputValue(), company.name, 'project setup auto-fills the signed-in company name');
     assert.equal(await profile.locator('[name="state"]').inputValue(), 'OR', 'project setup auto-selects Oregon from the project address');
     await profile.locator('[name="activities"][value="roofing"]').check();
-    await profile.locator('[name="enabled"]').check();
-    const profileSave = await responseAfter(page, '/safety/profile', () => profile.getByRole('button', { name: 'Save project setup' }).click(), 'PUT');
+    const profileSave = await responseAfter(page, '/safety/profile', () => profile.getByRole('button', { name: 'Turn on Safety' }).click(), 'PUT');
     const savedProfile = await profileSave.json();
     assert.equal(savedProfile.profile.employer, company.name, 'the server receives the company-account employer without retyping it');
     assert.equal(savedProfile.profile.state, 'OR', 'the server receives the project-address jurisdiction without reselecting it');
-    await dialog.getByRole('button', { name: 'Prepare checks', exact: true }).waitFor();
-    await responseAfter(page, '/safety/days', () => dialog.getByRole('button', { name: 'Prepare checks', exact: true }).click(), 'POST');
+    await page.evaluate(dateValue => PDLSafety.open(101, dateValue, 'setup'), date);
+    await dialog.locator('[data-safety-turn-off]').waitFor();
+    await page.evaluate(dateValue => PDLSafety.open(101, dateValue, 'checks'), date);
+    assert.equal(await dialog.locator('[data-safety-profile]').count(), 0, 'configured setup does not sit above the focused daily task');
     await dialog.locator('[data-safety-check="scope-confirmation"]').waitFor({ state: 'attached' });
-    assert.equal(await dialog.locator('.safety-check').count(), 4);
-    const ids = await dialog.locator('[data-safety-check]').evaluateAll(forms => forms.map(form => form.dataset.safetyCheck));
-    let recorded = 0;
-    for (const id of ids) {
-      const form = dialog.locator(`[data-safety-check="${id}"]`);
-      await form.locator('xpath=..').locator('summary').click();
-      await form.locator('[name="status"]').selectOption('pass');
-      await form.locator('[name="inspector"]').fill('Morgan Lee');
-      await form.locator('[name="notes"]').fill(id === 'scope-confirmation' ? 'Roofing only today. Inspected access, roof slope, exposed edges and skylights before work.' : 'Inspected at 08:00. Selected protection and site conditions recorded with the crew.');
-      await responseAfter(page, '/checks/' + id, () => form.getByRole('button', { name: 'Save response', exact: true }).click(), 'PATCH');
-      recorded++;
-      await page.waitForFunction(count => document.querySelectorAll('.safety-check.safety-status-pass').length === count, recorded);
+    const prepared = await (await context.request.get(base + `/api/projects/101/safety?date=${date}`)).json();
+    assert.equal(prepared.day.checks.length, 4, 'the compact setup auto-prepares the day once');
+    for (const expected of prepared.day.checks) {
+      await dialog.locator(`[data-safety-check="${expected.id}"]`).waitFor();
+      const form = dialog.locator('[data-safety-check]');
+      assert.equal(await form.getAttribute('data-safety-check'), expected.id, 'the runner advances one focused check at a time');
+      await responseAfter(page, '/checks/' + expected.id, () => form.getByRole('button', { name: 'Looks good', exact: true }).click(), 'PATCH');
     }
-    await dialog.getByRole('button', { name: '＋ Flag a hazard' }).click();
+    await dialog.getByText('Today’s safety check is complete', { exact: true }).waitFor();
+    assert.equal(await dialog.locator('.safety-demo').count(), 0, 'the prospect-demo builder is removed from the live safety workflow');
+
+    await page.evaluate(dateValue => PDLSafety.open(101, dateValue, 'talk'), date);
+    const talk = dialog.locator('[data-safety-talk]');
+    await talk.waitFor();
+    assert.equal(await talk.locator('[name="attendeeIds"]:checked').count(), 1, 'scheduled crew is selected for presenter-reported attendance');
+    await talk.locator('[name="topic"]').fill('Roof access and opening protection');
+    await talk.locator('[name="notes"]').fill('Reviewed access, openings, and stop-work expectations.');
+    await responseAfter(page, '/talks', () => talk.getByRole('button', { name: 'Save toolbox talk', exact: true }).click(), 'POST');
+    const talked = await (await context.request.get(base + `/api/projects/101/safety?date=${date}`)).json();
+    assert.equal(talked.day.talks[0].presenter, user.name, 'the signed-in presenter is server-owned');
+    assert.deepEqual(talked.day.talks[0].attendees.map(row => row.name), ['Demo crew member']);
+    await page.evaluate(dateValue => PDLSafety.open(101, dateValue, 'talk'), date);
+    await dialog.getByText('Correct record', { exact: true }).click();
+    const correction = dialog.locator('[data-talk-action="amend"]');
+    await correction.locator('[name="reason"]').fill('Correcting the topic wording while preserving the original.');
+    await correction.locator('[name="topic"]').fill('Roof access, openings, and stop-work expectations');
+    await responseAfter(page, '/talks/', () => correction.getByRole('button', { name: 'Save correction', exact: true }).click(), 'PATCH');
+    const correctedTalk = await (await context.request.get(base + `/api/projects/101/safety?date=${date}`)).json();
+    assert.equal(correctedTalk.day.talks[0].topic, 'Roof access, openings, and stop-work expectations');
+    assert.equal(correctedTalk.day.talks[0].initial.topic, 'Roof access and opening protection', 'correction preserves the original talk evidence');
+    await dialog.getByText('Void duplicate or wrong record', { exact: true }).waitFor();
+    await page.evaluate(dateValue => { assignments = []; return PDLSafety.open(101, dateValue, 'talk'); }, date);
+    await dialog.getByText('Schedule at least one crew member before recording attendance.', { exact: true }).first().waitFor();
+    assert.equal(await dialog.getByRole('button', { name: 'Save toolbox talk', exact: true }).isDisabled(), true, 'attendance cannot be recorded without a scheduled crew member');
+    await page.evaluate(rows => { assignments = rows; }, db.assignments);
+
+    await page.evaluate(dateValue => PDLSafety.open(101, dateValue, 'hazard'), date);
     const hazard = dialog.locator('[data-safety-hazard-create]');
+    await hazard.waitFor();
     await hazard.locator('[name="observation"]').fill('Unprotected roof opening at west stair');
     await hazard.locator('[name="location"]').fill('West roof stair landing');
     await hazard.locator('[name="action"]').fill('Stopped affected work and barricaded the opening pending cover installation.');
+    await hazard.locator('[name="outcome"][value="followup"]').check();
+    await hazard.locator('[name="workStoppedChoice"][value="yes"]').check();
     await hazard.locator('[name="owner"]').fill('Roof crew lead');
     await hazard.locator('[name="dueDate"]').fill(date);
     await hazard.locator('[name="photoId"]').selectOption('1');
-    await hazard.locator('[name="workStopped"]').uncheck();
     await responseAfter(page, '/hazards', () => hazard.getByRole('button', { name: 'Save hazard', exact: true }).click(), 'POST');
-    await dialog.locator('.safety-hazard').waitFor();
-    assert.equal((await dialog.locator('.safety-open-count').innerText()).trim(), '1\nunresolved');
     const savedHazard = dialog.locator('[data-safety-hazard-update]');
-    await savedHazard.locator('xpath=..').locator('summary').click();
+    await savedHazard.waitFor();
     const unstopped = await (await context.request.get(base + `/api/projects/101/safety?date=${date}`)).json();
-    assert.equal(unstopped.day.summary.canSubmit, false, 'uncontrolled open hazard blocks finalization');
-    assert.equal(await savedHazard.locator('[name="workStopped"]').isChecked(), false, 'follow-up shows the actual recorded stoppage state');
-    await savedHazard.locator('[name="workStopped"]').check();
-    await responseAfter(page, '/hazards/', () => savedHazard.getByRole('button', { name: 'Save follow-up' }).click(), 'PATCH');
-    await dialog.locator('.safety-work-stopped').waitFor();
-    const stopped = await (await context.request.get(base + `/api/projects/101/safety?date=${date}`)).json();
-    assert.equal(stopped.day.summary.canSubmit, true, 'later stopped-work evidence can complete documentation');
-    assert.equal(stopped.day.summary.unresolved, 1, 'stopped work does not resolve the hazard');
-    assert.equal(stopped.day.hazards[0].status, 'open', 'recording stoppage is not verification');
-    await savedHazard.locator('xpath=..').locator('summary').click();
-    assert.equal(await savedHazard.locator('[name="workStopped"]').isChecked(), true, 'saved stoppage is prefilled on the follow-up');
-    await savedHazard.locator('[name="status"]').selectOption('verified');
-    await savedHazard.locator('[name="verification"]').fill('PM inspected the secured rated cover at 09:10 before affected work resumed.');
-    await responseAfter(page, '/hazards/', () => savedHazard.getByRole('button', { name: 'Save follow-up' }).click(), 'PATCH');
-    await dialog.locator('.safety-hazard.is-verified').waitFor();
-    const before = await (await context.request.get(base + `/api/projects/101/safety?date=${date}`)).json();
-    await dialog.locator('.safety-demo>summary').click();
-    await dialog.locator('[data-demo-company]').fill('Cascade Earthworks');
-    await dialog.locator('[data-demo-trade]').selectOption('excavation');
-    assert.match(await dialog.locator('[data-demo-preview]').innerText(), /Cascade Earthworks/);
-    assert.match(await dialog.locator('[data-demo-preview]').innerText(), /Excavation in Oregon/);
-    const after = await (await context.request.get(base + `/api/projects/101/safety?date=${date}`)).json();
-    assert.deepEqual(after.profile, before.profile, 'demo preview must not alter profile or activate a trade');
+    assert.equal(unstopped.day.summary.canSubmit, true, 'documented stopped work can be submitted while follow-up remains open');
+    assert.equal(unstopped.day.hazards[0].status, 'open', 'recording protection does not resolve the hazard');
+    await responseAfter(page, '/hazards/', () => savedHazard.getByRole('button', { name: 'Mark corrected', exact: true }).click(), 'PATCH');
+    await dialog.locator('[data-next-status="verified"]').waitFor();
+    const verifyHazard = dialog.locator('[data-next-status="verified"]');
+    await verifyHazard.locator('[name="verification"]').fill('PM inspected the secured rated cover at 09:10 before affected work resumed.');
+    await responseAfter(page, '/hazards/', () => verifyHazard.getByRole('button', { name: 'Verify closed', exact: true }).click(), 'PATCH');
+    await dialog.getByText('No open follow-up', { exact: true }).first().waitFor();
     const submitted = await context.request.post(base + '/api/reports', { data: { projectId: 101, project: 0, dateIso: date, notes: 'Synthetic inspected roofing daily.', status: 'Submitted', reportType: 'superintendent', extracted: { reportType: 'superintendent' }, productionEntries: [], laborEntries: [] } });
     assert.equal(submitted.status(), 201, await submitted.text());
     const saved = await submitted.json();
@@ -181,6 +217,9 @@ async function responseAfter(page, pathPart, action, method) {
     assert.match(await evidence.innerText(), /Safety record at submission/);
     assert.match(await evidence.innerText(), /0 unresolved/);
     assert.match(await evidence.textContent(), /Morgan Lee/);
+    assert.match(await evidence.textContent(), /Toolbox talks \(1\)/);
+    assert.match(await evidence.textContent(), /Roof access, openings, and stop-work expectations/);
+    assert.match(await evidence.textContent(), /Demo crew member/);
     await page.evaluate(id => renderReports(id), saved.id);
     assert.equal(await evidence.count(), 1, 'repeated daily rendering must not duplicate saved evidence');
     const currentRead = await (await context.request.get(base + `/api/projects/101/safety?date=${date}`)).json();
@@ -190,29 +229,33 @@ async function responseAfter(page, pathPart, action, method) {
     assert.match(await evidence.innerText(), /0 unresolved/, 'historical evidence must retain the saved unresolved count');
     assert.doesNotMatch(await evidence.textContent(), /LATER CONDITION/, 'rendering historical evidence must not substitute current answers');
     assert.equal(await evidence.locator('[data-open-safety-pm]').getAttribute('data-project-id'), '101');
-    await dialog.locator('.safety-demo>summary').click();
     await dialog.evaluate(node => { node.scrollTop = 0; });
     fs.mkdirSync(path.join(__dirname, 'output'), { recursive: true });
-    await page.screenshot({ path: path.join(__dirname, 'output', 'safety-mvp-desktop.png'), fullPage: true });
+    await page.screenshot({ path: path.join(__dirname, 'output', 'safety-v3-desktop.png'), fullPage: true });
     assert.equal(await dialog.evaluate(node => node.scrollWidth > node.clientWidth), false, 'desktop dialog must not overflow horizontally');
     assert.equal(await dialog.locator('[data-safety-body]').evaluate(node => getComputedStyle(node).marginLeft), '0px', 'the app sidebar margin must not indent the dialog body');
     await page.setViewportSize({ width: 390, height: 844 });
     await dialog.evaluate(node => { node.scrollTop = 0; });
-    await page.screenshot({ path: path.join(__dirname, 'output', 'safety-mvp-mobile.png'), fullPage: true });
+    await page.screenshot({ path: path.join(__dirname, 'output', 'safety-v3-mobile.png'), fullPage: true });
     assert.equal(await dialog.evaluate(node => node.scrollWidth > node.clientWidth), false, '390px dialog must not overflow horizontally');
     await page.evaluate(() => PDLSafety.close());
     await evidence.locator('details').evaluateAll(nodes => nodes.forEach(node => { node.open = true; }));
-    await evidence.screenshot({ path: path.join(__dirname, 'output', 'safety-mvp-report-evidence.png') });
+    await evidence.screenshot({ path: path.join(__dirname, 'output', 'safety-v3-report-evidence.png') });
     assert.equal(await evidence.evaluate(node => node.scrollWidth > node.clientWidth), false, 'saved daily evidence must fit a mobile report');
-    await page.getByRole('button', { name: 'Safety today', exact: true }).click();
-    await dialog.getByRole('button', { name: '＋ Flag a hazard' }).waitFor();
-    await dialog.getByRole('button', { name: '＋ Flag a hazard' }).click();
+    await page.evaluate(dateValue => PDLSafety.open(101, dateValue, 'hazard'), date);
+    await dialog.locator('[data-safety-hazard-create]').waitFor();
     await dialog.locator('[data-safety-hazard-create] textarea[name="observation"]').fill('Unsaved scope-bound draft');
     await page.evaluate(() => { currentUser = { ...currentUser, id: 99 }; renderEverything(); });
     assert.equal(await dialog.evaluate(node => node.open), false);
     assert.equal(await dialog.locator('[data-safety-body]').innerText(), '', 'closing safety wipes account-specific UI data');
+    await page.evaluate(({ userValue, dateValue }) => { currentUser = userValue; renderEverything(); return PDLSafety.open(101, dateValue, 'setup'); }, { userValue: user, dateValue: date });
+    await dialog.locator('[data-safety-turn-off]').waitFor();
+    page.once('dialog', prompt => prompt.accept());
+    await responseAfter(page, '/safety/profile', () => dialog.locator('[data-safety-turn-off]').click(), 'PUT');
+    const disabledProfile = await (await context.request.get(base + `/api/projects/101/safety?date=${date}`)).json();
+    assert.equal(disabledProfile.profile.enabled, false, 'an owner can explicitly remove the daily safety gate from project setup');
     assert.deepEqual(errors, [], 'browser must not raise runtime errors');
-    console.log('Safety browser acceptance passed: desktop/mobile, project setup, generated checks, real check saves, hazard/photo/verification, isolated demo preview, overflow and scope cleanup.');
+    console.log('Safety v3 browser acceptance passed: compact setup, focused checks, hazard follow-up, toolbox attendance/correction, evidence, owner disable, mobile overflow and scope cleanup.');
   } finally {
     await browser?.close();
     if (child && child.exitCode == null) { const stopped = once(child, 'exit'); child.kill('SIGTERM'); await stopped; }
