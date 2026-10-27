@@ -9,7 +9,7 @@ const root = __dirname;
 const widths = [320, 390, 768, 1024, 1280, 1440, 1920, 2560, 3840];
 const css = fs.readFileSync(path.join(root, 'public-content.css'), 'utf8');
 assert.doesNotMatch(css, /\.landing-founder,\.landing-journal\{[^}]*max-width/);
-assert.match(fs.readFileSync(path.join(root, 'landing.html'), 'utf8'), /public-content\.css\?v=20261027-public2/);
+assert.match(fs.readFileSync(path.join(root, 'landing.html'), 'utf8'), /public-content\.css\?v=20261027-public3/);
 
 function chromePath() {
   const candidates = [
@@ -91,14 +91,12 @@ const measure = `(() => {
         assert.ok(section.content >= minimum, `${width} ${section.cls} content ${section.content}px, need >= ${minimum}`);
       }
       assert.ok(result.h2 >= textMinimum, `${width} founder h2 ${result.h2}px, need >= ${textMinimum}`);
+      if (width === 1920 || width === 2560) assert.ok(Math.abs(result.h2 - 760) <= 1, `${width} founder h2 ${result.h2}px, expected 760`);
       assert.ok(result.paragraphs.length >= 2, `${width} founder copy is missing paragraphs`);
       for (const paragraph of result.paragraphs) {
         assert.ok(paragraph >= textMinimum, `${width} founder paragraph ${paragraph}px, need >= ${textMinimum}`);
       }
-      // The hero grid overflows by a few pixels at 1024. A separate change fixes that.
-      if (width !== 1024) {
-        assert.equal(result.scroll, width, `${width} document scroll width ${result.scroll}`);
-      }
+      assert.equal(result.scroll, width, `${width} document scroll width ${result.scroll}`);
       console.log(`${width} founder h2 ${Math.round(result.h2)} section ${Math.round(result.founder)} scroll ${result.scroll}`);
     }
   } finally {
