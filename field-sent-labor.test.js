@@ -142,7 +142,41 @@ async function clockIn(page) {
     }));
     assert.equal(/Missing: labor hours/i.test(sent.summary), false, JSON.stringify(sent));
     assert.match(sent.summary, /2 min logged/i, JSON.stringify(sent));
-    console.log('A 2 minute punch is logged, not missing labor.');
+    await page.click('#report-sent-modal button.primary');
+    await page.waitForFunction(() => !document.querySelector('#report-sent-modal')?.open);
+    await page.evaluate(() => document.querySelector('.nav-item[data-page="myday"]').click());
+    await page.waitForSelector('#myday-page.active [data-start-day]', { timeout: 20000 });
+    await tap(page, '[data-start-day]');
+    await clockIn(page);
+    const again = JSON.parse(fs.readFileSync(dbFile, 'utf8'));
+    const earlier = new Date(Date.now() - 3 * 60 * 1000).toISOString();
+    for (const day of again.workdays || []) if (day.status === 'active') day.startedAt = earlier;
+    for (const card of again.timeCards || []) if (!card.outAt) card.inAt = earlier;
+    fs.writeFileSync(dbFile, JSON.stringify(again));
+    await tap(page, '[data-start-day]');
+    await page.waitForSelector('#report-modal[open] #field-notes');
+    await page.click('#report-next-step');
+    await page.waitForFunction(() => /measured/i.test(document.querySelector('#field-review-cards')?.innerText || ''), { timeout: 20000 });
+    const review = await page.evaluate(() => ({
+      text: document.querySelector('#field-review-cards')?.innerText || '',
+      blankManual: [...document.querySelectorAll('[data-labor-member]')].filter(input => input.dataset.manualHours === 'true' && input.value === '').map(input => input.dataset.laborMember)
+    }));
+    assert.deepEqual(review.blankManual, [], review.text);
+    assert.equal(/unknown h reported/i.test(review.text), false, review.text);
+    const measured = review.text.match(/(\d+) min · \d+\.\d{2} h measured/i);
+    assert.ok(measured && Number(measured[1]) >= 2, review.text);
+    await page.evaluate(() => {
+      document.querySelectorAll('[data-labor-member]').forEach(input => { input.value = ''; });
+    });
+    await page.click('#save-report');
+    await page.waitForSelector('#report-sent-modal[open]', { timeout: 20000 });
+    const restored = await page.evaluate(() => ({
+      title: document.querySelector('#report-sent-modal h2')?.textContent || '',
+      summary: document.querySelector('#report-sent-summary')?.textContent || ''
+    }));
+    assert.equal(/Missing: labor hours/i.test(restored.summary), false, JSON.stringify({ review: review.text, restored }));
+    assert.match(restored.summary, /\d+ min logged/i, JSON.stringify({ review: review.text, restored }));
+    console.log('A restored punch is measured on review and logged on send.');
   } finally {
     if (browser) await browser.close().catch(() => {});
     child.kill();
