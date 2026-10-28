@@ -2,6 +2,7 @@
 // Entirely local synthetic tenant: office compact review must not import raw punches.
 const assert=require('node:assert/strict'),fs=require('node:fs'),os=require('node:os'),path=require('node:path'),net=require('node:net');
 const {spawn}=require('node:child_process');
+const {openOfficeProjectDaily}=require('./scripts/test-office-project-navigation.cjs');
 const chrome=process.env.PDL_TEST_CHROME||(process.platform==='win32'?'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe':'/usr/bin/google-chrome-stable');
 const root=fs.mkdtempSync(path.join(os.tmpdir(),'pdl-office-daily-'));
 const shotRoot=process.env.PDL_TEST_SCREENSHOTS||path.join(os.tmpdir(),'pdl-office-daily-shots');
@@ -24,11 +25,10 @@ async function run(){
   await set(page,'#email','levi+owner@prodailylink.com');await set(page,'#password','synthetic-owner-pass');await page.click('form#login button.primary');
   await page.waitForFunction(()=>typeof currentRole!=='undefined'&&currentRole==='office'&&projects.length>0);
   await page.evaluate(()=>new Promise(resolve=>{const before=restoreInterruptedReport;restoreInterruptedReport=async function(){try{return await before()}finally{resolve()}};setTimeout(resolve,1500)}));
-  await page.click('.top-actions [data-open-report]');
-  await page.waitForSelector('#report-modal[open]');
+  const projectId=await page.evaluate(()=>projects.find(p=>/Cedar Grove/.test(p.name)).id);
+  await openOfficeProjectDaily(page,projectId);
   assert.equal(await page.$eval('#report-context-details',el=>el.open),false,'office New Daily opens notes first');
   await page.click('#report-context-summary');
-  await page.evaluate(()=>{$('#report-project').value=String(projects.findIndex(p=>/Cedar Grove/.test(p.name)));$('#report-project').dispatchEvent(new Event('change',{bubbles:true}));});
   await page.waitForFunction(()=>reportLaborLoadedKey===reportLaborSelectionKey());
   assert.equal(await page.$eval('#report-next-step',e=>e.textContent),'Done');
   for(const selector of ['#report-project-picker','#report-date-field','#report-crew-field','#report-photos','#save-report-draft'])assert.equal(await visible(page,selector),true,selector);

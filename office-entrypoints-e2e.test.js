@@ -1,24 +1,18 @@
 'use strict';
 // Real rendered entry points, synthetic owner/admin sessions, no report writes.
 const assert=require('node:assert/strict'),fs=require('node:fs'),os=require('node:os'),path=require('node:path'),net=require('node:net'),{spawn}=require('node:child_process');
+const {navigateOffice:navigate,assertNoGlobalOfficeDaily,openOfficeProjectDaily}=require('./scripts/test-office-project-navigation.cjs');
 const chrome=process.env.PDL_TEST_CHROME||(process.platform==='win32'?'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe':'/usr/bin/google-chrome-stable');
 const root=fs.mkdtempSync(path.join(os.tmpdir(),'pdl-office-entrypoints-'));
 const file=path.join(root,'db.json');
 const sleep=ms=>new Promise(resolve=>setTimeout(resolve,ms));
 async function waitForBoot(page){await page.waitForFunction(()=>typeof currentUser!=='undefined'&&currentUser?.id&&typeof projects!=='undefined'&&projects.length&&document.documentElement.classList.contains('workspace-ready')&&localStorage.getItem('pdl-role')==='office'&&document.querySelector('.page.active'));await page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))))}
-async function navigate(page,name){
- await page.waitForFunction(()=>Date.now()>=suppressReportOpenUntil);
- if(page.viewport().width<760&&!await page.$eval('#sidebar',el=>el.classList.contains('open')))await page.click('#menu-button');
- await page.waitForFunction(name=>{const r=document.querySelector('.nav-item[data-page="'+name+'"]').getBoundingClientRect();return r.width>0&&r.left>=-1&&r.right<=innerWidth+1}, {},name);
- await page.locator(`.nav-item[data-page="${name}"]`).click();
- await page.waitForSelector(`#${name}-page.active`);
-}
-async function assertOfficeEntry(page,selector,label){
+async function assertOfficeEntry(page,label){
  if(page.viewport().width<760)await page.waitForFunction(()=>document.querySelector('#sidebar').getBoundingClientRect().right<=1);
  console.log('Checking '+label);
  // Honor the existing close/tap-through guard before a deliberate new click.
  await page.waitForFunction(()=>Date.now()>=suppressReportOpenUntil);
- await page.locator(selector).click();await page.waitForSelector('#report-modal[open]');
+ const projectId=await openOfficeProjectDaily(page);
  const result=await page.evaluate(()=>{
   const modal=document.querySelector('#report-modal'),notes=document.querySelector('#field-notes'),voice=document.querySelector('#voice-notes'),rect=notes.getBoundingClientRect(),vr=voice.getBoundingClientRect();
   return{compact:modal.classList.contains('report-office-compact'),type:document.querySelector('#report-type').value,details:document.querySelector('#report-context-details').open,next:document.querySelector('#report-next-step').textContent,notesVisible:rect.height>0&&rect.top>=0&&rect.bottom<innerHeight-80,voiceVisible:vr.height>0&&vr.top>=0&&vr.bottom<innerHeight-80,clock:!!document.querySelector('#field-clock-out:not([hidden])')};
@@ -28,6 +22,8 @@ async function assertOfficeEntry(page,selector,label){
  await page.select('#report-type','superintendent');
  assert.equal(await page.$eval('#report-modal',el=>el.classList.contains('report-office-compact')),false,label+' superintendent');assert.equal(await page.$eval('#report-context-details',el=>el.open),true,label+' superintendent details open');
  await page.click('#close-report');await page.waitForFunction(()=>!document.querySelector('#report-modal').open);
+ assert.equal(await page.$eval('#project-detail-modal',el=>el.open),true,label+' closing the daily returns to the project');
+ assert.equal(await page.$eval('#project-detail-modal',el=>el.dataset.projectId),projectId,label+' returns to the same project');
 }
 async function checkOfficeLayout(page,width,height,shot){
  await page.$eval('#report-modal',el=>Promise.all(el.getAnimations().map(animation=>animation.finished)));
@@ -64,9 +60,13 @@ async function checkOfficeLayout(page,width,height,shot){
    const context=await browser.createBrowserContext(),page=await context.newPage();page.on('dialog',d=>d.accept());
    await page.setViewport({width:390,height:844,isMobile:true,hasTouch:true});await page.evaluateOnNewDocument(()=>localStorage.setItem('pdl-analytics-consent','declined'));
    await page.goto(`http://127.0.0.1:${port}/login.html`);await page.type('#email',owner.email);await page.type('#password','synthetic-owner-pass');await page.click('form#login button.primary');await waitForBoot(page);
-   const commandCenter=await page.evaluate(()=>{const priority=document.querySelector('.command-priority'),setup=document.querySelector('.setup-checklist'),production=document.querySelector('.production-panel'),team=document.querySelector('.nav-item[data-page="team"]'),shell=document.querySelector('.app-shell');return{priorityDisplay:getComputedStyle(priority).display,setupDisplay:getComputedStyle(setup).display,productionDisplay:getComputedStyle(production).display,teamDisplay:getComputedStyle(team).display,overflow:document.documentElement.scrollWidth-innerWidth,activePage:document.querySelector('.page.active')?.id||'',role:typeof currentRole==='undefined'?'':currentRole,hash:location.hash,shellHidden:Boolean(shell?.hidden)}});
-   assert.ok(commandCenter.priorityDisplay==='grid'||commandCenter.setupDisplay!=='none','phone Overview serves the canonical command center or its first-run setup path: '+JSON.stringify(commandCenter));assert.equal(commandCenter.productionDisplay,'none','the duplicate production chart lives in Insights, not Overview');assert.notEqual(commandCenter.teamDisplay,'none','Team remains a first-class destination');assert.ok(commandCenter.overflow<=1,'phone Overview has no horizontal overflow');
-   await page.click('.top-actions [data-open-report]');await page.waitForSelector('#report-modal[open]');
+   const commandCenter=await page.evaluate(()=>{const visible=selector=>document.querySelector(selector).checkVisibility({checkVisibilityCSS:true,checkOpacity:true});return{priorityVisible:visible('#office-priorities'),setupVisible:visible('.setup-checklist'),productionOpen:document.querySelector('#dashboard-production-details').open,productionVisible:visible('.production-panel'),teamDisplay:getComputedStyle(document.querySelector('.nav-item[data-page="team"]')).display,overflow:document.documentElement.scrollWidth-innerWidth}});
+   assert.ok(commandCenter.priorityVisible||commandCenter.setupVisible,'phone Overview shows priorities or setup');assert.equal(commandCenter.productionOpen,false,'production detail starts collapsed');assert.equal(commandCenter.productionVisible,false,'collapsed production detail stays out of the way');assert.notEqual(commandCenter.teamDisplay,'none','Team remains a first-class destination');assert.ok(commandCenter.overflow<=1,'phone Overview has no horizontal overflow');
+   await assertNoGlobalOfficeDaily(page);
+   await page.locator('#dashboard-production-details > summary').click();
+   assert.equal(await page.$eval('.production-panel',el=>el.checkVisibility({checkVisibilityCSS:true,checkOpacity:true})),true,'one tap reveals production details');
+   await page.locator('#dashboard-production-details > summary').click();
+   await openOfficeProjectDaily(page);
    for(const width of [320,375,390,430,1280]){await checkOfficeLayout(page,width,844,true);if(width<760)await checkOfficeLayout(page,width,390,true);}
    await page.evaluate(()=>showReportStep(2));
    for(const width of [320,375,390,430,1280]){
@@ -75,7 +75,7 @@ async function checkOfficeLayout(page,width,height,shot){
     assert(await page.$eval('#report-modal',el=>el.scrollWidth<=el.clientWidth+1),`${width} review no horizontal overflow`);
     if(process.env.PDL_TEST_SCREENSHOTS)await page.screenshot({path:path.join(process.env.PDL_TEST_SCREENSHOTS,`office-review-${width}.png`)});
    }
-   await page.setViewport({width:390,height:844,isMobile:true,hasTouch:true});await page.$eval('#close-report',el=>el.scrollIntoView({block:'center'}));await page.click('#close-report');await page.waitForFunction(()=>Date.now()>=suppressReportOpenUntil);await page.evaluate(()=>openReport());assert.equal(await page.$eval('#report-context-details',el=>el.open),false,'reopening keeps notes-first default');
+   await page.setViewport({width:390,height:844,isMobile:true,hasTouch:true});await page.$eval('#close-report',el=>el.scrollIntoView({block:'center'}));await page.click('#close-report');await page.waitForFunction(()=>Date.now()>=suppressReportOpenUntil);await page.locator('[data-office-new-daily]').click();await page.waitForSelector('#report-modal[open]');assert.equal(await page.$eval('#report-context-details',el=>el.open),false,'reopening keeps notes-first default');
    if(process.env.PDL_TEST_SCREENSHOTS){fs.mkdirSync(process.env.PDL_TEST_SCREENSHOTS,{recursive:true});for(const name of fs.readdirSync(root).filter(name=>name.endsWith('.png')))fs.copyFileSync(path.join(root,name),path.join(process.env.PDL_TEST_SCREENSHOTS,name));}
    await context.close();
   }
@@ -87,7 +87,7 @@ async function checkOfficeLayout(page,width,height,shot){
    assert.ok(release,'shared report controller requested within 30 seconds');
    await sleep(300);
    assert.equal(await page.evaluate(()=>document.documentElement.classList.contains('workspace-ready')),false,'slow controller cannot expose legacy New Daily');
-   release();await waitForBoot(page);await assertOfficeEntry(page,'.top-actions [data-open-report]','delayed shared controller');await context.close();
+   release();await waitForBoot(page);await assertOfficeEntry(page,'delayed shared controller');await context.close();
   }
   for(const role of ['owner','admin'])for(const width of [390,1280]){
    const context=await browser.createBrowserContext(),page=await context.newPage(),errors=[];page.on('pageerror',e=>errors.push(e.message));page.on('dialog',d=>d.accept());
@@ -97,12 +97,12 @@ async function checkOfficeLayout(page,width,height,shot){
    for(const restored of [false,true]){
     if(restored){await page.reload({waitUntil:'domcontentloaded'});await waitForBoot(page)}
     if(await page.$eval('#report-modal',el=>el.open))await page.click('#close-report');
-    await navigate(page,'dashboard');await assertOfficeEntry(page,'.top-actions [data-open-report]',`${role} ${width} restored=${restored} dashboard`);
-    await navigate(page,'reports');await assertOfficeEntry(page,'#reports-page [data-open-report]',`${role} ${width} restored=${restored} reports`);
+    await navigate(page,'dashboard');await assertOfficeEntry(page,`${role} ${width} restored=${restored} dashboard → project`);
+    await navigate(page,'reports');await assertOfficeEntry(page,`${role} ${width} restored=${restored} reports → project`);
    }
    assert.deepEqual(errors,[]);await context.close();
   }
   assert.equal(JSON.parse(fs.readFileSync(file)).reports.length,reportCount,'entry-point tests never create records');
-  console.log('Office actual buttons: owner/admin, mobile/desktop, fresh/restored session, dashboard/reports, notes/voice visible and superintendent escape passed. No report writes.');
+  console.log('Office project daily buttons: owner/admin, mobile/desktop, fresh/restored session, no global create, exact project, return to project, notes/voice visible and superintendent escape passed. No report writes.');
  }finally{await browser?.close();child.kill();await new Promise(resolve=>child.exitCode!=null?resolve():child.once('exit',resolve));fs.rmSync(root,{recursive:true,force:true})}
 })().catch(error=>{console.error(error);process.exitCode=1});
