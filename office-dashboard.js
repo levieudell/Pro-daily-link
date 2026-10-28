@@ -21,6 +21,34 @@ if (typeof module !== 'undefined' && module.exports) {
   (() => {
     const text = (en, es) => preferredLanguage === 'es' ? es : en;
 
+    // Presentation only: read the existing active destination, without changing navigation.
+    const previousPage = showPage;
+    showPage = function (...args) {
+      const result = previousPage.apply(this, args);
+      const label = $('#office-page-name'), nav = $('#main-nav .nav-item[aria-current="page"]');
+      if (label && nav?.childNodes) label.textContent = [...nav.childNodes].filter(node => node.nodeType === 3).map(node => node.textContent).join('').trim();
+      return result;
+    };
+
+    function renderOfficePhotoCount() {
+      const output = $('#office-photo-count'), count = $('#report-photos')?.files?.length || 0;
+      if (!output) return;
+      output.hidden = !count;
+      output.textContent = count ? text(`${count} photo${count === 1 ? '' : 's'} selected`, `${count} foto${count === 1 ? '' : 's'} seleccionada${count === 1 ? '' : 's'}`) : '';
+    }
+    $('#report-photos')?.addEventListener?.('change', renderOfficePhotoCount);
+    if (typeof applyFieldReportLayout === 'function') {
+      const previousReportLayout = applyFieldReportLayout;
+      applyFieldReportLayout = function (...args) {
+        const result = previousReportLayout.apply(this, args);
+        if (currentRole === 'office' && $('#report-type')?.value !== 'superintendent') {
+          if (!editingReportId) $('#report-modal-title').textContent = text('New daily', 'Nuevo reporte');
+          renderOfficePhotoCount();
+        }
+        return result;
+      };
+    }
+
     function renderOfficePriorities() {
       const host = $('#dashboard-actions'), panel = $('#office-priorities');
       if (!host || !panel) return;

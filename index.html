@@ -18,7 +18,7 @@
   <link rel="stylesheet" href="project-site-visits-ui.css?v=20261026-pm-visit3" />
   <link rel="stylesheet" href="project-assistant-ui.css?v=20261007-assistant-draft" />
   <link rel="stylesheet" href="design-system.css?v=20261021-field-clock-button1" />
-  <link rel="stylesheet" href="office-dashboard.css?v=20261028-office2" />
+  <link rel="stylesheet" href="office-dashboard.css?v=20261028-office3" />
   <link rel="manifest" href="manifest.webmanifest" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="default" />
@@ -66,7 +66,7 @@
         <button type="button" class="header-company-mark" id="header-company-mark" aria-label="Go to Overview" title="Overview">PD</button>
         <button class="app-back-button topbar-control" id="app-back-button" type="button" aria-label="Go back" hidden><span aria-hidden="true">←</span> Back</button>
         <div class="site-switcher"><small>VIEW AS</small><select id="role-switcher"><option value="office">Office administrator</option><option value="field">Field team · Marcus Reed</option></select></div>
-        <div class="office-topbar-label office-only">Office <span>/ Overview</span></div>
+        <div class="office-topbar-label office-only"><small>Office</small><strong id="office-page-name">Overview</strong></div>
         <div class="top-actions"><button class="icon-button help-trigger topbar-control" id="help-button" aria-label="Open Help Center" title="Help Center"><svg aria-hidden="true" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M9.7 9a2.4 2.4 0 0 1 4.6.9c0 1.7-2.3 2-2.3 3.6M12 17h.01"/></svg></button><button class="secondary small" id="logout-button" hidden style="display:none!important">Sign out</button><button class="primary small field-only" data-open-report aria-label="New daily report"><span aria-hidden="true">＋</span> <span class="daily-label-wide">New daily report</span><span class="daily-label-short">Daily</span></button></div>
       </header>
 
@@ -290,7 +290,7 @@
   <dialog id="sub-link-modal"><form method="dialog"><div class="modal-header"><div><p class="eyebrow">PROJECT ACCESS</p><h2 id="sub-link-title">Guest link</h2></div><button class="close-button" value="cancel">×</button></div>
     <input id="sub-link-id" type="hidden"><label>Project<select id="sub-link-project"></select></label><label>Reporting mode<select id="sub-link-mode"><option value="progress">Simple progress check-in</option><option value="tm">Detailed T&M ticket</option></select></label><label>Link expires<input id="sub-link-expires" type="date"></label><div id="sub-link-result"></div><div class="modal-actions"><button value="cancel" class="secondary">Close</button><button type="button" class="primary" id="generate-sub-link">Generate secure link</button></div>
   </form></dialog>
-  <dialog id="report-modal">
+  <dialog id="report-modal" aria-labelledby="report-modal-title">
     <div class="modal-header"><div><p class="eyebrow">FIELD REPORT</p><h2 id="report-modal-title">Create daily report</h2><p id="report-work-date" class="report-work-date" aria-live="polite"></p></div><button type="button" id="close-report" class="close-button" value="cancel" aria-label="Close daily report">×</button></div>
     <form method="dialog" id="report-form">
       <button type="button" class="secondary small" id="report-open-safety">Safety checks &amp; hazards</button>
@@ -318,7 +318,7 @@
         </section>
         <p class="voice-status" id="voice-status" role="status" aria-live="polite" hidden></p>
         <div class="autosave-status" id="autosave-status">Notes save automatically on this device</div>
-        <div id="field-daily-tools-home"><div id="field-daily-tools"><div class="note-tools"><button type="button" id="flag-extra-work">＋ Flag extra work</button></div><label id="report-photos-field"><span class="daily-photos-hit">Daily photos<input type="file" id="report-photos" accept="image/*" capture="environment" multiple /></span><small class="input-help">Add progress, material, issue, or completed-work photos.</small></label><span id="report-photo-preview" class="report-photo-preview" hidden></span><label id="report-photo-tags-field">Photo tags<input id="report-photo-tags" placeholder="progress, concrete, east wall"><small class="input-help">Separate tags with commas. Date and time are added automatically.</small></label></div></div>
+        <div id="field-daily-tools-home"><div id="field-daily-tools"><div class="note-tools"><button type="button" id="flag-extra-work">＋ Flag extra work</button></div><label id="report-photos-field"><span class="daily-photos-hit"><span class="daily-photos-label">Daily photos</span><span class="office-photo-label"><svg aria-hidden="true" viewBox="0 0 24 24"><path d="M3 6h4l2-3h6l2 3h4v15H3z"/><circle cx="12" cy="13" r="4"/></svg>Add photos</span><input type="file" id="report-photos" accept="image/*" capture="environment" multiple /></span><small class="input-help">Add progress, material, issue, or completed-work photos.</small></label><output id="office-photo-count" class="office-photo-count" aria-live="polite" hidden></output><span id="report-photo-preview" class="report-photo-preview" hidden></span><label id="report-photo-tags-field">Photo tags<input id="report-photo-tags" placeholder="progress, concrete, east wall"><small class="input-help">Separate tags with commas. Date and time are added automatically.</small></label></div></div>
         <button type="button" class="ai-button" id="ai-convert"><span>✦</span><b>Suggest lines from notes</b><small>Sends these notes to AI. Nothing is added until you accept each suggestion.</small></button>
         <p id="field-ai-disclosure" class="field-ai-disclosure">Notes are processed by AI to fill your report.</p>
         </div>
@@ -595,6 +595,6 @@
   <script src="safety-pm-ui.js?v=20261026-safetyv3"></script>
   <script src="safety-workspace-ui.js?v=20261026-safetyv3"></script>
   <script src="project-site-visits-ui.js?v=20261026-pm-visit3"></script>
-  <script src="office-dashboard.js?v=20261028-office1"></script>
+  <script src="office-dashboard.js?v=20261028-office3"></script>
 </body>
 </html>
