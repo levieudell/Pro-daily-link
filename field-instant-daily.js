@@ -142,6 +142,19 @@ var fieldScopeFlags=[];
   function groundedText(value){const text=String(value||'').trim();return text&&!/^needs confirmation[.!\s]*$/i.test(text)?text:''}
   function nextStepText(value){const text=groundedText(value);if(!text)return '';if(typeof FieldDailyScope!=='undefined'&&FieldDailyScope.tidyNext)return FieldDailyScope.tidyNext(text);return text.replace(/^(?:next\s*step|next)\s*:\s*/i,'').trim()}
   function lineEstimateId(row){return String((typeof rowEstimateItemId==='function'?rowEstimateItemId(row):'')||row?.dataset?.estimateItemId||row?.querySelector?.('.production-item')?.value||'')}
+  function focusQuantity(row){
+    const qty=row?.querySelector?.('.production-quantity');
+    if(!qty)return;
+    if(String(qty.value)==='0')qty.value='';
+    qty.placeholder='0';
+    qty.scrollIntoView?.({block:'center',behavior:'auto'});
+    qty.focus?.({preventScroll:true});
+  }
+  document.addEventListener('change',event=>{
+    const select=event.target?.closest?.('select.production-item');
+    if(!fieldCompact()||!select?.value||!select.closest('#report-modal'))return;
+    focusQuantity(select.closest('.production-entry'));
+  });
   function estimateLineNeedsQuantity(row){
     if(!row||row.dataset.extraWork==='true')return false;
     const id=lineEstimateId(row);
@@ -520,7 +533,7 @@ var fieldScopeFlags=[];
       renderFieldReview();
       const picked=[...$$('.production-entry')].find(entry=>String(entry.dataset.estimateItemId||entry.querySelector('.production-item')?.value||'')===String(item.id));
       $$('.production-entry').forEach(entry=>entry.classList.remove('is-editing'));
-      if(picked){picked.classList.add('is-editing');const qty=picked.querySelector('.production-quantity');qty?.scrollIntoView?.({block:'center',behavior:'auto'});qty?.focus?.({preventScroll:true})}
+      if(picked){picked.classList.add('is-editing');focusQuantity(picked)}
       persistResolvedChoice();
     });
   }
