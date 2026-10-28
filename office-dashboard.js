@@ -37,6 +37,38 @@ if (typeof module !== 'undefined' && module.exports) {
       output.textContent = count ? text(`${count} photo${count === 1 ? '' : 's'} selected`, `${count} foto${count === 1 ? '' : 's'} seleccionada${count === 1 ? '' : 's'}`) : '';
     }
     $('#report-photos')?.addEventListener?.('change', renderOfficePhotoCount);
+    if (typeof updateReportContextSummary === 'function') {
+      const previousContextSummary = updateReportContextSummary;
+      updateReportContextSummary = function (...args) {
+        const result = previousContextSummary.apply(this, args);
+        if (currentRole === 'office') {
+          const selection = $('#report-context-selection'), date = $('#report-date')?.value;
+          if (selection) selection.textContent = [date ? formatDate(date) : '', $('#report-crew')?.value].filter(Boolean).join(' · ');
+        }
+        return result;
+      };
+    }
+
+    // Extra clearance is only needed when the body actually scrolls. Measure the
+    // footer so review actions, wrapped labels, and safe-area padding all count.
+    if (typeof ResizeObserver !== 'undefined') {
+      const modal = $('#report-modal'), notes = $('#field-notes'), originalRows = notes.rows;
+      let layoutFrame;
+      const resize = new ResizeObserver(() => {
+        cancelAnimationFrame(layoutFrame);
+        layoutFrame = requestAnimationFrame(() => {
+          const office = modal.classList.contains('report-office-compact');
+          notes.rows = office && matchMedia('(min-width:761px)').matches ? 5 : originalRows;
+          if (!office || !modal.open) return;
+          const step = modal.querySelector('.report-step.active'), body = step.querySelector('.report-step-scroll'), footer = step.querySelector('.modal-actions');
+          const padding = parseFloat(getComputedStyle(body).paddingBottom);
+          const overflowing = body.scrollHeight - padding + 16 > body.clientHeight + 1;
+          const bottom = overflowing ? `${Math.ceil(footer.getBoundingClientRect().height) + 12}px` : '16px';
+          if (body.style.getPropertyValue('--office-scroll-bottom') !== bottom) body.style.setProperty('--office-scroll-bottom', bottom);
+        });
+      });
+      modal.querySelectorAll('.report-step-scroll, .report-step-scroll > *, .modal-actions').forEach(element => resize.observe(element));
+    }
     if (typeof applyFieldReportLayout === 'function') {
       const previousReportLayout = applyFieldReportLayout;
       applyFieldReportLayout = function (...args) {

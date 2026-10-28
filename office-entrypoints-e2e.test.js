@@ -51,7 +51,7 @@ async function assertBrandContrast(page,selectors){
  for(const color of colors)assert(color.ratio>=4.5,'brand text contrast '+JSON.stringify(color));
 }
 async function checkOfficeBrandMatrix(page){
- const sizes=[[1280,800],[1440,900],[390,844],[390,500]];
+ const sizes=[[1280,800],[1440,900],[390,844],[390,500],[768,1024],[1024,768],[1920,1080],[2560,1440],[3840,2160]];
  for(const theme of ['light','dark']){
   await page.evaluate(theme=>document.documentElement.dataset.theme=theme,theme);
   await navigate(page,'dashboard');
@@ -63,25 +63,44 @@ async function checkOfficeBrandMatrix(page){
    assert.equal(header.help.width,44);assert.equal(header.help.height,44);
    if(width===390){assert.equal(header.menu.width,44);assert.equal(header.menu.height,44);assert(header.brand.includes('assets/pdl-monogram.svg'))}
    await assertBrandContrast(page,['.office-topbar-label small','#office-page-name','#help-button','#menu-button']);
+   if(width>=1920){
+    const overview=await page.$eval('#dashboard-page',el=>{const r=el.getBoundingClientRect(),main=document.querySelector('#app-main').getBoundingClientRect();return{width:r.width,center:(r.left+r.right)/2,mainCenter:(main.left+main.right)/2,overflow:el.scrollWidth-el.clientWidth}});
+    assert(overview.width<=1530&&Math.abs(overview.center-overview.mainCenter)<=1&&overview.overflow<=1,'wide Overview stays centered and bounded '+JSON.stringify(overview));
+   }
    if(process.env.PDL_TEST_SCREENSHOTS)await page.screenshot({path:path.join(process.env.PDL_TEST_SCREENSHOTS,`office-header-${theme}-${width}-${height}.png`)});
   }
   await openOfficeProjectDaily(page);
   assert.equal(await page.$eval('#office-page-name',el=>el.textContent),'Projects','header follows existing navigation');
   assert.equal(await page.$eval('#report-modal-title',el=>el.textContent),'New daily');
+  await page.$eval('#report-date',el=>{el.value='2026-10-28';el.dispatchEvent(new Event('change',{bubbles:true}))});
+  assert.match(await page.$eval('#report-context-selection',el=>el.textContent),/^Oct 28, 2026 · /,'job card uses the app date format');
+  assert.equal(await page.$eval('#report-date',el=>el.value),'2026-10-28','date field keeps its ISO value');
   for(const [width,height] of sizes){
    await page.setViewport({width,height,isMobile:true,hasTouch:true});
    await page.$eval('#sidebar',el=>Promise.all(el.getAnimations().map(animation=>animation.finished)));
    await page.$eval('#report-context-details',el=>el.open=false);
    await page.$eval('#report-modal .report-step.active .report-step-scroll',el=>el.scrollTop=0);
+   await page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));
    await assertDailyActionsVisible(page,`${theme} ${width}x${height} initial footer`);
    const layout=await page.evaluate(()=>{
     const modal=document.querySelector('#report-modal'),body=modal.querySelector('.report-step.active .report-step-scroll'),actions=modal.querySelector('.report-step.active .modal-actions'),r=modal.getBoundingClientRect();
-    return{top:r.top,bottom:r.bottom,bodyBottom:body.getBoundingClientRect().bottom,actionsTop:actions.getBoundingClientRect().top,formOverflow:getComputedStyle(document.querySelector('#report-form')).overflow,bodyOverflow:getComputedStyle(body).overflowY,overflow:modal.scrollWidth-modal.clientWidth,buttons:['#voice-notes','#report-next-step','#save-report-draft'].map(selector=>({selector,height:document.querySelector(selector).getBoundingClientRect().height}))};
+    const draft=document.querySelector('#save-report-draft'),range=document.createRange();range.selectNodeContents(draft);const text=range.getBoundingClientRect(),button=draft.getBoundingClientRect();
+    return{top:r.top,bottom:r.bottom,width:r.width,height:r.height,center:(r.left+r.right)/2,bodyBottom:body.getBoundingClientRect().bottom,actionsTop:actions.getBoundingClientRect().top,formOverflow:getComputedStyle(document.querySelector('#report-form')).overflow,bodyOverflow:getComputedStyle(body).overflowY,bodyScroll:body.scrollHeight-body.clientHeight,padding:parseFloat(getComputedStyle(body).paddingBottom),footerHeight:actions.getBoundingClientRect().height,photoBottom:document.querySelector('.daily-photos-hit').getBoundingClientRect().bottom,draftTextCenter:(text.left+text.right)/2,draftButtonCenter:(button.left+button.right)/2,overflow:modal.scrollWidth-modal.clientWidth,buttons:['#voice-notes','#report-next-step','#save-report-draft'].map(selector=>({selector,height:document.querySelector(selector).getBoundingClientRect().height}))};
    });
    assert(layout.top>=0&&layout.bottom<=height);assert(layout.overflow<=1);assert(layout.bodyBottom<=layout.actionsTop+.1);assert.equal(layout.formOverflow,'hidden',JSON.stringify({theme,width,height,layout}));assert.equal(layout.bodyOverflow,'auto');
    for(const button of layout.buttons)assert.equal(button.height,48,JSON.stringify(button));
+   assert(Math.abs(layout.draftTextCenter-layout.draftButtonCenter)<=1,'draft label is centered '+JSON.stringify(layout));
+   if(width>=761){assert(layout.width<=440&&layout.height<=760&&Math.abs(layout.center-width/2)<=1,'desktop dialog remains compact and centered '+JSON.stringify(layout));assert.equal(await page.$eval('#field-notes',el=>el.rows),5)}
+   if(width===1280&&height===800){assert(layout.bodyScroll<=1,'1280x800 initial body fits without scrolling '+JSON.stringify(layout));assert(layout.photoBottom<layout.actionsTop,'whole photo control above footer')}
+   if(layout.bodyScroll>1)assert(layout.padding>=layout.footerHeight+12,'scrolling body reserves footer clearance '+JSON.stringify(layout));
    await assertBrandContrast(page,['#report-modal-title','#report-context-job','#report-context-selection','#report-context-summary>span','#report-open-safety','#voice-notes','.office-photo-label','#report-next-step','#save-report-draft','#report-modal .input-help','#report-modal .autosave-status','#field-ai-disclosure']);
    if(process.env.PDL_TEST_SCREENSHOTS)await page.screenshot({path:path.join(process.env.PDL_TEST_SCREENSHOTS,`office-daily-${theme}-${width}-${height}.png`)});
+   // Check complete controls, including their bottom edges, not just a tappable center.
+   for(const selector of ['#report-context-summary','#field-notes','#voice-notes','.daily-photos-hit']){
+    await page.$eval(selector,el=>el.scrollIntoView({block:'nearest'}));
+    const bounds=await page.$eval(selector,el=>{const r=el.getBoundingClientRect(),body=el.closest('.report-step-scroll').getBoundingClientRect(),footer=document.querySelector('#report-modal .report-step.active .modal-actions').getBoundingClientRect(),hit=document.elementFromPoint(r.left+r.width/2,r.bottom-2);return{top:r.top,bottom:r.bottom,bodyTop:body.top,footerTop:footer.top,hit:hit===el||el.contains(hit)}});
+    assert(bounds.top>=bounds.bodyTop-1&&bounds.bottom<=bounds.footerTop&&bounds.hit,`${theme} ${width}x${height} entire ${selector} clears footer `+JSON.stringify(bounds));
+   }
    await checkOfficeLayout(page,width,height,false);
    await assertDailyActionsVisible(page,`${theme} ${width}x${height} after scrolling`);
    await page.evaluate(()=>showReportStep(2));
@@ -97,7 +116,7 @@ async function checkOfficeBrandMatrix(page){
   await page.locator('[data-office-new-daily]').click();await page.waitForSelector('#report-modal[open]');
   assert.equal(await page.$eval('#office-photo-count',el=>el.hidden),true,'a fresh daily clears the photo count');
   await page.click('#close-report');
-  console.log(`Office brand ${theme}: 1280x800, 1440x900, 390x844 and 390x500; bounded initial/expanded/review footers, 48px actions, AA text, header and same photo input passed.`);
+  console.log(`Office brand ${theme}: ${sizes.map(size=>size.join('x')).join(', ')}; complete photo/control clearance, centered draft label, formatted date, bounded wide layouts, initial/expanded/review footers, AA text and same photo input passed.`);
  }
  await page.evaluate(()=>document.documentElement.dataset.theme='light');
  await page.setViewport({width:390,height:844,isMobile:true,hasTouch:true});
