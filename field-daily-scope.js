@@ -91,8 +91,14 @@
   function appendClockNotes(prior, incoming){
     const kept=String(prior||'').trim();
     const next=String(incoming||'').trim();
-    if(!next)return kept;
+    if(!next||next===kept)return kept;
     if(!kept)return next;
+    // A reopened daily sends the saved notes back. Keep them once, and add only text the crew typed after them.
+    if(next.startsWith(kept)&&/\s/.test(next.charAt(kept.length)||'')){
+      const added=next.slice(kept.length).trim();
+      return added?appendClockNotes(kept,added):kept;
+    }
+    if(kept.endsWith(next))return kept;
     const lines=kept.split(/\n+/).map(line=>line.trim()).filter(Boolean);
     if(lines[lines.length-1]===next)return kept;
     return `${kept}\n${next}`;

@@ -541,7 +541,11 @@ var fieldScopeFlags=[];
     applyLaborAllocation();
     const cards=[];
     const sourceNotes=$('#field-notes')?.value||'';
-    if(sourceNotes.trim())cards.push(`<article class="field-review-source"><strong>Original field notes</strong><p style="white-space:pre-wrap">${escapeText(sourceNotes)}</p><small>Source notes are saved with this daily. AI suggestions need your review.</small></article>`);
+    const noteText=sourceNotes.trim();
+    const noteLines=noteText.split(/\n+/).map(line=>line.trim()).filter(Boolean);
+    const covered=new Set(fieldScopeFlags.map(flag=>String(flag?.description||'').trim()).filter(Boolean));
+    const uncovered=noteLines.filter(line=>!covered.has(line));
+    if(uncovered.length){const sourceHtml=uncovered.length===noteLines.length?escapeText(sourceNotes):escapeText(uncovered.join('\n'));cards.push(`<article class="field-review-source"><strong>Original field notes</strong><p style="white-space:pre-wrap">${sourceHtml}</p><small>Source notes are saved with this daily. AI suggestions need your review.</small></article>`)}
     for(const reason of FieldDailyScope.narrativeWarnings(sourceNotes,$('#report-summary')?.value))cards.push(`<p class="field-clock-warning" role="status">${escapeText(reason.message)} You can send this to the office for review.</p>`);
     const notesForLines=$('#field-notes')?.value||'';
     $$('.production-entry').forEach((row,index)=>{
@@ -573,6 +577,7 @@ var fieldScopeFlags=[];
     });
     for(const [id,label] of textFields){
       const field=$(id);if(!field?.value?.trim())continue;
+      if(id==='#report-summary'){const echoed=field.value.trim().replace(/^field work recorded:\s*/i,'').trim();if(noteText&&echoed===noteText)continue}
       cards.push(`<button type="button" class="field-review-card" data-edit-field="${id.slice(1)}"><small>${field.dataset.aiAccepted==='true'?'AI filled':'Tap to edit'}</small><strong>${escapeText(label)}</strong><em>${escapeText(field.value.trim())}</em></button>`);
     }
     const nextValue=$('#report-next')?.value?.trim()||'';
