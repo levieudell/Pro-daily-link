@@ -116,6 +116,7 @@ async function pinnedBar(page) {
       closeInside: close.top >= header.top - 0.5 && close.bottom <= header.bottom + 0.5 && close.left >= header.left && close.right <= header.right + 0.5,
       closeH: Math.round(close.height),
       headerH: Math.round(header.height),
+      headerBottom: Math.round(header.bottom),
       barTop: Math.round(bar.top),
       barBottom: Math.round(bar.bottom),
       scrollerTop: Math.round(scrollerBox.top),
@@ -125,6 +126,41 @@ async function pinnedBar(page) {
       scrollPad
     };
   });
+}
+
+async function scrollRegions(page) {
+  return page.evaluate(() => {
+    const scroller = document.querySelector('.report-step.active .report-step-scroll');
+    const pieces = ['#report-open-safety', '#flag-extra-work', '#report-photos-field .input-help'].map(sel => {
+      const el = document.querySelector(sel);
+      if (!el) return { sel, missing: true };
+      const box = el.getBoundingClientRect();
+      return { sel, inside: Boolean(scroller?.contains(el)), left: Math.round(box.left), height: Math.round(box.height) };
+    });
+    return { scrollH: Math.round(scroller.getBoundingClientRect().height), viewH: window.innerHeight, pieces };
+  });
+}
+
+async function assertScrollRegions(page, label) {
+  for (const height of [844, 500]) {
+    await page.setViewport({ width: 390, height, isMobile: true, hasTouch: true });
+    await scrollStep(page, 'top');
+    const top = await pinnedBar(page);
+    const regions = await scrollRegions(page);
+    assert.ok(top.barBottom <= height + 1 && top.barTop < height, `${label} ${height} bar ${JSON.stringify(top)}`);
+    assert.ok(top.scrollerTop <= top.headerBottom + 2 && top.scrollerBottom <= top.barTop + 1, `${label} ${height} regions ${JSON.stringify(top)}`);
+    assert.ok(regions.scrollH > (height === 844 ? 600 : 250), `${label} ${height} short scroller ${JSON.stringify(regions)}`);
+    for (const piece of regions.pieces) {
+      assert.equal(piece.missing, undefined, `${label} ${JSON.stringify(piece)}`);
+      assert.equal(piece.inside, true, `${label} ${JSON.stringify(piece)}`);
+      if (piece.height > 0) assert.ok(piece.left >= 20, `${label} ${JSON.stringify(piece)}`);
+    }
+    await scrollStep(page, 'end');
+    const bottom = await pinnedBar(page);
+    assert.equal(bottom.barTop, top.barTop, `${label} ${height} bar moved ${JSON.stringify({ top, bottom })}`);
+  }
+  await page.setViewport({ width: 390, height: 844, isMobile: true, hasTouch: true });
+  await scrollStep(page, 'top');
 }
 
 async function clockIn(page) {
@@ -198,6 +234,7 @@ async function clockIn(page) {
     assert.ok(notesBar.barBottom <= notesBar.viewH + 1 && notesBar.barTop >= notesBar.viewH - 180, JSON.stringify(notesBar));
     assert.ok(notesBar.scrollerTop >= notesBar.headerH - 1 && notesBar.scrollerBottom <= notesBar.barTop + 1, JSON.stringify(notesBar));
     assert.ok(notesBar.formPad < 24 && notesBar.scrollPad < 24, JSON.stringify(notesBar));
+    await assertScrollRegions(page, 'notes');
     await scrollStep(page, 'end');
     const notesBottom = await headerCascade(page);
     assert.equal(notesBottom.besideHeader, true, JSON.stringify(notesBottom));
@@ -235,6 +272,7 @@ async function clockIn(page) {
     assert.equal(reviewHeader.position, 'sticky', JSON.stringify(reviewHeader));
     assert.equal(reviewHeader.height, '48px', JSON.stringify(reviewHeader));
     assert.equal(reviewHeader.besideHeader, true, JSON.stringify(reviewHeader));
+    await assertScrollRegions(page, 'review');
     const reviewBar = await pinnedBar(page);
     assert.ok(reviewBar.barBottom <= reviewBar.viewH + 1 && reviewBar.barTop >= reviewBar.viewH - 180, JSON.stringify(reviewBar));
     assert.ok(reviewBar.scrollerBottom <= reviewBar.barTop + 1 && reviewBar.scrollerTop >= 48, JSON.stringify(reviewBar));
@@ -264,6 +302,7 @@ async function clockIn(page) {
     assert.equal(picked.type, 'number');
     assert.equal(picked.inputMode, 'decimal');
     assert.equal(picked.focused, true, JSON.stringify(picked));
+    await assertScrollRegions(page, 'qty');
     await page.$eval('.production-entry.is-editing .production-quantity', el => {
       el.value = '0';
       el.dispatchEvent(new Event('input', { bubbles: true }));

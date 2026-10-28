@@ -17,15 +17,23 @@ var fieldScopeFlags=[];
     placeDailyTools();
   }
   function placeDailyTools(){
-    const tools=$('#field-daily-tools'),home=$('#field-daily-tools-home');
+    const tools=$('#field-daily-tools'),home=$('#field-daily-tools-home'),safety=$('#report-open-safety'),form=$('#report-form');
+    const step=form?.querySelector('.report-step.active');
+    const scroll=step?.querySelector(':scope > .report-step-scroll');
+    if(!fieldCompact()||!scroll){
+      if(tools&&home&&tools.parentElement!==home)home.append(tools);
+      const steps=form?.querySelector('.report-steps');
+      if(safety&&steps&&safety.parentElement!==form)steps.before(safety);
+      return;
+    }
+    if(safety&&safety.parentElement!==scroll)scroll.prepend(safety);
+    const clock=$('#field-clock-out');
+    if(clock&&clock.parentElement!==scroll)(safety?.parentElement===scroll?safety.after(clock):scroll.prepend(clock));
     if(!tools||!home)return;
-    if(!fieldCompact()){if(tools.parentElement!==home)home.append(tools);return}
-    const step=document.querySelector('#report-form .report-step.active');
-    if(!step)return;
     if(step.dataset.reportStep==='2'){
       const anchor=$('#field-scope-flags');
-      if(anchor&&anchor.parentElement===step)anchor.before(tools);
-      else{const actions=step.querySelector(':scope > .modal-actions');if(actions)actions.before(tools);else step.append(tools)}
+      if(anchor&&scroll.contains(anchor))anchor.before(tools);
+      else scroll.append(tools);
     }else if(tools.parentElement!==home)home.append(tools);
   }
   const previewUrls=[];
