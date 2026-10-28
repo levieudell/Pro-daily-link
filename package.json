@@ -12,6 +12,8 @@
     "zod": "^4.6.7"
   },
   "scripts": {
+    "test:office-dashboard": "node --test office-dashboard.test.js office-workspace.test.js first-principles-ux.test.js project-daily-navigation.test.js field-activity-navigation.test.js",
+    "demo:office-dashboard": "node scripts/office-dashboard-preview.cjs",
     "test:platform-security": "node platform-security.test.js && node content-security-policy.test.js && node platform-api-security.test.js",
     "start": "node server.js",
     "dev": "node --watch server.js",
