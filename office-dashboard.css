@@ -184,6 +184,7 @@ body:not(.field-mode) .report-page-actions [data-open-report] { display:none !im
 :root[data-theme="dark"] #dashboard-page .chart { background:repeating-linear-gradient(to top,transparent 0,transparent 38px,var(--border-default) 39px); }
 #dashboard-page :is(.chart-day label,.chart-axis,.chart-empty-note) { color:var(--text-secondary); }
 .production-details-link { margin:12px 24px 20px; font-size:12px; }
+#dashboard-page .production-details-link { color:var(--text-primary); }
 
 .dashboard-work-grid { display:grid; grid-template-columns:minmax(0,1.35fr) minmax(0,1fr); gap:20px; align-items:start; }
 #dashboard-page .dashboard-grid { display:block; grid-column:2; grid-row:1; min-width:0; margin:0; }
@@ -234,6 +235,13 @@ body:not(.field-mode) .report-page-actions [data-open-report] { display:none !im
   #dashboard-page .stats-grid { grid-template-columns:repeat(2,minmax(0,1fr)); }
 }
 @media (max-width:760px) {
+  /* Reserve space for both daily actions; only the form fields scroll. */
+  #report-modal.report-office-compact form { display:flex; flex-direction:column; overflow:hidden; padding-bottom:0; }
+  #report-modal.report-office-compact form>button { flex:none; }
+  #report-modal.report-office-compact .report-step.active { display:flex; flex-direction:column; flex:1 1 auto; min-height:0; overflow:hidden; }
+  #report-modal.report-office-compact .report-step-scroll { flex:1 1 auto; min-height:0; overflow:auto; padding-bottom:12px; scroll-padding:18px; }
+  #report-modal.report-office-compact .report-step .modal-actions { flex:none; margin:0; padding:12px 0 calc(12px + env(safe-area-inset-bottom, 0px)); box-shadow:none; }
+  #report-modal.report-office-compact [data-report-step="1"] .modal-actions { grid-template-columns:minmax(0,1fr); }
   .office-project-daily-actions { align-items:flex-start; flex-direction:column; }
   .office-topbar-label { font-size:12px; gap:6px; }
   .office-topbar-label span { display:none; }

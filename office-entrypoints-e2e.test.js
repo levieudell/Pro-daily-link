@@ -7,6 +7,31 @@ const root=fs.mkdtempSync(path.join(os.tmpdir(),'pdl-office-entrypoints-'));
 const file=path.join(root,'db.json');
 const sleep=ms=>new Promise(resolve=>setTimeout(resolve,ms));
 async function waitForBoot(page){await page.waitForFunction(()=>typeof currentUser!=='undefined'&&currentUser?.id&&typeof projects!=='undefined'&&projects.length&&document.documentElement.classList.contains('workspace-ready')&&localStorage.getItem('pdl-role')==='office'&&document.querySelector('.page.active'));await page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))))}
+async function assertDailyActionsVisible(page,label){
+ await page.$eval('#report-modal',el=>Promise.all(el.getAnimations().map(animation=>animation.finished)));
+ const layout=await page.evaluate(()=>{
+  const actions=document.querySelector('#report-modal .report-step.active .modal-actions');
+  return [actions,...actions.querySelectorAll('button')].filter(el=>el.checkVisibility()).map(el=>{
+   const r=el.getBoundingClientRect(),hit=document.elementFromPoint(r.left+r.width/2,r.bottom-2);
+   return{name:el.id||'action bar',left:r.left,right:r.right,top:r.top,bottom:r.bottom,inside:r.left>=0&&r.right<=innerWidth&&r.top>=0&&r.bottom<=innerHeight,reachable:hit===el||el.contains(hit)};
+  });
+ });
+ for(const control of layout)assert(control.inside&&control.reachable,label+' '+JSON.stringify(control));
+}
+async function assertProductionContrast(page){
+ for(const theme of ['dark','light']){
+  await page.evaluate(theme=>document.documentElement.dataset.theme=theme,theme);
+  await page.$eval('.production-details-link',el=>Promise.all(el.getAnimations().map(animation=>animation.finished)));
+  const contrast=await page.$eval('.production-details-link',el=>{
+   // Resolve CSS color-mix values to sRGB before measuring rendered contrast.
+   const ctx=document.createElement('canvas').getContext('2d',{willReadFrequently:true});
+   const luminance=color=>{ctx.clearRect(0,0,1,1);ctx.fillStyle=color;ctx.fillRect(0,0,1,1);const rgb=[...ctx.getImageData(0,0,1,1).data].slice(0,3).map(v=>{v/=255;return v<=.04045?v/12.92:((v+.055)/1.055)**2.4});return rgb[0]*.2126+rgb[1]*.7152+rgb[2]*.0722};
+   const style=getComputedStyle(el),text=luminance(style.color),background=luminance(style.backgroundColor);
+   return{color:style.color,background:style.backgroundColor,ratio:(Math.max(text,background)+.05)/(Math.min(text,background)+.05)};
+  });
+  assert(contrast.ratio>=4.5,theme+' production details readable '+JSON.stringify(contrast));
+ }
+}
 async function assertOfficeEntry(page,label){
  if(page.viewport().width<760)await page.waitForFunction(()=>document.querySelector('#sidebar').getBoundingClientRect().right<=1);
  console.log('Checking '+label);
@@ -18,6 +43,7 @@ async function assertOfficeEntry(page,label){
   return{compact:modal.classList.contains('report-office-compact'),type:document.querySelector('#report-type').value,details:document.querySelector('#report-context-details').open,next:document.querySelector('#report-next-step').textContent,notesVisible:rect.height>0&&rect.top>=0&&rect.bottom<innerHeight-80,voiceVisible:vr.height>0&&vr.top>=0&&vr.bottom<innerHeight-80,clock:!!document.querySelector('#field-clock-out:not([hidden])')};
  });
  assert.equal(result.compact,true,label);assert.equal(result.type,'production',label);assert.equal(result.details,false,label);assert.equal(result.next,'Done',label);assert.equal(result.notesVisible,true,label+' notes visible');assert.equal(result.voiceVisible,true,label+' voice visible');assert.equal(result.clock,false,label);
+ if(page.viewport().width<760)await assertDailyActionsVisible(page,label);
  await page.click('#report-context-summary');await page.waitForSelector('#report-project',{visible:true});
  await page.select('#report-type','superintendent');
  assert.equal(await page.$eval('#report-modal',el=>el.classList.contains('report-office-compact')),false,label+' superintendent');assert.equal(await page.$eval('#report-context-details',el=>el.open),true,label+' superintendent details open');
@@ -35,14 +61,14 @@ async function checkOfficeLayout(page,width,height,shot){
   return{modal:rect(modal),date:rect(date),crew:rect(crew),weather:rect(weather),buttons:[...weather.querySelectorAll('button')].map(rect),overflow:modal.scrollWidth-modal.clientWidth,position:getComputedStyle(actions).position};
  });
  assert(layout.overflow<=1,`${width}x${height} no horizontal overflow`);
- if(width<760){assert(layout.modal.left>=-1&&layout.modal.right<=width+1&&layout.modal.width>=width-1,'phone modal fills viewport '+JSON.stringify(layout.modal));assert(layout.crew.top>=layout.date.bottom,`${width} date and crew stack`);assert.equal(layout.position,'static','office actions scroll with content');}
+ if(width<760){assert(layout.modal.left>=-1&&layout.modal.right<=width+1&&layout.modal.width>=width-1,'phone modal fills viewport '+JSON.stringify(layout.modal));assert(layout.crew.top>=layout.date.bottom,`${width} date and crew stack`);assert.equal(layout.position,'static','office actions use reserved layout space');await assertDailyActionsVisible(page,`${width}x${height} expanded context`);}
  for(const r of [layout.date,layout.crew,...layout.buttons])assert(r.left>=layout.modal.left&&r.right<=layout.modal.right,`${width} controls stay within modal`);
  for(const selector of ['#report-date','#report-crew','#field-notes','#voice-notes','#report-photos','#report-next-step','#save-report-draft']){
-  await page.$eval(selector,el=>el.scrollIntoView({block:'center'}));
+  await page.$eval(selector,el=>el.scrollIntoView({block:'start'}));
   const hit=await page.$eval(selector,el=>{const r=el.getBoundingClientRect(),x=r.left+r.width/2,y=r.top+Math.min(r.height/2,24),hit=document.elementFromPoint(x,y);return{ok:y>=0&&y<innerHeight&&(hit===el||el.contains(hit)),x,y,hit:hit?.outerHTML.slice(0,150)}});assert(hit.ok,`${width}x${height} ${selector} reachable ${JSON.stringify(hit)}`);
  }
  await page.$eval('#field-notes',el=>{el.focus();el.scrollIntoView({block:'center'})});
- if(shot){await page.$eval('#field-notes',el=>el.blur());await page.$eval('#report-modal form',el=>el.scrollTop=0);const directory=process.env.PDL_TEST_SCREENSHOTS||root;fs.mkdirSync(directory,{recursive:true});await page.screenshot({path:path.join(directory,`office-expanded-${width}-${height}.png`)});}
+ if(shot){await page.$eval('#field-notes',el=>el.blur());await page.$$eval('#report-modal form, #report-modal .report-step-scroll',els=>els.forEach(el=>el.scrollTop=0));const directory=process.env.PDL_TEST_SCREENSHOTS||root;fs.mkdirSync(directory,{recursive:true});await page.screenshot({path:path.join(directory,`office-expanded-${width}-${height}.png`)});}
 }
 (async()=>{
  const port=await new Promise(resolve=>{const s=net.createServer();s.listen(0,'127.0.0.1',()=>{const p=s.address().port;s.close(()=>resolve(p))})});
@@ -65,8 +91,10 @@ async function checkOfficeLayout(page,width,height,shot){
    await assertNoGlobalOfficeDaily(page);
    await page.locator('#dashboard-production-details > summary').click();
    assert.equal(await page.$eval('.production-panel',el=>el.checkVisibility({checkVisibilityCSS:true,checkOpacity:true})),true,'one tap reveals production details');
+   await assertProductionContrast(page);
    await page.locator('#dashboard-production-details > summary').click();
    await openOfficeProjectDaily(page);
+   await assertDailyActionsVisible(page,'390x844 new project daily');
    for(const width of [320,375,390,430,1280]){await checkOfficeLayout(page,width,844,true);if(width<760)await checkOfficeLayout(page,width,390,true);}
    await page.evaluate(()=>showReportStep(2));
    for(const width of [320,375,390,430,1280]){
