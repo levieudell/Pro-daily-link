@@ -56,6 +56,19 @@ async function tap(page, selector) {
   await page.touchscreen.tap(point.x, point.y);
 }
 
+async function clearOfClose(page, selector) {
+  return page.evaluate(target => {
+    const close = document.querySelector('#report-modal .close-button');
+    const c = close.getBoundingClientRect();
+    const hit = document.elementFromPoint(c.left + c.width / 2, c.top + c.height / 2);
+    const overlaps = [...document.querySelectorAll(target)].filter(node => {
+      const box = node.getBoundingClientRect();
+      return box.width > 0 && box.height > 0 && !(box.right <= c.left + 1 || box.left >= c.right - 1 || box.bottom <= c.top + 1 || box.top >= c.bottom - 1);
+    }).map(node => (node.textContent || '').trim().slice(0, 70));
+    return { overlap: overlaps.length > 0, overlaps, closeHit: hit === close || Boolean(close.contains(hit)) };
+  }, selector);
+}
+
 async function clockIn(page) {
   await page.waitForSelector('#start-day-modal[open] #start-day-members input');
   await page.evaluate(() => {
@@ -115,6 +128,9 @@ async function clockIn(page) {
     await clockIn(page);
     await tap(page, '#myday-page.active [data-start-day]');
     await page.waitForSelector('#report-modal[open] #field-notes');
+    const notesClear = await clearOfClose(page, '#field-notes');
+    assert.equal(notesClear.overlap, false, JSON.stringify(notesClear));
+    assert.equal(notesClear.closeHit, true, JSON.stringify(notesClear));
     await page.$eval('#field-notes', (el, note) => {
       el.value = note;
       el.dispatchEvent(new Event('input', { bubbles: true }));
@@ -134,6 +150,13 @@ async function clockIn(page) {
     assert.match(hint.text, /can be sent for office review/i, JSON.stringify(hint));
     assert.ok(hint.overflow <= 1, JSON.stringify(hint));
     assert.ok(hint.right <= 390, JSON.stringify(hint));
+    const hintClear = await clearOfClose(page, '#field-review-cards p, .verify-banner');
+    assert.equal(hintClear.overlap, false, JSON.stringify(hintClear));
+    assert.equal(hintClear.closeHit, true, JSON.stringify(hintClear));
+    await page.$eval('#report-form', form => { form.scrollTop = 120; });
+    const scrolled = await clearOfClose(page, '#field-review-cards p, .verify-banner');
+    assert.equal(scrolled.closeHit, true, JSON.stringify(scrolled));
+    await page.$eval('#report-form', form => { form.scrollTop = 0; });
     const footing = await page.$eval('[data-pick-line]', select => [...select.options].find(item => /Footings/i.test(item.textContent || ''))?.value || '');
     await page.select('[data-pick-line]', footing);
     await page.waitForSelector('.production-entry.is-editing .production-quantity');
