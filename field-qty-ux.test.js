@@ -56,6 +56,25 @@ async function tap(page, selector) {
   await page.touchscreen.tap(point.x, point.y);
 }
 
+async function headerCascade(page) {
+  return page.evaluate(() => {
+    const close = document.querySelector('#report-modal .close-button');
+    const header = document.querySelector('#report-modal .modal-header');
+    const cs = getComputedStyle(header);
+    const c = close.getBoundingClientRect();
+    const x = Math.max(0, c.left - 6);
+    const y = c.top + c.height / 2;
+    const hit = document.elementFromPoint(x, y);
+    return {
+      position: cs.position,
+      height: cs.height,
+      background: cs.backgroundColor,
+      beside: hit ? `${hit.tagName}#${hit.id}.${String(hit.className || '')}` : 'none',
+      besideHeader: hit === header || Boolean(header.contains(hit))
+    };
+  });
+}
+
 async function clearOfClose(page, selector) {
   return page.evaluate(target => {
     const close = document.querySelector('#report-modal .close-button');
@@ -128,6 +147,14 @@ async function clockIn(page) {
     await clockIn(page);
     await tap(page, '#myday-page.active [data-start-day]');
     await page.waitForSelector('#report-modal[open] #field-notes');
+    const notesHeader = await headerCascade(page);
+    assert.equal(notesHeader.position, 'sticky', JSON.stringify(notesHeader));
+    assert.equal(notesHeader.height, '48px', JSON.stringify(notesHeader));
+    assert.equal(notesHeader.besideHeader, true, JSON.stringify(notesHeader));
+    await page.$eval('#report-form', form => { form.scrollTop = form.scrollHeight; });
+    const notesBottom = await headerCascade(page);
+    assert.equal(notesBottom.besideHeader, true, JSON.stringify(notesBottom));
+    await page.$eval('#report-form', form => { form.scrollTop = 0; });
     const notesClear = await clearOfClose(page, '#field-notes');
     assert.equal(notesClear.overlap, false, JSON.stringify(notesClear));
     assert.equal(notesClear.closeHit, true, JSON.stringify(notesClear));
@@ -153,9 +180,16 @@ async function clockIn(page) {
     const hintClear = await clearOfClose(page, '#field-review-cards p, .verify-banner');
     assert.equal(hintClear.overlap, false, JSON.stringify(hintClear));
     assert.equal(hintClear.closeHit, true, JSON.stringify(hintClear));
-    await page.$eval('#report-form', form => { form.scrollTop = 120; });
-    const scrolled = await clearOfClose(page, '#field-review-cards p, .verify-banner');
-    assert.equal(scrolled.closeHit, true, JSON.stringify(scrolled));
+    const reviewHeader = await headerCascade(page);
+    assert.equal(reviewHeader.position, 'sticky', JSON.stringify(reviewHeader));
+    assert.equal(reviewHeader.height, '48px', JSON.stringify(reviewHeader));
+    assert.equal(reviewHeader.besideHeader, true, JSON.stringify(reviewHeader));
+    await page.$eval('#report-form', form => { form.scrollTop = form.scrollHeight / 2; });
+    const reviewMiddle = await headerCascade(page);
+    assert.equal(reviewMiddle.besideHeader, true, JSON.stringify(reviewMiddle));
+    await page.$eval('#report-form', form => { form.scrollTop = form.scrollHeight; });
+    const reviewBottom = await headerCascade(page);
+    assert.equal(reviewBottom.besideHeader, true, JSON.stringify(reviewBottom));
     await page.$eval('#report-form', form => { form.scrollTop = 0; });
     const footing = await page.$eval('[data-pick-line]', select => [...select.options].find(item => /Footings/i.test(item.textContent || ''))?.value || '');
     await page.select('[data-pick-line]', footing);
