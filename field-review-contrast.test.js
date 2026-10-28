@@ -8,14 +8,18 @@ const { spawn } = require('node:child_process');
 const { chromium } = require('playwright-core');
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 
-// Inspect text nodes, not a hand-picked list of labels. Include rendered content
-// below the scroll fold, plus native input values, selected options and placeholders.
-async function assertContrast(page, selector, label) {
+async function settlePaint(page) {
   await page.evaluate(async () => {
     await document.fonts.ready;
     await Promise.all(document.getAnimations().filter(animation => animation.effect?.getTiming().iterations !== Infinity)
       .map(animation => animation.finished.catch(() => {})));
   });
+}
+
+// Inspect text nodes, not a hand-picked list of labels. Include rendered content
+// below the scroll fold, plus native input values, selected options and placeholders.
+async function assertContrast(page, selector, label) {
+  await settlePaint(page);
   const samples = await page.locator(selector).evaluate(root => {
     const context = document.createElement('canvas').getContext('2d', { willReadFrequently: true });
     const rgba = color => {
@@ -97,6 +101,44 @@ async function assertLayout(page, label) {
   assert.equal(result.buttons.find(b => b.id === 'report-back').width, result.buttons.find(b => b.id === 'save-report').width, 'Back matches Send width');
 }
 
+async function assertReviewHitTargets(page, theme, shots) {
+  const scroll = page.locator('.report-step.active .report-step-scroll');
+  const settleScroll = () => page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+  const hit = locator => locator.evaluate(el => {
+    const rect = el.getBoundingClientRect();
+    const body = el.closest('.report-step-scroll').getBoundingClientRect();
+    const target = document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2);
+    const uncovered = [rect.top + 3, rect.top + rect.height / 2, rect.bottom - 3].every(y => {
+      const found = document.elementFromPoint(rect.left + rect.width / 2, y);
+      return found === el || el.contains(found);
+    });
+    return { element: el.id || el.className, top: rect.top, bottom: rect.bottom,
+      target: target?.id || target?.className || target?.tagName,
+      direct: target === el || el.contains(target), uncovered,
+      clear: rect.top >= body.top && rect.bottom <= body.bottom && rect.left >= 0 && rect.right <= innerWidth };
+  });
+  await scroll.evaluate(el => el.scrollTop = el.scrollHeight);
+  await settleScroll();
+  const next = page.locator('#report-next');
+  const bottom = await hit(next);
+  assert(bottom.direct, theme + ' Next step center at scroll bottom ' + JSON.stringify(bottom));
+  if (shots) await page.screenshot({ path: path.join(shots, `field-review-bottom-${theme}-390-500.png`) });
+
+  const selectors = page.locator('.production-item');
+  assert(await selectors.count() > 0, 'Work-line selectors are present');
+  // Start from the bottom for every field. Native focus must reveal it without
+  // Playwright's click auto-scrolling or a manual scrollIntoView hiding an overlap.
+  for (const field of [next, ...await selectors.all()]) {
+    await field.evaluate(el => el.blur());
+    await scroll.evaluate(el => el.scrollTop = el.scrollHeight);
+    await field.focus();
+    await settleScroll();
+    const result = await hit(field);
+    assert(result.direct && result.uncovered && result.clear, theme + ' focused field is clear of header/strip/footer ' + JSON.stringify(result));
+  }
+  if (shots) await page.screenshot({ path: path.join(shots, `field-review-select-${theme}-390-500.png`) });
+}
+
 async function assertPalette(page, selector) {
   const old = await page.locator(selector).evaluate(root => [...root.querySelectorAll('*')]
     .filter(el => el.checkVisibility({ checkOpacity: true, checkVisibilityCSS: true }))
@@ -104,7 +146,7 @@ async function assertPalette(page, selector) {
       const value = getComputedStyle(el)[property];
       return ['rgb(255, 107, 26)', 'rgb(23, 105, 224)', 'rgb(25, 115, 76)', 'rgb(32, 43, 57)',
         'rgb(57, 77, 104)', 'rgb(132, 61, 23)', 'rgb(255, 243, 233)', 'rgb(238, 248, 241)',
-        'rgb(247, 246, 242)', 'rgb(238, 244, 255)'].includes(value) ? [{ element: el.id || el.className, property, value }] : [];
+        'rgb(247, 246, 242)', 'rgb(238, 244, 255)', 'rgb(60, 60, 60)', 'rgb(20, 20, 20)'].includes(value) ? [{ element: el.id || el.className, property, value }] : [];
     })));
   assert.deepEqual(old, [], 'No legacy field colors');
 }
@@ -179,6 +221,14 @@ async function assertPalette(page, selector) {
       await page.waitForFunction(() => document.documentElement.classList.contains('workspace-ready'));
       await page.unroute('**/api/config', hold);
     }
+    for (const theme of ['dark', 'light']) {
+      await page.evaluate(theme => document.documentElement.dataset.theme = theme, theme);
+      await settlePaint(page);
+      const borders = await page.locator('.topbar :is(.topbar-control,[data-open-report])').evaluateAll(els =>
+        els.filter(el => el.checkVisibility()).map(el => ({ id: el.id, color: getComputedStyle(el).borderTopColor })));
+      assert(borders.length > 0 && borders.every(button => button.color === 'rgb(110, 110, 110)'), theme + ' Heather Gray header borders ' + JSON.stringify(borders));
+      if (theme === 'dark') assert.equal(await page.locator('#field-first-tip').evaluate(el => getComputedStyle(el).backgroundColor), 'rgb(0, 0, 0)');
+    }
     await page.locator('[data-start-day]').first().click();
     await page.locator('#start-day-modal[open]').waitFor();
     for (const theme of ['dark', 'light']) {
@@ -187,6 +237,7 @@ async function assertPalette(page, selector) {
       assert.equal(await page.locator('#start-day-modal .modal-header').evaluate(el => getComputedStyle(el).borderBottomColor), 'rgb(255, 102, 0)');
       await assertContrast(page, '#start-day-modal', theme + ' clock-in');
       await assertPalette(page, '#start-day-modal');
+      if (theme === 'dark') assert.equal(await page.locator('#start-day-modal .timestamp-preview').evaluate(el => getComputedStyle(el).backgroundColor), 'rgb(0, 0, 0)');
       if (shots) {
         fs.mkdirSync(shots, { recursive: true });
         await page.screenshot({ path: path.join(shots, `field-clock-in-${theme}-390.png`) });
@@ -210,19 +261,29 @@ async function assertPalette(page, selector) {
     for (const theme of ['dark', 'light']) {
       await page.evaluate(theme => document.documentElement.dataset.theme = theme, theme);
       const samples = await assertContrast(page, '#report-modal', theme + ' expanded review');
+      assert.equal(await page.locator('#report-review-summary').evaluate(el => getComputedStyle(el).backgroundColor),
+        theme === 'dark' ? 'rgb(0, 0, 0)' : 'rgb(247, 245, 240)', theme + ' solid totals background');
       for (const name of ['Materials used', 'Equipment used', 'Safety observations', 'Office summary', 'Next step', 'Your name (optional)', 'Use custom work']) {
         assert(samples.some(sample => sample.text === name), name + ' was actually inspected');
       }
       for (const text of ['Hours', 'Cause and duration']) assert(samples.some(sample => sample.kind === '::placeholder' && sample.text === text), text + ' placeholder was inspected');
       await assertPalette(page, '#report-modal');
+      const button = await page.locator('#field-edit-hours').evaluate(el => {
+        const style = getComputedStyle(el);
+        return { background: style.backgroundColor, color: style.color, border: style.borderTopColor, height: el.getBoundingClientRect().height };
+      });
+      assert.deepEqual(button, { background: 'rgb(0, 0, 0)', color: 'rgb(255, 255, 255)', border: 'rgb(110, 110, 110)', height: 48 });
+      if (theme === 'dark') assert.equal(await page.locator('#report-back').evaluate(el => getComputedStyle(el).backgroundColor), 'rgb(0, 0, 0)');
       const placeholder = await page.locator('#report-delays').evaluate(el => ({ typed: getComputedStyle(el).color, placeholder: getComputedStyle(el, '::placeholder').color }));
       assert.notEqual(placeholder.placeholder, placeholder.typed, theme + ' placeholders differ from typed values');
+      const weights = await page.locator('#report-modal :is(input,textarea)[placeholder]').evaluateAll(els =>
+        els.filter(el => el.checkVisibility()).map(el => getComputedStyle(el, '::placeholder').fontWeight));
+      assert(weights.length > 0 && weights.every(weight => weight === '400'), theme + ' regular-weight placeholders');
       if (shots) {
         fs.mkdirSync(shots, { recursive: true });
         await page.locator('#report-more').evaluate(el => {
           const scroll = el.closest('.report-step-scroll');
-          const summary = scroll.querySelector('#report-review-summary');
-          scroll.scrollTop += el.getBoundingClientRect().top - scroll.getBoundingClientRect().top - summary.getBoundingClientRect().height - 16;
+          scroll.scrollTop += el.getBoundingClientRect().top - scroll.getBoundingClientRect().top - 16;
         });
         await page.screenshot({ path: path.join(shots, `field-review-more-${theme}-390.png`) });
         await editor.evaluate(el => el.scrollIntoView({ block: 'start' }));
@@ -232,6 +293,7 @@ async function assertPalette(page, selector) {
         await page.setViewportSize({ width: 390, height });
         await page.locator('#report-delays').focus();
         await assertLayout(page, `${theme} 390x${height}`);
+        if (height === 500) await assertReviewHitTargets(page, theme, shots);
       }
       await page.setViewportSize({ width: 390, height: 844 });
     }
@@ -241,7 +303,7 @@ async function assertPalette(page, selector) {
     await assertContrast(page, '#report-modal', 'dark custom-work editor');
     await assertPalette(page, '#report-modal');
     assert.deepEqual(errors, []);
-    console.log('Playwright field review contrast passed: all rendered text, values and placeholders; More and custom work; light/dark, first paint, clock-in, pinned full-width actions at 390x844 and 390x500.');
+    console.log('Playwright field review contrast passed: all rendered text, values and regular-weight placeholders; More and custom work; brand secondary controls; light/dark, first paint, clock-in, pinned full-width actions at 390x844 and 390x500. Short-screen Next step and every work-line selector pass center and edge hit tests after scrolling and native focus.');
   } finally {
     await browser?.close();
     server.kill();

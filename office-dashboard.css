@@ -308,16 +308,18 @@ body:not(.field-mode) .report-page-actions [data-open-report] { display:none !im
 :root[data-theme="dark"] #report-modal.report-office-compact #field-notes::placeholder { color:var(--pdl-white); }
 
 /* Field uses the same brand tokens, header, notes, and primary actions. */
-body.field-mode { --field-muted:var(--pdl-gray); --field-placeholder:var(--pdl-gray); }
-:root[data-theme="dark"] body.field-mode { --field-muted:var(--text-secondary); --field-placeholder:color-mix(in srgb,var(--pdl-white) 40%,var(--pdl-gray)); }
+body.field-mode { --field-muted:var(--pdl-gray); --field-placeholder:var(--pdl-gray); --border-default:var(--pdl-gray); }
+:root[data-theme="dark"] body.field-mode { --field-muted:var(--text-secondary); --field-placeholder:color-mix(in srgb,var(--pdl-white) 40%,var(--pdl-gray)); --surface-raised:var(--pdl-black); --surface-subtle:var(--pdl-black); }
+body.field-mode :is(input,textarea)::placeholder { font-weight:400; }
+body.field-mode .app-shell .topbar .topbar-control { border-color:var(--pdl-gray) !important; }
 body.field-mode .topbar #help-button { display:inline-flex; }
-body.field-mode .topbar [data-open-report] { align-items:center; justify-content:center; width:44px; min-width:44px; height:44px; min-height:44px; padding:0; background:transparent; color:var(--pdl-white) !important; border:1px solid #3C3C3C; box-shadow:none; font-size:22px; line-height:1; }
+body.field-mode .topbar [data-open-report] { align-items:center; justify-content:center; width:44px; min-width:44px; height:44px; min-height:44px; padding:0; background:transparent; color:var(--pdl-white) !important; border:1px solid var(--pdl-gray); box-shadow:none; font-size:22px; line-height:1; }
 body.field-mode .topbar [data-open-report] :is(.daily-label-wide,.daily-label-short) { display:none; }
 body.field-mode .topbar .top-actions { flex-wrap:nowrap; }
 body.field-mode #field-first-tip { background:var(--pdl-offwhite) !important; border:1px solid var(--pdl-black); color:var(--pdl-black); }
 body.field-mode #field-first-tip :is(strong,span,button) { color:var(--pdl-black); }
 body.field-mode #dismiss-field-tip { font-weight:700; }
-:root[data-theme="dark"] body.field-mode #field-first-tip { background:#141414 !important; }
+:root[data-theme="dark"] body.field-mode #field-first-tip { background:var(--pdl-black) !important; border-color:var(--pdl-gray); }
 :root[data-theme="dark"] body.field-mode #field-first-tip :is(strong,span,button) { color:var(--pdl-white); }
 body.field-mode #myday-page :is(.field-assignment-card,.field-assignment,.myday-status-strip>div) { background:var(--surface-panel); border-color:var(--border-strong); color:var(--text-primary); }
 body.field-mode #myday-page :is(small,.field-assignment-date,.input-help) { color:var(--field-muted); }
@@ -361,12 +363,13 @@ body.field-mode #report-sent-modal .success-mark { background:var(--pdl-orange);
 :root[data-theme="dark"] body.field-mode #report-modal.report-field-compact #field-notes::placeholder { color:var(--field-placeholder); }
 
 /* Expanded field review and work-line editor share the same theme surfaces. */
+body.field-mode #report-modal.report-field-compact #report-review-summary { position:static; background:var(--surface-canvas); }
 body.field-mode #report-modal.report-field-compact :is(#report-more,.report-review-summary>div,.verify-banner,.report-gaps,.report-submit-status,.hour-split-note,.production-entry) {
   background:var(--surface-canvas); color:var(--text-primary); border-color:var(--border-strong); box-shadow:none;
 }
 body.field-mode #report-modal.report-field-compact #report-more :is(summary,label) { color:var(--text-primary); }
-body.field-mode #report-modal.report-field-compact :is(.production-scope-toggle,#suggest-hour-split,#add-custom-production) {
-  min-height:48px; background:var(--pdl-black); color:var(--pdl-white); border:1px solid var(--pdl-gray); box-shadow:none;
+body.field-mode #report-modal.report-field-compact :is(.production-scope-toggle,#field-edit-hours,#suggest-hour-split,#add-custom-production) {
+  min-height:48px; padding:8px 12px; border-radius:8px; font-size:12px; font-weight:700; background:var(--pdl-black); color:var(--pdl-white); border:1px solid var(--pdl-gray); box-shadow:none;
 }
 body.field-mode #start-day-modal { background:var(--surface-canvas); color:var(--text-primary); }
 body.field-mode #start-day-modal form { padding:0 16px 20px; }
