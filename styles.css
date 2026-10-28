@@ -949,7 +949,7 @@ small{font-size:12px}
 .field-ai-disclosure{display:none;margin:8px 0 0;color:var(--muted);font-size:13px;font-weight:500;line-height:1.4}
 #report-modal.report-field-compact{width:min(440px,100%);background:var(--bg)}
 #report-modal.report-field-compact[open]{display:flex;flex-direction:column;overflow:hidden}
-#report-modal.report-field-compact form{flex:1 1 auto;min-height:0;overflow:auto;padding:20px 20px calc(120px + env(safe-area-inset-bottom, 0px));scroll-padding-bottom:120px}
+#report-modal.report-field-compact form{flex:1 1 auto;min-height:0;overflow:auto;padding:20px 20px calc(120px + env(safe-area-inset-bottom, 0px));scroll-padding-top:56px;scroll-padding-bottom:120px}
 #report-modal.report-field-compact .modal-header{position:relative;min-height:44px;margin:0 0 8px}
 #report-modal.report-field-compact .modal-header>div{display:none}
 #report-modal.report-field-compact .close-button{position:absolute;top:0;right:0;width:44px;height:44px}
