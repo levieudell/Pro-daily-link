@@ -446,14 +446,29 @@
     return text.length>=24&&note.includes(text);
   }
 
+  function finiteNumber(value){
+    const number=Number(value);
+    return Number.isFinite(number)?number:0;
+  }
+
   function dedupeProductionLines(lines){
     const kept=[],seen=new Map();
     for(const line of lines||[]){
       if(!line)continue;
       const key=line.estimateItemId!=null&&line.estimateItemId!==''?`id:${line.estimateItemId}`:`desc:${String(line.description||'').trim().toLowerCase()}`;
       if(seen.has(key)){
-        const at=seen.get(key);
-        if(Number(line.quantity)>Number(kept[at].quantity))kept[at]={...kept[at],...line};
+        const at=seen.get(key),prior=kept[at];
+        const minutesKnown=(prior.laborMinutes!=null&&prior.laborMinutes!=='')||(line.laborMinutes!=null&&line.laborMinutes!=='');
+        kept[at]={
+          ...prior,
+          ...line,
+          description:String(prior.description||line.description||''),
+          unit:prior.unit||line.unit||'',
+          quantity:finiteNumber(prior.quantity)+finiteNumber(line.quantity),
+          laborHours:round2(finiteNumber(prior.laborHours)+finiteNumber(line.laborHours)),
+          laborMinutes:minutesKnown?Math.round(finiteNumber(prior.laborMinutes)+finiteNumber(line.laborMinutes)):prior.laborMinutes,
+          laborManual:prior.laborManual===true||line.laborManual===true
+        };
         continue;
       }
       seen.set(key,kept.length);

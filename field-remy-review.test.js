@@ -124,7 +124,8 @@ const keptLines = scope.keepProductionLines([
   { description: 'Curb', quantity: 40, unit: 'LF', estimateItemId: 7, laborHours: 2 }
 ], rawNotes + ' Clocked out after the north curb pour was finished');
 assert.equal(keptLines.length, 1);
-assert.equal(keptLines[0].quantity, 40);
+assert.equal(keptLines[0].quantity, 50);
+assert.equal(keptLines[0].laborHours, 3);
 assert.equal(scope.rawNoteLine({ description: rawNotes, quantity: 0 }, rawNotes), true);
 
 const merged = scope.mergeScopeFlags(
