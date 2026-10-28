@@ -1,6 +1,8 @@
 'use strict';
 // Staging JSON store for PDL_STAGING=1.
 // Passwords come from PDL_STAGING_OWNER_PASSWORD and PDL_STAGING_FIELD_PASSWORD.
+// PDL_STAGING_OFFICE_PASSWORD is optional. When it is set, each boot upserts
+// the demo office login and refreshes that password hash. Unset does nothing.
 // Notes parsing uses OPENAI_API_KEY when that variable is set. OPENAI_MODEL is
 // optional and defaults to gpt-5.4-mini. Without OPENAI_API_KEY the local
 // parser still fills the daily from the notes.
@@ -14,6 +16,12 @@ const COMPANY_ID = '7176abe8-07e4-4336-a372-1163d2f21ff9';
 const COMPANY_NAME = 'DEMO | Alder Ridge Builders';
 const OWNER_EMAIL = 'levi+owner@prodailylink.com';
 const FIELD_EMAIL = 'levi+field@prodailylink.com';
+const OFFICE_EMAIL = 'office-demo@prodailylink.com';
+const OFFICE_NAME = 'DEMO Office Manager';
+// admin is the office login. Any role other than field opens the office daily
+// view, and New daily report plus office routes allow admin. The demo tenant
+// already has its one owner.
+const OFFICE_ROLE = 'admin';
 const TIMEZONE = 'America/Los_Angeles';
 
 function stagingToday(now = new Date(), timezone = TIMEZONE) {
@@ -152,4 +160,125 @@ function ensureStagingDatabase(file, env = process.env, now = new Date()) {
   return db;
 }
 
-module.exports = { COMPANY_ID, COMPANY_NAME, OWNER_EMAIL, FIELD_EMAIL, TIMEZONE, stagingToday, addIsoDays, buildStagingDb, ensureStagingDatabase };
+function stagingOfficeEnabled(env) {
+  return env?.PDL_STAGING === '1';
+}
+
+function officePassword(env) {
+  const value = env?.PDL_STAGING_OFFICE_PASSWORD;
+  if (value == null || value === '') return null;
+  const password = String(value);
+  if (!password) return null;
+  if (password.length < 10) throw new Error('PDL_STAGING_OFFICE_PASSWORD must be at least 10 characters');
+  return password;
+}
+
+function nextNumericId(rows) {
+  return (rows || []).reduce((max, row) => Math.max(max, Number(row.id) || 0), 0) + 1;
+}
+
+function sameOfficeEmail(row) {
+  return String(row?.email || '').toLowerCase() === OFFICE_EMAIL.toLowerCase();
+}
+
+function writeDatabase(file, db) {
+  const tmp = `${file}.tmp`;
+  fs.writeFileSync(tmp, JSON.stringify(db, null, 2));
+  fs.renameSync(tmp, file);
+}
+
+// Idempotent demo-tenant office login. No-op unless PDL_STAGING=1 and
+// PDL_STAGING_OFFICE_PASSWORD is set. Never logs the password.
+function ensureStagingOfficeUser(file, env = process.env, now = new Date()) {
+  if (!stagingOfficeEnabled(env)) return { applied: false };
+  const password = officePassword(env);
+  if (!password) {
+    console.info('Staging office demo user skipped: PDL_STAGING_OFFICE_PASSWORD unset');
+    return { applied: false };
+  }
+  if (!file || !fs.existsSync(file)) return { applied: false };
+  const db = JSON.parse(fs.readFileSync(file, 'utf8'));
+  if (String(db?.company?.id) !== COMPANY_ID || db.company.demo !== true) return { applied: false };
+  db.users ||= [];
+  db.team ||= [];
+  const userMatches = db.users.filter(sameOfficeEmail);
+  const existing = userMatches[0] || null;
+  if (userMatches.length > 1) {
+    const keepId = existing.id;
+    db.users = db.users.filter(user => !sameOfficeEmail(user) || user.id === keepId);
+  }
+  const teamMatches = db.team.filter(sameOfficeEmail);
+  let member = teamMatches[0] || null;
+  if (teamMatches.length > 1) {
+    const keepId = member.id;
+    db.team = db.team.filter(row => !sameOfficeEmail(row) || row.id === keepId);
+    member = db.team.find(row => row.id === keepId);
+  }
+  if (!member) {
+    member = {
+      id: nextNumericId(db.team),
+      name: OFFICE_NAME,
+      role: 'Office Manager',
+      initials: 'OM',
+      crew: 'Office',
+      hours: 0,
+      site: 'Not assigned',
+      phone: '(503) 555-0108',
+      email: OFFICE_EMAIL
+    };
+    db.team.push(member);
+  } else {
+    member.name = OFFICE_NAME;
+    member.role = 'Office Manager';
+    member.initials = member.initials || 'OM';
+    member.crew = 'Office';
+    member.email = OFFICE_EMAIL;
+  }
+  const createdAt = existing?.createdAt || now.toISOString();
+  const cred = credential(password);
+  const user = {
+    ...(existing || {}),
+    id: existing?.id ?? nextNumericId(db.users),
+    companyId: COMPANY_ID,
+    name: OFFICE_NAME,
+    email: OFFICE_EMAIL,
+    role: OFFICE_ROLE,
+    memberId: member.id,
+    status: 'Active',
+    projectIds: [],
+    mustSetPassword: false,
+    preferredLanguage: existing?.preferredLanguage || 'en',
+    emailVerifiedAt: existing?.emailVerifiedAt || createdAt,
+    createdAt,
+    passwordSalt: cred.passwordSalt,
+    passwordHash: cred.passwordHash
+  };
+  delete user.setupHash;
+  delete user.setupSalt;
+  delete user.setupExpiresAt;
+  delete user.resetTokenHash;
+  delete user.resetExpiresAt;
+  delete user.resetRequestedAt;
+  const index = db.users.findIndex(row => row.id === user.id);
+  if (index >= 0) db.users[index] = user;
+  else db.users.push(user);
+  writeDatabase(file, db);
+  console.info(`Staging office demo user ${existing ? 'refreshed' : 'created'}: ${OFFICE_EMAIL}`);
+  return { applied: true, created: !existing, id: user.id };
+}
+
+module.exports = {
+  COMPANY_ID,
+  COMPANY_NAME,
+  OWNER_EMAIL,
+  FIELD_EMAIL,
+  OFFICE_EMAIL,
+  OFFICE_NAME,
+  OFFICE_ROLE,
+  TIMEZONE,
+  stagingToday,
+  addIsoDays,
+  buildStagingDb,
+  ensureStagingDatabase,
+  ensureStagingOfficeUser
+};

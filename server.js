@@ -66,6 +66,8 @@ const DB_FILE = process.env.PDL_DB_FILE || path.join(ROOT, 'data', 'db.json');
 // Staging rewrites the local JSON store before anything else reads it.
 // Supabase, Stripe, Resend, and IndexNow stay off. OPENAI_API_KEY is left
 // in place so notes parsing still calls OpenAI when that key is set.
+// The office login is upserted after that rewrite, and only when
+// PDL_STAGING_OFFICE_PASSWORD is set, so a data reset keeps the same sign-in.
 if(process.env.PDL_STAGING==='1'){
   console.info('Voice transcription configuration: '+(process.env.OPENAI_API_KEY?'configured':'not_configured'));
   process.env.PDL_REQUIRE_AUTH='1';
@@ -73,7 +75,9 @@ if(process.env.PDL_STAGING==='1'){
   process.env.PDL_SUPABASE_ENABLED='0';
   process.env.PDL_TRANSACTIONAL_DB='off';
   for(const key of ['STRIPE_SECRET_KEY','STRIPE_WEBHOOK_SECRET','RESEND_API_KEY','INDEXNOW_KEY'])delete process.env[key];
-  require('./staging-seed').ensureStagingDatabase(DB_FILE, process.env);
+  const stagingSeed=require('./staging-seed');
+  stagingSeed.ensureStagingDatabase(DB_FILE, process.env);
+  stagingSeed.ensureStagingOfficeUser(DB_FILE, process.env);
 }
 // Non-secret release readback after mode overrides; never emit credential values.
 if(require.main===module)console.info('Runtime configuration: staging='+String(process.env.PDL_STAGING==='1')+' auth_required='+String(process.env.PDL_REQUIRE_AUTH==='1')+' ai='+String(Boolean(process.env.OPENAI_API_KEY))+' cloud='+String(supabase.configured()));
