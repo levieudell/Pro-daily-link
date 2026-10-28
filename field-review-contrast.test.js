@@ -333,6 +333,7 @@ async function assertPalette(page, selector) {
       await pick.selectOption(footing);
     }
     await page.locator('#field-edit-hours').click();
+    await settlePaint(page);
     // Edit hours exposes More; exercise its toggle before auditing the expanded content.
     await page.locator('#report-more > summary').click();
     await page.locator('#report-more > summary').click();
@@ -348,6 +349,7 @@ async function assertPalette(page, selector) {
     for (const theme of ['dark', 'light']) {
       await page.evaluate(theme => document.documentElement.dataset.theme = theme, theme);
       await page.locator('#field-edit-hours').click();
+      await settlePaint(page);
       const samples = await assertContrast(page, '#report-modal', theme + ' expanded review');
       assert.equal(await page.locator('#report-review-summary').evaluate(el => getComputedStyle(el).backgroundColor),
         theme === 'dark' ? 'rgb(0, 0, 0)' : 'rgb(247, 245, 240)', theme + ' solid totals background');
@@ -380,6 +382,9 @@ async function assertPalette(page, selector) {
       for (const height of [844, 500]) {
         await page.setViewportSize({ width: 390, height });
         await page.locator('#field-edit-hours').click();
+        // Edit hours reveals/focuses its input across two frames. Let that finish
+        // before deliberately focusing or scrolling elsewhere for hit testing.
+        await settlePaint(page);
         await page.locator('#report-delays').focus();
         await assertLayout(page, `${theme} 390x${height}`);
         if (height === 500) await assertReviewHitTargets(page, theme, shots);
