@@ -17,15 +17,23 @@ var fieldScopeFlags=[];
     placeDailyTools();
   }
   function placeDailyTools(){
-    const tools=$('#field-daily-tools'),home=$('#field-daily-tools-home');
+    const tools=$('#field-daily-tools'),home=$('#field-daily-tools-home'),safety=$('#report-open-safety'),form=$('#report-form');
+    const step=form?.querySelector('.report-step.active');
+    const scroll=step?.querySelector(':scope > .report-step-scroll');
+    if(!fieldCompact()||!scroll){
+      if(tools&&home&&tools.parentElement!==home)home.append(tools);
+      const steps=form?.querySelector('.report-steps');
+      if(safety&&steps&&safety.parentElement!==form)steps.before(safety);
+      return;
+    }
+    if(safety&&safety.parentElement!==scroll)scroll.prepend(safety);
+    const clock=$('#field-clock-out');
+    if(clock&&clock.parentElement!==scroll)(safety?.parentElement===scroll?safety.after(clock):scroll.prepend(clock));
     if(!tools||!home)return;
-    if(!fieldCompact()){if(tools.parentElement!==home)home.append(tools);return}
-    const step=document.querySelector('#report-form .report-step.active');
-    if(!step)return;
     if(step.dataset.reportStep==='2'){
       const anchor=$('#field-scope-flags');
-      if(anchor&&anchor.parentElement===step)anchor.before(tools);
-      else{const actions=step.querySelector(':scope > .modal-actions');if(actions)actions.before(tools);else step.append(tools)}
+      if(anchor&&scroll.contains(anchor))anchor.before(tools);
+      else scroll.append(tools);
     }else if(tools.parentElement!==home)home.append(tools);
   }
   const previewUrls=[];
@@ -142,6 +150,19 @@ var fieldScopeFlags=[];
   function groundedText(value){const text=String(value||'').trim();return text&&!/^needs confirmation[.!\s]*$/i.test(text)?text:''}
   function nextStepText(value){const text=groundedText(value);if(!text)return '';if(typeof FieldDailyScope!=='undefined'&&FieldDailyScope.tidyNext)return FieldDailyScope.tidyNext(text);return text.replace(/^(?:next\s*step|next)\s*:\s*/i,'').trim()}
   function lineEstimateId(row){return String((typeof rowEstimateItemId==='function'?rowEstimateItemId(row):'')||row?.dataset?.estimateItemId||row?.querySelector?.('.production-item')?.value||'')}
+  function focusQuantity(row){
+    const qty=row?.querySelector?.('.production-quantity');
+    if(!qty)return;
+    if(String(qty.value)==='0')qty.value='';
+    qty.placeholder='0';
+    qty.scrollIntoView?.({block:'center',behavior:'auto'});
+    qty.focus?.({preventScroll:true});
+  }
+  document.addEventListener('change',event=>{
+    const select=event.target?.closest?.('select.production-item');
+    if(!fieldCompact()||!select?.value||!select.closest('#report-modal'))return;
+    focusQuantity(select.closest('.production-entry'));
+  });
   function estimateLineNeedsQuantity(row){
     if(!row||row.dataset.extraWork==='true')return false;
     const id=lineEstimateId(row);
@@ -520,7 +541,7 @@ var fieldScopeFlags=[];
       renderFieldReview();
       const picked=[...$$('.production-entry')].find(entry=>String(entry.dataset.estimateItemId||entry.querySelector('.production-item')?.value||'')===String(item.id));
       $$('.production-entry').forEach(entry=>entry.classList.remove('is-editing'));
-      if(picked){picked.classList.add('is-editing');const qty=picked.querySelector('.production-quantity');qty?.scrollIntoView?.({block:'center',behavior:'auto'});qty?.focus?.({preventScroll:true})}
+      if(picked){picked.classList.add('is-editing');focusQuantity(picked)}
       persistResolvedChoice();
     });
   }

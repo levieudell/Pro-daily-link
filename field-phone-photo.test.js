@@ -54,7 +54,7 @@ async function login(page, port) {
 async function reveal(page, selector) {
   await page.evaluate(sel => {
     const el = document.querySelector(sel);
-    const scroller = document.querySelector('#report-modal form');
+    const scroller = document.querySelector('.report-step.active .report-step-scroll') || document.querySelector('#report-modal form');
     el?.scrollIntoView({ block: 'center', behavior: 'instant' });
     const actions = document.querySelector('.report-step.active .modal-actions');
     if (!el || !scroller || !actions) return;
@@ -256,7 +256,7 @@ function assertReachable(box, label) {
     assert.ok(Number(photoChrome.opacity) > 0, JSON.stringify(photoChrome));
     assert.equal(/daily\.jpg|no file chosen|choose file/i.test(photoChrome.tools), false, photoChrome.tools);
     const clearance = await page.evaluate(() => {
-      const form = document.querySelector('#report-modal form');
+      const form = document.querySelector('.report-step.active .report-step-scroll') || document.querySelector('#report-modal form');
       form.scrollTop = form.scrollHeight;
       const actions = document.querySelector('.report-step.active .modal-actions').getBoundingClientRect();
       const helper = document.querySelector('#report-photos-field .input-help').getBoundingClientRect();
