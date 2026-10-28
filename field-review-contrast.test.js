@@ -46,7 +46,8 @@ async function assertMyDayStart(page, theme, height, shots) {
 async function assertFocusedNotes(page, theme, height, shots) {
   await page.setViewportSize({ width: 390, height });
   const notes = page.locator('#field-notes');
-  await notes.evaluate(el => el.blur());
+  await notes.fill('Set forms along the east footing.\nChecked elevations with the crew.\nPlaced concrete at the south wall.\nStripped forms from yesterday.\nCleaned the work area.\nReady for the next pour.');
+  await notes.evaluate(el => { el.setSelectionRange(el.value.length, el.value.length); el.blur(); });
   await page.locator('.report-step.active .report-step-scroll').evaluate(el => el.scrollTop = el.scrollHeight);
   await notes.focus(); // Native focus from the bottom; no test-side scrollIntoView.
   await settlePaint(page);
@@ -54,11 +55,33 @@ async function assertFocusedNotes(page, theme, height, shots) {
     const r = el.getBoundingClientRect(), header = document.querySelector('#report-modal .modal-header').getBoundingClientRect();
     const body = el.closest('.report-step-scroll').getBoundingClientRect();
     const hit = document.elementFromPoint(r.left + r.width / 2, r.top + 3);
-    return { top: r.top, bottom: r.bottom, header: header.bottom, bodyBottom: body.bottom,
-      hit: hit === el || el.contains(hit), active: document.activeElement === el };
+    const footer = el.closest('.report-step').querySelector('.modal-actions').getBoundingClientRect();
+    return { top: r.top, bottom: r.bottom, header: header.bottom, bodyBottom: body.bottom, footer: footer.top,
+      hit: hit === el || el.contains(hit), active: document.activeElement === el, cursorAtEnd: el.selectionStart === el.value.length && el.selectionEnd === el.value.length };
   });
-  assert(rect.active && rect.top >= rect.header + 8 && rect.bottom <= rect.bodyBottom && rect.hit,
+  if (shots && height === 500) await page.screenshot({ path: path.join(shots, `notes-focus-${theme}-390x500.png`) });
+  assert(rect.active && rect.cursorAtEnd && rect.top >= rect.header + 8 && rect.bottom <= Math.min(rect.bodyBottom, rect.footer - 8) && rect.hit,
     `${theme} ${height} focused notes clear the header and footer ` + JSON.stringify(rect));
+  if (height === 500) {
+    // Keep focus and the end caret while the keyboard-sized viewport changes.
+    // There is deliberately no second focus call to trigger the focus handler.
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.locator('.report-step.active .report-step-scroll').evaluate(el => el.scrollTop = el.scrollHeight);
+    await page.setViewportSize({ width: 390, height: 500 });
+    // Model the final caret-driven scroll in the keyboard resize sequence,
+    // then deliver its viewport event without blurring or refocusing the field.
+    await page.locator('.report-step.active .report-step-scroll').evaluate(el => el.scrollTop = el.scrollHeight);
+    await page.evaluate(() => window.visualViewport.dispatchEvent(new Event('resize')));
+    await page.waitForFunction(() => {
+      const el = document.querySelector('#field-notes'), r = el.getBoundingClientRect();
+      const header = document.querySelector('#report-modal .modal-header').getBoundingClientRect();
+      const footer = el.closest('.report-step').querySelector('.modal-actions').getBoundingClientRect();
+      return document.activeElement === el && el.selectionStart === el.value.length && el.selectionEnd === el.value.length &&
+        r.top >= header.bottom + 8 && r.bottom <= footer.top - 8;
+    }, null, { timeout: 3000 });
+    await settlePaint(page);
+    if (shots) await page.screenshot({ path: path.join(shots, `notes-focus-${theme}-390x500.png`) });
+  }
   await round4Shot(page, shots, 'focused-notes', theme, height);
 }
 
@@ -78,11 +101,11 @@ async function assertBlockedSend(page, theme, height, shots) {
   await page.locator('#field-edit-hours').evaluate(el => el.scrollIntoView({ block: 'center' }));
   const row = await page.locator('#field-edit-hours,#field-add-line').evaluateAll(buttons => buttons.map(el => {
     const s = getComputedStyle(el), r = el.getBoundingClientRect(), hit = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
-    return { font: s.fontSize, weight: s.fontWeight, height: r.height, hit: hit === el || el.contains(hit) };
+    return { font: s.fontSize, weight: s.fontWeight, height: r.height, border: s.borderTopWidth, hit: hit === el || el.contains(hit) };
   }));
   assert.equal(row.length, 2);
   assert.deepEqual(row[0], row[1], 'Edit reported hours matches Add line');
-  assert(row[0].font === '16px' && row[0].height >= 44 && row[0].hit, JSON.stringify(row));
+  assert(row[0].font === '16px' && row[0].height >= 44 && row[0].border === '2px' && row[0].hit, JSON.stringify(row));
   await round4Shot(page, shots, 'hours-actions', theme, height);
 }
 

@@ -338,6 +338,34 @@ var fieldScopeFlags=[];
     }
   }
   var fieldHoursReview=null;
+  // Native caret scrolling can leave the top of a filled field under the
+  // header. Correct only its scrolling body; never change focus or selection.
+  function keepDailyFieldVisible(input){
+    const modal=$('#report-modal');
+    if(!fieldCompact()||!modal?.open||document.activeElement!==input||!input?.matches?.('input,textarea')||!modal.contains(input))return;
+    const scroll=input.closest('.report-step-scroll');
+    if(!scroll||!input.getClientRects().length)return;
+    const rect=input.getBoundingClientRect(),body=scroll.getBoundingClientRect();
+    const header=modal.querySelector('.modal-header')?.getBoundingClientRect();
+    const footer=input.closest('.report-step')?.querySelector('.modal-actions')?.getBoundingClientRect();
+    const viewport=window.visualViewport;
+    const top=Math.max(body.top,header?.bottom??body.top,viewport?.offsetTop??0)+8;
+    const bottom=Math.min(body.bottom,footer?.top??body.bottom,viewport?viewport.offsetTop+viewport.height:innerHeight)-8;
+    if(rect.top<top)scroll.scrollTop+=Math.floor(rect.top-top);
+    // If a field is taller than the usable space, keep its top clear instead
+    // of alternating between the header and footer on successive callbacks.
+    else if(rect.bottom>bottom)scroll.scrollTop+=Math.min(Math.ceil(rect.bottom-bottom),Math.floor(rect.top-top));
+  }
+  document.addEventListener('focusin',event=>{
+    if(fieldCompact()&&event.target.matches?.('input,textarea')&&event.target.closest('.report-step-scroll')){
+      requestAnimationFrame(()=>keepDailyFieldVisible(event.target));
+    }
+  });
+  let dailyViewportTimer;
+  window.visualViewport?.addEventListener('resize',()=>{
+    clearTimeout(dailyViewportTimer);
+    dailyViewportTimer=setTimeout(()=>requestAnimationFrame(()=>keepDailyFieldVisible(document.activeElement)),150);
+  });
   function revealFieldInput(input){
     if(!input)return;
     requestAnimationFrame(()=>{
