@@ -695,6 +695,7 @@ var fieldScopeFlags=[];
       revealFieldInput(field);
     });
     bindLaborAllocation();
+    if(typeof updateFieldReportReview==='function')updateFieldReportReview();
     clearStaleClockOutPrompt();
   }
   async function fillFieldReportFromNotes(){
@@ -953,7 +954,7 @@ var fieldScopeFlags=[];
     $$('[data-labor-member]').forEach(input=>{
       if(input.dataset.totalBound==='true')return;
       input.dataset.totalBound='true';
-      const syncCrewReportedHours=()=>{if(String(input.value).trim()===''){delete input.dataset.manualHours;const punch=punchRows().find(row=>Number(row.memberId)===Number(input.dataset.laborMember));if(punch&&punch.minutes>0)input.placeholder=String(typeof FieldDailyScope!=='undefined'&&FieldDailyScope.hoursFromMinutes?FieldDailyScope.hoursFromMinutes(punch.minutes):Math.round(punch.minutes/60*100)/100)}else{input.dataset.manualHours='true';delete input.dataset.timecardDerived}applyLaborAllocation();paintCrewReported(input)};input.addEventListener('input',syncCrewReportedHours);input.addEventListener('blur',syncCrewReportedHours);
+      const syncCrewReportedHours=()=>{if(String(input.value).trim()===''){delete input.dataset.manualHours;const punch=punchRows().find(row=>Number(row.memberId)===Number(input.dataset.laborMember));if(punch&&punch.minutes>0)input.placeholder=String(typeof FieldDailyScope!=='undefined'&&FieldDailyScope.hoursFromMinutes?FieldDailyScope.hoursFromMinutes(punch.minutes):Math.round(punch.minutes/60*100)/100)}else{input.dataset.manualHours='true';delete input.dataset.timecardDerived}applyLaborAllocation();paintCrewReported(input);if(typeof updateFieldReportReview==='function')updateFieldReportReview()};input.addEventListener('input',syncCrewReportedHours);input.addEventListener('blur',syncCrewReportedHours);
     });
   }
   let liveLaborDepth=0;
@@ -976,6 +977,20 @@ var fieldScopeFlags=[];
     }finally{liveLaborDepth--}
   }
   window.applyLiveLabor=applyLiveLabor;
+  function displayedCrewHours(){
+    const punches=new Map(punchRows().map(row=>[Number(row.memberId),Number(row.minutes)||0]));
+    let sum=0;const seen=new Set();
+    for(const input of $$('[data-labor-member]')){
+      const id=Number(input.dataset.laborMember);seen.add(id);
+      if(input.dataset.manualHours==='true'&&String(input.value).trim()!==''){sum+=Number(input.value)||0;continue}
+      const minutes=punches.get(id)||0;
+      if(minutes>0&&typeof FieldDailyScope!=='undefined'&&FieldDailyScope.hoursFromMinutes)sum+=FieldDailyScope.hoursFromMinutes(minutes);
+      else sum+=Number(input.value)||0;
+    }
+    for(const [id,minutes] of punches){if(seen.has(id)||!(minutes>0))continue;if(typeof FieldDailyScope!=='undefined'&&FieldDailyScope.hoursFromMinutes)sum+=FieldDailyScope.hoursFromMinutes(minutes)}
+    return Math.round(sum*100)/100;
+  }
+  window.displayedCrewHours=displayedCrewHours;
   window.fieldLaborContext=fieldLaborContext;
   function applyPunchHours(){
     const totals=new Map(punchRows().map(row=>[row.memberId,row.minutes]));
