@@ -96,12 +96,27 @@ async function main() {
     await page.setRequestInterception(true);
     page.on('request', request => request.url().startsWith(base + '/') || request.url().startsWith('data:') ? request.continue() : request.abort());
     const errors = [];
+    let payrollRequests = 0;
+    page.on('request', request => { if (request.url() === base + '/api/company' && request.method() === 'PATCH') payrollRequests++; });
     page.on('pageerror', error => { errors.push(error.message); console.error('Synthetic browser error:', error.message); });
     await page.setCookie({ name: 'pdl_session', value: token(companyA, 1), url: base }, { name: 'pdl_company', value: companyA, url: base });
     for (const theme of ['light', 'dark']) for (const width of [390, 1280]) {
+      const weekStart = theme === 'light' ? 'sunday' : 'monday', day = weekStart === 'sunday' ? 'Sunday' : 'Monday';
+      assert.equal((await call('/api/company', { name: initial.name, weekStart })).status, 200);
       await page.setViewport({ width, height: width === 390 ? 844 : 800 });
       await openSettings(page);
       await page.evaluate(theme => { document.documentElement.dataset.theme = theme; }, theme);
+      assert.deepEqual(await page.$$eval('.payroll-rule-toggle', els => els.map(el => el.textContent.trim())), ['Weekly OT after', 'Daily OT after', 'Double time after']);
+      const intro = await page.$$eval('#payroll-overtime-form > p', els => els.map(el => el.textContent));
+      assert.equal(intro[0], 'Only approved punches count. Extra-work hours still split into regular, OT, and DT.');
+      assert.equal(intro[1], `Workweek starts ${day} (from your company settings).`);
+      await page.evaluate(() => window.PDLLocale.set('es'));
+      assert.deepEqual(await page.$$eval('.payroll-rule-toggle', els => els.map(el => el.textContent.trim())), ['Horas extra semanales después de', 'Horas extra diarias después de', 'Tiempo doble después de']);
+      const spanishIntro = await page.$$eval('#payroll-overtime-form > p', els => els.map(el => el.textContent));
+      assert.equal(spanishIntro[0], 'Solo cuentan los registros de asistencia aprobados. Las horas de trabajo extra también se dividen en horas regulares, extras y dobles.');
+      assert.equal(spanishIntro[1], `La semana laboral empieza el ${weekStart === 'sunday' ? 'domingo' : 'lunes'} (según la configuración de su empresa).`);
+      assert.deepEqual(await page.$$eval('.payroll-rule-hours input', els => els.map(el => el.getAttribute('aria-label'))), ['Umbral de horas extra semanales en horas', 'Umbral de horas extra diarias en horas', 'Umbral de tiempo doble en horas']);
+      await page.evaluate(() => window.PDLLocale.set('en'));
       assert.equal(await page.$eval('#payroll-weeklyOver-enabled', el => el.checked), true);
       assert.equal(await page.$eval('#payroll-dailyOver', el => el.disabled), true);
       await page.click('#payroll-dailyOver-enabled');
@@ -134,20 +149,54 @@ async function main() {
         const helpColors = await page.$$eval('#payroll-overtime-settings p', els => els.map(el => getComputedStyle(el).color));
         assert(helpColors.length >= 5 && helpColors.every(color => color === 'rgb(255, 255, 255)'), JSON.stringify(helpColors));
       }
-      await page.$eval('#payroll-dailyDoubleOver', el => { el.value = '6'; el.dispatchEvent(new Event('input', { bubbles: true })); });
-      const rejected = page.waitForResponse(response => response.url() === base + '/api/company' && response.request().method() === 'PATCH');
-      await page.click('#payroll-overtime-form button[type="submit"]');
-      assert.equal((await rejected).status(), 400);
-      await page.waitForFunction(() => document.querySelector('#payroll-overtime-message')?.textContent === 'Double time must start after daily overtime.');
-      assert.deepEqual((await call('/api/state')).data.company.payroll.overtime, overtime, 'bad input leaves saved rules intact');
-      if (process.env.PDL_PAYROLL_SCREENSHOTS) {
+      if (process.env.PDL_PAYROLL_SCREENSHOTS && width === 390) {
+        await page.$eval('#payroll-overtime-settings', el => {
+          el.scrollIntoView({ block: 'start' });
+          const offset = Math.max(0, document.querySelector('.topbar').getBoundingClientRect().bottom + 12 - el.getBoundingClientRect().top);
+          let scroller = el.parentElement;
+          while (scroller && !(scroller.scrollHeight > scroller.clientHeight && /auto|scroll/.test(getComputedStyle(scroller).overflowY))) scroller = scroller.parentElement;
+          if (scroller) scroller.scrollTop -= offset; else window.scrollBy(0, -offset);
+        });
+        const heading = await page.evaluate(() => ({ top: document.querySelector('#payroll-overtime-settings h3').getBoundingClientRect().top, headerBottom: document.querySelector('.topbar').getBoundingClientRect().bottom }));
+        assert.ok(heading.top >= heading.headerBottom + 8 && heading.top < 200, JSON.stringify(heading));
         fs.mkdirSync(process.env.PDL_PAYROLL_SCREENSHOTS, { recursive: true });
-        await page.screenshot({ path: path.join(process.env.PDL_PAYROLL_SCREENSHOTS, `payroll-${theme}-${width}.png`), fullPage: true });
+        await page.screenshot({ path: path.join(process.env.PDL_PAYROLL_SCREENSHOTS, `overtime-top-${theme}-390.png`) });
+      }
+      await page.$eval('#payroll-dailyDoubleOver', el => { el.value = '6'; el.dispatchEvent(new Event('input', { bubbles: true })); });
+      async function showServerError() {
+        const rejected = page.waitForResponse(response => response.url() === base + '/api/company' && response.request().method() === 'PATCH');
+        await page.click('#payroll-overtime-form button[type="submit"]');
+        assert.equal((await rejected).status(), 400);
+        await page.waitForFunction(() => document.querySelector('#payroll-overtime-message')?.textContent === 'Double time must start after daily overtime.');
+      }
+      await showServerError();
+      assert.deepEqual((await call('/api/state')).data.company.payroll.overtime, overtime, 'bad input leaves saved rules intact');
+      await page.focus('#payroll-dailyDoubleOver');
+      await page.keyboard.press('ArrowUp');
+      assert.equal(await page.$eval('#payroll-overtime-message', el => el.textContent), '', 'input clears stale feedback');
+      await showServerError();
+      await page.click('#payroll-dailyDoubleOver-enabled');
+      assert.equal(await page.$eval('#payroll-overtime-message', el => el.textContent), '', 'toggle change clears stale feedback');
+      await page.click('#payroll-dailyDoubleOver-enabled');
+      // Change a value without an input event (e.g. an autofill), then exercise
+      // native validation via both a button click and requestSubmit().
+      for (const submit of ['click', 'requestSubmit']) {
+        await showServerError();
+        const requestsBefore = payrollRequests;
+        await page.$eval('#payroll-dailyDoubleOver', el => {
+          el.value = '';
+          el.addEventListener('invalid', () => { el.dataset.messageAtValidation = document.querySelector('#payroll-overtime-message').textContent; }, { once: true });
+        });
+        if (submit === 'click') await page.click('#payroll-overtime-form button[type="submit"]');
+        else await page.$eval('#payroll-overtime-form', form => form.requestSubmit());
+        assert.deepEqual(await page.$eval('#payroll-dailyDoubleOver', el => ({ missing: el.validity.valueMissing, message: el.dataset.messageAtValidation })), { missing: true, message: '' }, 'stale server error clears before native validation feedback');
+        assert.equal(payrollRequests, requestsBefore, 'native validation still prevents saving');
+        await page.$eval('#payroll-dailyDoubleOver', el => { el.value = '6'; });
       }
       await call('/api/company', { payroll: { overtime: DEFAULT_OVERTIME } });
     }
     assert.deepEqual(errors, []);
-    console.log('Payroll settings passed: HTTP validation/RBAC/tenant isolation/persistence, existing schedule unchanged, real-browser save/reload and brand/tap targets at 390 and 1280 in both themes.');
+    console.log('Payroll settings passed: HTTP validation/RBAC/tenant isolation/persistence, existing schedule unchanged, English/Spanish copy and dynamic week start, stale feedback cleared before native validation, real-browser save/reload and brand/tap targets at 390 and 1280 in both themes.');
   } finally {
     if (browser) await browser.close();
     if (server.listening) await new Promise(resolve => server.close(resolve));

@@ -82,6 +82,13 @@ Object.assign(placeholders,{
 'Schedule controls':'Controles del horario','Previous schedule period':'Período anterior del horario','Choose schedule date':'Elegir fecha del horario','Next schedule period':'Siguiente período del horario','Schedule view':'Vista del cronograma','Close assignment':'Cerrar asignación','e.g. Form footings, pour slab, rough inspection…':'Ej.: Encofrar zapatas, colar losa, inspeccionar instalaciones…',
 'e.g. Rebar delivery 7 AM':'Ej.: Entrega de varilla a las 7 a. m.','Where to stage it, who to expect, anything they need to know':'Dónde descargar, a quién esperar y qué necesitan saber','Example: Doctor appointment':'Ejemplo: Cita médica'
 });
+Object.assign(es,{
+'Weekly OT after':'Horas extra semanales después de','Daily OT after':'Horas extra diarias después de','Double time after':'Tiempo doble después de',
+'Weekly OT after hours':'Umbral de horas extra semanales en horas','Daily OT after hours':'Umbral de horas extra diarias en horas','Double time after hours':'Umbral de tiempo doble en horas',
+'Only approved punches count. Extra-work hours still split into regular, OT, and DT.':'Solo cuentan los registros de asistencia aprobados. Las horas de trabajo extra también se dividen en horas regulares, extras y dobles.',
+'Workweek starts Monday (from your company settings).':'La semana laboral empieza el lunes (según la configuración de su empresa).',
+'Workweek starts Sunday (from your company settings).':'La semana laboral empieza el domingo (según la configuración de su empresa).'
+});
 const esLower=Object.fromEntries(Object.entries(es).map(([key,value])=>[key.toLowerCase(),value]));
 const original=new Map(),originalAttributes=new Map();let language='en',running=false;
 function translatedLaneResult(value){return String(value||'').split(', ').map(part=>part.replace(/^(\d+) (?:day|days) scheduled$/i,(_,count)=>`${count} ${Number(count)===1?'día programado':'días programados'}`).replace(/^(\d+) joined an existing shift$/i,(_,count)=>`${count} ${Number(count)===1?'se unió a un turno existente':'se unieron a turnos existentes'}`).replace(/^(\d+) skipped \(time off or another job\)$/i,(_,count)=>`${count} ${Number(count)===1?'omitido':'omitidos'} (tiempo libre u otro proyecto)`)).join(', ')}
