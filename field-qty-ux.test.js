@@ -84,13 +84,7 @@ async function clearOfClose(page, selector) {
       const box = node.getBoundingClientRect();
       return box.width > 0 && box.height > 0 && !(box.right <= c.left + 1 || box.left >= c.right - 1 || box.bottom <= c.top + 1 || box.top >= c.bottom - 1);
     }).map(node => (node.textContent || '').trim().slice(0, 70));
-    return {
-      overlap: overlaps.length > 0,
-      overlaps,
-      closeHit: hit === close || Boolean(close?.contains(hit)),
-      hit: hit ? `${hit.tagName}#${hit.id}.${String(hit.className || '')}`.slice(0, 80) : 'none',
-      close: { top: Math.round(c.top), left: Math.round(c.left), width: Math.round(c.width), height: Math.round(c.height) }
-    };
+    return { overlap: overlaps.length > 0, overlaps, closeHit: hit === close || Boolean(close.contains(hit)) };
   }, selector);
 }
 
@@ -154,16 +148,16 @@ async function clockIn(page) {
     await tap(page, '#myday-page.active [data-start-day]');
     await page.waitForSelector('#report-modal[open] #field-notes');
     const notesHeader = await headerCascade(page);
-    assert.equal(notesHeader.position, 'absolute', JSON.stringify(notesHeader));
-    assert.equal(notesHeader.height, '0px', JSON.stringify(notesHeader));
-    const notesPad = await page.$eval('#report-form', form => parseFloat(getComputedStyle(form).paddingRight));
-    assert.ok(notesPad >= 46, String(notesPad));
+    assert.equal(notesHeader.position, 'sticky', JSON.stringify(notesHeader));
+    assert.equal(notesHeader.height, '48px', JSON.stringify(notesHeader));
+    assert.equal(notesHeader.besideHeader, true, JSON.stringify(notesHeader));
     await page.$eval('#report-form', form => { form.scrollTop = form.scrollHeight; });
-    const notesBottom = await clearOfClose(page, '#field-notes, #flag-extra-work');
-    assert.equal(notesBottom.overlap, false, JSON.stringify(notesBottom));
+    const notesBottom = await headerCascade(page);
+    assert.equal(notesBottom.besideHeader, true, JSON.stringify(notesBottom));
     await page.$eval('#report-form', form => { form.scrollTop = 0; });
     const notesClear = await clearOfClose(page, '#field-notes');
     assert.equal(notesClear.overlap, false, JSON.stringify(notesClear));
+    assert.equal(notesClear.closeHit, true, JSON.stringify(notesClear));
     await page.$eval('#field-notes', (el, note) => {
       el.value = note;
       el.dispatchEvent(new Event('input', { bubbles: true }));
@@ -185,15 +179,17 @@ async function clockIn(page) {
     assert.ok(hint.right <= 390, JSON.stringify(hint));
     const hintClear = await clearOfClose(page, '#field-review-cards p, .verify-banner');
     assert.equal(hintClear.overlap, false, JSON.stringify(hintClear));
+    assert.equal(hintClear.closeHit, true, JSON.stringify(hintClear));
     const reviewHeader = await headerCascade(page);
-    assert.equal(reviewHeader.position, 'absolute', JSON.stringify(reviewHeader));
-    assert.equal(reviewHeader.height, '0px', JSON.stringify(reviewHeader));
+    assert.equal(reviewHeader.position, 'sticky', JSON.stringify(reviewHeader));
+    assert.equal(reviewHeader.height, '48px', JSON.stringify(reviewHeader));
+    assert.equal(reviewHeader.besideHeader, true, JSON.stringify(reviewHeader));
     await page.$eval('#report-form', form => { form.scrollTop = form.scrollHeight / 2; });
-    const reviewMiddle = await clearOfClose(page, '.field-review-card, #field-edit-hours, #field-review-cards p');
-    assert.equal(reviewMiddle.overlap, false, JSON.stringify(reviewMiddle));
+    const reviewMiddle = await headerCascade(page);
+    assert.equal(reviewMiddle.besideHeader, true, JSON.stringify(reviewMiddle));
     await page.$eval('#report-form', form => { form.scrollTop = form.scrollHeight; });
-    const reviewBottom = await clearOfClose(page, '.field-review-card, #field-edit-hours, #field-review-cards p');
-    assert.equal(reviewBottom.overlap, false, JSON.stringify(reviewBottom));
+    const reviewBottom = await headerCascade(page);
+    assert.equal(reviewBottom.besideHeader, true, JSON.stringify(reviewBottom));
     await page.$eval('#report-form', form => { form.scrollTop = 0; });
     const footing = await page.$eval('[data-pick-line]', select => [...select.options].find(item => /Footings/i.test(item.textContent || ''))?.value || '');
     await page.select('[data-pick-line]', footing);
