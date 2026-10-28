@@ -55,6 +55,11 @@ async function main() {
     for (const key of ['weekStart', 'timezone', 'overtimeRule', 'pricingAccess', 'name']) assert.deepEqual(saved.company[key], initial[key]);
     for (const key of ['payPeriods', 'payPeriodExports', 'projects', 'team', 'reports', 'workdays']) assert.deepEqual(saved[key], beforeSave[key], key + ' unchanged');
     assert.deepEqual((await call('/api/state')).data.company.payroll.overtime, overtime);
+    for (const user of [4, 5]) {
+      const fieldState = await call('/api/state', undefined, user);
+      assert.equal(fieldState.status, 200);
+      assert.equal(Object.hasOwn(fieldState.data.company, 'payroll'), false, 'field company payload excludes payroll rules');
+    }
     assert.deepEqual((await call('/api/state', undefined, 1, companyB)).data.company.payroll.overtime, DEFAULT_OVERTIME, 'other tenant isolated');
     const beforeInvalid = fs.readFileSync(tenantFile, 'utf8');
     for (const invalid of [null, {}, [], { overtime: {} }, { overtime: { ...overtime, weeklyOver: -1 } }, { overtime: { ...overtime, dailyOver: '8' } }, { overtime: { ...overtime, dailyDoubleOver: 8 } }, { overtime: { ...overtime, dailyDoubleOver: 7 } }, { overtime: { ...overtime, dailyOver: 0 } }, { overtime: { ...overtime, weeklyOver: true } }, { overtime, weekStart: 'mon' }]) {
@@ -62,7 +67,16 @@ async function main() {
       assert.equal(result.status, 400, JSON.stringify(result));
       assert.equal(typeof result.data.error, 'string');
       assert.ok(result.data.error.length > 10);
+      assert.doesNotMatch(result.data.error, /weeklyOver|dailyOver|dailyDoubleOver|null/);
     }
+    for (const [key, label] of [['weeklyOver', 'Weekly overtime'], ['dailyOver', 'Daily overtime'], ['dailyDoubleOver', 'Double time']]) {
+      const result = await call('/api/company', { payroll: { overtime: { ...overtime, [key]: 0 } } });
+      assert.equal(result.status, 400);
+      assert.equal(result.data.error, `${label} must be more than 0 hours, or turn it off.`);
+    }
+    const invalidDouble = await call('/api/company', { payroll: { overtime: { ...overtime, dailyDoubleOver: 6 } } });
+    assert.equal(invalidDouble.status, 400);
+    assert.equal(invalidDouble.data.error, 'Double time must start after daily overtime.');
     assert.equal(fs.readFileSync(tenantFile, 'utf8'), beforeInvalid, 'invalid requests never write');
     const profile = await call('/api/company', { name: initial.name, weekStart: 'sunday' });
     assert.equal(profile.status, 200);
@@ -116,6 +130,16 @@ async function main() {
       assert.equal(layout.buttonColor, 'rgb(0, 0, 0)');
       assert.equal(layout.checkboxBackground, 'rgb(255, 102, 0)');
       assert.equal(layout.inputBackground, layout.background);
+      if (theme === 'dark') {
+        const helpColors = await page.$$eval('#payroll-overtime-settings p', els => els.map(el => getComputedStyle(el).color));
+        assert(helpColors.length >= 5 && helpColors.every(color => color === 'rgb(255, 255, 255)'), JSON.stringify(helpColors));
+      }
+      await page.$eval('#payroll-dailyDoubleOver', el => { el.value = '6'; el.dispatchEvent(new Event('input', { bubbles: true })); });
+      const rejected = page.waitForResponse(response => response.url() === base + '/api/company' && response.request().method() === 'PATCH');
+      await page.click('#payroll-overtime-form button[type="submit"]');
+      assert.equal((await rejected).status(), 400);
+      await page.waitForFunction(() => document.querySelector('#payroll-overtime-message')?.textContent === 'Double time must start after daily overtime.');
+      assert.deepEqual((await call('/api/state')).data.company.payroll.overtime, overtime, 'bad input leaves saved rules intact');
       if (process.env.PDL_PAYROLL_SCREENSHOTS) {
         fs.mkdirSync(process.env.PDL_PAYROLL_SCREENSHOTS, { recursive: true });
         await page.screenshot({ path: path.join(process.env.PDL_PAYROLL_SCREENSHOTS, `payroll-${theme}-${width}.png`), fullPage: true });

@@ -1077,7 +1077,7 @@ function nextId(rows){return rows.reduce((max,row)=>Math.max(max,Number(row.id)|
 function reportDateLabel(report){const iso=String(report?.dateIso||'');if(/^\d{4}-\d{2}-\d{2}$/.test(iso)){const [year,month,day]=iso.split('-').map(Number);return new Date(year,month-1,day).toLocaleDateString('en-US',{month:'short',day:'numeric'})}return report?.date||''}
 function presentCompanyLogo(logo){return logo&&(logo.url||logo.objectKey)?{url:'/api/company/logo',contentType:logo.contentType||'',updatedAt:logo.updatedAt||null}:null}
 function publicCompanyLogo(company){if(!company)return company;const safe={...company,payroll:payrollOvertime.companyPayroll(company)},shown=presentCompanyLogo(safe.logo);if(shown)safe.logo=shown;else delete safe.logo;return safe}
-function companyForField(company){const safe=publicCompanyLogo(company)||{};delete safe.planPrice;delete safe.discountPercent;delete safe.commercialNote;return safe}
+function companyForField(company){const safe=publicCompanyLogo(company)||{};delete safe.planPrice;delete safe.discountPercent;delete safe.commercialNote;delete safe.payroll;return safe}
 function customerDataExport(db){
   const copy=structuredClone(db);
   const vendorKeys=new Set(['stripeCustomerId','stripeSubscriptionId','stripeCheckoutSessionId','retiredStripeSubscriptionIds','stripeFreePeriod','pendingCheckout']);

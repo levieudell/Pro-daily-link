@@ -3,6 +3,7 @@
 #payroll-overtime-settings { max-width:720px; margin-top:28px; padding:20px; background:var(--surface-canvas); color:var(--text-primary); border:1px solid var(--pdl-gray); border-radius:12px; }
 #payroll-overtime-settings h3 { margin:0 0 12px; font-size:24px; }
 #payroll-overtime-settings p { color:var(--text-primary); font-size:14px; line-height:1.5; }
+:root[data-theme="dark"] #payroll-overtime-settings p { color:var(--pdl-white) !important; }
 #payroll-overtime-settings fieldset { border:0; padding:0; margin:0; min-width:0; }
 #payroll-overtime-settings .payroll-rule { display:grid; grid-template-columns:minmax(0,1fr) 120px; align-items:center; gap:4px 12px; padding:16px 0; border-bottom:1px solid var(--pdl-gray); }
 #payroll-overtime-settings .payroll-rule-toggle { display:flex; align-items:center; gap:10px; min-height:44px; margin:0; cursor:pointer; font-size:16px; font-weight:700; }

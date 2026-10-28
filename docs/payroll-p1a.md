@@ -48,12 +48,12 @@ Output is an array of worker/workweek records with `memberId`, `weekStart`, `REG
 
 The company-timezone **clock-in date** owns the whole punch, including overnight/DST shifts. Stored approved `hours` are authoritative (including deductions); timestamps determine ordering and dates. Daily OT/DT is classified first, then only daily REG counts toward weekly OT. Jobs receive the categories in punch time order. Billing/extra-work flags do not create pay categories.
 
-Calculations keep unrounded numbers. At output, categories round to cents of an hour. Rounding drift is applied to the last worked category on the last punch; pathological tiny rows that cannot absorb negative drift are adjusted backwards without creating negative hours. Job/day/week totals are sums of those integer cents, so they reconcile exactly to the approved punch sum rounded to two decimals. No independent parent rounding.
+Calculations keep unrounded numbers. At output, worker-week REG/OT/DT totals receive cents by largest remainder against the approved punch sum rounded to two decimals. Each category's cents are then distributed over its punches by largest remainder; ties go to the last worked row/category. Job/day/week totals aggregate those same cents, so punch rounding cannot transfer a cent between pay categories. When independently rounded categories would not sum to the rounded punch hours, largest remainder resolves that cent difference (for example, 16 REG + 4h1m OT + 1m DT becomes 16.00 / 4.01 / 0.02, totaling 20.03).
 
 No wages, rates, currency, processor templates, worker payroll IDs, California seventh-day rule, holiday pay, export route or export screen is introduced. Existing clock, field daily, voice, approval and handoff flows are unchanged.
 
 ## Verification
 
-- `payroll-overtime.test.js`: requested examples, approval precedence, overnight/DST, range edges, Sunday workweek, multiple workers/jobs, extra-work inclusion, fractional thresholds, rounding drift, invalid input and no mutation.
+- `payroll-overtime.test.js`: requested examples, approval precedence, overnight/DST, range edges, Sunday workweek, multiple workers/jobs, extra-work inclusion, fractional thresholds, category rounding regressions, 2,000 random minute-level weekly cases plus 1,000 mixed-rule cases, plain validation and no mutation.
 - `payroll-settings.test.js`: real HTTP validation, authorization, tenant isolation and persistence; browser save/reload and layout at 390×844 and 1280×800 in light/dark mode.
 - Both tests run in full `npm test`; new server modules are included in `npm run check`.

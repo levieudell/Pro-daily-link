@@ -12,16 +12,17 @@ function companyPayroll(company = {}) {
 }
 function validatePayroll(input) {
   if (!input || typeof input !== 'object' || Array.isArray(input) || Object.keys(input).some(key => key !== 'overtime')) {
-    fail('Send payroll overtime rules. Week start uses the existing company setting.');
+    fail('Save overtime rules here. Change the workweek start in company settings.');
   }
   const overtime = input.overtime;
   if (!overtime || typeof overtime !== 'object' || Array.isArray(overtime) || Object.keys(overtime).length !== 3) {
-    fail('Set all three overtime thresholds to a positive number or null.');
+    fail('Set weekly overtime, daily overtime and double time, or turn each one off.');
   }
   for (const key of Object.keys(DEFAULT_OVERTIME)) {
     const value = overtime[key];
     if (value !== null && (typeof value !== 'number' || !Number.isFinite(value) || value <= 0)) {
-      fail(`${key} must be a positive number or null.`);
+      const label = { weeklyOver: 'Weekly overtime', dailyOver: 'Daily overtime', dailyDoubleOver: 'Double time' }[key];
+      fail(`${label} must be more than 0 hours, or turn it off.`);
     }
   }
   if (overtime.dailyOver !== null && overtime.dailyDoubleOver !== null && overtime.dailyDoubleOver <= overtime.dailyOver) {
@@ -37,21 +38,30 @@ function weekDate(date, weekStart) {
 }
 const cents = hours => Math.round((hours + Number.EPSILON) * 100);
 
-// Round once, after classification and range filtering. Reconcile the last
-// worked pay category; if tiny rows cannot absorb negative drift, work backwards.
-// All parent totals are sums of these integer cents, never independently rounded.
+// Apportion a rounded total by largest remainder. Ties go to the last worked
+// row/category; zero amounts never receive a cent.
+function allocateCents(values, target) {
+  const scaled = values.map(value => value * 100);
+  const allocated = scaled.map(Math.floor);
+  const remaining = target - allocated.reduce((sum, value) => sum + value, 0);
+  const order = scaled.map((value, index) => ({ index, remainder: value - allocated[index] }))
+    .filter(row => values[row.index] > 0)
+    .sort((a, b) => Math.abs(b.remainder - a.remainder) > 1e-9 ? b.remainder - a.remainder : b.index - a.index);
+  for (let i = 0; i < remaining; i++) allocated[order[i].index]++;
+  return allocated;
+}
+
+// Round worker-week categories first, against the exact approved-hour sum, then
+// distribute each category's cents over its punches. Job/day/week totals all
+// aggregate those same cents; row rounding cannot move REG into OT or DT.
 function roundRows(rows) {
-  const rounded = rows.map(row => ({ ...row, ...Object.fromEntries(CATEGORIES.map(key => [key, cents(row[key])])) }));
-  const target = cents(rows.reduce((sum, row) => sum + row.REG + row.OT + row.DT, 0));
-  let drift = target - rounded.reduce((sum, row) => sum + row.REG + row.OT + row.DT, 0);
-  for (let i = rounded.length - 1; i >= 0 && drift; i--) {
-    for (const key of [...CATEGORIES].reverse()) {
-      if (!rows[i][key] || !drift) continue;
-      const adjustment = drift > 0 ? drift : Math.max(drift, -rounded[i][key]);
-      rounded[i][key] += adjustment;
-      drift -= adjustment;
-    }
-  }
+  const exact = CATEGORIES.map(key => rows.reduce((sum, row) => sum + row[key], 0));
+  const categoryCents = allocateCents(exact, cents(exact.reduce((sum, value) => sum + value, 0)));
+  const rounded = rows.map(row => ({ ...row }));
+  CATEGORIES.forEach((key, index) => {
+    const amounts = allocateCents(rows.map(row => row[key]), categoryCents[index]);
+    rounded.forEach((row, i) => row[key] = amounts[i]);
+  });
   return rounded;
 }
 function totals(rows) {

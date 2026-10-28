@@ -94,10 +94,109 @@ test('fractional thresholds and rounding drift conserve cents across every outpu
     }
   }
 });
+
+function assertBreakdowns(result) {
+  for (const collection of [result.jobs, result.days, result.punches]) {
+    for (const key of ['REG', 'OT', 'DT', 'total']) {
+      assert.equal(collection.reduce((sum, row) => sum + toCents(row[key]), 0), toCents(result[key]), key);
+    }
+    for (const row of collection) {
+      assert(pay(row).every(value => value >= 0));
+      assert.equal(pay(row).reduce((sum, value) => sum + toCents(value), 0), toCents(row.total));
+    }
+  }
+  for (const punch of result.punches) {
+    for (const key of ['REG', 'OT', 'DT']) assert.equal(Number(punch[key].toFixed(2)), punch[key]);
+  }
+}
+
+test('round worker-week categories before allocating cents to punches and jobs', () => {
+  for (const [count, hours, weeklyOver, expected] of [
+    [5, 8.3333, 40, [40, 1.67, 0]],
+    [6, 7.1234, 40, [40, 2.74, 0]],
+    [3, 2.3333, 5, [5, 2, 0]]
+  ]) {
+    const input = Array.from({ length: count }, (_, i) => card(`2026-10-${19 + i}`, hours, { projectId: i % 3 }));
+    const result = splitHours(input, rules({ weeklyOver }))[0];
+    assert.deepEqual(pay(result), expected);
+    assert.equal(toCents(result.total), toCents(count * hours));
+    assertBreakdowns(result);
+  }
+});
+
+// Deterministic random weeks keep failures reproducible. The independent oracle
+// classifies whole minutes and never uses the production floating-hour splitter.
+function randomWeeks(seed) {
+  let state = seed;
+  const random = max => { state = (Math.imul(state, 1664525) + 1013904223) >>> 0; return state % max; };
+  return () => {
+    const input = [], minutes = [];
+    for (let day = 0, count = 1 + random(7); day < count; day++) {
+      const date = `2026-10-${19 + day}`;
+      let elapsed = 0;
+      minutes[day] = 0;
+      for (let punch = 0, count = 1 + random(3); punch < count; punch++) {
+        const duration = 1 + random(300), start = Date.parse(date + 'T00:00:00Z') + elapsed * 60000;
+        input.push(card(date, duration / 60, { id: input.length, projectId: random(4), inAt: new Date(start).toISOString(), outAt: new Date(start + duration * 60000).toISOString() }));
+        elapsed += duration;
+        minutes[day] += duration;
+      }
+    }
+    return { input, minutes };
+  };
+}
+
+test('2000 random minute-level weeks match each exact rounded category and the punch sum', () => {
+  const next = randomWeeks(291);
+  for (let i = 0; i < 2000; i++) {
+    const { input, minutes } = next(), limit = [5, 20, 40][i % 3];
+    const sum = minutes.reduce((a, b) => a + b, 0);
+    const exact = [Math.min(sum, limit * 60), Math.max(0, sum - limit * 60), 0];
+    const result = splitHours(input.toReversed(), rules({ weeklyOver: limit }))[0];
+    assert.deepEqual(pay(result).map(toCents), exact.map(value => Math.round(value * 100 / 60)), `week ${i}`);
+    assert.equal(toCents(result.total), Math.round(sum * 100 / 60), `punch sum ${i}`);
+    assertBreakdowns(result);
+  }
+});
+
+test('1000 mixed-rule minute-level weeks preserve largest-remainder category targets', () => {
+  const next = randomWeeks(1291);
+  for (let i = 0; i < 1000; i++) {
+    const { input, minutes } = next();
+    const daily = i % 3 ? 8 * 60 : Infinity, double = i % 2 ? 12 * 60 : Infinity, weekly = i % 5 ? 40 * 60 : Infinity;
+    const exact = [0, 0, 0];
+    for (const day of minutes) {
+      const regular = Math.min(day, daily, double), dt = Math.max(0, day - double);
+      exact[0] += regular; exact[1] += day - regular - dt; exact[2] += dt;
+    }
+    const excess = Math.max(0, exact[0] - weekly);
+    exact[0] -= excess; exact[1] += excess;
+    const expected = exact.map(value => Math.floor(value * 100 / 60));
+    const total = Math.round(minutes.reduce((a, b) => a + b, 0) * 100 / 60);
+    const rank = [0, 1, 2].sort((a, b) => (exact[b] * 100 % 60) - (exact[a] * 100 % 60) || b - a);
+    const remainder = total - expected.reduce((a, b) => a + b, 0);
+    for (let cent = 0; cent < remainder; cent++) expected[rank[cent]]++;
+    const result = splitHours(input.toReversed(), rules({ weeklyOver: Number.isFinite(weekly) ? weekly / 60 : null, dailyOver: Number.isFinite(daily) ? daily / 60 : null, dailyDoubleOver: Number.isFinite(double) ? double / 60 : null }))[0];
+    assert.deepEqual(pay(result).map(toCents), expected, `mixed week ${i}`);
+    assert.equal(toCents(result.total), total);
+    assertBreakdowns(result);
+  }
+});
+
+test('category rounding ties cannot create an extra paid cent', () => {
+  const result = splitHours([card('2026-10-19', 12 + 1 / 60), card('2026-10-20', 8 + 1 / 60)], rules({ dailyOver: 8, dailyDoubleOver: 12 }))[0];
+  // Independent rounding would give 16 + 4.02 + .02 = 20.04, but the
+  // approved sum is 20.03. Largest remainder awards the tied cent to DT.
+  assert.deepEqual(pay(result), [16, 4.01, 0.02]);
+  assert.equal(result.total, 20.03);
+  assertBreakdowns(result);
+});
 test('server validation rejects malformed rules without numeric coercion', () => {
   for (const key of Object.keys(DEFAULT_OVERTIME)) for (const value of [0, -1, '8', '', true, {}, [], NaN, Infinity, undefined]) {
-    assert.throws(() => validatePayroll({ overtime: { ...DEFAULT_OVERTIME, [key]: value } }), error => error.statusCode === 400);
+    const label = { weeklyOver: 'Weekly overtime', dailyOver: 'Daily overtime', dailyDoubleOver: 'Double time' }[key];
+    assert.throws(() => validatePayroll({ overtime: { ...DEFAULT_OVERTIME, [key]: value } }), error => error.statusCode === 400 && error.message === `${label} must be more than 0 hours, or turn it off.`);
   }
+  assert.throws(() => validatePayroll({ overtime: { weeklyOver: 40, dailyOver: 8, dailyDoubleOver: 6 } }), error => error.statusCode === 400 && error.message === 'Double time must start after daily overtime.');
   for (const input of [null, [], {}, { overtime: {} }, { overtime: { ...DEFAULT_OVERTIME, extra: 1 } }, { overtime: DEFAULT_OVERTIME, weekStart: 'mon' }, { overtime: { weeklyOver: 40, dailyOver: 8, dailyDoubleOver: 8 } }, { overtime: { weeklyOver: 40, dailyOver: 8, dailyDoubleOver: 7 } }]) {
     assert.throws(() => validatePayroll(input), error => error.statusCode === 400);
   }
