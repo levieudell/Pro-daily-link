@@ -142,37 +142,57 @@ async function clockIn(page) {
     }));
     assert.equal(/Missing: labor hours/i.test(sent.summary), false, JSON.stringify(sent));
     assert.match(sent.summary, /2 min logged/i, JSON.stringify(sent));
+    const firstSaved = JSON.parse(fs.readFileSync(dbFile, 'utf8'));
+    const firstDaily = (firstSaved.reports || []).find(row => (row.officeReview?.reportedLabor || []).length);
+    assert.ok(firstDaily, 'first daily was saved');
+    assert.ok(firstDaily.officeReview.reportedLabor.every(row => row.hours == null), JSON.stringify(firstDaily.officeReview.reportedLabor));
     await page.click('#report-sent-modal button.primary');
     await page.waitForFunction(() => !document.querySelector('#report-sent-modal')?.open);
     await page.evaluate(() => document.querySelector('.nav-item[data-page="myday"]').click());
     await page.waitForSelector('#myday-page.active [data-start-day]', { timeout: 20000 });
     await tap(page, '[data-start-day]');
     await clockIn(page);
+    const again = JSON.parse(fs.readFileSync(dbFile, 'utf8'));
+    const earlier = new Date(Date.now() - 3 * 60 * 1000).toISOString();
+    for (const day of again.workdays || []) if (day.status === 'active') day.startedAt = earlier;
+    for (const card of again.timeCards || []) if (!card.outAt) card.inAt = earlier;
+    fs.writeFileSync(dbFile, JSON.stringify(again));
     await tap(page, '[data-start-day]');
     await page.waitForSelector('#report-modal[open] #field-notes');
     await page.click('#report-next-step');
     await page.waitForFunction(() => /measured/i.test(document.querySelector('#field-review-cards')?.innerText || ''), { timeout: 20000 });
-    const review = await page.evaluate(() => ({
-      text: document.querySelector('#field-review-cards')?.innerText || '',
-      blankManual: [...document.querySelectorAll('[data-labor-member]')].filter(input => input.dataset.manualHours === 'true' && input.value === '').map(input => input.dataset.laborMember)
-    }));
-    assert.deepEqual(review.blankManual, [], review.text);
-    assert.equal(/unknown h reported/i.test(review.text), false, review.text);
-    assert.equal(/h reported/i.test(review.text), false, review.text);
-    const measured = review.text.match(/(\d+) min · \d+\.\d{2} h measured/i);
-    assert.ok(measured && Number(measured[1]) >= 2, review.text);
-    await page.evaluate(() => {
-      document.querySelectorAll('[data-labor-member]').forEach(input => { input.value = ''; });
+    const review = await page.$eval('#field-review-cards', el => el.innerText);
+    assert.equal(/h reported/i.test(review), false, review);
+    const measured = review.match(/(\d+) min · \d+\.\d{2} h measured/i);
+    assert.ok(measured && Number(measured[1]) >= 5, review);
+    await page.click('#field-edit-hours');
+    await page.waitForSelector('[data-labor-member]', { visible: true });
+    const opened = await page.$eval('[data-labor-member]', el => ({ value: el.value, placeholder: el.placeholder }));
+    assert.equal(opened.value, '', JSON.stringify(opened));
+    assert.match(opened.placeholder, /\d/, JSON.stringify(opened));
+    await page.$eval('[data-labor-member]', el => {
+      el.value = '1.5';
+      el.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    await page.waitForFunction(() => /1\.5 h reported/i.test(document.querySelector('#field-review-cards')?.innerText || ''));
+    await page.$eval('[data-labor-member]', el => {
+      el.value = '';
+      el.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    await page.waitForFunction(() => !/h reported/i.test(document.querySelector('#field-review-cards')?.innerText || ''));
+    await page.$eval('[data-labor-member]', el => {
+      el.value = '1.5';
+      el.dispatchEvent(new Event('input', { bubbles: true }));
     });
     await page.click('#save-report');
     await page.waitForSelector('#report-sent-modal[open]', { timeout: 20000 });
-    const restored = await page.evaluate(() => ({
-      title: document.querySelector('#report-sent-modal h2')?.textContent || '',
-      summary: document.querySelector('#report-sent-summary')?.textContent || ''
-    }));
-    assert.equal(/Missing: labor hours/i.test(restored.summary), false, JSON.stringify({ review: review.text, restored }));
-    assert.match(restored.summary, /\d+ min logged/i, JSON.stringify({ review: review.text, restored }));
-    console.log('A restored punch is measured on review and logged on send.');
+    const restored = await page.evaluate(() => document.querySelector('#report-sent-summary')?.textContent || '');
+    assert.equal(/Missing: labor hours/i.test(restored), false, restored);
+    assert.match(restored, /\d+ min logged/i, restored);
+    const typedSaved = JSON.parse(fs.readFileSync(dbFile, 'utf8'));
+    const typedDaily = (typedSaved.reports || []).find(row => (row.officeReview?.reportedLabor || []).some(entry => entry.hours === 1.5));
+    assert.ok(typedDaily, JSON.stringify((typedSaved.reports || []).map(row => row.officeReview?.reportedLabor)));
+    console.log('Untyped hours stay blank, and a typed 1.5 is reported.');
   } finally {
     if (browser) await browser.close().catch(() => {});
     child.kill();
