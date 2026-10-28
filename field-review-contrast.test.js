@@ -10,10 +10,80 @@ const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 
 async function settlePaint(page) {
   await page.evaluate(async () => {
+    await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
     await document.fonts.ready;
     await Promise.all(document.getAnimations().filter(animation => animation.effect?.getTiming().iterations !== Infinity)
       .map(animation => animation.finished.catch(() => {})));
+    await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
   });
+}
+
+async function round4Shot(page, shots, scene, theme, height) {
+  if (!shots) return;
+  fs.mkdirSync(shots, { recursive: true });
+  await settlePaint(page);
+  await page.screenshot({ path: path.join(shots, `round4-${scene}-${theme}-390-${height}.png`) });
+}
+
+async function assertMyDayStart(page, theme, height, shots) {
+  await page.setViewportSize({ width: 390, height });
+  await page.evaluate(() => window.scrollTo(0, 0));
+  await settlePaint(page);
+  const start = await page.locator('#field-start-card [data-start-day]').evaluate(el => {
+    const r = el.getBoundingClientRect(), header = document.querySelector('.topbar').getBoundingClientRect();
+    const hit = [r.top + 2, r.top + r.height / 2, r.bottom - 2].every(y => {
+      const target = document.elementFromPoint(r.left + r.width / 2, y);
+      return target === el || el.contains(target);
+    });
+    return { top: r.top, bottom: r.bottom, height: r.height, header: header.bottom, viewport: innerHeight, hit,
+      scroll: scrollY, overflow: document.documentElement.scrollWidth - innerWidth };
+  });
+  assert(start.top >= start.header && start.bottom <= height && start.height >= 44 && start.hit && start.scroll === 0 && start.overflow <= 1,
+    `${theme} ${height} Clock in is fully visible without scrolling ` + JSON.stringify(start));
+  await round4Shot(page, shots, 'myday', theme, height);
+}
+
+async function assertFocusedNotes(page, theme, height, shots) {
+  await page.setViewportSize({ width: 390, height });
+  const notes = page.locator('#field-notes');
+  await notes.evaluate(el => el.blur());
+  await page.locator('.report-step.active .report-step-scroll').evaluate(el => el.scrollTop = el.scrollHeight);
+  await notes.focus(); // Native focus from the bottom; no test-side scrollIntoView.
+  await settlePaint(page);
+  const rect = await notes.evaluate(el => {
+    const r = el.getBoundingClientRect(), header = document.querySelector('#report-modal .modal-header').getBoundingClientRect();
+    const body = el.closest('.report-step-scroll').getBoundingClientRect();
+    const hit = document.elementFromPoint(r.left + r.width / 2, r.top + 3);
+    return { top: r.top, bottom: r.bottom, header: header.bottom, bodyBottom: body.bottom,
+      hit: hit === el || el.contains(hit), active: document.activeElement === el };
+  });
+  assert(rect.active && rect.top >= rect.header + 8 && rect.bottom <= rect.bodyBottom && rect.hit,
+    `${theme} ${height} focused notes clear the header and footer ` + JSON.stringify(rect));
+  await round4Shot(page, shots, 'focused-notes', theme, height);
+}
+
+async function assertBlockedSend(page, theme, height, shots) {
+  await page.setViewportSize({ width: 390, height });
+  await page.locator('#save-report').click();
+  await page.waitForFunction(() => /Enter a quantity for each work line\./.test(document.querySelector('#report-submit-status')?.textContent || ''));
+  assert.equal(await page.locator('#report-sent-modal[open]').count(), 0, 'quantity gate still blocks send');
+  const empty = await page.locator('.report-step.active .report-step-scroll').evaluate(root => [...root.querySelectorAll('div,p,section')].filter(el => {
+    const s = getComputedStyle(el), r = el.getBoundingClientRect();
+    return el.checkVisibility() && r.width > 0 && r.height > 0 && !el.textContent.trim() &&
+      !el.querySelector('input,textarea,select,button,img,svg') && parseFloat(s.borderTopWidth) > 0;
+  }).map(el => ({ id: el.id, className: el.className })));
+  assert.deepEqual(empty, [], `${theme} ${height} blocked send has no empty bordered containers`);
+  await page.locator('#report-submit-status').evaluate(el => el.scrollIntoView({ block: 'end' }));
+  await round4Shot(page, shots, 'blocked-send', theme, height);
+  await page.locator('#field-edit-hours').evaluate(el => el.scrollIntoView({ block: 'center' }));
+  const row = await page.locator('#field-edit-hours,#field-add-line').evaluateAll(buttons => buttons.map(el => {
+    const s = getComputedStyle(el), r = el.getBoundingClientRect(), hit = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+    return { font: s.fontSize, weight: s.fontWeight, height: r.height, hit: hit === el || el.contains(hit) };
+  }));
+  assert.equal(row.length, 2);
+  assert.deepEqual(row[0], row[1], 'Edit reported hours matches Add line');
+  assert(row[0].font === '16px' && row[0].height >= 44 && row[0].hit, JSON.stringify(row));
+  await round4Shot(page, shots, 'hours-actions', theme, height);
 }
 
 // Inspect text nodes, not a hand-picked list of labels. Include rendered content
@@ -107,6 +177,7 @@ async function assertReviewHitTargets(page, theme, shots) {
   const hit = locator => locator.evaluate(el => {
     const rect = el.getBoundingClientRect();
     const body = el.closest('.report-step-scroll').getBoundingClientRect();
+    const header = document.querySelector('#report-modal .modal-header').getBoundingClientRect();
     const target = document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2);
     const uncovered = [rect.top + 3, rect.top + rect.height / 2, rect.bottom - 3].every(y => {
       const found = document.elementFromPoint(rect.left + rect.width / 2, y);
@@ -115,7 +186,7 @@ async function assertReviewHitTargets(page, theme, shots) {
     return { element: el.id || el.className, top: rect.top, bottom: rect.bottom,
       target: target?.id || target?.className || target?.tagName,
       direct: target === el || el.contains(target), uncovered,
-      clear: rect.top >= body.top && rect.bottom <= body.bottom && rect.left >= 0 && rect.right <= innerWidth };
+      clear: rect.top >= Math.max(body.top, header.bottom + 8) && rect.bottom <= body.bottom && rect.left >= 0 && rect.right <= innerWidth };
   });
   await scroll.evaluate(el => el.scrollTop = el.scrollHeight);
   await settleScroll();
@@ -227,8 +298,10 @@ async function assertPalette(page, selector) {
       const borders = await page.locator('.topbar :is(.topbar-control,[data-open-report])').evaluateAll(els =>
         els.filter(el => el.checkVisibility()).map(el => ({ id: el.id, color: getComputedStyle(el).borderTopColor })));
       assert(borders.length > 0 && borders.every(button => button.color === 'rgb(110, 110, 110)'), theme + ' Heather Gray header borders ' + JSON.stringify(borders));
-      if (theme === 'dark') assert.equal(await page.locator('#field-first-tip').evaluate(el => getComputedStyle(el).backgroundColor), 'rgb(0, 0, 0)');
+      assert.equal(await page.locator('#field-first-tip').count(), 0, 'obsolete tip is removed');
+      for (const height of [844, 500]) await assertMyDayStart(page, theme, height, shots);
     }
+    await page.setViewportSize({ width: 390, height: 844 });
     await page.locator('[data-start-day]').first().click();
     await page.locator('#start-day-modal[open]').waitFor();
     for (const theme of ['dark', 'light']) {
@@ -246,9 +319,19 @@ async function assertPalette(page, selector) {
     await page.locator('#confirm-start-day').click();
     await page.waitForFunction(() => /Clock out/i.test(document.querySelector('#start-day-button').textContent));
     await page.locator('[data-assignment-daily]').first().click();
+    for (const theme of ['dark', 'light']) {
+      await page.evaluate(theme => document.documentElement.dataset.theme = theme, theme);
+      for (const height of [844, 500]) await assertFocusedNotes(page, theme, height, shots);
+    }
+    await page.setViewportSize({ width: 390, height: 844 });
     await page.locator('#field-notes').fill('Formed east footing.');
     await page.locator('#report-next-step').click();
     await page.waitForFunction(() => document.querySelector('#report-form').dataset.currentStep === '2');
+    for (const pick of await page.locator('[data-pick-line]').all()) {
+      const footing = await pick.evaluate(el => [...el.options].find(option => /Footings/i.test(option.textContent))?.value);
+      assert(footing, 'the note can be assigned to the fixture Footings estimate line');
+      await pick.selectOption(footing);
+    }
     await page.locator('#field-edit-hours').click();
     // Edit hours exposes More; exercise its toggle before auditing the expanded content.
     await page.locator('#report-more > summary').click();
@@ -258,8 +341,13 @@ async function assertPalette(page, selector) {
     const editor = page.locator('.production-entry.is-editing');
     await editor.locator('.production-scope-toggle').waitFor();
     assert.equal(await editor.locator('.production-scope-toggle').innerText(), 'Use custom work');
+    const item = await editor.locator('.production-item').evaluate(el => [...el.options].find(option => /Curb/i.test(option.textContent))?.value);
+    assert(item, 'an estimate item is available for the quantity gate');
+    await editor.locator('.production-item').selectOption(item);
+    await editor.locator('.production-quantity').fill('0');
     for (const theme of ['dark', 'light']) {
       await page.evaluate(theme => document.documentElement.dataset.theme = theme, theme);
+      await page.locator('#field-edit-hours').click();
       const samples = await assertContrast(page, '#report-modal', theme + ' expanded review');
       assert.equal(await page.locator('#report-review-summary').evaluate(el => getComputedStyle(el).backgroundColor),
         theme === 'dark' ? 'rgb(0, 0, 0)' : 'rgb(247, 245, 240)', theme + ' solid totals background');
@@ -291,9 +379,11 @@ async function assertPalette(page, selector) {
       }
       for (const height of [844, 500]) {
         await page.setViewportSize({ width: 390, height });
+        await page.locator('#field-edit-hours').click();
         await page.locator('#report-delays').focus();
         await assertLayout(page, `${theme} 390x${height}`);
         if (height === 500) await assertReviewHitTargets(page, theme, shots);
+        await assertBlockedSend(page, theme, height, shots);
       }
       await page.setViewportSize({ width: 390, height: 844 });
     }
@@ -303,7 +393,7 @@ async function assertPalette(page, selector) {
     await assertContrast(page, '#report-modal', 'dark custom-work editor');
     await assertPalette(page, '#report-modal');
     assert.deepEqual(errors, []);
-    console.log('Playwright field review contrast passed: all rendered text, values and regular-weight placeholders; More and custom work; brand secondary controls; light/dark, first paint, clock-in, pinned full-width actions at 390x844 and 390x500. Short-screen Next step and every work-line selector pass center and edge hit tests after scrolling and native focus.');
+    console.log('Playwright field review passed: AA text, More/custom work, first paint, pinned actions, native focus/header clearance, no empty blocked-send boxes, matching hours actions and tip-free Clock in above the fold at 390x844 and 390x500 in both themes. Short-screen Next step and every work-line selector pass center and edge hit tests.');
   } finally {
     await browser?.close();
     server.kill();

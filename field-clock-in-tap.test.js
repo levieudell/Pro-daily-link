@@ -138,7 +138,7 @@ async function assertDailyOpened(page, from) {
     await page.evaluateOnNewDocument(() => {
       try {
         localStorage.setItem('pdl-analytics-consent', 'declined');
-        localStorage.setItem('pdl-field-tip', 'dismissed');
+
       } catch {}
       window.__endDayPainted = false;
       const watch = () => {

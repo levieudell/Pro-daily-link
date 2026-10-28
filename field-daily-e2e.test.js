@@ -171,8 +171,6 @@ async function login(page, email, password) {
   await page.click('form#login button.primary');
   await page.waitForFunction(() => location.pathname.includes('/app'), { timeout: 20000 });
   await page.waitForSelector('#menu-button', { timeout: 20000 });
-  const tip = await page.$('#dismiss-field-tip');
-  if (tip && await tip.isIntersectingViewport()) await tip.click().catch(() => {});
   const consent = await page.$('#pdl-consent-banner button, #pdl-consent-banner [data-decline], #pdl-consent-banner .secondary');
   if (consent) await consent.click().catch(() => {});
 }
@@ -228,7 +226,7 @@ async function openNav(page, name) {
     page.on('pageerror', error => pageErrors.push(error.message));
     await page.evaluateOnNewDocument(() => {
       localStorage.setItem('pdl-analytics-consent', 'declined');
-      localStorage.setItem('pdl-field-tip', 'dismissed');
+
       window.__autosaveLog = [];
       const watch = () => {
         const status = document.querySelector('#autosave-status');
@@ -1068,7 +1066,7 @@ async function openNav(page, name) {
     await narrow.setViewport({ width: 320, height: 568, deviceScaleFactor: 2, isMobile: true, hasTouch: true });
     await narrow.evaluateOnNewDocument(() => {
       localStorage.setItem('pdl-analytics-consent', 'declined');
-      localStorage.setItem('pdl-field-tip', 'dismissed');
+
     });
     await narrow.goto(`http://127.0.0.1:${port}/login.html`, { waitUntil: 'domcontentloaded' });
     await narrow.waitForSelector('#email');

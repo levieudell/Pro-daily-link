@@ -316,11 +316,6 @@ body.field-mode .topbar #help-button { display:inline-flex; }
 body.field-mode .topbar [data-open-report] { align-items:center; justify-content:center; width:44px; min-width:44px; height:44px; min-height:44px; padding:0; background:transparent; color:var(--pdl-white) !important; border:1px solid var(--pdl-gray); box-shadow:none; font-size:22px; line-height:1; }
 body.field-mode .topbar [data-open-report] :is(.daily-label-wide,.daily-label-short) { display:none; }
 body.field-mode .topbar .top-actions { flex-wrap:nowrap; }
-body.field-mode #field-first-tip { background:var(--pdl-offwhite) !important; border:1px solid var(--pdl-black); color:var(--pdl-black); }
-body.field-mode #field-first-tip :is(strong,span,button) { color:var(--pdl-black); }
-body.field-mode #dismiss-field-tip { font-weight:700; }
-:root[data-theme="dark"] body.field-mode #field-first-tip { background:var(--pdl-black) !important; border-color:var(--pdl-gray); }
-:root[data-theme="dark"] body.field-mode #field-first-tip :is(strong,span,button) { color:var(--pdl-white); }
 body.field-mode #myday-page :is(.field-assignment-card,.field-assignment,.myday-status-strip>div) { background:var(--surface-panel); border-color:var(--border-strong); color:var(--text-primary); }
 body.field-mode #myday-page :is(small,.field-assignment-date,.input-help) { color:var(--field-muted); }
 body.field-mode #myday-page .start-day-hero { background:var(--pdl-black); color:var(--pdl-white); border-color:var(--pdl-orange); box-shadow:none; }
@@ -335,6 +330,8 @@ body.field-mode #report-modal.report-field-compact .modal-header { position:stat
 body.field-mode #report-modal.report-field-compact form { flex:1 1 0; }
 body.field-mode #report-modal.report-field-compact .report-step.active { flex:1 1 0; }
 body.field-mode #report-modal.report-field-compact .report-step-scroll { flex:1 1 0; padding:16px; overflow-y:auto; overflow-x:hidden; scroll-padding:18px; }
+body.field-mode #report-modal .report-step-scroll :is(input,textarea,select) { scroll-margin-top:68px; scroll-margin-bottom:12px; }
+body.field-mode #report-modal #hour-split-note:empty { display:none; }
 body.field-mode #report-modal.report-field-compact .modal-actions { position:static; padding:12px 16px calc(12px + env(safe-area-inset-bottom,0px)); background:var(--surface-canvas); border-color:var(--border-strong); box-shadow:none; }
 body.field-mode #report-modal.report-field-compact [data-report-step="2"] .modal-actions { grid-template-columns:minmax(0,1fr); }
 body.field-mode #report-modal.report-field-compact #report-back { grid-column:1/-1; width:100%; justify-content:center; text-align:center; color:var(--text-primary); background:var(--surface-canvas); border:1px solid var(--text-primary); }
@@ -371,6 +368,7 @@ body.field-mode #report-modal.report-field-compact #report-more :is(summary,labe
 body.field-mode #report-modal.report-field-compact :is(.production-scope-toggle,#field-edit-hours,#suggest-hour-split,#add-custom-production) {
   min-height:48px; padding:8px 12px; border-radius:8px; font-size:12px; font-weight:700; background:var(--pdl-black); color:var(--pdl-white); border:1px solid var(--pdl-gray); box-shadow:none;
 }
+body.field-mode #report-modal.report-field-compact :is(#field-edit-hours,#field-add-line) { font-size:16px; font-weight:700; min-height:48px; }
 body.field-mode #start-day-modal { background:var(--surface-canvas); color:var(--text-primary); }
 body.field-mode #start-day-modal form { padding:0 16px 20px; }
 body.field-mode #start-day-modal .modal-header {

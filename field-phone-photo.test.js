@@ -149,7 +149,7 @@ function assertReachable(box, label) {
     const page = await browser.newPage();
     await page.evaluateOnNewDocument(() => {
       localStorage.setItem('pdl-analytics-consent', 'declined');
-      localStorage.setItem('pdl-field-tip', 'dismissed');
+
       window.__endDayPainted = false;
       const watch = () => {
         const modal = document.querySelector('#end-day-modal');
