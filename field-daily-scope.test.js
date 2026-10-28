@@ -100,6 +100,14 @@ assert.equal(optionalExtra.block.length,0,'an optional extra-work quantity still
 const quantityStillRequired=scope.sendGate({flags:[],laborHours:0.07,openClock:false,lines:[{quantity:'',needsQuantity:true}]});
 assert.ok(quantityStillRequired.block.some(line=>/quantity/i.test(line)));
 const keptExtra=scope.keepProductionLines([{description:'Set forms',extra_work:true,quantity:0,laborHours:0.05},{description:'Curb',estimateItemId:1,quantity:40,laborHours:0.02}],'Poured 40 LF of curb. Set forms.');
+const addedCurb=scope.keepProductionLines([
+  {description:'Curb',estimateItemId:1,quantity:1,unit:'LF',laborHours:0.02,laborMinutes:1},
+  {description:'Curb',estimateItemId:1,quantity:10,unit:'LF',laborHours:0.02,laborMinutes:1}
+],'Formed curb.');
+assert.equal(addedCurb.length,1);
+assert.equal(addedCurb[0].quantity,11);
+assert.equal(addedCurb[0].laborHours,0.04);
+assert.equal(addedCurb[0].laborMinutes,2);
 assert.equal(keptExtra.length,1);
 assert.equal(keptExtra[0].description,'Curb');
 const extraMinutes=scope.fieldExtraItems([{...extra,who_asked:'owner',description:'Set forms.',laborMinutes:1,laborHours:0.02}]);
