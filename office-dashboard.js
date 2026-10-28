@@ -73,9 +73,9 @@ if (typeof module !== 'undefined' && module.exports) {
       const previousReportLayout = applyFieldReportLayout;
       applyFieldReportLayout = function (...args) {
         const result = previousReportLayout.apply(this, args);
-        if (currentRole === 'office' && $('#report-type')?.value !== 'superintendent') {
+        if (['office','field'].includes(currentRole) && $('#report-type')?.value !== 'superintendent') {
           if (!editingReportId) $('#report-modal-title').textContent = text('New daily', 'Nuevo reporte');
-          renderOfficePhotoCount();
+          if (currentRole === 'office') renderOfficePhotoCount();
         }
         return result;
       };
