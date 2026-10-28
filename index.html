@@ -3,12 +3,13 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <meta name="theme-color" content="#10251e" />
+  <meta name="theme-color" content="#F7F5F0" />
   <title>Pro Daily Link</title>
   <link rel="icon" type="image/png" href="assets/pro-daily-link-logo.png" />
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Oswald:wght@500;600;700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Anton&family=Inter:wght@400;500;600;700;900&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="assets/brand-fonts.css?v=20261028-office1" />
   <link rel="stylesheet" href="styles.css?v=20261014-review3-20261017-fieldreview1-office1-mobile3-20261019-schedule1-c1photo-nogo1-20261027-c1append1-c3dqty1-c3dqty3-c3dqty4-c3dqty5-c3dqty6-c3dqty7-c3dqty8-c3dqty9" />
   <link rel="stylesheet" href="estimate-mobile.css" />
   <link rel="stylesheet" href="safety-pm-ui.css?v=20261026-safetyv3" />
@@ -17,6 +18,7 @@
   <link rel="stylesheet" href="project-site-visits-ui.css?v=20261026-pm-visit3" />
   <link rel="stylesheet" href="project-assistant-ui.css?v=20261007-assistant-draft" />
   <link rel="stylesheet" href="design-system.css?v=20261021-field-clock-button1" />
+  <link rel="stylesheet" href="office-dashboard.css?v=20261028-office4" />
   <link rel="manifest" href="manifest.webmanifest" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="default" />
@@ -31,10 +33,11 @@
     <div class="connection-banner" id="connection-banner" role="status"></div>
     <div class="network-activity" id="network-activity" role="status" aria-live="polite" aria-label="Updating workspace" hidden><i></i><span>Updating…</span></div>
     <aside class="sidebar" id="sidebar">
-      <div class="brand"><button type="button" class="brand-home" id="sidebar-home" aria-label="Go to Overview"><span class="brand-mark"><img src="assets/pro-daily-link-logo.png" alt="" /></span><span>Pro Daily <b>Link</b></span></button></div>
+      <div class="brand"><button type="button" class="brand-home pdl-brand-lockup" id="sidebar-home" aria-label="Go to Overview"><img src="assets/pdl-monogram.svg" alt="" width="298" height="225" /><span class="pdl-brand-rule" aria-hidden="true"></span><span class="pdl-brand-tagline">Murder the<br>Guesswork</span></button></div>
       <nav id="main-nav" aria-label="Primary navigation">
         <p class="nav-section-label office-only">Command</p>
         <button class="nav-item active office-only" data-page="dashboard"><span>▦</span> Overview</button>
+        <button class="nav-item office-only" data-page="projects"><span>⌂</span> Projects</button>
         <button class="nav-item office-only" data-page="actions"><span>!</span> Action center <em id="action-count">0</em></button>
         <p class="nav-section-label office-only">Operations</p>
         <button class="nav-item office-only" data-page="schedule"><span>▣</span> Schedule</button>
@@ -46,13 +49,12 @@
         <button class="nav-item" data-page="reports"><span>≡</span> Daily reports <em id="report-count" hidden>0</em></button>
         <button type="button" class="nav-item" data-page="safety"><span aria-hidden="true">✓</span> Safety</button>
         <p class="nav-section-label office-only">Work</p>
-        <button class="nav-item office-only" data-page="projects"><span>⌂</span> Projects</button>
         <button class="nav-item office-only" data-page="customers"><span>▤</span> Customers</button>
         <button class="nav-item office-only" data-page="team"><span>♙</span> Team</button>
         <details class="nav-more office-only" id="nav-more"><summary><span>•••</span> Analyze &amp; configure</summary><div><button class="nav-item office-only" data-page="insights"><span>↗</span> Production insights</button><button class="nav-item office-only" data-page="catalog"><span>▧</span> Production catalog</button><button class="nav-item office-only" data-page="settings"><span>⚙</span> Company settings</button></div></details>
       </nav>
       <div class="sidebar-bottom">
-        <div class="trial-card"><small id="plan-name">PLAN</small><strong id="trial-days">Loading plan…</strong><div class="trial-bar"><i id="trial-progress"></i></div><button type="button" id="manage-plan">Manage plan</button></div>
+        <details class="office-plan-details office-only"><summary>Plan details</summary><div class="trial-card"><small id="plan-name">PLAN</small><strong id="trial-days">Loading plan…</strong><div class="trial-bar"><i id="trial-progress"></i></div><button type="button" id="manage-plan">Manage plan</button></div></details>
         <button class="profile" id="profile-button"><span class="avatar" id="profile-avatar">—</span><span><b id="profile-name">Loading profile…</b><small id="profile-role">Signed-in user</small></span><i>•••</i></button>
       </div>
     </aside>
@@ -64,25 +66,29 @@
         <button type="button" class="header-company-mark" id="header-company-mark" aria-label="Go to Overview" title="Overview">PD</button>
         <button class="app-back-button topbar-control" id="app-back-button" type="button" aria-label="Go back" hidden><span aria-hidden="true">←</span> Back</button>
         <div class="site-switcher"><small>VIEW AS</small><select id="role-switcher"><option value="office">Office administrator</option><option value="field">Field team · Marcus Reed</option></select></div>
-        <div class="top-actions"><button class="icon-button help-trigger topbar-control" id="help-button" aria-label="Open Help Center" title="Help Center"><svg aria-hidden="true" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M9.7 9a2.4 2.4 0 0 1 4.6.9c0 1.7-2.3 2-2.3 3.6M12 17h.01"/></svg></button><button class="secondary small" id="logout-button" hidden style="display:none!important">Sign out</button><button class="primary small" data-open-report aria-label="New daily report"><span aria-hidden="true">＋</span> <span class="daily-label-wide">New daily report</span><span class="daily-label-short">Daily</span></button></div>
+        <div class="office-topbar-label office-only"><small>Office</small><strong id="office-page-name">Overview</strong></div>
+        <div class="top-actions"><button class="icon-button help-trigger topbar-control" id="help-button" aria-label="Open Help Center" title="Help Center"><svg aria-hidden="true" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M9.7 9a2.4 2.4 0 0 1 4.6.9c0 1.7-2.3 2-2.3 3.6M12 17h.01"/></svg></button><button class="secondary small" id="logout-button" hidden style="display:none!important">Sign out</button><button class="primary small field-only" data-open-report aria-label="New daily report"><span aria-hidden="true">＋</span> <span class="daily-label-wide">New daily report</span><span class="daily-label-short">Daily</span></button></div>
       </header>
 
       <section class="page active" id="dashboard-page">
-        <div class="page-heading dashboard-heading"><div><p class="eyebrow">OPERATIONS COMMAND</p><h1>Welcome back.</h1><p>What needs action, what’s moving, and what’s at risk—without the noise.</p></div><div class="dashboard-heading-actions"><span class="system-live"><i aria-hidden="true"></i><span>Live workspace</span></span><button class="secondary" id="export-button">⇩ Export summary</button></div></div>
+        <div class="page-heading dashboard-heading"><div><p class="eyebrow">OPERATIONS COMMAND</p><h1>Welcome back.</h1><p>Review the work. Keep the jobs moving.</p></div><div class="dashboard-heading-actions"><span class="system-live"><i aria-hidden="true"></i><span>Live workspace</span></span><button class="secondary" id="export-button">⇩ Export summary</button></div></div>
 
-        <div class="alert command-priority"><span>!</span><div><small class="alert-kicker">NEXT ACTION</small><strong>3 daily reports need attention</strong><p>Two are missing production quantities and one has a potential delay.</p></div><button data-page-link="actions">Open action center →</button></div>
+        <section class="panel office-priorities" id="office-priorities" aria-label="Office priorities">
+          <div class="alert command-priority"><span aria-hidden="true">!</span><div><small class="alert-kicker">NEXT ACTION</small><strong>Checking today's work…</strong><p>Open an item to review the details.</p></div><button data-page-link="actions">View all actions →</button></div>
+          <div id="dashboard-actions" class="dashboard-actions"></div>
+        </section>
         <section class="setup-checklist" id="setup-checklist" hidden>
           <div class="setup-checklist-copy"><p class="eyebrow">SELF-GUIDED SETUP</p><h2>Setup checklist</h2><p>Setup checklist, Help Center, templates, and standard support are included. Finish these three steps in the workspace.</p></div>
           <ol>
             <li data-setup-step="project"><button type="button" data-setup="project"><span class="setup-index">1</span><span class="setup-copy"><b>Create your first project</b><small>Opens the new project form.</small></span><span class="setup-state">Start</span></button></li>
             <li data-setup-step="crew"><button type="button" data-setup="crew"><span class="setup-index">2</span><span class="setup-copy"><b>Invite your crew</b><small>Opens add team member.</small></span><span class="setup-state">Start</span></button></li>
-            <li data-setup-step="report"><button type="button" data-setup="report"><span class="setup-index">3</span><span class="setup-copy"><b>Submit a first daily report</b><small>Opens a new daily report.</small></span><span class="setup-state">Start</span></button></li>
+            <li data-setup-step="report"><button type="button" data-setup="report"><span class="setup-index">3</span><span class="setup-copy"><b>Open a project’s dailies</b><small>Start or review a daily inside the project.</small></span><span class="setup-state">Start</span></button></li>
           </ol>
         </section>
 
         <div class="dashboard-empty" id="dashboard-empty" hidden>
-          <h2>Your command center is ready</h2>
-          <p>Once your crew is set up and daily reports start coming in, this page shows live production, hours, and what is due today. Finish the three steps above to get going.</p>
+          <h2>Your first job starts here</h2>
+          <p>Add a project and invite the crew. Their dailies and the work that needs your review will show up here.</p>
         </div>
 
         <div class="stats-grid">
@@ -92,22 +98,29 @@
           <article class="stat-card" data-page-link="insights" role="link" tabindex="0" aria-label="Open production insights"><div class="stat-icon red">↘</div><div><small>WEEKLY PRODUCTION</small><strong>94.2%</strong><p><b class="red-text">↓ 3.1%</b> vs. estimate</p></div><span class="stat-card-arrow" aria-hidden="true">→</span></article>
         </div>
 
-        <div class="dashboard-grid">
+        <details class="dashboard-production-details" id="dashboard-production-details">
+          <summary><span>Production detail</span><span class="detail-hint">Approved work vs. estimate</span><span class="details-chevron" aria-hidden="true">＋</span></summary>
           <article class="panel production-panel" aria-label="Production trend available in Production insights">
-            <div class="panel-header"><div><h2>Production performance</h2><p>Actual production compared with estimate</p></div><select id="period-select"><option>This week</option><option>This month</option></select></div>
+            <div class="panel-header"><div><h2>Production performance</h2><p>Actual production compared with estimate</p></div><select id="period-select" aria-label="Production period"><option>This week</option><option>This month</option></select></div>
             <div class="chart-summary"><div><small>ACTUAL</small><strong>94.2%</strong><span class="trend">-3.1%</span></div><div class="legend"><span><i class="actual"></i>Actual</span><span><i class="estimate"></i>Estimated</span></div></div>
             <div class="chart" id="production-chart"></div>
+            <button class="secondary production-details-link" type="button" data-page-link="insights">Open all production details →</button>
           </article>
+        </details>
+
+        <div class="dashboard-work-grid">
+        <div class="dashboard-grid">
           <article class="panel today-panel">
-            <div class="panel-header"><div><h2>Today's field activity</h2><p id="activity-date"></p></div><button data-page-link="schedule">Full schedule →</button></div>
+            <div class="panel-header"><div><h2>In the field today</h2><p id="activity-date"></p></div><button data-page-link="schedule">Schedule →</button></div>
             <div id="activity-list"></div>
           </article>
         </div>
 
         <article class="panel projects-panel">
-          <div class="panel-header"><div><h2>Jobs to watch</h2><p>Highest-risk active work, with the reason visible</p></div><button data-page-link="projects">View all projects →</button></div>
+          <div class="panel-header"><div><h2>Jobs to watch</h2><p>Open a job to see the full picture.</p></div><button data-page-link="projects">All projects →</button></div>
           <div class="table-wrap"><table><thead><tr><th>PROJECT</th><th>CREW TODAY</th><th>COMPLETION</th><th>PRODUCTION</th><th>STATUS</th></tr></thead><tbody id="project-table"></tbody></table></div>
         </article>
+        </div>
       </section>
 
       <section class="page" id="actions-page">
@@ -212,7 +225,7 @@
       <section class="page" id="catalog-page"><div class="page-heading"><div><p class="eyebrow">REUSABLE WORK</p><h1>Production catalog</h1><p>Save common scope items once, reuse them in estimates, and build verified production history.</p></div><button class="primary" id="new-catalog-item">＋ Catalog item</button></div><div class="filter-row"><div class="search-box">⌕ <input id="catalog-search" placeholder="Search work items or categories"></div></div><div class="catalog-grid" id="catalog-grid"></div></section>
 
       <section class="page" id="reports-page">
-        <div class="page-heading"><div><p class="eyebrow">FIELD TO OFFICE</p><h1>Daily reports</h1><p>Review field notes transformed into structured production data.</p></div><div class="report-page-actions"><button type="button" class="secondary" id="close-report-view" hidden>← Back to project</button><button class="primary" data-open-report>＋ New daily report</button></div></div>
+        <div class="page-heading"><div><p class="eyebrow">FIELD TO OFFICE</p><h1>Daily reports</h1><p>Review field notes transformed into structured production data.</p></div><div class="report-page-actions"><button type="button" class="secondary" id="close-report-view" hidden>← Back to project</button><button class="primary field-only" data-open-report>＋ New daily report</button></div></div>
         <div class="report-list-tools" aria-label="Filter and sort daily reports"><label>Show<select id="report-status-filter"><option value="all">All reports</option><option value="Draft">Drafts</option><option value="Needs review">Needs review</option><option value="Missing data">Missing data</option><option value="Approved">Approved</option></select></label><label>Sort<select id="report-sort"><option value="newest">Newest first</option><option value="oldest">Oldest first</option><option value="project">Project name</option><option value="status">Status</option></select></label></div>
         <div class="report-layout"><div class="report-list" id="report-list"></div><article class="panel report-detail" id="report-detail"></article></div>
       </section>
@@ -277,7 +290,7 @@
   <dialog id="sub-link-modal"><form method="dialog"><div class="modal-header"><div><p class="eyebrow">PROJECT ACCESS</p><h2 id="sub-link-title">Guest link</h2></div><button class="close-button" value="cancel">×</button></div>
     <input id="sub-link-id" type="hidden"><label>Project<select id="sub-link-project"></select></label><label>Reporting mode<select id="sub-link-mode"><option value="progress">Simple progress check-in</option><option value="tm">Detailed T&M ticket</option></select></label><label>Link expires<input id="sub-link-expires" type="date"></label><div id="sub-link-result"></div><div class="modal-actions"><button value="cancel" class="secondary">Close</button><button type="button" class="primary" id="generate-sub-link">Generate secure link</button></div>
   </form></dialog>
-  <dialog id="report-modal">
+  <dialog id="report-modal" aria-labelledby="report-modal-title">
     <div class="modal-header"><div><p class="eyebrow">FIELD REPORT</p><h2 id="report-modal-title">Create daily report</h2><p id="report-work-date" class="report-work-date" aria-live="polite"></p></div><button type="button" id="close-report" class="close-button" value="cancel" aria-label="Close daily report">×</button></div>
     <form method="dialog" id="report-form">
       <button type="button" class="secondary small" id="report-open-safety">Safety checks &amp; hazards</button>
@@ -305,7 +318,7 @@
         </section>
         <p class="voice-status" id="voice-status" role="status" aria-live="polite" hidden></p>
         <div class="autosave-status" id="autosave-status">Notes save automatically on this device</div>
-        <div id="field-daily-tools-home"><div id="field-daily-tools"><div class="note-tools"><button type="button" id="flag-extra-work">＋ Flag extra work</button></div><label id="report-photos-field"><span class="daily-photos-hit">Daily photos<input type="file" id="report-photos" accept="image/*" capture="environment" multiple /></span><small class="input-help">Add progress, material, issue, or completed-work photos.</small></label><span id="report-photo-preview" class="report-photo-preview" hidden></span><label id="report-photo-tags-field">Photo tags<input id="report-photo-tags" placeholder="progress, concrete, east wall"><small class="input-help">Separate tags with commas. Date and time are added automatically.</small></label></div></div>
+        <div id="field-daily-tools-home"><div id="field-daily-tools"><div class="note-tools"><button type="button" id="flag-extra-work">＋ Flag extra work</button></div><label id="report-photos-field"><span class="daily-photos-hit"><span class="daily-photos-label">Daily photos</span><span class="office-photo-label"><svg aria-hidden="true" viewBox="0 0 24 24"><path d="M3 6h4l2-3h6l2 3h4v15H3z"/><circle cx="12" cy="13" r="4"/></svg>Add photos</span><input type="file" id="report-photos" accept="image/*" capture="environment" multiple /></span><small class="input-help">Add progress, material, issue, or completed-work photos.</small></label><output id="office-photo-count" class="office-photo-count" aria-live="polite" hidden></output><span id="report-photo-preview" class="report-photo-preview" hidden></span><label id="report-photo-tags-field">Photo tags<input id="report-photo-tags" placeholder="progress, concrete, east wall"><small class="input-help">Separate tags with commas. Date and time are added automatically.</small></label></div></div>
         <button type="button" class="ai-button" id="ai-convert"><span>✦</span><b>Suggest lines from notes</b><small>Sends these notes to AI. Nothing is added until you accept each suggestion.</small></button>
         <p id="field-ai-disclosure" class="field-ai-disclosure">Notes are processed by AI to fill your report.</p>
         </div>
@@ -555,7 +568,7 @@
   <script src="register-service-worker.js"></script>
   <script src="staging-banner.js"></script>
   <script src="offline.js?v=20261026-scoped-queue2"></script>
-  <script src="i18n.js?v=20261019-schedule1"></script>
+  <script src="i18n.js?v=20261028-office1"></script>
   <script src="csv-cell.js?v=20261004-security"></script>
   <script src="schedule-touch-drag.js?v=20261011-task-assign"></script>
   <script src="schedule-availability.js?v=20261005-partial-day-leave"></script>
@@ -582,5 +595,6 @@
   <script src="safety-pm-ui.js?v=20261026-safetyv3"></script>
   <script src="safety-workspace-ui.js?v=20261026-safetyv3"></script>
   <script src="project-site-visits-ui.js?v=20261026-pm-visit3"></script>
+  <script src="office-dashboard.js?v=20261028-office4"></script>
 </body>
 </html>
