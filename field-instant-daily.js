@@ -545,7 +545,7 @@ var fieldScopeFlags=[];
     const noteLines=noteText.split(/\n+/).map(line=>line.trim()).filter(Boolean);
     const covered=new Set(fieldScopeFlags.map(flag=>String(flag?.description||'').trim()).filter(Boolean));
     const uncovered=noteLines.filter(line=>!covered.has(line));
-    if(uncovered.length)cards.push(`<article class="field-review-source"><strong>Original field notes</strong><p style="white-space:pre-wrap">${escapeText(uncovered.join('\n'))}</p><small>Source notes are saved with this daily. AI suggestions need your review.</small></article>`);
+    if(uncovered.length){const sourceHtml=uncovered.length===noteLines.length?escapeText(sourceNotes):escapeText(uncovered.join('\n'));cards.push(`<article class="field-review-source"><strong>Original field notes</strong><p style="white-space:pre-wrap">${sourceHtml}</p><small>Source notes are saved with this daily. AI suggestions need your review.</small></article>`)}
     for(const reason of FieldDailyScope.narrativeWarnings(sourceNotes,$('#report-summary')?.value))cards.push(`<p class="field-clock-warning" role="status">${escapeText(reason.message)} You can send this to the office for review.</p>`);
     const notesForLines=$('#field-notes')?.value||'';
     $$('.production-entry').forEach((row,index)=>{
