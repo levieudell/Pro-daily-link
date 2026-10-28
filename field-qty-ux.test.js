@@ -40,15 +40,19 @@ async function login(page, port) {
 }
 
 async function tap(page, selector) {
-  const point = await page.$eval(selector, el => {
+  await page.waitForSelector(selector, { visible: true, timeout: 20000 });
+  await page.waitForFunction(target => {
+    const el = document.querySelector(target);
+    if (!el) return false;
     el.scrollIntoView({ block: 'center', behavior: 'instant' });
     const box = el.getBoundingClientRect();
-    const x = Math.round(box.left + box.width / 2);
-    const y = Math.round(box.top + box.height / 2);
-    const hit = document.elementFromPoint(x, y);
-    return { x, y, hit: hit === el || Boolean(el.contains(hit)) };
+    const hit = document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2);
+    return hit === el || Boolean(el.contains(hit));
+  }, { timeout: 20000 }, selector);
+  const point = await page.$eval(selector, el => {
+    const box = el.getBoundingClientRect();
+    return { x: Math.round(box.left + box.width / 2), y: Math.round(box.top + box.height / 2) };
   });
-  assert.equal(point.hit, true, `tap missed ${selector}`);
   await page.touchscreen.tap(point.x, point.y);
 }
 
@@ -106,9 +110,10 @@ async function clockIn(page) {
     await page.setViewport({ width: 390, height: 844, isMobile: true, hasTouch: true });
     page.on('dialog', async dialog => { await dialog.dismiss(); });
     await login(page, port);
-    await tap(page, '[data-start-day]');
+    await page.waitForSelector('#myday-page.active [data-start-day]', { timeout: 20000 });
+    await tap(page, '#myday-page.active [data-start-day]');
     await clockIn(page);
-    await tap(page, '[data-start-day]');
+    await tap(page, '#myday-page.active [data-start-day]');
     await page.waitForSelector('#report-modal[open] #field-notes');
     await page.$eval('#field-notes', (el, note) => {
       el.value = note;
