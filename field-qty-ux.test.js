@@ -139,10 +139,12 @@ async function clockIn(page) {
     await page.waitForSelector('.production-entry.is-editing .production-quantity');
     const picked = await page.evaluate(() => {
       const qty = document.querySelector('.production-entry.is-editing .production-quantity');
-      return { value: qty.value, placeholder: qty.placeholder, focused: document.activeElement === qty };
+      return { value: qty.value, placeholder: qty.placeholder, type: qty.type, inputMode: qty.inputMode, focused: document.activeElement === qty };
     });
     assert.equal(picked.value, '');
     assert.equal(picked.placeholder, '0');
+    assert.equal(picked.type, 'number');
+    assert.equal(picked.inputMode, 'decimal');
     assert.equal(picked.focused, true, JSON.stringify(picked));
     await page.$eval('.production-entry.is-editing .production-quantity', el => {
       el.value = '0';
@@ -160,11 +162,13 @@ async function clockIn(page) {
       select.value = option.value;
       select.dispatchEvent(new Event('change', { bubbles: true }));
       const qty = row.querySelector('.production-quantity');
-      return { ok: true, value: qty.value, placeholder: qty.placeholder, focused: document.activeElement === qty };
+      return { ok: true, value: qty.value, placeholder: qty.placeholder, type: qty.type, inputMode: qty.inputMode, focused: document.activeElement === qty };
     });
     assert.equal(manual.ok, true, JSON.stringify(manual));
     assert.equal(manual.value, '');
     assert.equal(manual.placeholder, '0');
+    assert.equal(manual.type, 'number');
+    assert.equal(manual.inputMode, 'decimal');
     assert.equal(manual.focused, true, JSON.stringify(manual));
     console.log('Quantity starts empty, focused, and the review hint fits.');
   } finally {
