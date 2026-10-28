@@ -148,11 +148,6 @@ async function clockIn(page) {
     await page.waitForSelector('#myday-page.active [data-start-day]', { timeout: 20000 });
     await tap(page, '[data-start-day]');
     await clockIn(page);
-    const again = JSON.parse(fs.readFileSync(dbFile, 'utf8'));
-    const earlier = new Date(Date.now() - 3 * 60 * 1000).toISOString();
-    for (const day of again.workdays || []) if (day.status === 'active') day.startedAt = earlier;
-    for (const card of again.timeCards || []) if (!card.outAt) card.inAt = earlier;
-    fs.writeFileSync(dbFile, JSON.stringify(again));
     await tap(page, '[data-start-day]');
     await page.waitForSelector('#report-modal[open] #field-notes');
     await page.click('#report-next-step');
@@ -163,6 +158,7 @@ async function clockIn(page) {
     }));
     assert.deepEqual(review.blankManual, [], review.text);
     assert.equal(/unknown h reported/i.test(review.text), false, review.text);
+    assert.equal(/h reported/i.test(review.text), false, review.text);
     const measured = review.text.match(/(\d+) min · \d+\.\d{2} h measured/i);
     assert.ok(measured && Number(measured[1]) >= 2, review.text);
     await page.evaluate(() => {
