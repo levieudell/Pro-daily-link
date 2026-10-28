@@ -510,6 +510,9 @@ var fieldScopeFlags=[];
       bindPickedLine(flag,item);
       renderFlags();
       renderFieldReview();
+      const picked=[...$$('.production-entry')].find(entry=>String(entry.dataset.estimateItemId||entry.querySelector('.production-item')?.value||'')===String(item.id));
+      $$('.production-entry').forEach(entry=>entry.classList.remove('is-editing'));
+      if(picked){picked.classList.add('is-editing');const qty=picked.querySelector('.production-quantity');qty?.scrollIntoView?.({block:'center',behavior:'auto'});qty?.focus?.({preventScroll:true})}
       persistResolvedChoice();
     });
   }
