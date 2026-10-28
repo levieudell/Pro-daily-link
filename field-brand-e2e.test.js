@@ -56,9 +56,10 @@ async function dailyBounds(page,label){
    assert.equal(header.height,56);assert.equal(header.bg,'rgb(0, 0, 0)');assert.equal(header.border,'rgb(255, 102, 0)');assert(header.mark.includes('assets/pdl-monogram.svg'));assert(header.overflow<=1);for(const icon of header.icons){assert.equal(icon.width,44);assert.equal(icon.height,44)}
    await contrast(page,['#field-first-tip strong','#field-first-tip span','#dismiss-field-tip','#myday-page h1','#myday-page small','#myday-page span','#myday-page p','#myday-page button','#myday-page .field-assignment-map']);await shot(page,`myday-${theme}-390-${height}`);
   }
-  await page.setViewport({width:1280,height:800});await settle(page);
+  await page.setViewport({width:1280,height:800});await page.waitForSelector('#myday-page.active [data-start-day]');await page.waitForFunction(()=>document.documentElement.classList.contains('workspace-ready'));await settle(page);
   const desktopMark=await page.$eval('#header-company-mark',el=>({visible:el.checkVisibility(),width:el.getBoundingClientRect().width,overflow:document.documentElement.scrollWidth-innerWidth}));assert(desktopMark.visible&&desktopMark.width>=140&&desktopMark.overflow<=1,'field desktop keeps the full lockup');await shot(page,'myday-desktop-1280-800');
   await page.setViewport({width:390,height:844,isMobile:true,hasTouch:true});
+  await page.waitForSelector('#myday-page.active [data-start-day]');await page.waitForFunction(()=>document.documentElement.classList.contains('workspace-ready'));
   await page.click('[data-start-day]');await page.waitForSelector('#start-day-modal[open]');
   for(const box of await page.$$('#start-day-members input')){const keep=await box.evaluate(el=>/Jordan Reed/.test(el.closest('label').textContent));if(await box.evaluate(el=>el.checked)!==keep)await box.click()}
   await page.click('#confirm-start-day');await page.waitForFunction(()=>/Clock out/i.test(document.querySelector('#start-day-button').textContent));
