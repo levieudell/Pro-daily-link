@@ -4,6 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta name="theme-color" content="#F7F5F0" />
+  <script>(()=>{let theme='light';try{theme=localStorage.getItem('pdl-theme')||theme}catch{}const dark=theme==='dark'||(theme==='system'&&matchMedia('(prefers-color-scheme: dark)').matches);document.documentElement.dataset.theme=dark?'dark':'light';document.querySelector('meta[name="theme-color"]').content=dark?'#000000':'#F7F5F0'})();</script>
   <title>Pro Daily Link</title>
   <link rel="icon" type="image/png" href="assets/pro-daily-link-logo.png" />
   <link rel="preconnect" href="https://fonts.googleapis.com">

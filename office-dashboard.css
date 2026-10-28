@@ -308,8 +308,8 @@ body:not(.field-mode) .report-page-actions [data-open-report] { display:none !im
 :root[data-theme="dark"] #report-modal.report-office-compact #field-notes::placeholder { color:var(--pdl-white); }
 
 /* Field uses the same brand tokens, header, notes, and primary actions. */
-body.field-mode { --field-muted:var(--pdl-gray); }
-:root[data-theme="dark"] body.field-mode { --field-muted:var(--pdl-white); }
+body.field-mode { --field-muted:var(--pdl-gray); --field-placeholder:var(--pdl-gray); }
+:root[data-theme="dark"] body.field-mode { --field-muted:var(--text-secondary); --field-placeholder:color-mix(in srgb,var(--pdl-white) 40%,var(--pdl-gray)); }
 body.field-mode .topbar #help-button { display:inline-flex; }
 body.field-mode .topbar [data-open-report] { align-items:center; justify-content:center; width:44px; min-width:44px; height:44px; min-height:44px; padding:0; background:transparent; color:var(--pdl-white) !important; border:1px solid #3C3C3C; box-shadow:none; font-size:22px; line-height:1; }
 body.field-mode .topbar [data-open-report] :is(.daily-label-wide,.daily-label-short) { display:none; }
@@ -334,7 +334,8 @@ body.field-mode #report-modal.report-field-compact form { flex:1 1 0; }
 body.field-mode #report-modal.report-field-compact .report-step.active { flex:1 1 0; }
 body.field-mode #report-modal.report-field-compact .report-step-scroll { flex:1 1 0; padding:16px; overflow-y:auto; overflow-x:hidden; scroll-padding:18px; }
 body.field-mode #report-modal.report-field-compact .modal-actions { position:static; padding:12px 16px calc(12px + env(safe-area-inset-bottom,0px)); background:var(--surface-canvas); border-color:var(--border-strong); box-shadow:none; }
-body.field-mode #report-modal.report-field-compact #report-back { color:var(--text-primary); background:var(--surface-canvas); border:1px solid var(--text-primary); }
+body.field-mode #report-modal.report-field-compact [data-report-step="2"] .modal-actions { grid-template-columns:minmax(0,1fr); }
+body.field-mode #report-modal.report-field-compact #report-back { grid-column:1/-1; width:100%; justify-content:center; text-align:center; color:var(--text-primary); background:var(--surface-canvas); border:1px solid var(--text-primary); }
 body.field-mode #report-modal.report-field-compact #report-job-context { margin-right:0; }
 body.field-mode #report-modal.report-field-compact .report-job-heading h3 { font-family:Anton,sans-serif !important; font-size:24px; font-weight:400; letter-spacing:0; }
 body.field-mode #report-modal.report-field-compact .report-job-heading .project-badge { background:var(--surface-canvas) !important; color:var(--text-primary); border:1px solid var(--border-strong); }
@@ -345,9 +346,10 @@ body.field-mode #report-modal.report-field-compact :is(small,dt,.input-help,.fie
 body.field-mode #report-modal.report-field-compact :is(.field-flag button,#field-clock-out,#field-add-line) { background:var(--pdl-black); color:var(--pdl-white); border-color:var(--pdl-gray); }
 body.field-mode #report-modal.report-field-compact .field-flag button:is([data-flag-choice="extra"],[data-flag-choice="bill"]) { background:var(--pdl-orange); color:var(--pdl-black); border-color:var(--pdl-orange); }
 body.field-mode #report-modal.report-field-compact .field-flag button.is-selected { outline-color:var(--pdl-orange); }
-body.field-mode #report-modal.report-field-compact :is(input,select,textarea) { color:var(--text-primary); background:var(--surface-panel); border-color:var(--border-strong); }
+body.field-mode #report-modal.report-field-compact :is(input,select,textarea) { color:var(--text-primary); background:var(--surface-panel) !important; border-color:var(--border-strong); }
+body.field-mode #report-modal.report-field-compact .production-hours { border-color:var(--border-strong) !important; }
 body.field-mode #report-modal.report-field-compact :is(.touch-stepper button,.production-remove,.field-review-source button) { background:var(--surface-panel); color:var(--text-primary); border-color:var(--border-strong); }
-body.field-mode #report-modal.report-field-compact :is(input,textarea)::placeholder { color:var(--field-muted); opacity:1; }
+body.field-mode #report-modal.report-field-compact :is(input,textarea)::placeholder { color:var(--field-placeholder); opacity:1; }
 body.field-mode #report-modal.report-field-compact :is(.voice-capture-panel,.voice-status) { background:var(--surface-canvas); color:var(--text-primary); border-color:var(--border-strong); }
 body.field-mode #report-modal.report-field-compact .voice-capture-panel h3 { color:var(--text-primary); }
 body.field-mode #report-modal.report-field-compact .voice-capture-circle { background:var(--pdl-orange); color:var(--pdl-black); box-shadow:none; animation:none; }
@@ -356,7 +358,32 @@ body.field-mode #report-modal.report-field-compact #voice-capture-cancel { backg
 body.field-mode #report-sent-modal { background:var(--surface-canvas); color:var(--text-primary); }
 body.field-mode #report-sent-modal .success-mark { background:var(--pdl-orange); color:var(--pdl-black); }
 :root[data-theme="dark"] body.field-mode #report-modal.report-field-compact #field-notes { background:var(--pdl-black) !important; color:var(--pdl-white) !important; }
-:root[data-theme="dark"] body.field-mode #report-modal.report-field-compact #field-notes::placeholder { color:var(--pdl-white); }
+:root[data-theme="dark"] body.field-mode #report-modal.report-field-compact #field-notes::placeholder { color:var(--field-placeholder); }
+
+/* Expanded field review and work-line editor share the same theme surfaces. */
+body.field-mode #report-modal.report-field-compact :is(#report-more,.report-review-summary>div,.verify-banner,.report-gaps,.report-submit-status,.hour-split-note,.production-entry) {
+  background:var(--surface-canvas); color:var(--text-primary); border-color:var(--border-strong); box-shadow:none;
+}
+body.field-mode #report-modal.report-field-compact #report-more :is(summary,label) { color:var(--text-primary); }
+body.field-mode #report-modal.report-field-compact :is(.production-scope-toggle,#suggest-hour-split,#add-custom-production) {
+  min-height:48px; background:var(--pdl-black); color:var(--pdl-white); border:1px solid var(--pdl-gray); box-shadow:none;
+}
+body.field-mode #start-day-modal { background:var(--surface-canvas); color:var(--text-primary); }
+body.field-mode #start-day-modal form { padding:0 16px 20px; }
+body.field-mode #start-day-modal .modal-header {
+  box-sizing:border-box; height:56px; min-height:56px; align-items:center; margin:0 -16px 18px; padding:4px 16px; background:var(--pdl-black); color:var(--pdl-white); border-bottom:3px solid var(--pdl-orange) !important; box-shadow:none;
+}
+body.field-mode #start-day-modal .modal-header .eyebrow { display:none; }
+body.field-mode #start-day-modal .modal-header h2 { margin:0; font-size:22px; color:var(--pdl-white); }
+body.field-mode #start-day-modal .close-button { position:static; flex:none; width:44px; height:44px; min-height:44px; padding:0; background:var(--pdl-black); color:var(--pdl-white); border:0; box-shadow:none; font-size:28px; }
+body.field-mode #start-day-modal .timestamp-preview { background:var(--surface-subtle); color:var(--text-primary); border:1px solid var(--border-strong); }
+
+/* The saved theme is applied in the head, before any stylesheet can paint. */
+.workspace-loader { background:var(--surface-canvas); color:var(--text-primary); }
+.workspace-loader-card strong { font-family:Anton,sans-serif !important; font-weight:400; }
+.workspace-loader-card span { color:var(--text-secondary); }
+.workspace-loader-bar { background:var(--border-strong); }
+.workspace-loader-bar::after { background:var(--pdl-orange); }
 @media (max-width:760px) {
   body.field-mode #report-modal.report-field-compact { width:100%; max-width:100%; height:100dvh; max-height:100dvh; margin:0; border-radius:0; }
 }

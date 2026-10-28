@@ -1,0 +1,251 @@
+'use strict';
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const os = require('node:os');
+const path = require('node:path');
+const net = require('node:net');
+const { spawn } = require('node:child_process');
+const { chromium } = require('playwright-core');
+const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
+
+// Inspect text nodes, not a hand-picked list of labels. Include rendered content
+// below the scroll fold, plus native input values, selected options and placeholders.
+async function assertContrast(page, selector, label) {
+  await page.evaluate(async () => {
+    await document.fonts.ready;
+    await Promise.all(document.getAnimations().filter(animation => animation.effect?.getTiming().iterations !== Infinity)
+      .map(animation => animation.finished.catch(() => {})));
+  });
+  const samples = await page.locator(selector).evaluate(root => {
+    const context = document.createElement('canvas').getContext('2d', { willReadFrequently: true });
+    const rgba = color => {
+      context.clearRect(0, 0, 1, 1);
+      context.fillStyle = color;
+      context.fillRect(0, 0, 1, 1);
+      const value = [...context.getImageData(0, 0, 1, 1).data];
+      value[3] /= 255;
+      return value;
+    };
+    const over = (front, back) => [...front.slice(0, 3).map((v, i) => v * front[3] + back[i] * (1 - front[3])), 1];
+    const luminance = color => color.slice(0, 3).map(v => {
+      v /= 255;
+      return v <= .04045 ? v / 12.92 : ((v + .055) / 1.055) ** 2.4;
+    }).reduce((sum, v, i) => sum + v * [.2126, .7152, .0722][i], 0);
+    const visible = el => el.checkVisibility({ checkOpacity: true, checkVisibilityCSS: true }) && el.getClientRects().length;
+    const result = [];
+    function sample(el, text, pseudo) {
+      if (!text.trim() || !visible(el)) return;
+      const style = getComputedStyle(el, pseudo);
+      const chain = [];
+      for (let node = el; node; node = node.parentElement) chain.unshift(node);
+      let background = [255, 255, 255, 1];
+      let opacity = Number(pseudo ? style.opacity : 1);
+      const gradients = [];
+      for (const node of chain) {
+        const s = getComputedStyle(node);
+        background = over(rgba(s.backgroundColor), background);
+        opacity *= Number(s.opacity);
+        if (s.backgroundImage.includes('gradient(')) gradients.push(node.id || node.className);
+      }
+      const color = rgba(style.color);
+      color[3] *= opacity;
+      const foreground = over(color, background);
+      const a = luminance(foreground), b = luminance(background);
+      const size = parseFloat(style.fontSize), weight = parseInt(style.fontWeight, 10);
+      result.push({ element: el.id || el.className || el.tagName, text: text.trim().slice(0, 70),
+        kind: pseudo || 'text', color: foreground, background, gradients,
+        ratio: (Math.max(a, b) + .05) / (Math.min(a, b) + .05),
+        minimum: size >= 24 || (size >= 18.6667 && weight >= 700) ? 3 : 4.5 });
+    }
+    const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+    while (walker.nextNode()) {
+      const node = walker.currentNode;
+      if (!node.textContent.trim() || !visible(node.parentElement)) continue;
+      const range = document.createRange();
+      range.selectNodeContents(node);
+      if ([...range.getClientRects()].some(r => r.width > 0 && r.height > 0)) sample(node.parentElement, node.textContent);
+    }
+    for (const el of root.querySelectorAll('input,textarea,select')) {
+      if (['hidden', 'file', 'checkbox', 'radio'].includes(el.type) || !visible(el)) continue;
+      sample(el, el.tagName === 'SELECT' ? el.selectedOptions[0]?.textContent || '' : el.value);
+      if (!el.value && el.placeholder) sample(el, el.placeholder, '::placeholder');
+    }
+    return result;
+  });
+  assert(samples.length > 0, label + ' inspected text');
+  const failures = samples.filter(s => s.gradients.length || s.ratio < s.minimum);
+  assert.deepEqual(failures, [], label + ' WCAG AA text contrast');
+  return samples;
+}
+
+async function assertLayout(page, label) {
+  const result = await page.locator('#report-modal').evaluate(modal => {
+    const step = modal.querySelector('.report-step.active');
+    const body = step.querySelector('.report-step-scroll');
+    const footer = step.querySelector('.modal-actions');
+    return { overflow: Math.max(document.documentElement.scrollWidth - innerWidth, modal.scrollWidth - modal.clientWidth),
+      separate: body.getBoundingClientRect().bottom <= footer.getBoundingClientRect().top + 1,
+      buttons: [...footer.querySelectorAll('button')].filter(el => el.checkVisibility()).map(el => {
+        const r = el.getBoundingClientRect(), hit = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+        return { id: el.id, width: r.width, height: r.height,
+          inside: r.left >= 0 && r.right <= innerWidth && r.top >= 0 && r.bottom <= innerHeight,
+          tappable: hit === el || el.contains(hit) };
+      }) };
+  });
+  assert(result.overflow <= 1 && result.separate, label + JSON.stringify(result));
+  for (const button of result.buttons) assert(button.inside && button.tappable && button.height >= 48, label + JSON.stringify(button));
+  assert.equal(result.buttons.find(b => b.id === 'report-back').width, result.buttons.find(b => b.id === 'save-report').width, 'Back matches Send width');
+}
+
+async function assertPalette(page, selector) {
+  const old = await page.locator(selector).evaluate(root => [...root.querySelectorAll('*')]
+    .filter(el => el.checkVisibility({ checkOpacity: true, checkVisibilityCSS: true }))
+    .flatMap(el => ['color', 'backgroundColor', 'borderTopColor', 'outlineColor'].flatMap(property => {
+      const value = getComputedStyle(el)[property];
+      return ['rgb(255, 107, 26)', 'rgb(23, 105, 224)', 'rgb(25, 115, 76)', 'rgb(32, 43, 57)',
+        'rgb(57, 77, 104)', 'rgb(132, 61, 23)', 'rgb(255, 243, 233)', 'rgb(238, 248, 241)',
+        'rgb(247, 246, 242)', 'rgb(238, 244, 255)'].includes(value) ? [{ element: el.id || el.className, property, value }] : [];
+    })));
+  assert.deepEqual(old, [], 'No legacy field colors');
+}
+
+(async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'pdl-review-contrast-'));
+  const shots = process.env.PDL_TEST_SCREENSHOTS;
+  const port = await new Promise(resolve => {
+    const server = net.createServer();
+    server.listen(0, '127.0.0.1', () => { const port = server.address().port; server.close(() => resolve(port)); });
+  });
+  const env = { ...process.env, PORT: String(port), PDL_STAGING: '1', PDL_STAGING_OWNER_PASSWORD: 'contrast-owner-pass',
+    PDL_STAGING_FIELD_PASSWORD: 'contrast-field-pass', PDL_DB_FILE: path.join(root, 'db.json'), PDL_PLATFORM_FILE: path.join(root, 'platform.json'),
+    PDL_SUPABASE_ENABLED: '0', PDL_TRANSACTIONAL_DB: 'off', PDL_EMAIL_DEV_MODE: '1', OPENAI_API_KEY: '' };
+  for (const key of ['STRIPE_SECRET_KEY', 'STRIPE_WEBHOOK_SECRET', 'RESEND_API_KEY', 'INDEXNOW_KEY', 'SENTRY_DSN']) delete env[key];
+  const server = spawn(process.execPath, ['--require', require.resolve('./scripts/test-analytics-isolation.cjs'), 'server.js'],
+    { cwd: __dirname, env, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] });
+  let log = '', browser;
+  server.stdout.on('data', data => log += data);
+  server.stderr.on('data', data => log += data);
+  try {
+    for (let i = 0; i < 200 && !log.includes('running at'); i++) await sleep(100);
+    assert(log.includes('running at'), 'Disposable staging server started');
+    browser = await chromium.launch({ executablePath: process.env.PDL_TEST_CHROME || process.env.CHROME_PATH ||
+      (process.platform === 'win32' ? 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe' : '/usr/bin/google-chrome-stable'),
+      headless: true, args: ['--no-sandbox', '--disable-dev-shm-usage'] });
+    const context = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, colorScheme: 'dark' });
+    const page = await context.newPage();
+    const errors = [];
+    page.on('pageerror', error => errors.push(error.message));
+    page.on('console', message => { if (message.type() === 'error' && /Content Security Policy/.test(message.text())) errors.push(message.text()); });
+    await context.addInitScript(() => localStorage.setItem('pdl-analytics-consent', 'declined'));
+    await page.goto(`http://127.0.0.1:${port}/login.html`);
+    await page.locator('#email').fill('levi+field@prodailylink.com');
+    await page.locator('#password').fill('contrast-field-pass');
+    await page.locator('form#login button.primary').click();
+    await page.waitForSelector('#myday-page.active [data-start-day]');
+    await page.waitForFunction(() => document.documentElement.classList.contains('workspace-ready'));
+
+    // Hold app initialization while taking a real first-paint sample. A MutationObserver
+    // also records the theme at the instant the first stylesheet is parsed.
+    await page.addInitScript(() => {
+      window.__themeAtFirstStylesheet = null;
+      const observer = new MutationObserver(() => {
+        if (document.querySelector('link[rel="stylesheet"]')) {
+          window.__themeAtFirstStylesheet = document.documentElement.dataset.theme;
+          observer.disconnect();
+        }
+      });
+      observer.observe(document, { subtree: true, childList: true });
+    });
+    for (const theme of ['dark', 'light', 'system']) {
+      await page.evaluate(theme => localStorage.setItem('pdl-theme', theme), theme);
+      let release;
+      const gate = new Promise(resolve => release = resolve);
+      const hold = async route => { await gate; await route.continue(); };
+      await page.route('**/api/config', hold);
+      await page.reload({ waitUntil: 'domcontentloaded' });
+      try {
+        await page.locator('.workspace-loader').waitFor({ state: 'visible' });
+        const expected = theme === 'light' ? 'light' : 'dark';
+        const paint = await page.evaluate(() => ({ theme: document.documentElement.dataset.theme,
+          early: window.__themeAtFirstStylesheet, meta: document.querySelector('meta[name="theme-color"]').content,
+          background: getComputedStyle(document.querySelector('.workspace-loader')).backgroundColor,
+          officeVisible: document.querySelector('#dashboard-page').checkVisibility({ checkOpacity: true, checkVisibilityCSS: true }) }));
+        assert.equal(paint.theme, expected, JSON.stringify({ paint, errors, url: page.url() })); assert.equal(paint.early, expected);
+        assert.equal(paint.meta, expected === 'dark' ? '#000000' : '#F7F5F0');
+        assert.equal(paint.background, expected === 'dark' ? 'rgb(0, 0, 0)' : 'rgb(247, 245, 240)');
+        assert.equal(paint.officeVisible, false);
+        await assertContrast(page, '.workspace-loader', theme + ' loader');
+      } finally { release(); }
+      await page.waitForFunction(() => document.documentElement.classList.contains('workspace-ready'));
+      await page.unroute('**/api/config', hold);
+    }
+    await page.locator('[data-start-day]').first().click();
+    await page.locator('#start-day-modal[open]').waitFor();
+    for (const theme of ['dark', 'light']) {
+      await page.evaluate(theme => document.documentElement.dataset.theme = theme, theme);
+      assert.equal(await page.locator('#start-day-modal .modal-header').evaluate(el => getComputedStyle(el).backgroundColor), 'rgb(0, 0, 0)');
+      assert.equal(await page.locator('#start-day-modal .modal-header').evaluate(el => getComputedStyle(el).borderBottomColor), 'rgb(255, 102, 0)');
+      await assertContrast(page, '#start-day-modal', theme + ' clock-in');
+      await assertPalette(page, '#start-day-modal');
+      if (shots) {
+        fs.mkdirSync(shots, { recursive: true });
+        await page.screenshot({ path: path.join(shots, `field-clock-in-${theme}-390.png`) });
+      }
+    }
+    await page.locator('#confirm-start-day').click();
+    await page.waitForFunction(() => /Clock out/i.test(document.querySelector('#start-day-button').textContent));
+    await page.locator('[data-assignment-daily]').first().click();
+    await page.locator('#field-notes').fill('Formed east footing.');
+    await page.locator('#report-next-step').click();
+    await page.waitForFunction(() => document.querySelector('#report-form').dataset.currentStep === '2');
+    await page.locator('#field-edit-hours').click();
+    // Edit hours exposes More; exercise its toggle before auditing the expanded content.
+    await page.locator('#report-more > summary').click();
+    await page.locator('#report-more > summary').click();
+    assert.equal(await page.locator('#report-more').evaluate(el => el.open), true);
+    await page.locator('#field-add-line').click();
+    const editor = page.locator('.production-entry.is-editing');
+    await editor.locator('.production-scope-toggle').waitFor();
+    assert.equal(await editor.locator('.production-scope-toggle').innerText(), 'Use custom work');
+    for (const theme of ['dark', 'light']) {
+      await page.evaluate(theme => document.documentElement.dataset.theme = theme, theme);
+      const samples = await assertContrast(page, '#report-modal', theme + ' expanded review');
+      for (const name of ['Materials used', 'Equipment used', 'Safety observations', 'Office summary', 'Next step', 'Your name (optional)', 'Use custom work']) {
+        assert(samples.some(sample => sample.text === name), name + ' was actually inspected');
+      }
+      for (const text of ['Hours', 'Cause and duration']) assert(samples.some(sample => sample.kind === '::placeholder' && sample.text === text), text + ' placeholder was inspected');
+      await assertPalette(page, '#report-modal');
+      const placeholder = await page.locator('#report-delays').evaluate(el => ({ typed: getComputedStyle(el).color, placeholder: getComputedStyle(el, '::placeholder').color }));
+      assert.notEqual(placeholder.placeholder, placeholder.typed, theme + ' placeholders differ from typed values');
+      if (shots) {
+        fs.mkdirSync(shots, { recursive: true });
+        await page.locator('#report-more').evaluate(el => {
+          const scroll = el.closest('.report-step-scroll');
+          const summary = scroll.querySelector('#report-review-summary');
+          scroll.scrollTop += el.getBoundingClientRect().top - scroll.getBoundingClientRect().top - summary.getBoundingClientRect().height - 16;
+        });
+        await page.screenshot({ path: path.join(shots, `field-review-more-${theme}-390.png`) });
+        await editor.evaluate(el => el.scrollIntoView({ block: 'start' }));
+        await page.screenshot({ path: path.join(shots, `field-review-editor-${theme}-390.png`) });
+      }
+      for (const height of [844, 500]) {
+        await page.setViewportSize({ width: 390, height });
+        await page.locator('#report-delays').focus();
+        await assertLayout(page, `${theme} 390x${height}`);
+      }
+      await page.setViewportSize({ width: 390, height: 844 });
+    }
+    await editor.locator('.production-scope-toggle').click();
+    await page.locator('.production-entry .custom-description').last().fill('Formed east footing');
+    await page.evaluate(() => document.documentElement.dataset.theme = 'dark');
+    await assertContrast(page, '#report-modal', 'dark custom-work editor');
+    await assertPalette(page, '#report-modal');
+    assert.deepEqual(errors, []);
+    console.log('Playwright field review contrast passed: all rendered text, values and placeholders; More and custom work; light/dark, first paint, clock-in, pinned full-width actions at 390x844 and 390x500.');
+  } finally {
+    await browser?.close();
+    server.kill();
+    await new Promise(resolve => server.exitCode !== null ? resolve() : server.once('exit', resolve));
+    if (root.startsWith(path.join(os.tmpdir(), 'pdl-review-contrast-'))) fs.rmSync(root, { recursive: true, force: true });
+  }
+})().catch(error => { console.error(error); process.exitCode = 1; });
