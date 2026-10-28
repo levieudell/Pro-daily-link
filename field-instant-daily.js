@@ -971,11 +971,12 @@ var fieldScopeFlags=[];
     const totals=new Map(punchRows().map(row=>[row.memberId,row.minutes]));
     for(const [memberId,minutes] of totals){if(!(minutes>0))continue;const input=$(`[data-labor-member="${memberId}"]`);if(!input||input.dataset.manualHours==='true')continue;input.value=typeof FieldDailyScope!=='undefined'&&FieldDailyScope.hoursFromMinutes?FieldDailyScope.hoursFromMinutes(minutes):Math.round(minutes/60*100)/100;input.dataset.timecardDerived='true'}
   }
-  function presentReportSent({totalHours,unplanned,productionEntries}={}){
+  function presentReportSent({totalHours,unplanned,productionEntries,laborEntries}={}){
     const flags=typeof fieldScopeFlags==='undefined'?[]:fieldScopeFlags;
-    const hours=Number(totalHours)||0,produced=(productionEntries||[]).some(row=>Number(row.quantity)>0),confirmed=flags.filter(flag=>flag&&flag.decision==='extra'&&flag.createsChange).length,extras=flags.filter(flag=>flag&&flag.decision==='extra'&&flag.extra_work&&!flag.createsChange).length,changes=(Number(unplanned)||0)+confirmed,missing=[];
+    const countedMinutes=(laborEntries||[]).reduce((sum,row)=>sum+(row&&row.minutes!=null&&row.minutes!==''?Math.max(0,Math.round(Number(row.minutes)||0)):0),0);
+    const hours=countedMinutes>0&&typeof FieldDailyScope!=='undefined'&&FieldDailyScope.hoursFromMinutes?FieldDailyScope.hoursFromMinutes(countedMinutes):(Number(totalHours)||0),produced=(productionEntries||[]).some(row=>Number(row.quantity)>0),confirmed=flags.filter(flag=>flag&&flag.decision==='extra'&&flag.createsChange).length,extras=flags.filter(flag=>flag&&flag.decision==='extra'&&flag.extra_work&&!flag.createsChange).length,changes=(Number(unplanned)||0)+confirmed,missing=[];
     if(!produced)missing.push('production quantities');
-    if(!(hours>0))missing.push('labor hours');
+    if(!(hours>0)&&!(countedMinutes>0))missing.push('labor hours');
     const title=$('#report-sent-modal h2'),summary=$('#report-sent-summary');
     const parts=[];
     if(changes)parts.push(`${changes} potential change${changes===1?'':'s'} flagged`);
