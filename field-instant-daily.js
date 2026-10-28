@@ -142,6 +142,14 @@ var fieldScopeFlags=[];
   function groundedText(value){const text=String(value||'').trim();return text&&!/^needs confirmation[.!\s]*$/i.test(text)?text:''}
   function nextStepText(value){const text=groundedText(value);if(!text)return '';if(typeof FieldDailyScope!=='undefined'&&FieldDailyScope.tidyNext)return FieldDailyScope.tidyNext(text);return text.replace(/^(?:next\s*step|next)\s*:\s*/i,'').trim()}
   function lineEstimateId(row){return String((typeof rowEstimateItemId==='function'?rowEstimateItemId(row):'')||row?.dataset?.estimateItemId||row?.querySelector?.('.production-item')?.value||'')}
+  function estimateLineNeedsQuantity(row){
+    if(!row||row.dataset.extraWork==='true')return false;
+    const id=lineEstimateId(row);
+    if(!id||id.startsWith('custom:'))return false;
+    const items=(typeof projects==='undefined'?[]:projects)?.[+$('#report-project')?.value]?.estimateItems||[];
+    if(!items.some(item=>String(item.id)===id))return false;
+    return !(Number(row.querySelector('.production-quantity')?.value)>0);
+  }
   function lockedLaborMap(){
     const map=new Map();
     const remember=(id,minutes,hours)=>{const key=String(id||'');if(!key)return;map.set(key,{minutes:Math.max(0,Math.round(Number(minutes)||0)),hours:Number(hours)||0})};
@@ -798,7 +806,7 @@ var fieldScopeFlags=[];
         restoreHeldChoices();
         applyPunchHours();
         applyLaborAllocation();
-        const lines=[...$$('.production-entry')].filter(row=>row.dataset.aiFilled==='true').map(row=>{const extra=row.dataset.extraWork==='true',quantity=row.querySelector('.production-quantity')?.value;return {quantity,extra,needsQuantity:!extra&&!(Number(quantity)>0)}});
+        const lines=[...$$('.production-entry')].map(row=>{const extra=row.dataset.extraWork==='true',quantity=row.querySelector('.production-quantity')?.value;return {quantity,extra,needsQuantity:estimateLineNeedsQuantity(row)}});
         const gate=typeof FieldDailyScope!=='undefined'&&FieldDailyScope.sendGate?FieldDailyScope.sendGate({flags:fieldScopeFlags,laborHours:enteredLaborHours(),openClock:crewStillClockedIn(),lines}):{block:fieldScopeFlags.some(flag=>!flag.decision)?['Answer each flag before sending this daily to the office.']:[],warn:[]};
         const message=[...gate.block,...(gate.block.length?[]:gate.warn)].join(' ');
         const extraOpen=fieldScopeFlags.some(flag=>flag&&flag.reason==='stated_extra'&&!flag.decision);
