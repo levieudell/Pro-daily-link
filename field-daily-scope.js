@@ -578,7 +578,7 @@
 
   function sendGate({flags,laborHours,openClock,lines}={}){
     const block=[],warn=[];
-    if((flags||[]).some(flag=>flag&&!flag.decision))block.push('Answer each flag before sending this daily to the office.');
+    if((flags||[]).some(flag=>flag&&flag.kind!=='productivity'&&!flag.decision))block.push('Answer each flag before sending this daily to the office.');
     if(!(Number(laborHours)>0))warn.push('Crew hours need office review. You can send this daily without confirmed hours.');
     if((lines||[]).some(line=>line&&line.extra!==true&&line.needsQuantity&&!(Number(line.quantity)>0)))block.push('Enter a quantity for each work line.');
     if(openClock)warn.push('Clock out to include today\'s time');

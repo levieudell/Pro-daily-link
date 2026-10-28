@@ -350,7 +350,7 @@ var fieldScopeFlags=[];
   function enteredLaborHours(){return [...$$('[data-labor-member]')].reduce((sum,input)=>sum+(Number(input.value)||0),0)}
   function crewStillClockedIn(){if(!fieldCompact())return false;const projectId=projects?.[+$('#report-project')?.value]?.id,date=$('#report-date')?.value,cards=typeof timeCards==='undefined'?[]:timeCards,days=typeof workdays==='undefined'?[]:workdays;return cards.some(card=>card&&!card.deletedAt&&Number(card.projectId)===Number(projectId)&&String(card.date||'')===String(date||'')&&card.inAt&&!card.outAt)||days.some(day=>day&&Number(day.projectId)===Number(projectId)&&day.status==='active'&&!day.endedAt)}
   function applyAskedHours(value,headcount){const each=Number(value);if(!Number.isFinite(each)||each<0||each>24)return;const inputs=[...$$('[data-labor-member]')];if(!(each>0)){inputs.forEach(input=>{if(input.dataset.noteDerived==='true')input.value=''});return}const count=Math.max(1,Math.min(inputs.length,Math.floor(Number(headcount)||1)));inputs.forEach(input=>{if(input.dataset.noteDerived==='true')input.value=''});inputs.slice(0,count).forEach(input=>{input.value=each;input.dataset.manualHours='true';input.dataset.noteDerived='true'})}
-  function stampFlags(flags){return (Array.isArray(flags)?flags:[]).filter(Boolean).map(flag=>({...flag,id:flag.id||(typeof FieldDailyScope!=='undefined'&&FieldDailyScope.flagIdentity?FieldDailyScope.flagIdentity(flag):`${flag.reason||'note'}:${String(flag.description||'').toLowerCase()}`)}))}
+  function stampFlags(flags){return (Array.isArray(flags)?flags:[]).filter(flag=>flag&&flag.kind!=='productivity').map(flag=>({...flag,id:flag.id||(typeof FieldDailyScope!=='undefined'&&FieldDailyScope.flagIdentity?FieldDailyScope.flagIdentity(flag):`${flag.reason||'note'}:${String(flag.description||'').toLowerCase()}`)}))}
   function flagById(id){return fieldScopeFlags.find(flag=>String(flag?.id)===String(id))}
   function findUnmatchedRow(flag){
     const rows=[...$$('.production-entry')];
@@ -480,14 +480,13 @@ var fieldScopeFlags=[];
     host.hidden=false;
     host.innerHTML=fieldScopeFlags.map((flag,index)=>{
       if(flag.kind==='pick'&&flag.decision)return '';
+      if(flag.kind==='productivity')return '';
       const answered=Boolean(flag.decision);
       const label=flag.kind==='productivity'?'Productivity':flag.kind==='pick'?'Needs your pick':'Possible extra work';
       const items=projects?.[+$('#report-project')?.value]?.estimateItems||[];
       const picker=flag.kind==='pick'?`<label class="field-pick">Pick an estimate line<select data-flag-id="${escapeText(flag.id)}" data-flag-index="${index}" data-pick-line><option value="">Choose a line</option>${items.map(item=>`<option value="${escapeText(item.id)}">${escapeText(item.name)} · ${escapeText(item.unit||'')}</option>`).join('')}</select></label><button type="button" data-flag-id="${escapeText(flag.id)}" data-flag-index="${index}" data-flag-choice="extra">Extra work</button>`:'';
       const who=String(flag.who_asked||'');
-      const actions=flag.kind==='productivity'
-        ?`<button type="button" data-flag-id="${escapeText(flag.id)}" data-flag-index="${index}" data-flag-choice="noted">Noted</button>`
-        :flag.kind==='pick'?picker
+      const actions=flag.kind==='pick'?picker
         :flag.reason==='stated_extra'
           ?`<div class="field-extra-ask"><span>Extra work?</span><button type="button" class="${flag.decision==='extra'?'is-selected':''}" aria-pressed="${flag.decision==='extra'?'true':'false'}" data-flag-id="${escapeText(flag.id)}" data-flag-index="${index}" data-flag-choice="yes">Yes, extra</button><button type="button" class="${flag.decision==='not'?'is-selected':''}" aria-pressed="${flag.decision==='not'?'true':'false'}" data-flag-id="${escapeText(flag.id)}" data-flag-index="${index}" data-flag-choice="no">No, normal scope</button></div>${flag.decision?'':`<p class="field-flag-prompt" data-extra-prompt>Answer Extra work? to send</p>`}<label class="field-who-asked">Who asked?<input data-flag-asker="${escapeText(flag.id)}" maxlength="80" value="${escapeText(who)}" aria-label="Who asked?"></label>`
           :`<button type="button" class="${flag.decision==='extra'?'is-selected':''}" data-flag-id="${escapeText(flag.id)}" data-flag-index="${index}" data-flag-choice="extra">Extra work</button><button type="button" class="${flag.decision==='estimate'?'is-selected':''}" data-flag-id="${escapeText(flag.id)}" data-flag-index="${index}" data-flag-choice="estimate">Part of estimate</button>`;

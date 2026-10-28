@@ -56,6 +56,8 @@ assert.equal(stored[0].extra_work,true);
 assert.equal(stored[0].who_asked,'owner');
 assert.equal(Object.hasOwn(stored[0],'billable'),false);
 assert.equal(scope.confirmedExtraChanges([productivity]).length,0);
+const notedGate=scope.sendGate({flags:[productivity],laborHours:productivity.laborHours,lines:[]});
+assert.deepEqual(notedGate.block,[],'hours over the estimate rate do not make the crew tap Noted');
 
 const clock=scope.hoursFromClock({cards:[{projectId:1,date:'2026-10-16',memberId:3,inAt:'2026-10-16T14:00:00.000Z',outAt:'2026-10-16T21:30:00.000Z',hours:7.5},{projectId:1,date:'2026-10-16',memberId:4,inAt:'2026-10-16T14:00:00.000Z',outAt:null,hours:null},{deletedAt:'2026-10-16T22:00:00.000Z',projectId:1,date:'2026-10-16',memberId:5,inAt:'a',outAt:'b',hours:8}],projectId:1,date:'2026-10-16',scheduled:[{memberId:3,hours:8.5,source:'schedule'}]});
 assert.equal(clock.source,'clock');
