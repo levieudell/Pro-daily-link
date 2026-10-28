@@ -82,10 +82,49 @@ async function clearOfClose(page, selector) {
     const hit = document.elementFromPoint(c.left + c.width / 2, c.top + c.height / 2);
     const overlaps = [...document.querySelectorAll(target)].filter(node => {
       const box = node.getBoundingClientRect();
-      return box.width > 0 && box.height > 0 && !(box.right <= c.left + 1 || box.left >= c.right - 1 || box.bottom <= c.top + 1 || box.top >= c.bottom - 1);
+      const scroller = node.closest('.report-step-scroll');
+      const view = scroller ? scroller.getBoundingClientRect() : box;
+      const top = Math.max(box.top, view.top);
+      const bottom = Math.min(box.bottom, view.bottom);
+      const left = Math.max(box.left, view.left);
+      const right = Math.min(box.right, view.right);
+      const visible = right - left > 0 && bottom - top > 0;
+      return visible && !(right <= c.left + 1 || left >= c.right - 1 || bottom <= c.top + 1 || top >= c.bottom - 1);
     }).map(node => (node.textContent || '').trim().slice(0, 70));
     return { overlap: overlaps.length > 0, overlaps, closeHit: hit === close || Boolean(close.contains(hit)) };
   }, selector);
+}
+
+async function scrollStep(page, where) {
+  await page.$eval('.report-step.active .report-step-scroll', (el, place) => {
+    el.scrollTop = place === 'end' ? el.scrollHeight : place === 'mid' ? el.scrollHeight / 2 : 0;
+  }, where);
+}
+
+async function pinnedBar(page) {
+  await page.evaluate(() => Promise.all(document.getAnimations().map(animation => animation.finished.catch(() => {}))));
+  return page.evaluate(() => {
+    const header = document.querySelector('#report-modal .modal-header').getBoundingClientRect();
+    const close = document.querySelector('#report-modal .close-button').getBoundingClientRect();
+    const bar = document.querySelector('.report-step.active .modal-actions').getBoundingClientRect();
+    const form = document.querySelector('#report-form');
+    const scroller = document.querySelector('.report-step.active .report-step-scroll');
+    const scrollerBox = scroller.getBoundingClientRect();
+    const formPad = parseFloat(getComputedStyle(form).paddingBottom);
+    const scrollPad = parseFloat(getComputedStyle(scroller).paddingBottom);
+    return {
+      closeInside: close.top >= header.top - 0.5 && close.bottom <= header.bottom + 0.5 && close.left >= header.left && close.right <= header.right + 0.5,
+      closeH: Math.round(close.height),
+      headerH: Math.round(header.height),
+      barTop: Math.round(bar.top),
+      barBottom: Math.round(bar.bottom),
+      scrollerTop: Math.round(scrollerBox.top),
+      scrollerBottom: Math.round(scrollerBox.bottom),
+      viewH: window.innerHeight,
+      formPad,
+      scrollPad
+    };
+  });
 }
 
 async function clockIn(page) {
@@ -147,14 +186,26 @@ async function clockIn(page) {
     await clockIn(page);
     await tap(page, '#myday-page.active [data-start-day]');
     await page.waitForSelector('#report-modal[open] #field-notes');
+    await page.evaluate(() => Promise.all(document.getAnimations().map(animation => animation.finished.catch(() => {}))));
     const notesHeader = await headerCascade(page);
     assert.equal(notesHeader.position, 'sticky', JSON.stringify(notesHeader));
     assert.equal(notesHeader.height, '48px', JSON.stringify(notesHeader));
     assert.equal(notesHeader.besideHeader, true, JSON.stringify(notesHeader));
-    await page.$eval('#report-form', form => { form.scrollTop = form.scrollHeight; });
+    const notesBar = await pinnedBar(page);
+    assert.equal(notesBar.closeInside, true, JSON.stringify(notesBar));
+    assert.ok(notesBar.closeH >= 44, JSON.stringify(notesBar));
+    assert.equal(notesBar.headerH, 48, JSON.stringify(notesBar));
+    assert.ok(notesBar.barBottom <= notesBar.viewH + 1 && notesBar.barTop >= notesBar.viewH - 180, JSON.stringify(notesBar));
+    assert.ok(notesBar.scrollerTop >= notesBar.headerH - 1 && notesBar.scrollerBottom <= notesBar.barTop + 1, JSON.stringify(notesBar));
+    assert.ok(notesBar.formPad < 24 && notesBar.scrollPad < 24, JSON.stringify(notesBar));
+    await scrollStep(page, 'end');
     const notesBottom = await headerCascade(page);
     assert.equal(notesBottom.besideHeader, true, JSON.stringify(notesBottom));
-    await page.$eval('#report-form', form => { form.scrollTop = 0; });
+    const notesBottomBar = await pinnedBar(page);
+    assert.equal(notesBottomBar.barTop, notesBar.barTop, JSON.stringify({ notesBar, notesBottomBar }));
+    const notesBottomClear = await clearOfClose(page, '#field-notes, #flag-extra-work');
+    assert.equal(notesBottomClear.overlap, false, JSON.stringify(notesBottomClear));
+    await scrollStep(page, 'top');
     const notesClear = await clearOfClose(page, '#field-notes');
     assert.equal(notesClear.overlap, false, JSON.stringify(notesClear));
     assert.equal(notesClear.closeHit, true, JSON.stringify(notesClear));
@@ -184,13 +235,23 @@ async function clockIn(page) {
     assert.equal(reviewHeader.position, 'sticky', JSON.stringify(reviewHeader));
     assert.equal(reviewHeader.height, '48px', JSON.stringify(reviewHeader));
     assert.equal(reviewHeader.besideHeader, true, JSON.stringify(reviewHeader));
-    await page.$eval('#report-form', form => { form.scrollTop = form.scrollHeight / 2; });
+    const reviewBar = await pinnedBar(page);
+    assert.ok(reviewBar.barBottom <= reviewBar.viewH + 1 && reviewBar.barTop >= reviewBar.viewH - 180, JSON.stringify(reviewBar));
+    assert.ok(reviewBar.scrollerBottom <= reviewBar.barTop + 1 && reviewBar.scrollerTop >= 48, JSON.stringify(reviewBar));
+    assert.equal(reviewBar.closeInside, true, JSON.stringify(reviewBar));
+    await scrollStep(page, 'mid');
     const reviewMiddle = await headerCascade(page);
     assert.equal(reviewMiddle.besideHeader, true, JSON.stringify(reviewMiddle));
-    await page.$eval('#report-form', form => { form.scrollTop = form.scrollHeight; });
+    const reviewMiddleClear = await clearOfClose(page, '.field-review-card, #field-edit-hours, #field-review-cards p');
+    assert.equal(reviewMiddleClear.overlap, false, JSON.stringify(reviewMiddleClear));
+    await scrollStep(page, 'end');
     const reviewBottom = await headerCascade(page);
     assert.equal(reviewBottom.besideHeader, true, JSON.stringify(reviewBottom));
-    await page.$eval('#report-form', form => { form.scrollTop = 0; });
+    const reviewBottomBar = await pinnedBar(page);
+    assert.equal(reviewBottomBar.barTop, reviewBar.barTop, JSON.stringify({ reviewBar, reviewBottomBar }));
+    const reviewBottomClear = await clearOfClose(page, '.field-review-card, #field-edit-hours, #field-review-cards p, .production-quantity');
+    assert.equal(reviewBottomClear.overlap, false, JSON.stringify(reviewBottomClear));
+    await scrollStep(page, 'top');
     const footing = await page.$eval('[data-pick-line]', select => [...select.options].find(item => /Footings/i.test(item.textContent || ''))?.value || '');
     await page.select('[data-pick-line]', footing);
     await page.waitForSelector('.production-entry.is-editing .production-quantity');
@@ -227,6 +288,16 @@ async function clockIn(page) {
     assert.equal(manual.type, 'number');
     assert.equal(manual.inputMode, 'decimal');
     assert.equal(manual.focused, true, JSON.stringify(manual));
+    const qtyTop = await pinnedBar(page);
+    assert.equal(qtyTop.closeInside, true, JSON.stringify(qtyTop));
+    assert.ok(qtyTop.barBottom <= qtyTop.viewH + 1 && qtyTop.barTop >= qtyTop.viewH - 180, JSON.stringify(qtyTop));
+    assert.ok(qtyTop.scrollerBottom <= qtyTop.barTop + 1, JSON.stringify(qtyTop));
+    await scrollStep(page, 'end');
+    const qtyBottom = await pinnedBar(page);
+    assert.equal(qtyBottom.barTop, qtyTop.barTop, JSON.stringify({ qtyTop, qtyBottom }));
+    assert.equal(qtyBottom.closeInside, true, JSON.stringify(qtyBottom));
+    const qtyClear = await clearOfClose(page, '.production-quantity, .field-review-card, #field-edit-hours');
+    assert.equal(qtyClear.overlap, false, JSON.stringify(qtyClear));
     console.log('Quantity starts empty, focused, and the review hint fits.');
   } finally {
     if (browser) await browser.close().catch(() => {});
