@@ -174,7 +174,22 @@ function maintenanceReadOnly(){return maintenanceFence.inspectMaintenanceFence(p
 const dbContext=new AsyncLocalStorage();
 const tenantQueues=new Map();
 function transactionalMode(){const mode=String(process.env.PDL_TRANSACTIONAL_DB||'off').toLowerCase();return['shadow','primary'].includes(mode)?mode:'off'}
-function withTenantQueue(companyId,task){const prior=tenantQueues.get(companyId)||Promise.resolve(),run=prior.catch(()=>{}).then(task),tracked=run.catch(()=>{}).finally(()=>{if(tenantQueues.get(companyId)===tracked)tenantQueues.delete(companyId)});tenantQueues.set(companyId,tracked);return run}
+function withTenantQueue(companyId,task,route='/internal'){
+  const prior=tenantQueues.get(companyId)||Promise.resolve();
+  const run=prior.catch(()=>{}).then(async()=>{
+    const configured=Number(process.env.PDL_TENANT_TASK_TIMEOUT_MS),timeoutMs=Number.isFinite(configured)&&configured>0?configured:45000;
+    route=monitoring.sanitizeRoute(route);
+    let timer;
+    const deadline=new Promise((_,reject)=>{timer=setTimeout(()=>{
+      console.error('Tenant queue task timed out',companyId,route);
+      reject(Object.assign(new Error('Tenant queue task timed out'),{statusCode:503,code:'TENANT_TASK_TIMEOUT'}));
+    },timeoutMs)});
+    try{return await Promise.race([Promise.resolve().then(task),deadline])}finally{clearTimeout(timer)}
+  });
+  const tracked=run.catch(()=>{}).finally(()=>{if(tenantQueues.get(companyId)===tracked)tenantQueues.delete(companyId)});
+  tenantQueues.set(companyId,tracked);
+  return run;
+}
 function withPlatformQueue(task){return withTenantQueue(PLATFORM_CLOUD_ID,async()=>{if(PLATFORM_REPOSITORY_MODE==='primary'&&platformStateStore)await platformStateStore.refresh();return task()})}
 function activeDbFile(){return dbContext.getStore()?.file||DB_FILE}
 function rekeyDuplicateAssignments(db){const rows=db?.assignments;if(!Array.isArray(rows))return false;const seen=new Set();let next=rows.reduce((max,row)=>Math.max(max,Number(row.id)||0),0)+1,changed=false;for(const row of rows){const id=Number(row.id);if(!seen.has(id)){seen.add(id);continue}row.id=next++;changed=true}return changed}
@@ -1041,7 +1056,21 @@ function json(res,status,data){
   return jsonHeaders(res,status,data);
 }
 function flushDeferredResponse(res,context){if(!context.response||res.headersSent)return;const{status,data,headers}=context.response;res.writeHead(status,headers);res.end(JSON.stringify(data))}
-function body(req){if(req.parsedBodyPromise)return req.parsedBodyPromise;req.parsedBodyPromise=new Promise((resolve,reject)=>{let raw='',settled=false;req.on('data',c=>{if(settled)return;raw+=c;if(Buffer.byteLength(raw)>16_000_000){settled=true;const error=new Error('Request too large');error.statusCode=413;reject(error);req.resume()}});req.on('end',()=>{if(settled)return;try{resolve(raw?JSON.parse(raw):{})}catch(error){error.statusCode=400;reject(error)}});req.on('error',reject)});return req.parsedBodyPromise}
+function body(req){
+  if(req.parsedBodyPromise)return req.parsedBodyPromise;
+  const aborted=()=>Object.assign(new Error('Client aborted request'),{statusCode:499,code:'CLIENT_ABORTED'});
+  if(req.destroyed||req.readableAborted)return Promise.reject(aborted());
+  req.parsedBodyPromise=new Promise((resolve,reject)=>{
+    let raw='',settled=false;
+    const fail=error=>{if(settled)return;settled=true;reject(error)};
+    req.on('data',c=>{if(settled)return;raw+=c;if(Buffer.byteLength(raw)>16_000_000){fail(Object.assign(new Error('Request too large'),{statusCode:413}));req.resume()}});
+    req.on('end',()=>{if(settled)return;try{const value=raw?JSON.parse(raw):{};settled=true;resolve(value)}catch(error){error.statusCode=400;fail(error)}});
+    req.on('error',fail);
+    req.on('aborted',()=>fail(aborted()));
+    req.on('close',()=>fail(aborted()));
+  });
+  return req.parsedBodyPromise;
+}
 function nextId(rows){return rows.reduce((max,row)=>Math.max(max,Number(row.id)||0),0)+1}
 function reportDateLabel(report){const iso=String(report?.dateIso||'');if(/^\d{4}-\d{2}-\d{2}$/.test(iso)){const [year,month,day]=iso.split('-').map(Number);return new Date(year,month-1,day).toLocaleDateString('en-US',{month:'short',day:'numeric'})}return report?.date||''}
 function presentCompanyLogo(logo){return logo&&(logo.url||logo.objectKey)?{url:'/api/company/logo',contentType:logo.contentType||'',updatedAt:logo.updatedAt||null}:null}
@@ -3877,11 +3906,13 @@ const server=http.createServer(async(req,res)=>{
         return await dbContext.run(context,()=>url.pathname.startsWith('/api/assistant/')?handleAssistantAI(req,res,url):handleProjectAssistant(req,res,url))
       }
       return await withTenantQueue(companyId,async()=>{
+        if(req.destroyed)return;
         const database=await requestDatabase({headers:{'x-pdl-company':companyId}});
         if(!database)return json(res,404,{error:guestToken?'This guest link is invalid or expired':changeOrderToken?'This link is invalid or expired':'Company workspace not found'});
         database.db=freshestTenantSnapshot(database);
         const context={...database,pending:[],backup:null,deferResponse:transactionalMode()==='primary'};
         try{
+          if(req.destroyed)return;
           const result=await dbContext.run(context,()=>api(req,res,url));
           if(isCredentialAttempt(req,url)&&res.statusCode===401)recordAuthFailure(req);
           await Promise.all(context.pending);
@@ -3893,7 +3924,7 @@ const server=http.createServer(async(req,res)=>{
           }
           throw error
         }
-      })
+      },url.pathname)
     }
     let requested=decodeURIComponent(url.pathname==='/'?'/landing.html':url.pathname==='/app'?'/index.html':url.pathname==='/favicon.ico'?'/assets/pro-daily-link-logo.png':/^\/guest\/[a-f0-9]{48}$/.test(url.pathname)?'/guest.html':url.pathname);
     if(requested.startsWith('/uploads/')){res.writeHead(307,{Location:'/api/local-files/'+requested.slice(9).split('/').map(encodeURIComponent).join('/'),'Cache-Control':'no-store'});return res.end()}

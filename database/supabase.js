@@ -38,6 +38,7 @@ function headers(extra = {}) {
 async function request(relativePath, options = {}) {
   const response = await fetch(`${process.env.SUPABASE_URL}${relativePath}`, {
     ...options,
+    signal: options.signal || AbortSignal.timeout(15000),
     headers: headers(options.headers)
   });
   if (!response.ok) {
