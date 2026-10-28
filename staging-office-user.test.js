@@ -47,12 +47,13 @@ const fieldBefore = read().users.find(user => user.role === 'field');
 
 const missingPassword = withInfo(() => seed.ensureStagingOfficeUser(file, { PDL_STAGING: '1' }));
 assert.deepEqual(missingPassword.result, { applied: false });
-assert.deepEqual(missingPassword.lines, []);
+assert.deepEqual(missingPassword.lines, ['Staging office demo user skipped: PDL_STAGING_OFFICE_PASSWORD unset']);
 assert.equal(fs.readFileSync(file, 'utf8'), untouched);
 assert.equal(officeUsers().length, 0);
 
 const emptyPassword = withInfo(() => seed.ensureStagingOfficeUser(file, { PDL_STAGING: '1', PDL_STAGING_OFFICE_PASSWORD: '' }));
 assert.deepEqual(emptyPassword.result, { applied: false });
+assert.deepEqual(emptyPassword.lines, ['Staging office demo user skipped: PDL_STAGING_OFFICE_PASSWORD unset']);
 assert.equal(fs.readFileSync(file, 'utf8'), untouched);
 
 const outside = withInfo(() => seed.ensureStagingOfficeUser(file, { PDL_STAGING_OFFICE_PASSWORD: officePassword }));
@@ -66,12 +67,13 @@ for (const flag of ['0', 'true', 'yes']) {
   assert.equal(fs.readFileSync(file, 'utf8'), untouched);
 }
 
-const productionHost = withInfo(() => seed.ensureStagingOfficeUser(file, {
-  ...officeEnv,
+const productionUrlWithoutStaging = withInfo(() => seed.ensureStagingOfficeUser(file, {
+  PDL_STAGING_OFFICE_PASSWORD: officePassword,
   NODE_ENV: 'production',
   PDL_PUBLIC_URL: 'https://app.prodailylink.com'
 }));
-assert.deepEqual(productionHost.result, { applied: false });
+assert.deepEqual(productionUrlWithoutStaging.result, { applied: false });
+assert.deepEqual(productionUrlWithoutStaging.lines, []);
 assert.equal(fs.readFileSync(file, 'utf8'), untouched);
 
 const otherCompany = path.join(root, 'other.json');
@@ -104,7 +106,7 @@ const seeded = read();
 seeded.reports.push({ id: 42, notes: 'keep this daily' });
 fs.writeFileSync(file, JSON.stringify(seeded, null, 2));
 
-const first = withInfo(() => seed.ensureStagingOfficeUser(file, { ...officeEnv, PDL_PUBLIC_URL: 'https://pdl-staging.onrender.com', NODE_ENV: 'production' }));
+const first = withInfo(() => seed.ensureStagingOfficeUser(file, { ...officeEnv, PDL_PUBLIC_URL: 'https://app.prodailylink.com', NODE_ENV: 'production' }));
 const second = withInfo(() => seed.ensureStagingOfficeUser(file, { ...officeEnv, PDL_STAGING_OFFICE_PASSWORD: replacementPassword }));
 const db = read();
 const matches = officeUsers(db);

@@ -161,10 +161,7 @@ function ensureStagingDatabase(file, env = process.env, now = new Date()) {
 }
 
 function stagingOfficeEnabled(env) {
-  if (env?.PDL_STAGING !== '1') return false;
-  const url = String(env.PDL_PUBLIC_URL || '');
-  if (/(^|\/\/)app\.prodailylink\.com(?::\d+)?(?:\/|$)/i.test(url)) return false;
-  return true;
+  return env?.PDL_STAGING === '1';
 }
 
 function officePassword(env) {
@@ -190,12 +187,15 @@ function writeDatabase(file, db) {
   fs.renameSync(tmp, file);
 }
 
-// Idempotent demo-tenant office login. No-op outside staging, on the production
-// host, or when PDL_STAGING_OFFICE_PASSWORD is unset. Never logs the password.
+// Idempotent demo-tenant office login. No-op unless PDL_STAGING=1 and
+// PDL_STAGING_OFFICE_PASSWORD is set. Never logs the password.
 function ensureStagingOfficeUser(file, env = process.env, now = new Date()) {
   if (!stagingOfficeEnabled(env)) return { applied: false };
   const password = officePassword(env);
-  if (!password) return { applied: false };
+  if (!password) {
+    console.info('Staging office demo user skipped: PDL_STAGING_OFFICE_PASSWORD unset');
+    return { applied: false };
+  }
   if (!file || !fs.existsSync(file)) return { applied: false };
   const db = JSON.parse(fs.readFileSync(file, 'utf8'));
   if (String(db?.company?.id) !== COMPANY_ID || db.company.demo !== true) return { applied: false };
