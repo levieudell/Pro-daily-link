@@ -614,7 +614,7 @@ var fieldScopeFlags=[];
     if(crewStillClockedIn())cards.unshift('<p class="field-clock-warning">Clock out to include today\'s time</p>');
     host.hidden=false;
     host.innerHTML=(cards.length?cards.join(''):'<p class="field-review-empty">AI did not fill any lines. Add the work on the cards below.</p>')+(fieldCompact()?'<p>Unknown or mismatched hours can be sent for office review. Clock punches are kept separately.</p>':'<p>Review approved time-card, scheduled, or entered crew hours before sending.</p>')+'<button type="button" id="field-edit-hours">Edit reported hours</button><button type="button" id="field-add-line">Add line</button>';
-    const editHours=$('#field-edit-hours');if(editHours)editHours.onclick=()=>{const modal=$('#report-modal');modal?.classList.add('field-manual-entry');const more=$('#report-more');if(more)more.open=true;revealFieldInput($$('[data-labor-member]')[0])};
+    const editHours=$('#field-edit-hours');if(editHours)editHours.onclick=()=>{const modal=$('#report-modal');modal?.classList.add('field-manual-entry');const more=$('#report-more');if(more)more.open=true;$$('[data-labor-member]').forEach(input=>{if(input.dataset.manualHours==='true')return;const punch=punchRows().find(row=>Number(row.memberId)===Number(input.dataset.laborMember));input.value='';if(punch&&punch.minutes>0)input.placeholder=String(typeof FieldDailyScope!=='undefined'&&FieldDailyScope.hoursFromMinutes?FieldDailyScope.hoursFromMinutes(punch.minutes):Math.round(punch.minutes/60*100)/100)});revealFieldInput($$('[data-labor-member]')[0])};
     const addLine=$('#field-add-line');
     if(addLine)addLine.onclick=()=>{
       if(typeof addProductionRow!=='function')return;
@@ -630,7 +630,7 @@ var fieldScopeFlags=[];
     if(hourInput)hourInput.oninput=()=>{applyAskedHours(hourInput.value,hours?.headcount);applyLaborAllocation()};
     host.querySelectorAll('[data-gap-member]').forEach(input=>input.oninput=()=>{
       const labor=$(`[data-labor-member="${input.dataset.gapMember}"]`);
-      if(labor){labor.value=input.value;labor.dataset.noteDerived='true';labor.dataset.manualHours='true'}
+      if(labor){labor.value=input.value;if(String(input.value).trim()==='')delete labor.dataset.manualHours;else{labor.dataset.noteDerived='true';labor.dataset.manualHours='true'}}
       applyLaborAllocation();
 
     });
@@ -695,6 +695,7 @@ var fieldScopeFlags=[];
       revealFieldInput(field);
     });
     bindLaborAllocation();
+    if(typeof updateFieldReportReview==='function')updateFieldReportReview();
     clearStaleClockOutPrompt();
   }
   async function fillFieldReportFromNotes(){
@@ -807,7 +808,7 @@ var fieldScopeFlags=[];
         applyPunchHours();
         applyLaborAllocation();
         const lines=[...$$('.production-entry')].map(row=>{const extra=row.dataset.extraWork==='true',quantity=row.querySelector('.production-quantity')?.value;return {quantity,extra,needsQuantity:estimateLineNeedsQuantity(row)}});
-        const gate=typeof FieldDailyScope!=='undefined'&&FieldDailyScope.sendGate?FieldDailyScope.sendGate({flags:fieldScopeFlags,laborHours:enteredLaborHours(),openClock:crewStillClockedIn(),lines}):{block:fieldScopeFlags.some(flag=>!flag.decision)?['Answer each flag before sending this daily to the office.']:[],warn:[]};
+        const gate=typeof FieldDailyScope!=='undefined'&&FieldDailyScope.sendGate?FieldDailyScope.sendGate({flags:fieldScopeFlags,laborHours:Math.max(enteredLaborHours(),Number(fieldLaborContext().total?.total)||0),openClock:crewStillClockedIn(),lines}):{block:fieldScopeFlags.some(flag=>!flag.decision)?['Answer each flag before sending this daily to the office.']:[],warn:[]};
         const message=[...gate.block,...(gate.block.length?[]:gate.warn)].join(' ');
         const extraOpen=fieldScopeFlags.some(flag=>flag&&flag.reason==='stated_extra'&&!flag.decision);
         if(extraOpen){event?.preventDefault();syncExtraSendGate();document.querySelector('[data-extra-prompt]')?.scrollIntoView({block:'center'});const status=$('#report-submit-status');if(status&&/Answer each flag before sending/i.test(status.textContent||'')){status.textContent='';status.className='report-submit-status'}return}
@@ -819,7 +820,7 @@ var fieldScopeFlags=[];
   }
   if(typeof openReport==='function'){
     const openBefore=openReport;
-    openReport=function(report=null,context={}){reviewGeneration++;fieldScopeFlags=[];fieldHoursReview=null;reviewedNotesKey='';if(!sameOpenDaily(report,context))clearReportPhotoFiles();const result=openBefore(report,context);if(fieldCompact()&&Array.isArray(report?.officeReview?.reportedLabor)){for(const row of report.officeReview.reportedLabor){const input=$('[data-labor-member="'+Number(row.memberId)+'"]');if(input){input.value=row.hours==null?'':String(row.hours);input.dataset.manualHours='true';delete input.dataset.timecardDerived}}}if($('#report-next-step'))$('#report-next-step').disabled=false;if(dailyCompact()){const loadedSummary=String($('#report-summary')?.value||'').trim(),loadedNotes=String($('#field-notes')?.value||'').trim(),hasProduction=(report?.productionEntries||[]).some(row=>row&&row.extra_work!==true&&String(row.description||'').trim()),hasResolution=(report?.scopeFlags||[]).some(flag=>flag&&flag.decision)||(report?.extraWork||[]).some(item=>item&&item.extra_work===true);if(loadedNotes&&((officeCompact()&&hasProduction)||hasResolution||(loadedSummary&&(!/^field work recorded:/i.test(loadedSummary)||hasProduction))))reviewedNotesKey=loadedNotes;if(officeCompact()&&report?.productionEntries?.length&&typeof addProductionRow==='function'){$('#production-rows').innerHTML='';report.productionEntries.forEach(entry=>addProductionRow({...entry,laborManual:entry.laborManual===true||Number(entry.laborHours)>0,laborMinutes:entry.laborMinutes??Math.round((Number(entry.laborHours)||0)*60)}))}const saved=(report?.productionEntries||[]).some(row=>row&&((row.estimateItemId!=null&&String(row.estimateItemId)!=='')||Number(row.quantity)>0));if(report?.workSuggestions?.length&&!saved&&$('#production-rows'))$('#production-rows').innerHTML='';const draft=typeof readOfflineDraft==='function'&&typeof offlineReportDraftKey==='function'?readOfflineDraft(offlineReportDraftKey()):null;if(Array.isArray(report?.scopeFlags)&&report.scopeFlags.length)fieldScopeFlags=stampFlags(report.scopeFlags);else if(Array.isArray(draft?.scopeFlags)&&String(draft.notes||'').trim()&&String(draft.notes||'').trim()===String($('#field-notes')?.value||'').trim())fieldScopeFlags=stampFlags(draft.scopeFlags)}restoreResolvedExtras(report);dropEmptyLines();dropRawProductionRows();bindLaborAllocation();polishFieldDaily();renderReportPhotoPreview();renderFlags();if(report?.id&&!(typeof restoringActiveReport!=='undefined'&&restoringActiveReport)&&typeof clearRestoreBanner==='function')clearRestoreBanner();if(dailyCompact()&&$('#report-form')?.getAttribute('data-current-step')==='2')renderFieldReview();return result};
+    openReport=function(report=null,context={}){reviewGeneration++;fieldScopeFlags=[];fieldHoursReview=null;reviewedNotesKey='';if(!sameOpenDaily(report,context))clearReportPhotoFiles();const result=openBefore(report,context);if(fieldCompact()&&Array.isArray(report?.officeReview?.reportedLabor)){for(const row of report.officeReview.reportedLabor){const input=$('[data-labor-member="'+Number(row.memberId)+'"]');if(!input)continue;const typed=row.hours!=null&&row.hours!==''&&Number.isFinite(Number(row.hours));if(typed){input.value=String(row.hours);input.dataset.manualHours='true';delete input.dataset.timecardDerived}else{delete input.dataset.manualHours;input.value=''}}}if($('#report-next-step'))$('#report-next-step').disabled=false;if(dailyCompact()){const loadedSummary=String($('#report-summary')?.value||'').trim(),loadedNotes=String($('#field-notes')?.value||'').trim(),hasProduction=(report?.productionEntries||[]).some(row=>row&&row.extra_work!==true&&String(row.description||'').trim()),hasResolution=(report?.scopeFlags||[]).some(flag=>flag&&flag.decision)||(report?.extraWork||[]).some(item=>item&&item.extra_work===true);if(loadedNotes&&((officeCompact()&&hasProduction)||hasResolution||(loadedSummary&&(!/^field work recorded:/i.test(loadedSummary)||hasProduction))))reviewedNotesKey=loadedNotes;if(officeCompact()&&report?.productionEntries?.length&&typeof addProductionRow==='function'){$('#production-rows').innerHTML='';report.productionEntries.forEach(entry=>addProductionRow({...entry,laborManual:entry.laborManual===true||Number(entry.laborHours)>0,laborMinutes:entry.laborMinutes??Math.round((Number(entry.laborHours)||0)*60)}))}const saved=(report?.productionEntries||[]).some(row=>row&&((row.estimateItemId!=null&&String(row.estimateItemId)!=='')||Number(row.quantity)>0));if(report?.workSuggestions?.length&&!saved&&$('#production-rows'))$('#production-rows').innerHTML='';const draft=typeof readOfflineDraft==='function'&&typeof offlineReportDraftKey==='function'?readOfflineDraft(offlineReportDraftKey()):null;if(Array.isArray(report?.scopeFlags)&&report.scopeFlags.length)fieldScopeFlags=stampFlags(report.scopeFlags);else if(Array.isArray(draft?.scopeFlags)&&String(draft.notes||'').trim()&&String(draft.notes||'').trim()===String($('#field-notes')?.value||'').trim())fieldScopeFlags=stampFlags(draft.scopeFlags)}restoreResolvedExtras(report);dropEmptyLines();dropRawProductionRows();bindLaborAllocation();polishFieldDaily();renderReportPhotoPreview();renderFlags();if(report?.id&&!(typeof restoringActiveReport!=='undefined'&&restoringActiveReport)&&typeof clearRestoreBanner==='function')clearRestoreBanner();if(dailyCompact()&&$('#report-form')?.getAttribute('data-current-step')==='2')renderFieldReview();return result};
   }
   if(typeof showReportStep==='function'){
     const stepBefore=showReportStep;
@@ -929,6 +930,16 @@ var fieldScopeFlags=[];
     warn.hidden=!result.warning;warn.textContent=result.warning||'';
     return result;
   }
+  function crewReportedText(input){
+    const punch=punchRows().find(row=>Number(row.memberId)===Number(input?.dataset?.laborMember));
+    const punchMinutes=punch?.minutes;
+    const crewMinutes=punchMinutes!=null?punchMinutes:(typeof FieldDailyScope!=='undefined'&&FieldDailyScope.minutesFromHours?FieldDailyScope.minutesFromHours(Number(input?.value)||0):Math.round((Number(input?.value)||0)*60));
+    return punch?`${punch.seconds<60?`${Math.floor(punch.seconds)} sec (under 1 min)`:punchTotalLabel(crewMinutes)} measured${input?.dataset?.manualHours==='true'?` · ${input.value||'unknown'} h reported`:''}`:clockLabel(crewMinutes);
+  }
+  function paintCrewReported(input){
+    const card=document.querySelector(`[data-edit-labor="${input?.dataset?.laborMember}"] em`);
+    if(card)card.textContent=crewReportedText(input);
+  }
   function bindLaborAllocation(){
     $$('.production-hours').forEach(input=>{
       if(input.dataset.allocationBound==='true')return;
@@ -943,7 +954,7 @@ var fieldScopeFlags=[];
     $$('[data-labor-member]').forEach(input=>{
       if(input.dataset.totalBound==='true')return;
       input.dataset.totalBound='true';
-      input.addEventListener('input',()=>{input.dataset.manualHours='true';delete input.dataset.timecardDerived;applyLaborAllocation()});
+      const syncCrewReportedHours=()=>{if(String(input.value).trim()===''){delete input.dataset.manualHours;const punch=punchRows().find(row=>Number(row.memberId)===Number(input.dataset.laborMember));if(punch&&punch.minutes>0)input.placeholder=String(typeof FieldDailyScope!=='undefined'&&FieldDailyScope.hoursFromMinutes?FieldDailyScope.hoursFromMinutes(punch.minutes):Math.round(punch.minutes/60*100)/100)}else{input.dataset.manualHours='true';delete input.dataset.timecardDerived}applyLaborAllocation();paintCrewReported(input);if(typeof updateFieldReportReview==='function')updateFieldReportReview()};input.addEventListener('input',syncCrewReportedHours);input.addEventListener('blur',syncCrewReportedHours);
     });
   }
   let liveLaborDepth=0;
@@ -966,16 +977,31 @@ var fieldScopeFlags=[];
     }finally{liveLaborDepth--}
   }
   window.applyLiveLabor=applyLiveLabor;
+  function displayedCrewHours(){
+    const punches=new Map(punchRows().map(row=>[Number(row.memberId),Number(row.minutes)||0]));
+    let sum=0;const seen=new Set();
+    for(const input of $$('[data-labor-member]')){
+      const id=Number(input.dataset.laborMember);seen.add(id);
+      if(input.dataset.manualHours==='true'&&String(input.value).trim()!==''){sum+=Number(input.value)||0;continue}
+      const minutes=punches.get(id)||0;
+      if(minutes>0&&typeof FieldDailyScope!=='undefined'&&FieldDailyScope.hoursFromMinutes)sum+=FieldDailyScope.hoursFromMinutes(minutes);
+      else sum+=Number(input.value)||0;
+    }
+    for(const [id,minutes] of punches){if(seen.has(id)||!(minutes>0))continue;if(typeof FieldDailyScope!=='undefined'&&FieldDailyScope.hoursFromMinutes)sum+=FieldDailyScope.hoursFromMinutes(minutes)}
+    return Math.round(sum*100)/100;
+  }
+  window.displayedCrewHours=displayedCrewHours;
   window.fieldLaborContext=fieldLaborContext;
   function applyPunchHours(){
     const totals=new Map(punchRows().map(row=>[row.memberId,row.minutes]));
-    for(const [memberId,minutes] of totals){if(!(minutes>0))continue;const input=$(`[data-labor-member="${memberId}"]`);if(!input||input.dataset.manualHours==='true')continue;input.value=typeof FieldDailyScope!=='undefined'&&FieldDailyScope.hoursFromMinutes?FieldDailyScope.hoursFromMinutes(minutes):Math.round(minutes/60*100)/100;input.dataset.timecardDerived='true'}
+    for(const [memberId,minutes] of totals){if(!(minutes>0))continue;const input=$(`[data-labor-member="${memberId}"]`);if(!input||input.dataset.manualHours==='true')continue;input.placeholder=String(typeof FieldDailyScope!=='undefined'&&FieldDailyScope.hoursFromMinutes?FieldDailyScope.hoursFromMinutes(minutes):Math.round(minutes/60*100)/100);input.dataset.timecardDerived='true';if(document.activeElement!==input)input.value=''}
   }
-  function presentReportSent({totalHours,unplanned,productionEntries}={}){
+  function presentReportSent({totalHours,unplanned,productionEntries,laborEntries}={}){
     const flags=typeof fieldScopeFlags==='undefined'?[]:fieldScopeFlags;
-    const hours=Number(totalHours)||0,produced=(productionEntries||[]).some(row=>Number(row.quantity)>0),confirmed=flags.filter(flag=>flag&&flag.decision==='extra'&&flag.createsChange).length,extras=flags.filter(flag=>flag&&flag.decision==='extra'&&flag.extra_work&&!flag.createsChange).length,changes=(Number(unplanned)||0)+confirmed,missing=[];
+    const countedMinutes=(laborEntries||[]).reduce((sum,row)=>sum+(row&&row.minutes!=null&&row.minutes!==''?Math.max(0,Math.round(Number(row.minutes)||0)):0),0);
+    const hours=countedMinutes>0&&typeof FieldDailyScope!=='undefined'&&FieldDailyScope.hoursFromMinutes?FieldDailyScope.hoursFromMinutes(countedMinutes):(Number(totalHours)||0),produced=(productionEntries||[]).some(row=>Number(row.quantity)>0),confirmed=flags.filter(flag=>flag&&flag.decision==='extra'&&flag.createsChange).length,extras=flags.filter(flag=>flag&&flag.decision==='extra'&&flag.extra_work&&!flag.createsChange).length,changes=(Number(unplanned)||0)+confirmed,missing=[];
     if(!produced)missing.push('production quantities');
-    if(!(hours>0))missing.push('labor hours');
+    if(!(hours>0)&&!(countedMinutes>0))missing.push('labor hours');
     const title=$('#report-sent-modal h2'),summary=$('#report-sent-summary');
     const parts=[];
     if(changes)parts.push(`${changes} potential change${changes===1?'':'s'} flagged`);
