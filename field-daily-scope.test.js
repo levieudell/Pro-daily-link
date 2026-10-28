@@ -88,6 +88,8 @@ assert.equal(closedDraft.productionEntries[0].quantity,12);
 assert.equal(closedDraft.laborEntries[0].minutes,1);
 assert.equal(scope.appendClockNotes('Set forms.','Set forms.'),'Set forms.');
 assert.equal(scope.appendClockNotes('Set forms.',''),'Set forms.');
+assert.equal(scope.appendClockNotes('C2a v2 A: formed east footing.','C2a v2 A: formed east footing.'),'C2a v2 A: formed east footing.');
+assert.equal(scope.appendClockNotes('C2a v2 A: formed east footing.','C2a v2 A: formed east footing.\nStripped the forms.'),'C2a v2 A: formed east footing.\nStripped the forms.');
 assert.equal(scope.elapsedMinutes('2026-10-16T22:38:50.000Z','2026-10-16T22:39:10.000Z'),0);
 assert.equal(scope.hoursFromMinutes(0),0);
 assert.equal(scope.punchLengthLabel({inAt:'2026-10-16T22:38:50.000Z',outAt:'2026-10-16T22:39:10.000Z'}),'0 min');
