@@ -118,6 +118,15 @@ async function tapInPlace(page, locator) {
   await tap(page, locator);
   assert.equal(await scrollOffset(page), 0, 'tap did not scroll');
 }
+async function typeKept(page, selector, text) {
+  const locator = page.locator(selector);
+  await locator.click();
+  await locator.evaluate(el => { el.focus(); el.select(); });
+  await page.keyboard.type(text, { delay: 20 });
+  const state = await page.evaluate(sel => { const el = document.querySelector(sel); return { value: el ? el.value : '', focused: document.activeElement === el }; }, selector);
+  assert.equal(state.value, text, selector);
+  assert.equal(state.focused, true, selector + ' keeps focus');
+}
 async function assertScheduleClear(page) {
   assert.equal(await scrollOffset(page), 0, 'schedule fits without scrolling');
   const rows = await page.evaluate(() => {
@@ -388,7 +397,15 @@ async function main() {
     const offsetCopy=await page.locator('.pay-schedule-offsets').innerText();
     assert.match(offsetCopy,/Time cards due:[\s\S]*days after the period ends/);
     assert.match(offsetCopy,/Payday:[\s\S]*days after the period ends/);
-    console.log('Twice a month at 390x667 dark clears the Save bar');
+    await typeKept(page,'[data-end-index="0"]','15');
+    await typeKept(page,'[data-end-index="1"]','20');
+    await typeKept(page,'[data-offset="cards_due_offset_days"]','12');
+    await typeKept(page,'[data-offset="payday_offset_days"]','10');
+    await page.locator('[data-pay-frequency="monthly"]').click();
+    await typeKept(page,'[data-month-end]','21');
+    await typeKept(page,'[data-offset="cards_due_offset_days"]','11');
+    await typeKept(page,'[data-offset="payday_offset_days"]','16');
+    console.log('Twice a month and Monthly keep each typed number and its focus at 390x667');
     assert.equal((await context.request.patch(base+'/api/company',{data:{payroll:{pay_schedule:{frequency:'weekly'}}},headers:{'X-PDL-Company':seed.COMPANY_ID}})).status(),400);
     assert.equal((await context.request.patch(base+'/api/company',{data:{payroll:{pay_schedule:{frequency:'weekly',period_end_weekday:2,cards_due_offset_days:1}}},headers:{'X-PDL-Company':seed.COMPANY_ID}})).status(),400);
     assert.equal((await context.request.patch(base+'/api/company',{data:{payroll:{pay_schedule:{frequency:'monthly',monthly_end_day:'last',payday_weekday:5}}},headers:{'X-PDL-Company':seed.COMPANY_ID}})).status(),400);
