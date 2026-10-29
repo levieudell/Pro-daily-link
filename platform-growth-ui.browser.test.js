@@ -252,6 +252,7 @@ function launchEdgeCdp(edge, profilePath, width) {
   const child = childProcess.spawn(edge, [
     '--headless=new',
     '--disable-gpu',
+    '--disable-dev-shm-usage',
     '--disable-extensions',
     '--disable-background-networking',
     '--disable-component-update',
@@ -309,14 +310,15 @@ function launchEdgeCdp(edge, profilePath, width) {
     }
   });
 
-  function send(method, params = {}, sessionId) {
+  function send(method, params = {}, sessionId, timeoutMs = 10000) {
     if (stopped) return Promise.reject(new Error(`Microsoft Edge ${width}px is no longer running.`));
     const requestId = ++id;
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => {
         pending.delete(requestId);
-        reject(new Error(`Microsoft Edge ${width}px timed out waiting for DevTools ${method}.`));
-      }, 10000);
+        const detail = method === 'Browser.getVersion' && stderr.trim() ? `\nBrowser startup: ${stderr.trim()}` : '';
+        reject(new Error(`Microsoft Edge ${width}px timed out waiting for DevTools ${method}.${detail}`));
+      }, timeoutMs);
       pending.set(requestId, { resolve, reject, timer, method });
       const message = { id: requestId, method, params };
       if (sessionId) message.sessionId = sessionId;
@@ -331,16 +333,65 @@ function launchEdgeCdp(edge, profilePath, width) {
     });
   }
 
-  async function close() {
+  async function close(force = false) {
     if (stopped) return;
-    try { await send('Browser.close'); } catch { child.kill(); }
-    await Promise.race([
-      new Promise(resolve => child.once('exit', resolve)),
-      new Promise(resolve => setTimeout(() => { if (!stopped) child.kill(); resolve(); }, 2000))
-    ]);
+    const exited = new Promise(resolve => child.once('exit', resolve));
+    if (force) child.kill('SIGKILL');
+    else { try { await send('Browser.close'); } catch { child.kill(); } }
+    let timer;
+    try {
+      await Promise.race([exited, new Promise(resolve => {
+        timer = setTimeout(() => { if (!stopped) child.kill('SIGKILL'); resolve(); }, 2000);
+      })]);
+    } finally { clearTimeout(timer); }
   }
 
   return { send, close };
+}
+
+async function startEdgeCdp(edge, profilePath, width, { launch = launchEdgeCdp, warn = console.warn } = {}) {
+  // Retry only the initial handshake, never navigation or a UI assertion.
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const cdp = launch(edge, attempt ? `${profilePath}-retry` : profilePath, width);
+    try {
+      await cdp.send('Browser.getVersion', {}, undefined, 30000);
+      return cdp;
+    } catch (error) {
+      await cdp.close(true);
+      if (attempt) throw error;
+      warn(`Browser startup failed at ${width}px; retrying once with a fresh process and profile. ${error.message}`);
+    }
+  }
+}
+
+async function assertStartupRecovery() {
+  const launches = [], closed = [], waits = [], warnings = [];
+  const startupError = new Error('Synthetic startup timeout');
+  const launch = (_edge, profile) => {
+    const attempt = launches.push(profile);
+    return {
+      async send(method, _params, _session, timeout) {
+        waits.push(timeout);
+        if (method !== 'Browser.getVersion') throw new Error('Synthetic UI failure');
+        if (attempt === 1) throw startupError;
+      },
+      async close(force) { closed.push({ attempt, force }); }
+    };
+  };
+  const cdp = await startEdgeCdp('browser', 'profile', 320, { launch, warn: text => warnings.push(text) });
+  assert.deepEqual(launches, ['profile', 'profile-retry']);
+  assert.deepEqual(waits, [30000, 30000]);
+  assert.deepEqual(closed, [{ attempt: 1, force: true }]);
+  assert.equal(warnings.length, 1);
+  await assert.rejects(cdp.send('Page.enable'), /Synthetic UI failure/);
+  assert.equal(launches.length, 2, 'UI failures are not retried');
+  let attempts = 0, cleanups = 0;
+  await assert.rejects(startEdgeCdp('browser', 'failed-profile', 320, {
+    launch() { attempts++; return { async send() { throw startupError; }, async close(force) { assert.equal(force, true); cleanups++; } }; },
+    warn() {}
+  }), error => error === startupError);
+  assert.equal(attempts, 2, 'persistent startup failure stops after one retry');
+  assert.equal(cleanups, 2, 'both failed browser processes are cleaned up');
 }
 
 async function runViewport(edge, tempRoot, width) {
@@ -348,9 +399,8 @@ async function runViewport(edge, tempRoot, width) {
   const profilePath = path.join(tempRoot, `edge-profile-${width}`);
   const moduleUrl = pathToFileURL(path.join(__dirname, 'platform-growth-ui.js')).href;
   fs.writeFileSync(htmlPath, pageSource(moduleUrl, width), 'utf8');
-  const cdp = launchEdgeCdp(edge, profilePath, width);
+  const cdp = await startEdgeCdp(edge, profilePath, width);
   try {
-    await cdp.send('Browser.getVersion');
     const created = await cdp.send('Target.createTarget', { url: 'about:blank' });
     const attached = await cdp.send('Target.attachToTarget', { targetId: created.targetId, flatten: true });
     const sessionId = attached.sessionId;
@@ -416,6 +466,7 @@ async function runViewport(edge, tempRoot, width) {
 }
 
 async function main() {
+  await assertStartupRecovery();
   const edge = findEdge();
   const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'pdl-growth-browser-'));
   try {
