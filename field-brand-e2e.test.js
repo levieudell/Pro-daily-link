@@ -63,8 +63,11 @@ async function dailyBounds(page,label){
   await page.click('[data-start-day]');await page.waitForSelector('#start-day-modal[open]');
   for(const box of await page.$$('#start-day-members input')){const keep=await box.evaluate(el=>/Jordan Reed/.test(el.closest('label').textContent));if(await box.evaluate(el=>el.checked)!==keep)await box.click()}
   await page.click('#confirm-start-day');await page.waitForFunction(()=>/Clock out/i.test(document.querySelector('#start-day-button').textContent));
-  await page.waitForSelector('#myday-page.active [data-assignment-daily]');await settle(page);
-  await page.locator('#myday-page.active [data-assignment-daily]').click();await page.waitForSelector('#report-modal[open]');
+  await page.waitForSelector('#myday-page.active [data-assignment-daily]');
+  await page.waitForFunction(()=>!document.querySelector('#toast')?.classList.contains('visible'));
+  await settle(page);
+  await page.locator('#myday-page.active [data-assignment-daily]').click();
+  await page.waitForSelector('#report-modal[open]');
   for(const theme of ['light','dark'])for(const height of [844,500]){
    await page.evaluate(theme=>document.documentElement.dataset.theme=theme,theme);await page.setViewport({width:390,height,isMobile:true,hasTouch:true});await page.$eval('#field-notes',el=>el.focus());await dailyBounds(page,`${theme} ${height} notes focused`);
    const notes=await page.$eval('#field-notes',el=>({font:getComputedStyle(el).fontSize,ring:getComputedStyle(el).boxShadow}));assert.equal(notes.font,'16px');assert(notes.ring.includes('255, 102, 0'));
