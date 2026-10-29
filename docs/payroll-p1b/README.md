@@ -19,7 +19,7 @@ Adds a live payroll download to the existing time approval and pay-period settin
 
 `payroll-export-e2e.test.js` creates a disposable copy of the real staging seed, logs in through the office login, and adds test-only approved and submitted punches. At 390×844 and 1280×800, in light and dark mode, it checks downloads against 45 approved hours (40 REG + 5 OT), headers, filenames, API rejection, field 403, notice/review link, AA contrast, viewport bounds, and 390px inline overtime labels.
 
-The warm-path browser test counts trusted clicks: This pay week **2**, Last week **3**, Custom **5**. Weekly paths fail above five seconds; custom timing is reported separately. Local measurements are not a substitute for Remy's staging GO measurement.
+The warm-path browser test counts trusted clicks: This pay week **2**, Last week **3**, Custom **6**, including both picker selections. Weekly paths fail above five seconds; Custom fails above eight seconds. Native OS calendars sit outside the browser DOM, so a test-only picker adapter supplies two trusted day-selection clicks and requires the real application to call `To.showPicker()`. This guards the full touch budget and automatic advancement; it does not claim to automate the iOS/Android system picker. Local measurements are not a substitute for Remy's staging GO measurement.
 
 Screenshots: `payroll-{light,dark}-{390,1280}.png`. `payroll-summary.pdf` is a synthetic seed-data example, rendered and visually checked as one page.
 

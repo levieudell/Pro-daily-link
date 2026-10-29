@@ -45,6 +45,27 @@ function parseCsv(text) {
   }
   return rows;
 }
+async function installPickerHarness(page) {
+  // Native OS calendars are outside Playwright's DOM. Model their day-selection
+  // surfaces with trusted button clicks, rather than treating fill() as zero taps.
+  // The real application must call To.showPicker() to expose the second surface.
+  // Remy's iOS/Android run still verifies the platform picker itself.
+  await page.evaluate(({ from, to }) => {
+    const start = document.querySelector('#payroll-export-from'), end = document.querySelector('#payroll-export-to');
+    const popup = document.createElement('div'); popup.id = 'test-payroll-picker'; popup.hidden = true;
+    popup.style.cssText = 'position:fixed;inset:35% 20px auto;z-index:99999;padding:20px;background:white;color:black;border:2px solid black';
+    const pick = document.createElement('button'); pick.type = 'button'; popup.append(pick);
+    document.querySelector('#payroll-export-dialog').append(popup);
+    let active;
+    function open(input) { active = input; pick.textContent = input === start ? 'Pick From day' : 'Pick To day'; popup.hidden = false; }
+    start.addEventListener('click', event => { event.preventDefault(); open(start); });
+    end.showPicker = () => { window.payrollToPickerCalls = (window.payrollToPickerCalls || 0) + 1; open(end); };
+    pick.addEventListener('click', () => {
+      const input = active; popup.hidden = true; input.value = input === start ? from : to;
+      input.dispatchEvent(new Event('input', { bubbles: true })); input.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+  }, { from: calendar.addDays(week.from, 2), to: calendar.addDays(week.from, 4) });
+}
 async function download(page, preset, limit) {
   await page.evaluate(() => { window.payrollTapCount = 0; });
   const start = performance.now();
@@ -54,7 +75,13 @@ async function download(page, preset, limit) {
   if (preset !== 'week') await page.locator(`[data-payroll-range="${preset}"]`).click();
   if (preset === 'custom') {
     range = { from: calendar.addDays(week.from, 2), to: calendar.addDays(week.from, 4) };
-    for (const key of ['from', 'to']) { await page.locator('#payroll-export-' + key).click(); await page.locator('#payroll-export-' + key).fill(range[key]); }
+    assert.equal(await page.locator('#payroll-export-from').inputValue(), week.from);
+    assert.equal(await page.locator('#payroll-export-to').inputValue(), week.to);
+    const calls = await page.evaluate(() => window.payrollToPickerCalls || 0);
+    await page.locator('#payroll-export-from').click();
+    await page.getByRole('button', { name: 'Pick From day', exact: true }).click();
+    assert.equal(await page.evaluate(() => window.payrollToPickerCalls), calls + 1, 'From selection opens To without a tap');
+    await page.getByRole('button', { name: 'Pick To day', exact: true }).click();
   }
   const [file] = await Promise.all([page.waitForEvent('download'), page.locator('[data-payroll-download="csv"]').click()]);
   const csv = fs.readFileSync(await file.path(), 'utf8'), rows = parseCsv(csv);
@@ -66,13 +93,14 @@ async function download(page, preset, limit) {
   assert.equal(expected.totals.total, preset === 'custom' ? 27 : 45, 'approved punch sum, excluding the submitted punch');
   assert.deepEqual(totals[0].slice(5), preset === 'custom' ? ['22.00','5.00','0.00','27.00'] : ['40.00','5.00','0.00','45.00']);
   const elapsed = performance.now() - start, taps = await page.evaluate(() => window.payrollTapCount);
-  assert.equal(taps, preset === 'week' ? 2 : preset === 'last' ? 3 : 5);
+  assert.equal(taps, preset === 'week' ? 2 : preset === 'last' ? 3 : 6);
   assert(taps <= limit, `${preset}: ${taps} taps exceeds ${limit}`);
-  if (preset !== 'custom') assert(elapsed <= 5000, `${preset}: ${elapsed}ms exceeds 5 seconds`);
+  assert(elapsed <= (preset === 'custom' ? 8000 : 5000), `${preset}: ${elapsed}ms exceeds its time budget`);
   console.log(`Payroll ${page.viewportSize().width}px ${preset}: ${taps} taps, ${Math.round(elapsed)}ms, ${expected.totals.total} approved hours`);
 }
 async function bounds(page) {
-  const palette = await page.locator('#payroll-export-dialog').evaluate(el => ({ theme: document.documentElement.dataset.theme, background: getComputedStyle(el).backgroundColor, primary: getComputedStyle(el.querySelector('[data-payroll-download="csv"]')).backgroundColor }));
+  const palette = await page.locator('#payroll-export-dialog').evaluate(el => ({ theme: document.documentElement.dataset.theme, border: getComputedStyle(el).borderTopColor, background: getComputedStyle(el).backgroundColor, primary: getComputedStyle(el.querySelector('[data-payroll-download="csv"]')).backgroundColor }));
+  if (palette.theme === 'dark') assert.equal(palette.border, 'rgb(110, 110, 110)');
   assert.equal(palette.background, palette.theme === 'dark' ? 'rgb(0, 0, 0)' : 'rgb(247, 245, 240)');
   assert.equal(palette.primary, 'rgb(255, 102, 0)');
   const result = await page.evaluate(() => {
@@ -100,6 +128,7 @@ async function main() {
     await page.addInitScript(() => { localStorage.setItem('pdl-analytics-consent','declined'); document.addEventListener('click', event => { if (event.isTrusted) window.payrollTapCount = (window.payrollTapCount || 0) + 1; }, true); });
     const errors = []; page.on('pageerror', error => errors.push(error.message));
     await login(page, seed.OFFICE_EMAIL);
+    await installPickerHarness(page);
     const response = await context.request.get(base + '/api/payroll/export?' + new URLSearchParams({ ...week, format: 'csv' }));
     assert.equal(response.status(), 200); assert.equal(response.headers()['cache-control'], 'private, no-store');
     for (const query of ['from=bad&to=2026-10-25&format=csv', `from=${week.from}&to=${week.to}&format=x`]) assert.equal((await context.request.get(base + '/api/payroll/export?' + query)).status(), 400);
@@ -109,6 +138,14 @@ async function main() {
       await page.evaluate(theme => { document.documentElement.dataset.theme = theme; showPage('timecards'); }, theme);
       await page.locator('#pay-period-panel [data-payroll-export-open]').waitFor({ state: 'visible' });
       await page.evaluate(() => document.fonts.ready);
+      const entry = await page.locator('#pay-period-panel [data-payroll-export-open]').evaluate(el => ({ height: el.getBoundingClientRect().height, minimum: parseFloat(getComputedStyle(el).minHeight) }));
+      assert(entry.height >= 48 && entry.minimum >= 48, `${width}px export entry: ${JSON.stringify(entry)}`);
+      if (theme === 'dark') {
+        const tab = await page.locator('#timecards-page .time-workspace-tabs button.active').evaluate(el => ({ color: getComputedStyle(el).color, background: getComputedStyle(el).backgroundColor }));
+        assert.deepEqual(tab, { color: 'rgb(0, 0, 0)', background: 'rgb(255, 102, 0)' });
+        const luminance = color => color.match(/\d+/g).map(Number).map(v => (v /= 255) <= .04045 ? v / 12.92 : ((v + .055) / 1.055) ** 2.4).reduce((sum, v, i) => sum + v * [.2126, .7152, .0722][i], 0);
+        assert((luminance(tab.background) + .05) / (luminance(tab.color) + .05) >= 4.5, 'selected dark tab passes AA');
+      }
       for (const preset of ['week', 'last', 'custom']) {
         await download(page, preset, preset === 'custom' ? 6 : preset === 'last' ? 3 : 2);
         await bounds(page);
@@ -117,6 +154,27 @@ async function main() {
       }
     }
     await page.locator('#pay-period-panel [data-payroll-export-open]').click();
+    await page.locator('[data-payroll-range="last"]').click();
+    await page.locator('[data-payroll-range="custom"]').click();
+    assert.equal(await page.locator('#payroll-export-from').inputValue(), week.from, 'Custom resets even after Last week');
+    assert.equal(await page.locator('#payroll-export-to').inputValue(), week.to);
+    const nextFrom = calendar.addDays(week.from, 9);
+    const advanced = await page.evaluate(from => {
+      const start = document.querySelector('#payroll-export-from'), end = document.querySelector('#payroll-export-to');
+      start.value = from; start.dispatchEvent(new Event('change', { bubbles: true }));
+      document.querySelector('#test-payroll-picker').hidden = true;
+      return end.value;
+    }, nextFrom);
+    assert.equal(advanced, calendar.range('week', nextFrom, db.company.weekStart).to, 'To advances to the end of the new From workweek');
+    for (const mode of ['missing', 'throws']) {
+      assert(await page.evaluate(mode => {
+        const start = document.querySelector('#payroll-export-from'), end = document.querySelector('#payroll-export-to'), picker = end.showPicker;
+        end.showPicker = mode === 'missing' ? undefined : () => { throw new DOMException('No user activation', 'NotAllowedError'); };
+        start.focus(); start.dispatchEvent(new Event('change', { bubbles: true }));
+        const focused = document.activeElement === end; end.showPicker = picker; return focused;
+      }, mode), mode + ' picker falls back to To focus');
+    }
+    await page.locator('[data-payroll-range="week"]').click();
     assert.match(await page.locator('#payroll-export-count').textContent(), /1 punch not approved yet/);
     const [pdf] = await Promise.all([page.waitForEvent('download'), page.locator('[data-payroll-download="pdf"]').click()]);
     const bytes = fs.readFileSync(await pdf.path()); assert.equal(bytes.subarray(0, 5).toString(), '%PDF-');
@@ -124,11 +182,16 @@ async function main() {
     if (shots) fs.copyFileSync(await pdf.path(), path.join(shots, 'payroll-summary.pdf'));
     await page.locator('#payroll-export-approve').click();
     assert.equal(await page.locator('#timecard-from').inputValue(), week.from); assert.equal(await page.locator('#timecard-to').inputValue(), week.to);
+    assert.equal(await page.locator('#timecard-status').inputValue(), 'submitted');
     await page.setViewportSize({ width: 390, height: 844 });
     await page.evaluate(() => window.PDLCompanySettings.openPayPeriods());
     await page.locator('#payroll-overtime-form').waitFor({ state: 'visible' });
-    const inline = await page.locator('.payroll-rule-hours').evaluateAll(labels => labels.map(label => { const parts = [...label.children].map(el => el.getBoundingClientRect()); return { top: Math.max(...parts.map(r => r.top)), bottom: Math.min(...parts.map(r => r.bottom)), right: Math.max(...parts.map(r => r.right)), viewport: innerWidth }; }));
-    for (const line of inline) assert(line.top < line.bottom && line.right <= line.viewport, 'one-line overtime sentence at 390px: ' + JSON.stringify(line));
+    for (const theme of ['light', 'dark']) {
+      await page.evaluate(theme => document.documentElement.dataset.theme = theme, theme);
+      const settingsEntry = await page.locator('#company-pay-periods [data-payroll-export-open]').boundingBox(); assert(settingsEntry.height >= 48);
+      const inline = await page.locator('.payroll-rule-hours').evaluateAll(labels => labels.map(label => { const parts = [...label.children].map(el => el.getBoundingClientRect()), input = label.querySelector('input').getBoundingClientRect(); return { top: Math.max(...parts.map(r => r.top)), bottom: Math.min(...parts.map(r => r.bottom)), right: Math.max(...parts.map(r => r.right)), boxRight: label.getBoundingClientRect().right, gap: parseFloat(getComputedStyle(label.parentElement).columnGap), width: input.width, height: input.height }; }));
+      for (const line of inline) { assert(line.top < line.bottom && line.right <= line.boxRight + .5, 'one-line overtime sentence fits its box: ' + JSON.stringify(line)); assert.equal(line.width, 48); assert.equal(line.height, 48); assert(line.gap >= 4); }
+    }
     const field = await browser.newContext(), fieldPage = await field.newPage(); await login(fieldPage, seed.FIELD_EMAIL);
     assert.equal((await field.request.get(base + '/api/payroll/export?' + new URLSearchParams({ ...week, format: 'csv' }))).status(), 403);
     assert.equal(await fieldPage.locator('[data-payroll-export-open]:visible').count(), 0);

@@ -1,5 +1,8 @@
 /* Payroll export is scoped to the pay-period entry and its own dialog. */
 [data-payroll-export-open] { min-height:48px; font:700 16px Inter,sans-serif; background:var(--pdl-black); color:var(--pdl-white); border:2px solid var(--pdl-gray); }
+#pay-period-panel [data-payroll-export-open], #company-pay-periods [data-payroll-export-open] { min-height:48px; }
+:root[data-theme="dark"] dialog#payroll-export-dialog { border-color:var(--pdl-gray) !important; }
+:root[data-theme="dark"] #timecards-page .time-workspace-tabs button.active { background:var(--pdl-orange) !important; color:var(--pdl-black) !important; }
 :root dialog#payroll-export-dialog { box-sizing:border-box; width:min(560px,calc(100vw - 24px)); max-width:calc(100vw - 24px); max-height:calc(100dvh - 24px); margin:auto; padding:0; border:1px solid var(--pdl-gray); background:var(--surface-canvas) !important; color:var(--text-primary); overflow:hidden; }
 #payroll-export-dialog[open] { display:flex; flex-direction:column; }
 #payroll-export-dialog * { box-sizing:border-box; }

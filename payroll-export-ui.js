@@ -21,8 +21,8 @@
   function choose(preset) {
     dialog.querySelectorAll('[data-payroll-range]').forEach(button => button.setAttribute('aria-pressed', String(button.dataset.payrollRange === preset)));
     find('#payroll-export-custom').hidden = preset !== 'custom';
-    if (preset !== 'custom') {
-      const range = calendar.range(preset, calendar.today(company?.timezone || 'America/Los_Angeles'), company?.weekStart || 'monday');
+    {
+      const range = calendar.range(preset === 'custom' ? 'week' : preset, calendar.today(company?.timezone || 'America/Los_Angeles'), company?.weekStart || 'monday');
       find('#payroll-export-from').value = range.from;
       find('#payroll-export-to').value = range.to;
     }
@@ -37,6 +37,16 @@
   find('[data-payroll-close]').addEventListener('click', close);
   dialog.querySelectorAll('[data-payroll-range]').forEach(button => button.addEventListener('click', () => choose(button.dataset.payrollRange)));
   dialog.querySelectorAll('input').forEach(input => input.addEventListener('input', refresh));
+  find('#payroll-export-from').addEventListener('change', () => {
+    const { from, to } = dates();
+    if (!calendar.validDate(from)) return;
+    const end = find('#payroll-export-to');
+    if (!calendar.validDate(to) || to < from) end.value = calendar.range('week', from, company?.weekStart || 'monday').to;
+    refresh();
+    // Stay in the date-selection gesture: no timer that would lose user activation.
+    try { if (typeof end.showPicker === 'function') end.showPicker(); else end.focus(); }
+    catch { end.focus(); }
+  });
   find('#payroll-export-approve').addEventListener('click', () => {
     const range = dates(); close(); showPage('timecards'); window.PDLPayPeriods.reviewRange(range.from, range.to);
   });

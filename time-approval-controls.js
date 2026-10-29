@@ -126,7 +126,7 @@ else {
       finally{if(context===timeContext())fieldset.disabled=false}
     });
   }
-  window.PDLPayPeriods={refresh:refreshPayPeriods,reviewRange(from,to){paySelected='';$('#timecard-from').value=from;$('#timecard-to').value=to;for(const id of ['timecard-job','timecard-person','timecard-status'])$('#'+id).value='all';$('#time-person-search').value='';renderTimeCards()}};
+  window.PDLPayPeriods={refresh:refreshPayPeriods,reviewRange(from,to){paySelected='';$('#timecard-from').value=from;$('#timecard-to').value=to;for(const id of ['timecard-job','timecard-person'])$('#'+id).value='all';$('#timecard-status').value='submitted';$('#time-person-search').value='';renderTimeCards()}};
   function choosePayPeriod(id){paySelected=id;const p=payList.find(p=>p.id===id);$('#timecard-from').value=p?.from||'';$('#timecard-to').value=p?.to||'';for(const id of ['timecard-job','timecard-person','timecard-status'])$('#'+id).value='all';$('#time-person-search').value='';renderTimeCards()}
   async function refreshPayPeriods(){
     const context=timeContext(),sequence=++paySequence,selection=paySelected;
