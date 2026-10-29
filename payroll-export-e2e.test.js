@@ -103,8 +103,25 @@ async function landingDownload(page, preset) {
   console.log(`Landing ${page.viewportSize().width}px ${preset}: ${taps} real taps, ${Math.round(elapsed)}ms, ${expected.totals.total} approved hours`);
   await checkComponent(page,root);
 }
-async function assertStickyFooter(page, root) {
+async function settle(page) {
   await page.evaluate(async () => { await Promise.all(document.getAnimations().filter(a => a.effect?.getTiming().iterations !== Infinity).map(a => a.finished.catch(() => {}))); });
+}
+async function assertChipsHit(page, root) {
+  await settle(page);
+  const chips = root.locator('[data-payroll-range]');
+  assert.equal(await chips.count(), 6);
+  for (let i = 0; i < 6; i++) {
+    const info = await chips.nth(i).evaluate(el => {
+      const r = el.getBoundingClientRect();
+      const hit = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+      return { text: el.textContent.trim(), top: r.top, bottom: r.bottom, height: r.height, innerHeight, hit: hit === el || !!el.contains(hit), hitText: hit ? hit.outerHTML.slice(0, 140) : null };
+    });
+    assert(info.height >= 48, JSON.stringify(info));
+    assert(info.top >= -0.5 && info.bottom <= info.innerHeight + 0.5 && info.hit, JSON.stringify(info));
+  }
+}
+async function assertStickyFooter(page, root) {
+  await settle(page);
   const line = root.locator('[data-payroll-bar-review]');
   const csv = root.locator('[data-payroll-download="csv"]');
   for (const locator of [line, csv]) {
@@ -132,6 +149,7 @@ async function showMonth(root, ym) {
 }
 async function assertCustomUnapprovedNotice(page, root) {
   const first = calendar.addDays(week.from, 1), second = week.from;
+  await settle(page);
   await tap(page, root.locator('[data-payroll-range="custom"]'));
   assert.equal(await root.locator('.payroll-calendar').isVisible(), true, 'custom calendar is open');
   await tap(page, root.locator(`[data-payroll-day="${first}"]`));
@@ -157,11 +175,11 @@ async function main() {
     assert.equal((await fetch(base+route)).status,401,'anonymous gets 401');
     for(const query of ['from=bad&to=2026-10-25&format=csv',`from=${week.from}&to=${week.to}&format=x`])assert.equal((await context.request.get(base+'/api/payroll/export?'+query)).status(),400);
     assert.equal((await context.request.post(base+'/api/payroll/export')).status(),405);
-    for(const width of [390,768,1280])for(const theme of ['light','dark']){
-      await page.setViewportSize({width,height:width===1280?800:844});await page.evaluate(theme=>{document.documentElement.dataset.theme=theme},theme);await page.evaluate(()=>document.fonts.ready);
-      for(const preset of ['week','last','custom']){
+    for (const size of [{width:390,height:500},{width:390,height:844},{width:768,height:844},{width:1280,height:800}]) for (const theme of ['light','dark']) {
+      await page.setViewportSize(size);await page.evaluate(theme=>{document.documentElement.dataset.theme=theme},theme);await page.evaluate(()=>document.fonts.ready);
+      for (const preset of ['week','last','custom']) {
         await landingDownload(page,preset);
-        if(shots){fs.mkdirSync(shots,{recursive:true});await page.screenshot({path:path.join(shots,`landing-${preset}-${theme}-${width}.png`)})}
+        if(shots){fs.mkdirSync(shots,{recursive:true});await page.screenshot({path:path.join(shots,`landing-${preset}-${theme}-${size.width}x${size.height}.png`)})}
       }
     }
     const root=page.locator('#payroll-landing');await page.evaluate(()=>showPage('dashboard'));
@@ -205,8 +223,10 @@ async function main() {
       await page.setViewportSize(viewport);
       await page.evaluate(() => { document.documentElement.dataset.theme='light'; showPage('dashboard'); window.scrollTo(0,0); });
       const landing = page.locator('#payroll-landing');
+      await assertChipsHit(page, landing);
       await landing.locator('[data-payroll-range="last"]').click();
       await page.evaluate(() => window.scrollTo(0,0));
+      await assertChipsHit(page, landing);
       await assertStickyFooter(page, landing);
       await landing.locator('[data-payroll-range="custom"]').click();
       await showMonth(landing, '2026-10');
@@ -223,7 +243,9 @@ async function main() {
       } else await page.evaluate(() => showPage('timecards'));
       await page.locator('#pay-period-panel [data-payroll-export-open]').click();
       const dialog = page.locator('#payroll-dialog-content');
+      await assertChipsHit(page, dialog);
       await dialog.locator('[data-payroll-range="last"]').click();
+      await assertChipsHit(page, dialog);
       await assertStickyFooter(page, dialog);
       await dialog.locator('[data-payroll-range="custom"]').click();
       await showMonth(dialog, '2026-10');

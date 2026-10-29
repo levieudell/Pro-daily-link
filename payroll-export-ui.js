@@ -14,7 +14,7 @@
     const find = selector => root.querySelector(selector);
     let identity = '', range = null, preset = 'week', month = '', cursor = '', first = null, pending = false, picked = false, controller = null, busy = false;
     function error(text) { find('[data-payroll-error]').textContent = text; }
-    function setCalendar(open) { root.classList.toggle('calendar-open', open); find('.payroll-calendar').hidden = !open; }
+    function setCalendar(open) { root.classList.toggle('calendar-open', open); find('.payroll-calendar').hidden = !open; if (open && isLanding) root.scrollIntoView({block:'start'}); }
     function update() {
       const authorized = allowed();
       if (!authorized) { controller?.abort(); identity = ''; if (isLanding) { root.replaceChildren(); root.remove(); } else { root.replaceChildren(); if (dialog.open) dialog.close(); dialog.remove(); } return; }

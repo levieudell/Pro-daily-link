@@ -17,18 +17,18 @@
 .payroll-component .payroll-export-body { min-height:0; overflow-y:auto; }
 .payroll-component p { color:var(--pay-text) !important; font:400 14px/1.4 Inter,sans-serif; margin:0 0 8px; }
 :is(#payroll-landing,#payroll-dialog-content) button { min-height:48px !important; font:700 14px/1.2 Inter,sans-serif; border-radius:6px; box-shadow:none; }
-.payroll-export-chips { display:grid; grid-template-columns:1fr 1fr; gap:6px; margin:8px 0; }
-.payroll-component [data-payroll-range] { padding:6px; background:var(--pay-bg) !important; color:var(--pay-text) !important; border:2px solid var(--pdl-gray) !important; }
+.payroll-export-chips { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:8px; margin:8px 0; }
+.payroll-component [data-payroll-range] { min-width:0; height:48px; padding:4px 6px; white-space:normal; overflow:hidden; background:var(--pay-bg) !important; color:var(--pay-text) !important; border:2px solid var(--pdl-gray) !important; }
 .payroll-component [data-payroll-range][aria-pressed="true"] { background:var(--pdl-orange) !important; color:var(--pdl-black) !important; border-color:var(--pdl-orange) !important; }
 .payroll-component button:disabled { opacity:1; cursor:not-allowed; border-style:dashed !important; }
-.payroll-component [data-payroll-bar-review] { grid-column:1 / -1; display:flex; align-items:center; justify-content:flex-start; height:48px; min-height:48px !important; margin:0; padding:0 4px; background:transparent !important; color:var(--pay-text) !important; border:0 !important; border-radius:0; box-shadow:none; font:400 14px/1.2 Inter,sans-serif !important; text-align:left; white-space:nowrap; }
+.payroll-component [data-payroll-bar-review] { flex:1 0 100%; display:flex; align-items:center; justify-content:flex-start; height:48px; min-height:48px !important; max-height:48px; margin:0; padding:0 4px; background:transparent !important; color:var(--pay-text) !important; border:0 !important; border-radius:0; box-shadow:none; font:400 14px/1.2 Inter,sans-serif !important; text-align:left; white-space:nowrap; }
 .payroll-component [data-payroll-bar-sep] { white-space:pre; }
 .payroll-component [data-payroll-bar-review] span:last-child { text-decoration:underline; }
 .payroll-component [data-payroll-error]:empty { display:none; }
 .payroll-component [data-payroll-error]:not(:empty) { border-left:2px solid var(--pdl-pink); padding:8px; }
-.payroll-component footer { position:sticky; bottom:0; z-index:4; display:grid; grid-template-columns:1.2fr 1fr; gap:8px; flex:none; padding-top:8px; background:var(--pay-bg); }
-.payroll-component [data-payroll-download="csv"] { background:var(--pdl-orange) !important; color:var(--pdl-black) !important; border:2px solid var(--pdl-orange) !important; }
-.payroll-component [data-payroll-download="pdf"] { background:var(--pdl-black) !important; color:var(--pdl-white) !important; border:2px solid var(--pdl-gray) !important; }
+.payroll-component footer { position:sticky; bottom:0; z-index:4; display:flex; flex-wrap:wrap; align-items:stretch; gap:8px; flex:none; padding-top:8px; background:var(--pay-bg); }
+.payroll-component [data-payroll-download="csv"] { flex:2 1 0; height:48px; min-height:48px !important; max-height:48px; background:var(--pdl-orange) !important; color:var(--pdl-black) !important; border:2px solid var(--pdl-orange) !important; }
+.payroll-component [data-payroll-download="pdf"] { flex:1 1 0; height:48px; min-height:48px !important; max-height:48px; background:var(--pdl-black) !important; color:var(--pdl-white) !important; border:2px solid var(--pdl-gray) !important; }
 .payroll-component :is(button,a):focus-visible { outline:2px solid var(--pdl-orange); outline-offset:2px; }
 .payroll-component.calendar-open :is(.payroll-intro,.payroll-export-chips) { display:none; }
 .payroll-calendar-nav { display:grid; grid-template-columns:48px 1fr 48px; align-items:center; text-align:center; }
@@ -45,7 +45,7 @@
 .payroll-component [data-payroll-range-label] { clear:both; padding-top:4px; }
 :root[data-theme="dark"] .payroll-component { --pay-bg:var(--pdl-black); --pay-text:var(--pdl-white); }
 :root[data-theme="dark"] dialog#payroll-export-dialog { background:var(--pdl-black) !important; }
-@media(min-width:768px) { #payroll-landing .payroll-export-chips { grid-template-columns:repeat(3,1fr); } }
+@media (max-height:560px) { #payroll-landing .payroll-intro { display:none; } }
 @media(max-width:390px) {
   #company-pay-periods [data-pay-new] { box-sizing:border-box; height:48px; min-height:48px; }
 }
