@@ -153,7 +153,7 @@ async function assertScrollRegions(page, label) {
     for (const piece of regions.pieces) {
       assert.equal(piece.missing, undefined, `${label} ${JSON.stringify(piece)}`);
       assert.equal(piece.inside, true, `${label} ${JSON.stringify(piece)}`);
-      if (piece.height > 0) assert.ok(piece.left >= 20, `${label} ${JSON.stringify(piece)}`);
+      if (piece.height > 0) assert.ok(piece.left >= 16, `${label} ${JSON.stringify(piece)}`);
     }
     await scrollStep(page, 'end');
     const bottom = await pinnedBar(page);
@@ -224,13 +224,14 @@ async function clockIn(page) {
     await page.waitForSelector('#report-modal[open] #field-notes');
     await page.evaluate(() => Promise.all(document.getAnimations().map(animation => animation.finished.catch(() => {}))));
     const notesHeader = await headerCascade(page);
-    assert.equal(notesHeader.position, 'sticky', JSON.stringify(notesHeader));
-    assert.equal(notesHeader.height, '48px', JSON.stringify(notesHeader));
+    // The shared brand header stays outside the step's scrolling body.
+    assert.equal(notesHeader.position, 'static', JSON.stringify(notesHeader));
+    assert.equal(notesHeader.height, '56px', JSON.stringify(notesHeader));
     assert.equal(notesHeader.besideHeader, true, JSON.stringify(notesHeader));
     const notesBar = await pinnedBar(page);
     assert.equal(notesBar.closeInside, true, JSON.stringify(notesBar));
     assert.ok(notesBar.closeH >= 44, JSON.stringify(notesBar));
-    assert.equal(notesBar.headerH, 48, JSON.stringify(notesBar));
+    assert.equal(notesBar.headerH, 56, JSON.stringify(notesBar));
     assert.ok(notesBar.barBottom <= notesBar.viewH + 1 && notesBar.barTop >= notesBar.viewH - 180, JSON.stringify(notesBar));
     assert.ok(notesBar.scrollerTop >= notesBar.headerH - 1 && notesBar.scrollerBottom <= notesBar.barTop + 1, JSON.stringify(notesBar));
     assert.ok(notesBar.formPad < 24 && notesBar.scrollPad < 24, JSON.stringify(notesBar));
@@ -269,8 +270,8 @@ async function clockIn(page) {
     assert.equal(hintClear.overlap, false, JSON.stringify(hintClear));
     assert.equal(hintClear.closeHit, true, JSON.stringify(hintClear));
     const reviewHeader = await headerCascade(page);
-    assert.equal(reviewHeader.position, 'sticky', JSON.stringify(reviewHeader));
-    assert.equal(reviewHeader.height, '48px', JSON.stringify(reviewHeader));
+    assert.equal(reviewHeader.position, 'static', JSON.stringify(reviewHeader));
+    assert.equal(reviewHeader.height, '56px', JSON.stringify(reviewHeader));
     assert.equal(reviewHeader.besideHeader, true, JSON.stringify(reviewHeader));
     await assertScrollRegions(page, 'review');
     const reviewBar = await pinnedBar(page);

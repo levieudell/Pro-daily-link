@@ -158,7 +158,7 @@ async function serverDaily(page) {
     page.on('dialog', async dialog => { await dialog.accept(); });
     await page.evaluateOnNewDocument(() => {
       localStorage.setItem('pdl-analytics-consent', 'declined');
-      localStorage.setItem('pdl-field-tip', 'dismissed');
+
     });
     await login(page);
     await openNav(page, 'fieldday');
