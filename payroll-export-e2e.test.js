@@ -6,6 +6,7 @@ const path = require('node:path');
 const { chromium } = require('playwright-core');
 const seed = require('./staging-seed');
 const calendar = require('./payroll-ranges');
+const paySchedule = require('./pay-schedule');
 const { buildPayrollExport, defaultTemplate } = require('./payroll-export');
 const root = fs.mkdtempSync(path.join(os.tmpdir(), 'pdl-payroll-export-'));
 const dbFile = path.join(root, 'db.json');
@@ -258,7 +259,33 @@ async function main() {
     await page.setViewportSize({width:390,height:844});await page.evaluate(()=>window.PDLCompanySettings.openPayPeriods());await page.locator('#payroll-overtime-form').waitFor({state:'visible'});
     const spacing=await page.locator('#company-pay-periods').evaluate(el=>{const a=el.querySelector('[data-payroll-export-open]').getBoundingClientRect(),b=el.querySelector('[data-pay-new]').getBoundingClientRect();return{gap:b.y>=a.bottom?b.y-a.bottom:b.x-a.right,height:a.height,newHeight:b.height}});assert(spacing.gap>=8&&spacing.height>=48&&spacing.newHeight>=48,JSON.stringify(spacing));
     for(const theme of ['light','dark']){await page.evaluate(theme=>document.documentElement.dataset.theme=theme,theme);const inline=await page.locator('.payroll-rule-hours').evaluateAll(labels=>labels.map(label=>{const parts=[...label.children].map(el=>el.getBoundingClientRect()),input=label.querySelector('input').getBoundingClientRect();return{top:Math.max(...parts.map(r=>r.top)),bottom:Math.min(...parts.map(r=>r.bottom)),right:Math.max(...parts.map(r=>r.right)),boxRight:label.getBoundingClientRect().right,width:input.width,height:input.height,gap:parseFloat(getComputedStyle(label.parentElement).columnGap)}}));for(const line of inline){assert(line.top<line.bottom&&line.right<=line.boxRight+.5,JSON.stringify(line));assert.equal(line.width,48);assert.equal(line.height,48);assert(line.gap>=4)}}
-    const field=await browser.newContext(),fieldPage=await field.newPage();await login(fieldPage,seed.FIELD_EMAIL);await fieldPage.waitForFunction(()=>!document.querySelector('#payroll-landing')&&!document.querySelector('#payroll-export-dialog'));assert.equal((await field.request.get(base+route)).status(),403);assert.equal(await fieldPage.locator('#payroll-landing').count(),0,'field users have no payroll card in the DOM');assert.equal(await fieldPage.locator('#payroll-export-dialog').count(),0,'field users have no export dialog in the DOM');assert.equal(await fieldPage.locator('[data-payroll-export-open]:visible').count(),0);
+    await page.setViewportSize({width:390,height:1400});
+    await page.evaluate(() => { document.documentElement.dataset.theme='light'; window.PDLCompanySettings.openPayPeriods(); window.payrollTapCount=0; });
+    await page.locator('#pay-schedule-form').waitFor();
+    const periodTab=await page.locator('#settings-tab-periods').evaluate(el => ({bg:getComputedStyle(el).backgroundColor,color:getComputedStyle(el).color}));
+    assert.deepEqual(periodTab,{bg:'rgb(0, 0, 0)',color:'rgb(255, 255, 255)'});
+    const scheduleStarted=performance.now();
+    await tap(page,page.locator('[data-pay-frequency="weekly"]'));
+    await tap(page,page.locator('[data-end-weekday="2"]'));
+    await tap(page,page.locator('[data-due-weekday="3"]'));
+    await tap(page,page.locator('[data-pay-weekday="5"]'));
+    await tap(page,page.locator('[data-pay-schedule-save]'));
+    await page.locator('[data-pay-schedule-error]').filter({hasText:'saved'}).waitFor();
+    const scheduleTaps=await page.evaluate(()=>window.payrollTapCount),scheduleElapsed=performance.now()-scheduleStarted;
+    assert(scheduleTaps<=6,`weekly setup took ${scheduleTaps} taps`);
+    assert(scheduleElapsed<10000,`${scheduleElapsed}ms`);
+    console.log(`Weekly Tue-end schedule: ${scheduleTaps} taps, ${Math.round(scheduleElapsed)}ms`);
+    await page.evaluate(()=>{window.payrollTapCount=0});
+    await tap(page,page.locator('[data-pay-frequency="biweekly"]'));
+    await tap(page,page.locator('[data-anchor]').first());
+    assert.equal(await page.evaluate(()=>window.payrollTapCount),2);
+    assert.equal((await context.request.patch(base+'/api/company',{data:{payroll:{pay_schedule:{frequency:'weekly'}}},headers:{'X-PDL-Company':seed.COMPANY_ID}})).status(),400);
+    const scheduleToday=calendar.today('America/Los_Angeles');
+    const expectedPeriod=paySchedule.lastEndedBefore({...paySchedule.emptySchedule(),frequency:'weekly',period_end_weekday:2,cards_due_offset_days:1,payday_offset_days:3},scheduleToday);
+    await page.evaluate(()=>showPage('dashboard'));
+    await page.locator('#payroll-landing [data-payroll-range="period"]').click();
+    assert.equal(await page.locator('#payroll-landing [data-payroll-range-label]').innerText(),calendar.label(expectedPeriod.start,expectedPeriod.end,scheduleToday.slice(0,4)));
+    const field=await browser.newContext(),fieldPage=await field.newPage();await login(fieldPage,seed.FIELD_EMAIL);await fieldPage.waitForFunction(()=>!document.querySelector('#payroll-landing')&&!document.querySelector('#payroll-export-dialog'));assert.equal((await field.request.get(base+route)).status(),403);assert.equal((await field.request.patch(base+'/api/company',{data:{payroll:{pay_schedule:{frequency:'weekly',period_end_weekday:2}}},headers:{'X-PDL-Company':seed.COMPANY_ID}})).status(),403);assert.equal(await fieldPage.locator('#payroll-landing').count(),0,'field users have no payroll card in the DOM');assert.equal(await fieldPage.locator('#payroll-export-dialog').count(),0,'field users have no export dialog in the DOM');assert.equal(await fieldPage.locator('[data-payroll-export-open]:visible').count(),0);
     assert.deepEqual(errors,[]);console.log('Landing payroll speed, real inline calendar, CSV sums, empty states, shared dialog, filtered review, keyboard, brand and access checks passed.');
   }finally{await browser?.close();await new Promise(resolve=>server.close(resolve));fs.rmSync(root,{recursive:true,force:true})}
 }
