@@ -122,6 +122,7 @@ assert.equal(matches[0].id, first.result.id);
 assert.equal(matches[0].name, 'DEMO Office Manager');
 assert.equal(matches[0].email, 'office-demo@prodailylink.com');
 assert.equal(matches[0].role, 'admin');
+assert.equal(matches[0].permissions.manageTime, true);
 assert.equal(matches[0].companyId, seed.COMPANY_ID);
 assert.equal(matches[0].status, 'Active');
 assert.equal(matches[0].mustSetPassword, false);
@@ -257,6 +258,7 @@ async function login(port) {
   const profile = await me.json();
   assert.equal(me.status, 200);
   assert.equal(profile.role, 'admin');
+  assert.equal(profile.permissions.manageTime, true);
   assert.equal(profile.name, 'DEMO Office Manager');
   return body;
 }

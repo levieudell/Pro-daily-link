@@ -85,8 +85,46 @@ else {
     host.innerHTML=`<div class="pay-period-tools"><label>Company pay period<select id="pay-period-select"><option value="">Choose custom dates</option>${payList.map(p=>`<option value="${e(p.id)}" ${p.id===paySelected?'selected':''}>${e(p.label)} · ${e(p.from)} – ${e(p.to)}</option>`).join('')}</select></label>${payConfigure?'<button type="button" class="secondary" data-pay-settings>Manage pay periods</button>':''}${payConfigure&&selected&&!selected.exportCount?'<button type="button" class="secondary" data-pay-edit>Edit dates</button>':''}</div>${s?payPeriodReviewMarkup(s,payConfigure,payBusy):'<p class="input-help">Choose a company pay period to review approved hours and prepare a fixed export. Custom dates below filter the time-card list.</p>'}<p id="pay-period-message" class="form-message" role="alert" hidden></p>`;
   }
   function drawPaySettings(){
-    const host=$('#company-pay-period-list'),allowed=timeCardOffice()&&timeCardsOn()&&(currentUser?.role==='owner'||currentUser?.role==='admin'&&currentUser?.permissions?.manageTime===true);if(!allowed||!payConfigure){host.innerHTML='';return}
+    const host=$('#company-pay-period-list'),allowed=timeCardOffice()&&timeCardsOn()&&(currentUser?.role==='owner'||currentUser?.role==='admin'&&currentUser?.permissions?.manageTime===true);drawPayrollSettings(allowed&&payConfigure);if(!allowed||!payConfigure){host.innerHTML='';return}
     host.innerHTML=`<button type="button" class="primary" data-pay-new>New pay period</button><p class="input-help">Company timezone: ${escapeHtml(company?.timezone||'America/Los_Angeles')}. Each period keeps the timezone it was created with.</p>${payList.length?payList.map(p=>`<article class="company-period-row"><div><strong>${escapeHtml(p.label)}</strong><small>${escapeHtml(p.from)} through ${escapeHtml(p.to)} · ${escapeHtml(p.timeZone)}${p.exportCount?' · Fixed exports: '+p.exportCount:''}</small></div><button type="button" class="secondary" data-pay-use="${escapeHtml(p.id)}">Review time</button>${!p.exportCount?`<button type="button" class="secondary" data-pay-setting-edit="${escapeHtml(p.id)}">Edit dates</button>`:''}</article>`).join(''):'<p>No pay periods yet. Create your company’s first date range.</p>'}`;
+  }
+  let payrollSettingsKey='';
+  function drawPayrollSettings(allowed){
+    const host=$('#payroll-overtime-settings');
+    if(!allowed){host.hidden=true;host.innerHTML='';payrollSettingsKey='';return}
+    const overtime={weeklyOver:40,dailyOver:null,dailyDoubleOver:null,...company?.payroll?.overtime};
+    const key=JSON.stringify([timeContext(),overtime,company?.weekStart]);
+    host.hidden=false;if(key===payrollSettingsKey)return;payrollSettingsKey=key;
+    const fields=[
+      ['weeklyOver','Overtime after',40,'Regular hours above this limit become OT each workweek. Daily OT and double time don’t count twice.','hours a week','Weekly overtime',168],
+      ['dailyOver','Overtime after',8,'Hours above this limit become OT each day, up to the double-time limit.','hours a day','Daily overtime',24],
+      ['dailyDoubleOver','Double time after',12,'Hours above this limit become double time each day.','hours a day','Double time',24]
+    ];
+    host.innerHTML=`<form id="payroll-overtime-form" novalidate><h3>OVERTIME RULES</h3><p>Only approved punches count. Extra-work flags don't change pay.</p><p>Workweek starts ${company?.weekStart==='sunday'?'Sunday':'Monday'} (from your company settings).</p><fieldset>${fields.map(([name,label,fallback,help,period,title,max])=>`<div class="payroll-rule"><label class="payroll-rule-toggle" for="payroll-${name}-enabled"><input aria-label="${title}" type="checkbox" id="payroll-${name}-enabled" data-payroll-toggle="${name}" ${overtime[name]!==null?'checked':''}></label><label class="payroll-rule-hours" for="payroll-${name}"><span>${label}</span> <input aria-label="${title} hours" type="number" id="payroll-${name}" name="${name}" min="0" max="${max}" step="any" inputmode="decimal" value="${escapeHtml(overtime[name]??fallback)}" aria-describedby="payroll-${name}-help" ${overtime[name]===null?'disabled':''} required> <span>${period}</span></label><p id="payroll-${name}-help">${help}</p></div>`).join('')}<button type="submit" class="primary">Save overtime rules</button></fieldset><p id="payroll-overtime-message" role="status" aria-live="polite"></p></form>`;
+    const form=$('#payroll-overtime-form');
+    const clearMessage=()=>{
+      const message=$('#payroll-overtime-message');message.textContent='';message.classList.remove('is-error');
+      form.querySelectorAll('[aria-invalid]').forEach(input=>{input.removeAttribute('aria-invalid');input.removeAttribute('aria-errormessage')});
+    };
+    form.addEventListener('input',clearMessage);
+    form.addEventListener('change',event=>{clearMessage();const name=event.target.dataset.payrollToggle;if(name)$('#payroll-'+name).disabled=!event.target.checked});
+    form.addEventListener('submit',async event=>{
+      clearMessage();
+      event.preventDefault();const context=timeContext(),fieldset=form.querySelector('fieldset'),message=$('#payroll-overtime-message');
+      const overtime=Object.fromEntries(fields.map(([name])=>[name,$('#payroll-'+name+'-enabled').checked?Number($('#payroll-'+name).value):null]));
+      fieldset.disabled=true;message.textContent='Saving…';
+      try{
+        const saved=await api('/api/company',{method:'PATCH',body:JSON.stringify({payroll:{overtime}})});
+        if(context!==timeContext())return;
+        company=saved;payrollSettingsKey='';drawPayrollSettings(true);$('#payroll-overtime-message').textContent='Overtime rules saved.';
+      }catch(error){if(context===timeContext()){
+        message.textContent=window.PDLLocale?.translate(error.message)||error.message;message.classList.add('is-error');
+        const fault=fields.find(field=>error.message.startsWith(field[5]));
+        if(fault){const input=$('#payroll-'+fault[0]);input.setAttribute('aria-invalid','true');input.setAttribute('aria-errormessage',message.id)}
+        requestAnimationFrame(()=>{if(context===timeContext()&&message.isConnected)message.scrollIntoView({block:'nearest'})});
+      }}
+      finally{if(context===timeContext())fieldset.disabled=false}
+    });
   }
   window.PDLPayPeriods={refresh:refreshPayPeriods};
   function choosePayPeriod(id){paySelected=id;const p=payList.find(p=>p.id===id);$('#timecard-from').value=p?.from||'';$('#timecard-to').value=p?.to||'';for(const id of ['timecard-job','timecard-person','timecard-status'])$('#'+id).value='all';$('#time-person-search').value='';renderTimeCards()}

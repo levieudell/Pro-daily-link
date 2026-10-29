@@ -82,6 +82,28 @@ Object.assign(placeholders,{
 'Schedule controls':'Controles del horario','Previous schedule period':'Período anterior del horario','Choose schedule date':'Elegir fecha del horario','Next schedule period':'Siguiente período del horario','Schedule view':'Vista del cronograma','Close assignment':'Cerrar asignación','e.g. Form footings, pour slab, rough inspection…':'Ej.: Encofrar zapatas, colar losa, inspeccionar instalaciones…',
 'e.g. Rebar delivery 7 AM':'Ej.: Entrega de varilla a las 7 a. m.','Where to stage it, who to expect, anything they need to know':'Dónde descargar, a quién esperar y qué necesitan saber','Example: Doctor appointment':'Ejemplo: Cita médica'
 });
+Object.assign(es,{
+'OVERTIME RULES':'REGLAS DE HORAS EXTRA','Overtime after':'Horas extra después de','Double time after':'Tiempo doble después de',
+'hours':'horas','hours a week':'horas a la semana','hours a day':'horas al día',
+'Weekly overtime':'Horas extra semanales','Daily overtime':'Horas extra diarias','Double time':'Tiempo doble',
+'Weekly overtime hours':'Umbral de horas extra semanales en horas','Daily overtime hours':'Umbral de horas extra diarias en horas','Double time hours':'Umbral de tiempo doble en horas',
+"Only approved punches count. Extra-work flags don't change pay.":'Solo cuentan los registros de asistencia aprobados. Las marcas de trabajo extra no cambian el pago.',
+'Regular hours above this limit become OT each workweek. Daily OT and double time don’t count twice.':'Las horas regulares por encima de este límite pasan a ser horas extra cada semana laboral. Las horas extra diarias y el tiempo doble no se cuentan dos veces.',
+'Hours above this limit become OT each day, up to the double-time limit.':'Las horas por encima de este límite pasan a ser horas extra cada día, hasta el límite de tiempo doble.',
+'Hours above this limit become double time each day.':'Las horas por encima de este límite pasan a ser tiempo doble cada día.',
+'Save overtime rules':'Guardar reglas de horas extra','Overtime rules saved.':'Reglas de horas extra guardadas.',
+'Weekly overtime must be more than 0 hours, or turn it off.':'Las horas extra semanales deben empezar después de 0 horas; si no, desactive la regla.',
+'Daily overtime must be more than 0 hours, or turn it off.':'Las horas extra diarias deben empezar después de 0 horas; si no, desactive la regla.',
+'Double time must be more than 0 hours, or turn it off.':'El tiempo doble debe empezar después de 0 horas; si no, desactive la regla.',
+"Weekly overtime can't be more than 168 hours.":'Las horas extra semanales no pueden empezar después de 168 horas.',
+"Daily overtime can't be more than 24 hours.":'Las horas extra diarias no pueden empezar después de 24 horas.',
+"Double time can't be more than 24 hours.":'El tiempo doble no puede empezar después de 24 horas.',
+'Double time must start after daily overtime.':'El tiempo doble debe empezar después de las horas extra diarias.',
+'Save overtime rules here. Change the workweek start in company settings.':'Guarde aquí las reglas de horas extra. Cambie el inicio de la semana laboral en la configuración de su empresa.',
+'Set weekly overtime, daily overtime and double time, or turn each one off.':'Defina las horas extra semanales, las horas extra diarias y el tiempo doble, o desactive cada regla.',
+'Workweek starts Monday (from your company settings).':'La semana laboral empieza el lunes (según la configuración de su empresa).',
+'Workweek starts Sunday (from your company settings).':'La semana laboral empieza el domingo (según la configuración de su empresa).'
+});
 const esLower=Object.fromEntries(Object.entries(es).map(([key,value])=>[key.toLowerCase(),value]));
 const original=new Map(),originalAttributes=new Map();let language='en',running=false;
 function translatedLaneResult(value){return String(value||'').split(', ').map(part=>part.replace(/^(\d+) (?:day|days) scheduled$/i,(_,count)=>`${count} ${Number(count)===1?'día programado':'días programados'}`).replace(/^(\d+) joined an existing shift$/i,(_,count)=>`${count} ${Number(count)===1?'se unió a un turno existente':'se unieron a turnos existentes'}`).replace(/^(\d+) skipped \(time off or another job\)$/i,(_,count)=>`${count} ${Number(count)===1?'omitido':'omitidos'} (tiempo libre u otro proyecto)`)).join(', ')}

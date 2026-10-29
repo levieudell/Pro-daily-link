@@ -243,6 +243,7 @@ function ensureStagingOfficeUser(file, env = process.env, now = new Date()) {
     name: OFFICE_NAME,
     email: OFFICE_EMAIL,
     role: OFFICE_ROLE,
+    permissions: { ...(existing?.permissions || {}), manageTime: true },
     memberId: member.id,
     status: 'Active',
     projectIds: [],
