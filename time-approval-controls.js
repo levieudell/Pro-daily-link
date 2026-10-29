@@ -96,18 +96,18 @@ else {
     const key=JSON.stringify([timeContext(),overtime,company?.weekStart]);
     host.hidden=false;if(key===payrollSettingsKey)return;payrollSettingsKey=key;
     const fields=[
-      ['weeklyOver','Weekly OT after',40,'Regular hours above this limit become OT each workweek. Daily OT and double time don’t count twice.'],
-      ['dailyOver','Daily OT after',8,'Hours above this limit become OT each day, up to the double-time limit.'],
-      ['dailyDoubleOver','Double time after',12,'Hours above this limit become double time each day.']
+      ['weeklyOver','Overtime after',40,'Regular hours above this limit become OT each workweek. Daily OT and double time don’t count twice.','hours a week','Weekly overtime',168],
+      ['dailyOver','Overtime after',8,'Hours above this limit become OT each day, up to the double-time limit.','hours a day','Daily overtime',24],
+      ['dailyDoubleOver','Double time after',12,'Hours above this limit become double time each day.','hours a day','Double time',24]
     ];
-    host.innerHTML=`<form id="payroll-overtime-form"><h3>OVERTIME RULES</h3><p>Only approved punches count. Extra-work hours still split into regular, OT, and DT.</p><p>Workweek starts ${company?.weekStart==='sunday'?'Sunday':'Monday'} (from your company settings).</p><fieldset>${fields.map(([name,label,fallback,help])=>`<div class="payroll-rule"><label class="payroll-rule-toggle" for="payroll-${name}-enabled"><input type="checkbox" id="payroll-${name}-enabled" data-payroll-toggle="${name}" ${overtime[name]!==null?'checked':''}>${label}</label><label class="payroll-rule-hours" for="payroll-${name}"><input aria-label="${label} hours" type="number" id="payroll-${name}" name="${name}" min="0" step="any" inputmode="decimal" value="${escapeHtml(overtime[name]??fallback)}" aria-describedby="payroll-${name}-help" ${overtime[name]===null?'disabled':''} required><span>hours</span></label><p id="payroll-${name}-help">${help}</p></div>`).join('')}<button type="submit" class="primary">Save overtime rules</button></fieldset><p id="payroll-overtime-message" role="status" aria-live="polite"></p></form>`;
+    host.innerHTML=`<form id="payroll-overtime-form" novalidate><h3>OVERTIME RULES</h3><p>Only approved punches count. Extra-work flags don't change pay.</p><p>Workweek starts ${company?.weekStart==='sunday'?'Sunday':'Monday'} (from your company settings).</p><fieldset>${fields.map(([name,label,fallback,help,period,title,max])=>`<div class="payroll-rule"><label class="payroll-rule-toggle" for="payroll-${name}-enabled"><input aria-label="${title}" type="checkbox" id="payroll-${name}-enabled" data-payroll-toggle="${name}" ${overtime[name]!==null?'checked':''}></label><label class="payroll-rule-hours" for="payroll-${name}"><span>${label}</span> <input aria-label="${title} hours" type="number" id="payroll-${name}" name="${name}" min="0" max="${max}" step="any" inputmode="decimal" value="${escapeHtml(overtime[name]??fallback)}" aria-describedby="payroll-${name}-help" ${overtime[name]===null?'disabled':''} required> <span>${period}</span></label><p id="payroll-${name}-help">${help}</p></div>`).join('')}<button type="submit" class="primary">Save overtime rules</button></fieldset><p id="payroll-overtime-message" role="status" aria-live="polite"></p></form>`;
     const form=$('#payroll-overtime-form');
-    const clearMessage=()=>{$('#payroll-overtime-message').textContent=''};
+    const clearMessage=()=>{
+      const message=$('#payroll-overtime-message');message.textContent='';message.classList.remove('is-error');
+      form.querySelectorAll('[aria-invalid]').forEach(input=>{input.removeAttribute('aria-invalid');input.removeAttribute('aria-errormessage')});
+    };
     form.addEventListener('input',clearMessage);
     form.addEventListener('change',event=>{clearMessage();const name=event.target.dataset.payrollToggle;if(name)$('#payroll-'+name).disabled=!event.target.checked});
-    // Native validation runs before submit, including implicit Enter-key saves.
-    form.addEventListener('click',event=>{if(event.target.closest('button[type="submit"]'))clearMessage()});
-    form.addEventListener('invalid',clearMessage,true);
     form.addEventListener('submit',async event=>{
       clearMessage();
       event.preventDefault();const context=timeContext(),fieldset=form.querySelector('fieldset'),message=$('#payroll-overtime-message');
@@ -117,7 +117,12 @@ else {
         const saved=await api('/api/company',{method:'PATCH',body:JSON.stringify({payroll:{overtime}})});
         if(context!==timeContext())return;
         company=saved;payrollSettingsKey='';drawPayrollSettings(true);$('#payroll-overtime-message').textContent='Overtime rules saved.';
-      }catch(error){if(context===timeContext())message.textContent=error.message}
+      }catch(error){if(context===timeContext()){
+        message.textContent=window.PDLLocale?.translate(error.message)||error.message;message.classList.add('is-error');
+        const fault=fields.find(field=>error.message.startsWith(field[5]));
+        if(fault){const input=$('#payroll-'+fault[0]);input.setAttribute('aria-invalid','true');input.setAttribute('aria-errormessage',message.id)}
+        requestAnimationFrame(()=>{if(context===timeContext()&&message.isConnected)message.scrollIntoView({block:'nearest'})});
+      }}
       finally{if(context===timeContext())fieldset.disabled=false}
     });
   }

@@ -20,10 +20,12 @@ function validatePayroll(input) {
   }
   for (const key of Object.keys(DEFAULT_OVERTIME)) {
     const value = overtime[key];
+    const label = { weeklyOver: 'Weekly overtime', dailyOver: 'Daily overtime', dailyDoubleOver: 'Double time' }[key];
+    const max = key === 'weeklyOver' ? 168 : 24;
     if (value !== null && (typeof value !== 'number' || !Number.isFinite(value) || value <= 0)) {
-      const label = { weeklyOver: 'Weekly overtime', dailyOver: 'Daily overtime', dailyDoubleOver: 'Double time' }[key];
       fail(`${label} must be more than 0 hours, or turn it off.`);
     }
+    if (value !== null && value > max) fail(`${label} can't be more than ${max} hours.`);
   }
   if (overtime.dailyOver !== null && overtime.dailyDoubleOver !== null && overtime.dailyDoubleOver <= overtime.dailyOver) {
     fail('Double time must start after daily overtime.');
