@@ -10,14 +10,16 @@
   const presets = [['week','This week'],['last','Last week'],['last2','Last 2 weeks'],['period','Last pay period'],['month','This month'],['custom','Custom']];
   const components = [];
   function makeComponent(root, isLanding) {
-    root.innerHTML = `${isLanding?'<h2>PAYROLL</h2>':''}<div class="payroll-export-body"><p class="payroll-intro">Only approved punches count. Extra-work flags don't change pay.</p><div class="payroll-export-chips" role="group" aria-label="Payroll date range">${presets.map(([key,label])=>`<button type="button" data-payroll-range="${key}" aria-pressed="false">${label}</button>`).join('')}</div><div class="payroll-calendar" hidden><div class="payroll-calendar-nav"><button type="button" data-month="-1" aria-label="Previous month">‹</button><strong data-month-label></strong><button type="button" data-month="1" aria-label="Next month">›</button></div><p data-calendar-help role="status"></p><div data-calendar-grid></div><button type="button" data-calendar-close>Back to ranges</button></div><p data-payroll-range-label></p><p data-payroll-empty role="status" hidden>No approved hours in this range.</p><div data-payroll-warning hidden><p data-payroll-count></p><button type="button" data-payroll-approve>Review unapproved</button></div><p data-payroll-error role="alert"></p></div><footer><button type="button" data-payroll-download="csv">Download CSV</button><button type="button" data-payroll-download="pdf">PDF summary</button></footer>`;
+    const paint = () => { root.innerHTML = `${isLanding?'<h2>PAYROLL</h2>':''}<div class="payroll-export-body"><p class="payroll-intro">Only approved punches count. Extra-work flags don't change pay.</p><div class="payroll-export-chips" role="group" aria-label="Payroll date range">${presets.map(([key,label])=>`<button type="button" data-payroll-range="${key}" aria-pressed="false">${label}</button>`).join('')}</div><div class="payroll-calendar" hidden><div class="payroll-calendar-nav"><button type="button" data-month="-1" aria-label="Previous month">‹</button><strong data-month-label></strong><button type="button" data-month="1" aria-label="Next month">›</button></div><p data-calendar-help role="status"></p><div data-calendar-grid></div><button type="button" data-calendar-close>Back to ranges</button></div><p data-payroll-range-label></p><p data-payroll-empty role="status" hidden>No approved hours in this range.</p><div data-payroll-warning hidden><p data-payroll-count></p><button type="button" data-payroll-approve>Review unapproved</button></div><p data-payroll-error role="alert"></p></div><footer><button type="button" data-payroll-download="csv">Download CSV</button><button type="button" data-payroll-download="pdf">PDF summary</button></footer>`; };
+    if (!isLanding) paint();
     const find = selector => root.querySelector(selector);
     let identity = '', range = null, preset = 'week', month = '', cursor = '', first = null, pending = false, picked = false, controller = null, busy = false;
     function error(text) { find('[data-payroll-error]').textContent = text; }
     function setCalendar(open) { root.classList.toggle('calendar-open', open); find('.payroll-calendar').hidden = !open; }
     function update() {
-      const authorized = allowed(); if (isLanding) root.hidden = !authorized;
-      if (!authorized) { controller?.abort(); identity = ''; if (!isLanding && dialog.open) dialog.close(); return; }
+      const authorized = allowed();
+      if (!authorized) { controller?.abort(); identity = ''; if (isLanding) { root.replaceChildren(); root.remove(); } else if (dialog.open) dialog.close(); return; }
+      if (isLanding) { if (!root.isConnected) document.querySelector('#office-priorities').before(root); if (!root.querySelector('[data-payroll-download]')) paint(); root.hidden = false; }
       if (identity !== context()) { controller?.abort(); identity = context(); choose('week'); return; }
       const period = lastPeriod(); find('[data-payroll-range="period"]').disabled = !period;
       find('[data-payroll-range="period"]').title = period ? '' : 'No previous saved pay period.';
@@ -26,7 +28,7 @@
       const hasHours = cards.some(card => timeCardApproved(card) && Number(card.hours) > 0);
       find('[data-payroll-range-label]').textContent = range ? calendar.label(range.from, range.to, today().slice(0,4)) : '';
       find('[data-payroll-empty]').hidden = hasHours || pending;
-      find('[data-payroll-warning]').hidden = !unapproved;
+      find('[data-payroll-warning]').hidden = pending || !unapproved;
       find('[data-payroll-count]').textContent = unapproved === 1 ? "1 punch not approved yet. It's left out." : `${unapproved} punches not approved yet. They're left out.`;
       root.querySelectorAll('[data-payroll-download]').forEach(button => button.disabled = !hasHours || pending || busy);
     }
@@ -91,6 +93,6 @@
   const previousRender=renderTimeCards;
   renderTimeCards=function(){const result=previousRender.apply(this,arguments);components.forEach(component=>component.update());return result;};
   const previousPage=showPage;
-  showPage=function(page,...args){const result=previousPage.call(this,page,...args);if(page==='dashboard'&&allowed())card.reset();return result;};
+  showPage=function(page,...args){const result=previousPage.call(this,page,...args);if(page==='dashboard'){if(allowed())card.reset();else card.update();}return result;};
   window.PDLPayrollExport={refresh(){components.forEach(component=>component.update());}};
 })();

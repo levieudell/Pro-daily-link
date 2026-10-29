@@ -100,6 +100,22 @@ async function landingDownload(page, preset) {
   console.log(`Landing ${page.viewportSize().width}px ${preset}: ${taps} real taps, ${Math.round(elapsed)}ms, ${expected.totals.total} approved hours`);
   await checkComponent(page,root);
 }
+async function assertCustomUnapprovedNotice(page, root) {
+  const first = calendar.addDays(week.from, 1), second = week.from;
+  await tap(page, root.locator('[data-payroll-range="custom"]'));
+  assert.equal(await root.locator('.payroll-calendar').isVisible(), true, 'custom calendar is open');
+  await tap(page, root.locator(`[data-payroll-day="${first}"]`));
+  assert.equal(await root.locator('[data-payroll-warning]').isVisible(), false, 'notice waits until the range is complete');
+  await tap(page, root.locator(`[data-payroll-day="${second}"]`));
+  const notice = root.locator('[data-payroll-warning]'), review = root.locator('[data-payroll-approve]');
+  assert.equal(await notice.isVisible(), true, 'unapproved notice is visible before download');
+  assert.equal(await review.isVisible(), true, 'review link is visible before download');
+  assert.match(await notice.locator('[data-payroll-count]').innerText(), /^2 punches not approved yet/);
+  assert.equal(await review.innerText(), 'Review unapproved');
+  assert.equal(await root.evaluate(el => el.classList.contains('calendar-open') && getComputedStyle(el.querySelector('[data-payroll-warning]')).display !== 'none'), true);
+  assert.equal(await root.locator('[data-payroll-download="csv"]').isVisible(), true);
+  await checkComponent(page, root);
+}
 async function main() {
   await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));base='http://127.0.0.1:'+server.address().port;
   try{
@@ -146,10 +162,36 @@ async function main() {
     if(shots)fs.copyFileSync(await pdf.path(),path.join(shots,'payroll-summary.pdf'));
     await modal.locator('[data-payroll-range="custom"]').click();for(let i=0;i<2;i++)await modal.locator('[data-month="1"]').click();const days=await modal.locator('[data-payroll-day]').evaluateAll(els=>els.slice(10,12).map(el=>el.dataset.payrollDay));for(const day of days)await modal.locator(`[data-payroll-day="${day}"]`).click();assert(await modal.locator('[data-payroll-empty]').isVisible());assert(await modal.locator('[data-payroll-download="csv"]').isDisabled());
     await page.locator('[data-payroll-close]').click();
+    for (const width of [390, 1280]) for (const theme of ['light', 'dark']) {
+      await page.setViewportSize({width, height: width === 1280 ? 800 : 844});
+      await page.evaluate(theme => { document.documentElement.dataset.theme = theme; }, theme);
+      await page.evaluate(() => { showPage('dashboard'); window.scrollTo(0, 0); });
+      await page.locator('#payroll-landing [data-payroll-download="csv"]').waitFor({state:'visible'});
+      await assertCustomUnapprovedNotice(page, page.locator('#payroll-landing'));
+      await page.evaluate(() => showPage('timecards'));
+      await page.locator('#pay-period-panel [data-payroll-export-open]').click();
+      await assertCustomUnapprovedNotice(page, page.locator('#payroll-dialog-content'));
+      await page.locator('[data-payroll-close]').click();
+    }
+    await page.setViewportSize({width:390,height:500});
+    await page.evaluate(() => { showPage('dashboard'); window.scrollTo(0, 0); });
+    const shortLanding = page.locator('#payroll-landing');
+    await shortLanding.locator('[data-payroll-range="custom"]').click();
+    const shortCsv = shortLanding.locator('[data-payroll-download="csv"]');
+    const shortBox = await shortCsv.boundingBox();
+    assert(shortBox && shortBox.y >= 0 && shortBox.y + shortBox.height <= 500.5 && shortBox.height >= 48, 'landing download stays on screen at 390x500: ' + JSON.stringify(shortBox));
+    const shortPaint = await shortCsv.evaluate(el => ({bg:getComputedStyle(el).backgroundColor, color:getComputedStyle(el).color}));
+    assert.equal(shortPaint.bg, 'rgb(255, 102, 0)'); assert.equal(shortPaint.color, 'rgb(0, 0, 0)');
+    await page.evaluate(() => showPage('timecards'));
+    await page.locator('#pay-period-panel [data-payroll-export-open]').click();
+    await page.locator('#payroll-dialog-content [data-payroll-range="custom"]').click();
+    const shortDialog = await page.locator('#payroll-dialog-content [data-payroll-download="csv"]').boundingBox();
+    assert(shortDialog && shortDialog.y >= 0 && shortDialog.y + shortDialog.height <= 500.5 && shortDialog.height >= 48, 'dialog download stays on screen at 390x500: ' + JSON.stringify(shortDialog));
+    await page.locator('[data-payroll-close]').click();
     await page.setViewportSize({width:390,height:844});await page.evaluate(()=>window.PDLCompanySettings.openPayPeriods());await page.locator('#payroll-overtime-form').waitFor({state:'visible'});
-    const spacing=await page.locator('#company-pay-periods').evaluate(el=>{const a=el.querySelector('[data-payroll-export-open]').getBoundingClientRect(),b=el.querySelector('[data-pay-new]').getBoundingClientRect();return{gap:b.y>=a.bottom?b.y-a.bottom:b.x-a.right,height:a.height}});assert(spacing.gap>=8&&spacing.height>=48,JSON.stringify(spacing));
+    const spacing=await page.locator('#company-pay-periods').evaluate(el=>{const a=el.querySelector('[data-payroll-export-open]').getBoundingClientRect(),b=el.querySelector('[data-pay-new]').getBoundingClientRect();return{gap:b.y>=a.bottom?b.y-a.bottom:b.x-a.right,height:a.height,newHeight:b.height}});assert(spacing.gap>=8&&spacing.height>=48&&spacing.newHeight>=48,JSON.stringify(spacing));
     for(const theme of ['light','dark']){await page.evaluate(theme=>document.documentElement.dataset.theme=theme,theme);const inline=await page.locator('.payroll-rule-hours').evaluateAll(labels=>labels.map(label=>{const parts=[...label.children].map(el=>el.getBoundingClientRect()),input=label.querySelector('input').getBoundingClientRect();return{top:Math.max(...parts.map(r=>r.top)),bottom:Math.min(...parts.map(r=>r.bottom)),right:Math.max(...parts.map(r=>r.right)),boxRight:label.getBoundingClientRect().right,width:input.width,height:input.height,gap:parseFloat(getComputedStyle(label.parentElement).columnGap)}}));for(const line of inline){assert(line.top<line.bottom&&line.right<=line.boxRight+.5,JSON.stringify(line));assert.equal(line.width,48);assert.equal(line.height,48);assert(line.gap>=4)}}
-    const field=await browser.newContext(),fieldPage=await field.newPage();await login(fieldPage,seed.FIELD_EMAIL);assert.equal((await field.request.get(base+route)).status(),403);assert.equal(await fieldPage.locator('#payroll-landing:visible').count(),0);assert.equal(await fieldPage.locator('[data-payroll-export-open]:visible').count(),0);
+    const field=await browser.newContext(),fieldPage=await field.newPage();await login(fieldPage,seed.FIELD_EMAIL);await fieldPage.waitForFunction(()=>!document.querySelector('#payroll-landing'));assert.equal((await field.request.get(base+route)).status(),403);assert.equal(await fieldPage.locator('#payroll-landing').count(),0,'field users have no payroll card in the DOM');assert.equal(await fieldPage.locator('[data-payroll-export-open]:visible').count(),0);
     assert.deepEqual(errors,[]);console.log('Landing payroll speed, real inline calendar, CSV sums, empty states, shared dialog, filtered review, keyboard, brand and access checks passed.');
   }finally{await browser?.close();await new Promise(resolve=>server.close(resolve));fs.rmSync(root,{recursive:true,force:true})}
 }

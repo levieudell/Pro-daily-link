@@ -30,7 +30,7 @@
 .payroll-component [data-payroll-download="csv"] { background:var(--pdl-orange) !important; color:var(--pdl-black) !important; border:2px solid var(--pdl-orange) !important; }
 .payroll-component [data-payroll-download="pdf"] { background:var(--pdl-black) !important; color:var(--pdl-white) !important; border:2px solid var(--pdl-gray) !important; }
 .payroll-component :is(button,a):focus-visible { outline:2px solid var(--pdl-orange); outline-offset:2px; }
-.payroll-component.calendar-open :is(.payroll-intro,.payroll-export-chips,[data-payroll-warning]) { display:none; }
+.payroll-component.calendar-open :is(.payroll-intro,.payroll-export-chips) { display:none; }
 .payroll-calendar-nav { display:grid; grid-template-columns:48px 1fr 48px; align-items:center; text-align:center; }
 .payroll-component .payroll-calendar button { background:var(--pay-bg); color:var(--pay-text); border:1px solid var(--pdl-gray); }
 .payroll-calendar [data-calendar-help] { margin:4px 0; }
@@ -46,3 +46,14 @@
 :root[data-theme="dark"] .payroll-component { --pay-bg:var(--pdl-black); --pay-text:var(--pdl-white); }
 :root[data-theme="dark"] dialog#payroll-export-dialog { background:var(--pdl-black) !important; }
 @media(min-width:768px) { #payroll-landing .payroll-export-chips { grid-template-columns:repeat(3,1fr); } }
+@media(max-width:390px) {
+  #company-pay-periods [data-pay-new] { box-sizing:border-box; height:48px; min-height:48px; }
+}
+@media(max-width:390px) and (max-height:500px) {
+  #payroll-landing.calendar-open { position:fixed; z-index:40; top:56px; right:8px; bottom:0; left:8px; display:flex; flex-direction:column; max-width:none; margin:0; overflow:hidden; }
+  .payroll-component.calendar-open .payroll-export-body { flex:1 1 auto; min-height:0; overflow-y:auto; }
+  #payroll-export-dialog[open]:has(.calendar-open) { max-height:calc(100dvh - 16px); height:calc(100dvh - 16px); }
+  #payroll-dialog-content.calendar-open { flex:1 1 auto; overflow:hidden; }
+  .payroll-component.calendar-open footer { position:sticky; bottom:0; z-index:1; flex:none; margin-top:auto; padding-top:0; background:var(--pay-bg); }
+  .payroll-component.calendar-open [data-payroll-download="csv"] { box-sizing:border-box; flex:none; height:48px !important; min-height:48px !important; max-height:48px; background:var(--pdl-orange) !important; color:var(--pdl-black) !important; }
+}
