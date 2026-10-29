@@ -309,7 +309,18 @@ body:not(.field-mode) .report-page-actions [data-open-report] { display:none !im
 
 /* Field uses the same brand tokens, header, notes, and primary actions. */
 body.field-mode { --field-muted:var(--pdl-gray); --field-placeholder:var(--pdl-gray); --border-default:var(--pdl-gray); }
-:root[data-theme="dark"] body.field-mode { --field-muted:var(--text-secondary); --field-placeholder:color-mix(in srgb,var(--pdl-white) 40%,var(--pdl-gray)); --surface-raised:var(--pdl-black); --surface-subtle:var(--pdl-black); }
+/* Resolve shared aliases here so office tokens stay unchanged. */
+body.field-mode :is(#myday-page,#start-day-modal,#report-modal) {
+  --text-secondary:var(--pdl-gray); --text-tertiary:var(--pdl-gray); --muted:var(--text-secondary); --line:var(--pdl-gray);
+  --border-default:var(--pdl-gray); --action-primary-hover:var(--pdl-orange); --action-primary-soft:var(--surface-canvas);
+  --action-selection:var(--pdl-blue); --action-selection-soft:var(--surface-canvas); --state-info:var(--text-primary);
+  --state-warning-surface:var(--surface-canvas); --state-danger-surface:var(--surface-canvas); --state-info-surface:var(--surface-canvas);
+  --focus-ring:0 0 0 3px var(--pdl-orange);
+}
+:root[data-theme="dark"] body.field-mode :is(#myday-page,#start-day-modal,#report-modal) {
+  --text-secondary:var(--pdl-white); --text-tertiary:var(--pdl-white); --field-muted:var(--pdl-white); --field-placeholder:var(--pdl-white);
+  --surface-raised:var(--pdl-black); --surface-subtle:var(--pdl-black);
+}
 body.field-mode :is(input,textarea)::placeholder { font-weight:400; }
 body.field-mode .app-shell .topbar .topbar-control { border-color:var(--pdl-gray) !important; }
 body.field-mode .topbar #help-button { display:inline-flex; }
@@ -317,6 +328,7 @@ body.field-mode .topbar [data-open-report] { align-items:center; justify-content
 body.field-mode .topbar [data-open-report] :is(.daily-label-wide,.daily-label-short) { display:none; }
 body.field-mode .topbar .top-actions { flex-wrap:nowrap; }
 body.field-mode #myday-page :is(.field-assignment-card,.field-assignment,.myday-status-strip>div) { background:var(--surface-panel); border-color:var(--border-strong); color:var(--text-primary); }
+body.field-mode #myday-page .field-assignment .status.warning { background:transparent; border-color:var(--pdl-orange); color:var(--text-primary); }
 body.field-mode #myday-page :is(small,.field-assignment-date,.input-help) { color:var(--field-muted); }
 body.field-mode #myday-page .start-day-hero { background:var(--pdl-black); color:var(--pdl-white); border-color:var(--pdl-orange); box-shadow:none; }
 body.field-mode #myday-page .start-day-hero :is(small,p) { color:var(--pdl-white); }
@@ -347,6 +359,8 @@ body.field-mode #report-modal.report-field-compact .field-flag button:is([data-f
 body.field-mode #report-modal.report-field-compact .field-flag button.is-selected { outline-color:var(--pdl-orange); }
 body.field-mode #report-modal.report-field-compact :is(input,select,textarea) { color:var(--text-primary); background:var(--surface-panel) !important; border-color:var(--border-strong); }
 body.field-mode #report-modal.report-field-compact .production-hours { border-color:var(--border-strong) !important; }
+body.field-mode #report-modal.report-field-compact .ai-changed { border-color:var(--pdl-orange) !important; }
+body.field-mode #report-modal.report-field-compact .ai-changed-label { color:var(--text-primary); }
 body.field-mode #report-modal.report-field-compact :is(.touch-stepper button,.production-remove,.field-review-source button) { background:var(--surface-panel); color:var(--text-primary); border-color:var(--border-strong); }
 body.field-mode #report-modal.report-field-compact :is(input,textarea)::placeholder { color:var(--field-placeholder); opacity:1; }
 body.field-mode #report-modal.report-field-compact :is(.voice-capture-panel,.voice-status) { background:var(--surface-canvas); color:var(--text-primary); border-color:var(--border-strong); }
@@ -368,7 +382,8 @@ body.field-mode #report-modal.report-field-compact #report-more :is(summary,labe
 body.field-mode #report-modal.report-field-compact :is(.production-scope-toggle,#field-edit-hours,#suggest-hour-split,#add-custom-production) {
   min-height:48px; padding:8px 12px; border-radius:8px; font-size:12px; font-weight:700; background:var(--pdl-black); color:var(--pdl-white); border:1px solid var(--pdl-gray); box-shadow:none;
 }
-body.field-mode #report-modal.report-field-compact :is(#field-edit-hours,#field-add-line) { font-size:16px; font-weight:700; min-height:48px; border-width:2px; }
+body.field-mode #report-modal.report-field-compact :is(#field-edit-hours,#field-add-line) { font-size:16px; font-weight:700; height:48px; min-height:48px; border:2px solid var(--pdl-gray); outline:none; box-shadow:none; }
+body.field-mode #report-modal.report-field-compact :is(#field-edit-hours,#field-add-line):focus-visible { outline:2px solid var(--pdl-orange); outline-offset:2px; }
 body.field-mode #start-day-modal { background:var(--surface-canvas); color:var(--text-primary); }
 body.field-mode #start-day-modal form { padding:0 16px 20px; }
 body.field-mode #start-day-modal .modal-header {

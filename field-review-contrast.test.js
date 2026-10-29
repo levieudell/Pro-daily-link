@@ -40,7 +40,32 @@ async function assertMyDayStart(page, theme, height, shots) {
   });
   assert(start.top >= start.header && start.bottom <= height && start.height >= 44 && start.hit && start.scroll === 0 && start.overflow <= 1,
     `${theme} ${height} Clock in is fully visible without scrolling ` + JSON.stringify(start));
+  await assertPalette(page, '#myday-page');
+  await assertPalette(page, '.topbar');
+  await assertContrast(page, '#myday-page', `${theme} ${height} My Day`);
+  const chips = await page.locator('#myday-page .field-assignment .status.warning').evaluateAll(els => els.filter(el => el.checkVisibility()).map(el => {
+    const s = getComputedStyle(el);
+    return { text: el.textContent, background: s.backgroundColor, color: s.color, border: s.borderTopColor, width: parseFloat(s.borderTopWidth), style: s.borderTopStyle };
+  }));
+  assert(chips.length && chips.some(chip => chip.text === 'New assignment'), 'My Day fixture includes the New assignment chip');
+  for (const chip of chips) {
+    assert.equal(chip.background, 'rgba(0, 0, 0, 0)');
+    assert.equal(chip.border, 'rgb(255, 102, 0)');
+    assert.equal(chip.color, theme === 'dark' ? 'rgb(255, 255, 255)' : 'rgb(0, 0, 0)');
+    assert(chip.width >= 1 && chip.width <= 2 && chip.style === 'solid');
+  }
+  if (theme === 'dark') await assertWhiteSecondary(page, '#myday-page');
   await round4Shot(page, shots, 'myday', theme, height);
+  // At 500px the above-fold Clock in and the lower assignment card need
+  // separate screenshots; do not change the layout to fit both into one shot.
+  if (shots) {
+    await page.locator('#myday-page .field-assignment-card').first().evaluate(el => {
+      el.closest('.panel').scrollIntoView({ block: 'start' });
+      window.scrollBy(0, -document.querySelector('.topbar').getBoundingClientRect().bottom - 12);
+    });
+    await settlePaint(page);
+    await page.screenshot({ path: path.join(shots, `myday-assignment-${theme}-390x${height}.png`) });
+  }
 }
 
 async function assertFocusedNotes(page, theme, height, shots) {
@@ -51,6 +76,8 @@ async function assertFocusedNotes(page, theme, height, shots) {
   await page.locator('.report-step.active .report-step-scroll').evaluate(el => el.scrollTop = el.scrollHeight);
   await notes.focus(); // Native focus from the bottom; no test-side scrollIntoView.
   await settlePaint(page);
+  await assertPalette(page, '#report-modal');
+  if (theme === 'dark') await assertWhiteSecondary(page, '#report-modal');
   const rect = await notes.evaluate(el => {
     const r = el.getBoundingClientRect(), header = document.querySelector('#report-modal .modal-header').getBoundingClientRect();
     const body = el.closest('.report-step-scroll').getBoundingClientRect();
@@ -101,12 +128,29 @@ async function assertBlockedSend(page, theme, height, shots) {
   await page.locator('#field-edit-hours').evaluate(el => el.scrollIntoView({ block: 'center' }));
   const row = await page.locator('#field-edit-hours,#field-add-line').evaluateAll(buttons => buttons.map(el => {
     const s = getComputedStyle(el), r = el.getBoundingClientRect(), hit = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
-    return { font: s.fontSize, weight: s.fontWeight, height: r.height, border: s.borderTopWidth, hit: hit === el || el.contains(hit) };
+    return { font: s.fontSize, family: s.fontFamily, weight: s.fontWeight, height: r.height,
+      borders: ['Top','Right','Bottom','Left'].map(edge => [s['border' + edge + 'Width'], s['border' + edge + 'Style'], s['border' + edge + 'Color']]),
+      outline: s.outlineStyle, shadow: s.boxShadow, hit: hit === el || el.contains(hit) };
   }));
   assert.equal(row.length, 2);
   assert.deepEqual(row[0], row[1], 'Edit reported hours matches Add line');
-  assert(row[0].font === '16px' && row[0].height >= 44 && row[0].border === '2px' && row[0].hit, JSON.stringify(row));
+  assert(row[0].font === '16px' && row[0].family.includes('Inter') && row[0].weight === '700' && row[0].height === 48 && row[0].hit, JSON.stringify(row));
+  assert.deepEqual(row[0].borders, Array(4).fill(['2px', 'solid', 'rgb(110, 110, 110)']));
+  assert.equal(row[0].outline, 'none');
+  assert.equal(row[0].shadow, 'none');
   await round4Shot(page, shots, 'hours-actions', theme, height);
+  // Tab into each control without activating its editing behavior.
+  await page.locator('#field-edit-hours').evaluate(el => el.focus());
+  await page.keyboard.press('Tab');
+  for (const id of ['field-add-line', 'field-edit-hours']) {
+    if (id === 'field-edit-hours') await page.keyboard.press('Shift+Tab');
+    const focus = await page.locator('#' + id).evaluate(el => {
+      const s = getComputedStyle(el);
+      return { active: document.activeElement === el, visible: el.matches(':focus-visible'), width: s.outlineWidth, style: s.outlineStyle, color: s.outlineColor };
+    });
+    assert.deepEqual(focus, { active: true, visible: true, width: '2px', style: 'solid', color: 'rgb(255, 102, 0)' });
+  }
+  await page.locator('#field-edit-hours').evaluate(el => el.blur());
 }
 
 // Inspect text nodes, not a hand-picked list of labels. Include rendered content
@@ -234,15 +278,31 @@ async function assertReviewHitTargets(page, theme, shots) {
 }
 
 async function assertPalette(page, selector) {
-  const old = await page.locator(selector).evaluate(root => [...root.querySelectorAll('*')]
-    .filter(el => el.checkVisibility({ checkOpacity: true, checkVisibilityCSS: true }))
-    .flatMap(el => ['color', 'backgroundColor', 'borderTopColor', 'outlineColor'].flatMap(property => {
-      const value = getComputedStyle(el)[property];
-      return ['rgb(255, 107, 26)', 'rgb(23, 105, 224)', 'rgb(25, 115, 76)', 'rgb(32, 43, 57)',
-        'rgb(57, 77, 104)', 'rgb(132, 61, 23)', 'rgb(255, 243, 233)', 'rgb(238, 248, 241)',
-        'rgb(247, 246, 242)', 'rgb(238, 244, 255)', 'rgb(60, 60, 60)', 'rgb(20, 20, 20)'].includes(value) ? [{ element: el.id || el.className, property, value }] : [];
-    })));
-  assert.deepEqual(old, [], 'No legacy field colors');
+  const colors = await page.locator(selector).evaluate(root => {
+    const ctx = document.createElement('canvas').getContext('2d', { willReadFrequently: true });
+    const rgba = value => { ctx.clearRect(0,0,1,1); ctx.fillStyle = value; ctx.fillRect(0,0,1,1); return [...ctx.getImageData(0,0,1,1).data]; };
+    return [root, ...root.querySelectorAll('*')].filter(el => el.checkVisibility({ checkOpacity: true, checkVisibilityCSS: true })).flatMap(el => {
+      const pseudos = [null, '::before', '::after', ...(el.matches('input[placeholder],textarea[placeholder]') ? ['::placeholder'] : [])];
+      return pseudos.flatMap(pseudo => {
+        const style = getComputedStyle(el, pseudo);
+        if (pseudo && pseudo !== '::placeholder' && ['none','normal'].includes(style.content)) return [];
+        return ['color','backgroundColor','borderTopColor','borderRightColor','borderBottomColor','borderLeftColor','outlineColor'].map(property =>
+          ({ element: el.id || el.className || el.tagName, pseudo, property, value: style[property], rgba: rgba(style[property]) }));
+      });
+    });
+  });
+  // Normalize color-mix()/color(srgb) too: string-only RGB checks miss these tints.
+  const forbidden = new Set(['219,219,219','61,61,61','255,234,219','36,14,0']);
+  assert.deepEqual(colors.filter(c => c.rgba[3] && forbidden.has(c.rgba.slice(0,3).join(','))), [], selector + ' has no DBDBDB/3D3D3D/FFEADB/240E00');
+  const palette = new Set(['0,0,0','255,255,255','247,245,240','110,110,110','255,102,0','255,46,138','0,102,255']);
+  assert.deepEqual(colors.filter(c => c.rgba[3] && (c.rgba[3] !== 255 || !palette.has(c.rgba.slice(0,3).join(',')))), [], selector + ' only uses brand colors, without tints');
+}
+
+async function assertWhiteSecondary(page, selector) {
+  const samples = await page.locator(selector).locator('small,dt,.input-help,.page-heading p,.field-assignment-date,.field-ai-disclosure,.field-clamp-note,.field-review-card em,.field-flag p,.field-hours-card p,.status').evaluateAll(els =>
+    els.filter(el => el.checkVisibility() && el.textContent.trim()).map(el => ({ element: el.id || el.className || el.tagName, text: el.textContent.trim().slice(0,60), color: getComputedStyle(el).color })));
+  assert(samples.length > 0, selector + ' has secondary text to inspect');
+  assert.deepEqual(samples.filter(sample => sample.color !== 'rgb(255, 255, 255)'), [], selector + ' dark secondary text is white');
 }
 
 (async () => {
@@ -333,6 +393,7 @@ async function assertPalette(page, selector) {
       assert.equal(await page.locator('#start-day-modal .modal-header').evaluate(el => getComputedStyle(el).borderBottomColor), 'rgb(255, 102, 0)');
       await assertContrast(page, '#start-day-modal', theme + ' clock-in');
       await assertPalette(page, '#start-day-modal');
+      if (theme === 'dark') await assertWhiteSecondary(page, '#start-day-modal');
       if (theme === 'dark') assert.equal(await page.locator('#start-day-modal .timestamp-preview').evaluate(el => getComputedStyle(el).backgroundColor), 'rgb(0, 0, 0)');
       if (shots) {
         fs.mkdirSync(shots, { recursive: true });
@@ -381,6 +442,7 @@ async function assertPalette(page, selector) {
       }
       for (const text of ['Hours', 'Cause and duration']) assert(samples.some(sample => sample.kind === '::placeholder' && sample.text === text), text + ' placeholder was inspected');
       await assertPalette(page, '#report-modal');
+      if (theme === 'dark') await assertWhiteSecondary(page, '#report-modal');
       const button = await page.locator('#field-edit-hours').evaluate(el => {
         const style = getComputedStyle(el);
         return { background: style.backgroundColor, color: style.color, border: style.borderTopColor, height: el.getBoundingClientRect().height };
@@ -388,7 +450,8 @@ async function assertPalette(page, selector) {
       assert.deepEqual(button, { background: 'rgb(0, 0, 0)', color: 'rgb(255, 255, 255)', border: 'rgb(110, 110, 110)', height: 48 });
       if (theme === 'dark') assert.equal(await page.locator('#report-back').evaluate(el => getComputedStyle(el).backgroundColor), 'rgb(0, 0, 0)');
       const placeholder = await page.locator('#report-delays').evaluate(el => ({ typed: getComputedStyle(el).color, placeholder: getComputedStyle(el, '::placeholder').color }));
-      assert.notEqual(placeholder.placeholder, placeholder.typed, theme + ' placeholders differ from typed values');
+      if (theme === 'dark') assert.equal(placeholder.placeholder, 'rgb(255, 255, 255)', 'dark placeholders keep AA using white, distinguished by regular weight');
+      else assert.notEqual(placeholder.placeholder, placeholder.typed, theme + ' placeholders differ from typed values');
       const weights = await page.locator('#report-modal :is(input,textarea)[placeholder]').evaluateAll(els =>
         els.filter(el => el.checkVisibility()).map(el => getComputedStyle(el, '::placeholder').fontWeight));
       assert(weights.length > 0 && weights.every(weight => weight === '400'), theme + ' regular-weight placeholders');
@@ -421,7 +484,7 @@ async function assertPalette(page, selector) {
     await assertContrast(page, '#report-modal', 'dark custom-work editor');
     await assertPalette(page, '#report-modal');
     assert.deepEqual(errors, []);
-    console.log('Playwright field review passed: AA text, More/custom work, first paint, pinned actions, native focus/header clearance, no empty blocked-send boxes, matching hours actions and tip-free Clock in above the fold at 390x844 and 390x500 in both themes. Short-screen Next step and every work-line selector pass center and edge hit tests.');
+    console.log('Playwright field review passed: normalized palette with no tints, transparent assignment chip, white dark secondary text, solid matching hours borders and keyboard-only focus rings; AA text, More/custom work, first paint, pinned actions, native focus/header clearance, no empty blocked-send boxes and tip-free Clock in above the fold at 390x844 and 390x500 in both themes. Short-screen Next step and every work-line selector pass center and edge hit tests.');
   } finally {
     await browser?.close();
     server.kill();

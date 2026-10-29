@@ -179,8 +179,27 @@ async function assertDailyOpened(page, from) {
     await page.waitForSelector('#myday-page.active [data-start-day]', { timeout: 10000 });
     assert.equal(await page.$eval('[data-start-day]', el => el.textContent.trim()), 'Clock out');
     assert.equal(await page.$eval('#report-modal', el => el.open), false);
+    await page.evaluate(() => {
+      window.__clockOutTiming = {};
+      const button = document.querySelector('#myday-page [data-start-day]'), modal = document.querySelector('#report-modal');
+      button.addEventListener('click', () => { window.__clockOutTiming.start = performance.now(); }, { capture: true, once: true });
+      const observer = new MutationObserver(() => {
+        if (!modal.open) return;
+        observer.disconnect();
+        requestAnimationFrame(() => {
+          const notes = document.querySelector('#field-notes');
+          window.__clockOutTiming.visible = notes.checkVisibility() && notes.getBoundingClientRect().height > 0;
+          window.__clockOutTiming.elapsed = performance.now() - window.__clockOutTiming.start;
+        });
+      });
+      observer.observe(modal, { attributes: true, attributeFilter: ['open'] });
+    });
     await tap(page, '[data-start-day]');
     await assertDailyOpened(page, 'My Day Clock out');
+    await page.waitForFunction(() => Number.isFinite(window.__clockOutTiming?.elapsed));
+    const clockOutTiming = await page.evaluate(() => window.__clockOutTiming);
+    assert(clockOutTiming.visible && clockOutTiming.elapsed <= 1000, 'warm My Day opens the daily within 1 second: ' + JSON.stringify(clockOutTiming));
+    console.log(`Warm 390x844 My Day: one Clock out tap to visible daily in ${Math.round(clockOutTiming.elapsed)}ms.`);
 
     await page.evaluate(() => document.querySelector('#report-modal').close());
     await page.waitForFunction(() => !document.querySelector('#report-modal').open);
