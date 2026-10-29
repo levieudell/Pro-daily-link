@@ -124,7 +124,7 @@ async function assertScheduleClear(page) {
     const save = document.querySelector('[data-pay-schedule-save]');
     const shown = save && !save.hidden && getComputedStyle(save).display !== 'none';
     const saveRect = shown ? save.getBoundingClientRect() : null;
-    return [...document.querySelectorAll('#pay-schedule-form button, #pay-schedule-form p')].filter(el => !el.hidden && getComputedStyle(el).display !== 'none' && getComputedStyle(el).visibility !== 'hidden').map(el => {
+    return [...document.querySelectorAll('#pay-schedule-form button, #pay-schedule-form p, #pay-schedule-form label, #pay-schedule-form input')].filter(el => !el.hidden && getComputedStyle(el).display !== 'none' && getComputedStyle(el).visibility !== 'hidden').map(el => {
       const r = el.getBoundingClientRect();
       const hit = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
       const overlaps = !!saveRect && el !== save && r.bottom > saveRect.top + 0.5 && r.top < saveRect.bottom - 0.5 && r.right > saveRect.left + 0.5 && r.left < saveRect.right - 0.5;
@@ -314,7 +314,8 @@ async function main() {
       const bar=await page.locator('[data-pay-schedule-save]').evaluate(el=>({position:getComputedStyle(el).position,bottom:getComputedStyle(el).bottom,h:el.getBoundingClientRect().height}));
       assert.deepEqual(bar,{position:'sticky',bottom:'0px',h:48});
       await tapInPlace(page,page.locator('[data-pay-schedule-save]'));
-      await page.locator('[data-pay-schedule-error]').filter({hasText:'saved'}).waitFor();
+      await page.locator('[data-pay-schedule-status]').filter({hasText:'saved'}).waitFor();
+      assert.equal(await page.locator('[data-pay-schedule-status]').evaluate(el=>getComputedStyle(el).borderLeftWidth),'0px');
       await page.locator('[data-pay-schedule-save]').waitFor({state:'hidden'});
       const scheduleTaps=await page.evaluate(()=>window.payrollTapCount),scheduleElapsed=performance.now()-scheduleStarted;
       assert(scheduleTaps<=6,`weekly setup at 390x${height} ${theme} took ${scheduleTaps} taps`);
@@ -329,6 +330,53 @@ async function main() {
       scheduleCounts.push({height,theme,weekly:scheduleTaps,biweekly:2,ms:Math.round(scheduleElapsed)});
     }
     console.log('Pay schedule phone taps '+JSON.stringify(scheduleCounts));
+    await page.setViewportSize({width:1280,height:800});
+    await settle(page);
+    await page.evaluate(async()=>{
+      document.documentElement.dataset.theme='light';
+      company=await api('/api/company',{method:'PATCH',body:JSON.stringify({payroll:{pay_schedule:{frequency:null}}})});
+      window.PDLCompanySettings.openPayPeriods();
+    });
+    await page.locator('#pay-schedule-form').waitFor();
+    await page.waitForFunction(()=>{const save=document.querySelector('[data-pay-schedule-save]');return !!save&&save.hidden&&!document.querySelector('[data-end-weekday]')});
+    await settle(page);
+    await page.evaluate(()=>{window.scrollTo(0,0);document.querySelector('main')?.scrollTo(0,0);window.payrollTapCount=0});
+    assert.equal(await page.locator('#settings-tab-company').evaluate(el=>getComputedStyle(el).borderTopColor),'rgb(110, 110, 110)');
+    await tapInPlace(page,page.locator('[data-pay-frequency="weekly"]'));
+    await tapInPlace(page,page.locator('[data-end-weekday="2"]'));
+    await tapInPlace(page,page.locator('[data-due-weekday="3"]'));
+    await tapInPlace(page,page.locator('[data-pay-weekday="5"]'));
+    await assertScheduleClear(page);
+    const desktopSave=await page.locator('[data-pay-schedule-save]').evaluate(el=>({position:getComputedStyle(el).position,h:el.getBoundingClientRect().height}));
+    assert.deepEqual(desktopSave,{position:'static',h:48});
+    const kept=async()=>{
+      assert.equal(await page.locator('[data-due-weekday="3"]').getAttribute('aria-pressed'),'true');
+      assert.equal(await page.locator('[data-pay-weekday="5"]').getAttribute('aria-pressed'),'true');
+    };
+    await kept();
+    await tapInPlace(page,page.locator('[data-pay-schedule-save]'));
+    await page.locator('[data-pay-schedule-status]').filter({hasText:'saved'}).waitFor();
+    await tapInPlace(page,page.locator('[data-pay-frequency="biweekly"]'));
+    await kept();
+    await tapInPlace(page,page.locator('[data-pay-frequency="weekly"]'));
+    await kept();
+    console.log('Desktop 1280x800 weekly flow on screen, due and payday kept across Weekly > Every 2 weeks > Weekly');
+    await page.setViewportSize({width:390,height:667});
+    await settle(page);
+    await page.evaluate(()=>{document.documentElement.dataset.theme='dark';window.scrollTo(0,0);document.querySelector('main')?.scrollTo(0,0)});
+    await tapInPlace(page,page.locator('[data-pay-frequency="semimonthly"]'));
+    await assertScheduleClear(page);
+    const darkColors=await page.evaluate(()=>{
+      const style=sel=>{const el=document.querySelector(sel);const s=getComputedStyle(el);return{color:s.color,bg:s.backgroundColor,border:s.borderTopColor}};
+      return{label:style('#pay-schedule-form > p'),preview:style('.pay-schedule-preview p'),input:style('.pay-schedule input[type="number"]'),tab:getComputedStyle(document.querySelector('#settings-tab-company')).borderTopColor};
+    });
+    assert.equal(darkColors.label.color,'rgb(255, 255, 255)');
+    assert.equal(darkColors.preview.color,'rgb(255, 255, 255)');
+    assert.deepEqual(darkColors.input,{color:'rgb(255, 255, 255)',bg:'rgb(0, 0, 0)',border:'rgb(110, 110, 110)'});
+    assert.equal(darkColors.tab,'rgb(110, 110, 110)');
+    assert.equal(await page.locator('[data-offset="cards_due_offset_days"]').inputValue(),'1');
+    assert.equal(await page.locator('[data-offset="payday_offset_days"]').inputValue(),'3');
+    console.log('Twice a month at 390x667 dark clears the Save bar');
     assert.equal((await context.request.patch(base+'/api/company',{data:{payroll:{pay_schedule:{frequency:'weekly'}}},headers:{'X-PDL-Company':seed.COMPANY_ID}})).status(),400);
     const scheduleToday=calendar.today('America/Los_Angeles');
     const expectedPeriod=paySchedule.lastEndedBefore({...paySchedule.emptySchedule(),frequency:'weekly',period_end_weekday:2,cards_due_offset_days:1,payday_offset_days:3},scheduleToday);

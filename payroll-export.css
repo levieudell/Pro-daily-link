@@ -43,24 +43,36 @@
 .payroll-component [data-payroll-day].adjacent-month { font-weight:400; text-decoration:underline dotted; }
 .payroll-component [data-calendar-close] { float:right; padding:4px 8px; }
 .payroll-component [data-payroll-range-label] { clear:both; margin:0 !important; padding:0 4px; text-align:left; }
+.company-settings-tabs button:not(.active) { border-color:var(--pdl-gray) !important; }
 .company-settings-tabs button.active { background:var(--pdl-black) !important; color:var(--pdl-white) !important; border-color:var(--pdl-black) !important; }
 :root[data-theme="dark"] .company-settings-tabs button.active { background:var(--pdl-white) !important; color:var(--pdl-black) !important; border-color:var(--pdl-white) !important; }
+#company-pay-periods > h2 { margin:0 0 4px; font:22px/1.1 Anton,sans-serif; }
+#company-pay-periods > p { margin:0 0 8px; }
 .pay-schedule { color:var(--pdl-black); font-family:Inter,sans-serif; }
 :root[data-theme="dark"] .pay-schedule { color:var(--pdl-white); }
-.pay-schedule h3 { margin:0 0 8px; font:24px Anton,sans-serif; }
-.pay-schedule p, .pay-schedule legend { margin:0 0 8px; color:inherit; font:400 14px/1.4 Inter,sans-serif; }
-.pay-schedule-choices, .pay-schedule-days, .pay-schedule-weekdays { display:grid; gap:8px; margin:0 0 12px; }
-.pay-schedule-choices { grid-template-columns:1fr 1fr; }
-.pay-schedule-weekdays { grid-template-columns:repeat(4,minmax(0,1fr)); }
-.pay-schedule button { min-height:48px; height:48px; padding:4px 8px; border:2px solid var(--pdl-gray); border-radius:6px; background:var(--pdl-offwhite); color:var(--pdl-black); font:700 14px/1.2 Inter,sans-serif; }
+:root[data-theme="dark"] .pay-schedule :is(p, label) { color:var(--pdl-white) !important; }
+.pay-schedule h3 { display:none; }
+.pay-schedule p, .pay-schedule legend, .pay-schedule label { margin:0 0 4px; color:inherit; font:400 14px/1.4 Inter,sans-serif; }
+.pay-schedule-choices, .pay-schedule-days, .pay-schedule-weekdays { display:grid; gap:8px; margin:0 0 8px; }
+.pay-schedule-choices, .pay-schedule-days { grid-template-columns:repeat(4,minmax(48px,1fr)); }
+.pay-schedule-weekdays { grid-template-columns:repeat(7,minmax(48px,1fr)); }
+.pay-schedule-day-row { display:flex; align-items:center; gap:8px; margin:0 0 8px; }
+.pay-schedule-day-row label { display:flex; align-items:center; gap:8px; margin:0; }
+.pay-schedule-day-row button { flex:1 1 auto; min-width:48px; }
+.pay-schedule-offsets { display:grid; grid-template-columns:1fr 1fr; gap:8px; margin:0 0 8px; }
+.pay-schedule-offsets label { display:flex; flex-direction:column; align-items:stretch; gap:2px; margin:0; }
+.pay-schedule button { min-width:0; min-height:48px; height:48px; padding:4px 8px; border:2px solid var(--pdl-gray); border-radius:6px; background:var(--pdl-offwhite); color:var(--pdl-black); font:700 14px/1.2 Inter,sans-serif; }
 :root[data-theme="dark"] .pay-schedule button { background:var(--pdl-black); color:var(--pdl-white); }
 .pay-schedule button[aria-pressed="true"], .pay-schedule [data-pay-schedule-save] { background:var(--pdl-orange) !important; color:var(--pdl-black) !important; border-color:var(--pdl-orange) !important; }
 .pay-schedule [data-pay-schedule-save] { position:sticky; bottom:0; z-index:6; width:100%; height:48px; min-height:48px; margin:4px 0 0; }
+@media (min-width:768px) { .pay-schedule [data-pay-schedule-save] { position:static; } }
 .pay-schedule [hidden] { display:none !important; }
-.pay-schedule-preview { margin:8px 0; padding:0; }
-.pay-schedule input[type="number"] { box-sizing:border-box; width:72px; height:48px; margin-right:8px; border:2px solid var(--pdl-gray); background:var(--pdl-offwhite); color:var(--pdl-black); font:400 16px Inter,sans-serif; }
-:root[data-theme="dark"] .pay-schedule input[type="number"] { background:var(--pdl-black); color:var(--pdl-white); }
-.pay-schedule [data-pay-schedule-error]:empty { display:none; }
+.pay-schedule-preview { margin:4px 0; padding:0; }
+.pay-schedule input[type="number"] { box-sizing:border-box; width:72px; height:48px; margin:0; border:2px solid var(--pdl-gray); background:var(--pdl-offwhite); color:var(--pdl-black); font:400 16px Inter,sans-serif; }
+.pay-schedule-offsets input[type="number"] { width:100%; }
+:root[data-theme="dark"] .pay-schedule input[type="number"] { background:var(--pdl-black) !important; color:var(--pdl-white) !important; border:2px solid var(--pdl-gray) !important; }
+.pay-schedule :is([data-pay-schedule-status],[data-pay-schedule-error]):empty { display:none; }
+.pay-schedule [data-pay-schedule-status]:not(:empty) { margin:4px 0; padding:0; border:0; }
 .pay-schedule [data-pay-schedule-error]:not(:empty) { border-left:2px solid var(--pdl-pink); padding:8px; }
 :root[data-theme="dark"] .payroll-component { --pay-bg:var(--pdl-black); --pay-text:var(--pdl-white); }
 :root[data-theme="dark"] dialog#payroll-export-dialog { background:var(--pdl-black) !important; }
@@ -78,11 +90,10 @@
   #company-pay-periods.settings-panel { padding:6px 8px 8px; }
   #company-pay-periods > h2 { margin:0 0 4px; font:18px/1.1 Anton,sans-serif; }
   #company-pay-periods > p { display:none; }
-  .pay-schedule h3 { display:none; }
-  .pay-schedule p { margin:0 0 2px; font-size:12px; line-height:1.15; }
-  .pay-schedule-choices, .pay-schedule-days, .pay-schedule-weekdays { gap:2px; margin:0 0 2px; }
-  .pay-schedule-choices, .pay-schedule-days { grid-template-columns:repeat(4,minmax(0,1fr)); }
-  .pay-schedule-weekdays { grid-template-columns:repeat(7,minmax(0,1fr)); }
+  .pay-schedule p, .pay-schedule label { margin:0 0 2px; font-size:12px; line-height:1.15; }
+  .pay-schedule-choices, .pay-schedule-days, .pay-schedule-weekdays, .pay-schedule-day-row, .pay-schedule-offsets { gap:2px; margin:0 0 2px; }
+  .pay-schedule-choices, .pay-schedule-days { grid-template-columns:repeat(4,minmax(48px,1fr)); }
+  .pay-schedule-weekdays { grid-template-columns:repeat(7,minmax(48px,1fr)); }
   .pay-schedule button:not([hidden]) { display:grid; place-items:center; min-width:0; max-height:48px; padding:0 2px; overflow:hidden; font-size:12px; line-height:1.1; text-align:center; white-space:normal; }
   .pay-schedule-preview { margin:0 0 2px; }
   .pay-schedule-preview p { margin:0; font-size:12px; line-height:1.15; }
