@@ -24,6 +24,8 @@
 .payroll-component [data-payroll-approve] { background:transparent; color:var(--pay-text); border:0; padding:0 8px; text-decoration:underline; }
 .payroll-component [data-payroll-warning] { display:flex; align-items:center; gap:8px; margin-bottom:8px; }
 .payroll-component [data-payroll-warning] p { flex:1; margin:0; }
+.payroll-component [data-payroll-bar-review] { grid-column:1 / -1; display:flex; align-items:center; justify-content:flex-start; height:48px; min-height:48px !important; margin:0; padding:0 4px; background:transparent !important; color:var(--pay-text) !important; border:0 !important; border-radius:0; box-shadow:none; font:400 14px/1.2 Inter,sans-serif !important; text-align:left; white-space:nowrap; }
+.payroll-component [data-payroll-bar-review] span:last-child { text-decoration:underline; }
 .payroll-component [data-payroll-error]:empty { display:none; }
 .payroll-component [data-payroll-error]:not(:empty) { border-left:2px solid var(--pdl-pink); padding:8px; }
 .payroll-component footer { display:grid; grid-template-columns:1.2fr 1fr; gap:8px; flex:none; padding-top:8px; background:var(--pay-bg); }
