@@ -23,11 +23,16 @@
     return [value.getUTCFullYear(), value.getUTCMonth() + 1];
   }
   function emptySchedule() {
-    return { frequency: null, period_end_weekday: null, anchor_end_date: null, semimonthly_end_days: null, monthly_end_day: null, cards_due_offset_days: null, payday_offset_days: null };
+    return { frequency: null, period_end_weekday: null, anchor_end_date: null, semimonthly_end_days: null, monthly_end_day: null, cards_due_weekday: null, payday_weekday: null, cards_due_offset_days: null, payday_offset_days: null };
   }
   function offset(value, max, label) {
     if (value == null) return null;
-    if (typeof value !== 'number' || !Number.isInteger(value) || value < 0 || value > max) fail(`${label} must be a whole number from 0 to ${max}, or left off.`);
+    if (typeof value !== 'number' || !Number.isInteger(value) || value < 0 || value > max) fail(`${label} must be a whole number from 0 to ${max}.`);
+    return value;
+  }
+  function weekdayValue(value, label) {
+    if (value == null) return null;
+    if (typeof value !== 'number' || !Number.isInteger(value) || value < 0 || value > 6) fail(`${label} must be a weekday from Sunday through Saturday.`);
     return value;
   }
   function endSpec(value, label) {
@@ -36,15 +41,23 @@
     fail(`${label} must be a day from 1 to 28, or the last day of the month.`);
   }
   function validateSchedule(input) {
-    if (!input || typeof input !== 'object' || Array.isArray(input)) fail('Save a pay schedule, or turn it off.');
+    if (!input || typeof input !== 'object' || Array.isArray(input)) fail('Enter a pay schedule.');
     const allowed = new Set(Object.keys(emptySchedule()));
-    if (Object.keys(input).some(key => !allowed.has(key))) fail('Save a pay schedule, or turn it off.');
+    if (Object.keys(input).some(key => !allowed.has(key))) fail('Remove fields that are not part of the pay schedule.');
     const schedule = emptySchedule();
     if (input.frequency == null) return schedule;
     if (!FREQUENCIES.includes(input.frequency)) fail('Choose weekly, every 2 weeks, twice a month, or monthly.');
     schedule.frequency = input.frequency;
-    schedule.cards_due_offset_days = offset(input.cards_due_offset_days, 14, 'Time cards due');
-    schedule.payday_offset_days = offset(input.payday_offset_days, 30, 'Payday');
+    const weekdayFamily = input.frequency === 'weekly' || input.frequency === 'biweekly';
+    if (weekdayFamily && (input.cards_due_offset_days != null || input.payday_offset_days != null)) fail('Use a weekday for time cards due and payday on a weekly or every-2-weeks schedule.');
+    if (!weekdayFamily && (input.cards_due_weekday != null || input.payday_weekday != null)) fail('Use days after the period ends for time cards due and payday on a twice-a-month or monthly schedule.');
+    if (weekdayFamily) {
+      schedule.cards_due_weekday = weekdayValue(input.cards_due_weekday, 'Time cards due');
+      schedule.payday_weekday = weekdayValue(input.payday_weekday, 'Payday');
+    } else {
+      schedule.cards_due_offset_days = offset(input.cards_due_offset_days, 14, 'Time cards due');
+      schedule.payday_offset_days = offset(input.payday_offset_days, 30, 'Payday');
+    }
     if (input.frequency === 'weekly' || input.frequency === 'biweekly') {
       const day = input.period_end_weekday;
       if (typeof day !== 'number' || !Number.isInteger(day) || day < 0 || day > 6) fail('Choose the weekday the pay period ends.');
@@ -72,6 +85,10 @@
     if (schedule.frequency === 'semimonthly') return schedule.semimonthly_end_days.map(spec => resolveEnd(year, month, spec)).sort();
     return [resolveEnd(year, month, schedule.monthly_end_day)];
   }
+  function onOrAfterWeekday(end, day) {
+    if (day == null) return null;
+    return addDays(end, (day - weekday(end) + 7) % 7);
+  }
   function finish(schedule, end) {
     const length = schedule.frequency === 'weekly' ? 6 : schedule.frequency === 'biweekly' ? 13 : null;
     let start;
@@ -83,10 +100,11 @@
       const earlier = endsFor(schedule, year, month).filter(value => value < end).at(-1);
       start = addDays(earlier || previous, 1);
     }
+    const weekdayFamily = schedule.frequency === 'weekly' || schedule.frequency === 'biweekly';
     return {
       start, end,
-      cards_due: schedule.cards_due_offset_days == null ? null : addDays(end, schedule.cards_due_offset_days),
-      payday: schedule.payday_offset_days == null ? null : addDays(end, schedule.payday_offset_days)
+      cards_due: weekdayFamily ? onOrAfterWeekday(end, schedule.cards_due_weekday) : schedule.cards_due_offset_days == null ? null : addDays(end, schedule.cards_due_offset_days),
+      payday: weekdayFamily ? onOrAfterWeekday(end, schedule.payday_weekday) : schedule.payday_offset_days == null ? null : addDays(end, schedule.payday_offset_days)
     };
   }
   function payPeriodFor(schedule, date) {
