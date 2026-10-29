@@ -100,9 +100,9 @@
     const on = allowed();
     const nav = document.querySelector('#payroll-nav');
     const bar = document.querySelector('#payroll-phone-bar');
-    const onPayroll = document.querySelector('#payroll-page')?.classList.contains('active');
+    const onDashboard = document.querySelector('#dashboard-page')?.classList.contains('active');
     if (nav) nav.hidden = !on;
-    if (bar) bar.hidden = !on || !!onPayroll;
+    if (bar) bar.hidden = !on || !onDashboard;
   }
   const card=makeComponent(landing,true), modal=makeComponent(document.querySelector('#payroll-dialog-content'),false);
   document.addEventListener('click',event=>{if(event.target.closest('[data-payroll-export-open]')&&allowed()){modal.reset();dialog.showModal();}});
