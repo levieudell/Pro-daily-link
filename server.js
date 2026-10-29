@@ -31,6 +31,7 @@ const fieldReportReview = require('./field-report-review');
 const { createReportingExport, reportingExportCsv } = require('./reporting-exports');
 const payPeriods=require('./pay-periods');
 const payrollOvertime=require('./payroll-overtime');
+const payrollExport=require('./payroll-export');
 const {status:timeCardStatusText,isApproved:timeCardIsApproved}=require('./time-card-approval');
 const fieldTimeCards=require('./time-card-field-access');
 const scheduleAvailability=require('./schedule-availability');
@@ -2446,6 +2447,26 @@ async function handleTimeRecords(req,res,url){
   const decision=url.pathname.match(/^\/api\/time-off-requests\/([^/]+)\/(approve|decline)$/);if(decision&&req.method==='POST'){if(!office){json(res,403,{error:'Office permission required'});return true}const scope=user?.role==='project_manager'?managerScope(db,user):null,row=db.timeOffRequests.find(item=>String(item.id)===decision[1]&&(!scope||scope.memberIds.has(Number(item.memberId))));if(!row){json(res,404,{error:'Time-off request not found'});return true}const input=await body(req),now=new Date().toISOString();row.status=decision[2]==='approve'?'approved':'declined';row.reviewNote=String(input.note||'').trim().slice(0,500);row.reviewedAt=now;row.reviewedBy=user?.name||'Office';row.history ||= [];row.history.push({action:row.status==='approved'?'Approved':'Declined',by:row.reviewedBy,at:now,note:row.reviewNote});writeDb(db);json(res,200,row);return true}
   json(res,404,{error:'Not found'});return true
 }
+async function handlePayrollExport(req,res,url){
+  if(url.pathname!=='/api/payroll/export')return false;
+  const db=readDb(),user=req.auth?.user;
+  if(!user||!(user.role==='owner'||user.role==='admin'&&user.permissions?.manageTime===true)){
+    json(res,403,{error:'Company time administrator required for payroll export.'});return true;
+  }
+  if(!timeCardsEnabled(db.company)){json(res,403,{error:'Time cards must be enabled for payroll export.'});return true}
+  if(req.method!=='GET'){res.setHeader('Allow','GET');json(res,405,{error:'Use GET to download payroll.'});return true}
+  try{
+    const format=url.searchParams.get('format');
+    if(!['csv','pdf'].includes(format)){json(res,400,{error:'Choose CSV or PDF for payroll export.'});return true}
+    const report=payrollExport.buildPayrollExport(db,{from:url.searchParams.get('from'),to:url.searchParams.get('to')});
+    const output=format==='csv'?payrollExport.payrollCsv(report):await payrollExport.payrollPdf(report);
+    res.writeHead(200,{'Content-Type':format==='csv'?'text/csv; charset=utf-8':'application/pdf',
+      'Content-Disposition':`attachment; filename="${payrollExport.defaultTemplate.filename(report,format)}"`,
+      'Cache-Control':'private, no-store','X-Content-Type-Options':'nosniff',
+      'X-PDL-Unapproved-Punches':String(report.unapprovedCount)});
+    res.end(output);return true;
+  }catch(error){if(error.statusCode===400){json(res,400,{error:error.message});return true}throw error}
+}
 async function handlePayPeriods(req,res,url){
   if(!url.pathname.startsWith('/api/pay-periods'))return false;
   const db=readDb(),user=req.auth?.user;
@@ -3717,6 +3738,7 @@ async function api(req,res,url){
   const assignmentAck=url.pathname.match(/^\/api\/assignments\/(\d+)\/acknowledge$/);if(req.method==='POST'&&assignmentAck){const input=await body(req),db=readDb(),assignment=db.assignments.find(row=>row.id===Number(assignmentAck[1])),memberId=Number(req.auth?.user.memberId||input.memberId);if(!assignment||!assignment.memberIds.includes(memberId))return json(res,404,{error:'Assignment not found for this team member'});if(process.env.PDL_REQUIRE_AUTH==='1'&&Number(req.auth?.user.memberId)!==memberId)return json(res,403,{error:'You can only acknowledge your own assignment'});assignment.acknowledgements ||= {};assignment.acknowledgements[memberId]={status:'acknowledged',at:new Date().toISOString(),by:req.auth?.user.name||db.team.find(member=>member.id===memberId)?.name||'Field user'};writeDb(db);return json(res,200,assignment)}
   if(await handleDailyTemplates(req,res,url))return;
   if(await handleTimeRecords(req,res,url))return;
+  if(await handlePayrollExport(req,res,url))return;
   if(await handlePayPeriods(req,res,url))return;
   if(await handleTimeCards(req,res,url))return;
   if(req.method==='PATCH'&&url.pathname==='/api/company/contract-value-tracking'){
