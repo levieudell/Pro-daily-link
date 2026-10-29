@@ -255,6 +255,9 @@ async function assertReviewHitTargets(page, theme, shots) {
       direct: target === el || el.contains(target), uncovered,
       clear: rect.top >= Math.max(body.top, header.bottom + 8) && rect.bottom <= body.bottom && rect.left >= 0 && rect.right <= innerWidth };
   });
+  // Finish editing before testing a deliberate scroll to a different control.
+  // A queued keyboard-resize correction must not restore the prior field.
+  await page.evaluate(() => document.activeElement?.blur());
   await scroll.evaluate(el => el.scrollTop = el.scrollHeight);
   await settleScroll();
   const next = page.locator('#report-next');
