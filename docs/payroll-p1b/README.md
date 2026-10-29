@@ -1,26 +1,30 @@
 # Payroll P1b — Murder the Guesswork export
 
-Adds a live payroll download to the existing time approval and pay-period settings area. Existing fixed pay-period snapshots are unchanged. No field, punch, daily, voice, approval or overtime-calculation logic changes.
+The office landing screen has a compact Payroll card with the same range/calendar/download component used by the Time cards dialog. No field, punch, daily, voice, approval policy or overtime-calculation changes.
 
 ## Data and access
 
-- Reuses `company.payroll.overtime`, `company.weekStart`, `company.timezone`, `timeCards`, the shared approval policy and P1a's `splitHours`. No new settings or payroll IDs.
-- `GET /api/payroll/export?from=YYYY-MM-DD&to=YYYY-MM-DD&format=csv|pdf` requires the same company-wide access as fixed payroll exports: owner, or admin with `manageTime`. Field/foreman and project-scoped users cannot download company payroll.
-- Full overlapping workweeks are classified and rounded first, without a requested-range filter passed to `splitHours`. Only then are requested start-days selected. This preserves each day's REG/OT/DT cents across full-week and partial-week files.
-- Overnight punches belong entirely to the company-calendar day they started. Unapproved/deleted punches are excluded; incomplete approved punches block export with a plain error.
-- Detail CSV rows are per worker/job/workweek. `WORKER TOTAL` rows summarize each worker across the chosen range; consumers should not sum both detail and total rows. The `worker_id` is the PDL internal ID, disclosed in the PDF footer.
-- Every CSV cell uses `csv-cell.js`. The default columns and filename live in the `murder-the-guesswork` layout config, ready for future template configs.
-- PDF embeds the existing licensed Anton/Inter fonts, converted losslessly from WOFF2 to TTF for reliable subsetting. Small teams use US Letter. Large teams get a taller single page, preserving readable text and every worker rather than dropping rows.
-- Exports use private/no-store responses and tenant-bound authenticated requests. No server-side export records or worker payload changes.
+- Reuses company overtime rules, week start, timezone, approved time cards and P1a's splitHours. Full overlapping weeks are classified first, then the requested start-days are selected. Overnight and range-edge classification are unchanged.
+- Existing pay schedules store explicit period dates, not recurring frequency/anchor settings. As confirmed for this PR, Last pay period selects the most recent saved period ending before today. No parallel schedule was added.
+- CSV rows are one worker/job across the entire requested range, with from_date and to_date instead of week_start. There are no worker-total rows to double-count. Every cell uses csv-cell.js; columns and filename remain template-driven.
+- Worker totals remain in the one-page PDF. Its black header uses the supplied PDL monogram paths; its footer explains that worker IDs are Pro Daily Link IDs until payroll IDs are added.
+- Existing access checks are unchanged: company-wide payroll access is required, field users receive 403 and anonymous users receive 401.
+- Review unapproved opens the selected date range with draft and submitted cards included. Empty ranges show a message and disable downloads.
 
 ## Verification
 
-`payroll-export.test.js` covers range starts/ends mid-week, two workweeks, cent-for-cent full-week equivalence, chronological job allocation, overnight/company timezone, Sunday start, DST/year boundaries, unapproved exclusion, CSV formula escaping, invalid inputs, empty exports and large-team PDF pagination.
+The browser test signs in using a disposable copy of staging seed data and starts each timed path on the warm office landing screen. At 390×844, 768×844 and 1280×800, in both themes, it counts trusted clicks and verifies each target is visible and unobstructed without automatic scrolling:
 
-`payroll-export-e2e.test.js` creates a disposable copy of the real staging seed, logs in through the office login, and adds test-only approved and submitted punches. At 390×844 and 1280×800, in light and dark mode, it checks downloads against 45 approved hours (40 REG + 5 OT), headers, filenames, API rejection, field 403, notice/review link, AA contrast, viewport bounds, and 390px inline overtime labels.
+| Path | Actual taps | Limit | Local elapsed range |
+| --- | ---: | ---: | ---: |
+| This week | 1 | 2 / 3 seconds | 86–162 ms |
+| Last week | 2 | 2 / 4 seconds | 103–127 ms |
+| Custom | 4 | 4 / 8 seconds | 160–251 ms |
 
-The warm-path browser test counts trusted clicks: This pay week **2**, Last week **3**, Custom **6**, including both picker selections. Weekly paths fail above five seconds; Custom fails above eight seconds. Native OS calendars sit outside the browser DOM, so a test-only picker adapter supplies two trusted day-selection clicks and requires the real application to call `To.showPicker()`. This guards the full touch budget and automatic advancement; it does not claim to automate the iOS/Android system picker. Local measurements are not a substitute for Remy's staging GO measurement.
+Custom uses actual inline calendar day buttons: Custom, first day, last day, Download. No native picker adapter or new dependency. Arrow keys, Home/End, Page Up/Down, Enter and Space are covered. Month/year boundaries, leap years and six-row months have unit coverage. Remy's staging device measurement remains the GO check; local timings are not a claim about device/network performance.
 
-Screenshots: `payroll-{light,dark}-{390,1280}.png`. `payroll-summary.pdf` is a synthetic seed-data example, rendered and visually checked as one page.
+CSV tests assert category and total sums, unique worker/job rows, date columns, formula escaping and unchanged full-week/partial-week equivalence. Browser checks cover all presets, empty states in both entry points, filtered approval review, 48px targets, contrast, dark dialog border, settings spacing and inline overtime labels. PDF tests cover one-page output with empty and large teams.
+
+Screenshots: payroll-{light,dark}-{390,768,1280}.png and calendar-{light,dark}-{390,768,1280}.png. payroll-summary.pdf contains synthetic seed data and was rendered and visually checked.
 
 No P2 settings, payroll IDs, processor templates, seventh-day rules or holiday pay are included.

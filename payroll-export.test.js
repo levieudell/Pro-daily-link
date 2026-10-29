@@ -16,7 +16,9 @@ test('mid-week starts, ends and two-workweek ranges match the same full-week day
     for (const [from, to] of [['2026-10-21', '2026-10-23'], ['2026-10-19', '2026-10-22'], ['2026-10-22', '2026-10-29']]) {
       const result = build(source, { from, to }), expected = full.filter(p => p.date >= from && p.date <= to);
       for (const key of ['REG', 'OT', 'DT', 'total']) assert.equal(result.totals[key], total(expected, key), `${hours} ${from} ${to} ${key}`);
-      assert.equal(result.rows.filter(r => r.job_name === 'WORKER TOTAL').length, 1);
+      assert.equal(result.rows.filter(r => r.job_name === 'WORKER TOTAL').length, 0);
+      assert.equal(new Set(result.rows.map(r=>r.worker_id+'|'+r.job_name)).size,result.rows.length);
+      for(const row of result.rows){assert.equal(row.from_date,from);assert.equal(row.to_date,to)}
       assert.equal(total(result.rows.filter(r => r.job_name !== 'WORKER TOTAL').map(r => ({ total: Number(r.total_hours) })), 'total'), result.totals.total);
     }
   }
@@ -29,24 +31,24 @@ test('approved punches only, chronological jobs and extra-work hours remain in R
   assert.deepEqual(result.totals, { REG: 8, OT: 4, DT: 1, total: 13 });
   assert.equal(result.unapprovedCount, 2); assert.equal(result.approvedCount, 2);
   assert.deepEqual(result.workers[0].weeks[0].jobs.map(j => [j.REG, j.OT, j.DT]), [[6, 0, 0], [2, 4, 1]]);
-  assert.deepEqual(defaultTemplate.columns, ['worker_name','worker_id','job_name','job_number','week_start','reg_hours','ot_hours','dt_hours','total_hours']);
+  assert.deepEqual(defaultTemplate.columns, ['worker_name','worker_id','job_name','job_number','from_date','to_date','reg_hours','ot_hours','dt_hours','total_hours']);
 });
 test('overnight 18:00–04:00 stays on its start day/workweek in company timezone', () => {
   const source = db([card('2026-10-25', 10, { inAt: '2026-10-26T01:00:00Z', outAt: '2026-10-26T11:00:00Z' })], { dailyOver: 8 });
   source.company.timezone = 'America/Los_Angeles';
   const result = build(source, { from: '2026-10-25', to: '2026-10-25' });
   assert.deepEqual(result.totals, { REG: 8, OT: 2, DT: 0, total: 10 });
-  assert.equal(result.rows[0].week_start, '2026-10-19');
+  assert.equal(result.workers[0].weeks[0].weekStart, '2026-10-19');
   assert.equal(build(source, { from: '2026-10-26', to: '2026-10-26' }).totals.total, 0);
   source.company.weekStart = 'sunday';
-  assert.equal(build(source, { from: '2026-10-25', to: '2026-10-25' }).rows[0].week_start, '2026-10-25');
+  assert.equal(build(source, { from: '2026-10-25', to: '2026-10-25' }).workers[0].weeks[0].weekStart, '2026-10-25');
 });
 test('template-driven CSV quotes formulas, commas, quotes and newlines; totals do not become pay lines', () => {
   const source = db([card('2026-10-19', 8)]); source.team[0].name = '=SUM(1,2)'; source.projects[0].name = 'Job "One",\nNorth'; source.projects[0].code = '@evil';
   const report = build(source, { from: '2026-10-19', to: '2026-10-25' }), csv = payrollCsv(report);
   assert.ok(csv.startsWith(defaultTemplate.columns.map(c => `"${c}"`).join(',') + '\r\n'));
   assert.ok(csv.includes('"\'=SUM(1,2)"')); assert.ok(csv.includes('"Job ""One"",\nNorth"')); assert.ok(csv.includes('"\'@evil"'));
-  assert.equal(payrollCsv(report, { columns: ['worker_id', 'reg_hours'] }), '"worker_id","reg_hours"\r\n"1","8.00"\r\n"1","8.00"\r\n');
+  assert.equal(payrollCsv(report, { columns: ['worker_id', 'reg_hours'] }), '"worker_id","reg_hours"\r\n"1","8.00"\r\n');
   assert.equal(defaultTemplate.filename(report), 'pdl-payroll-2026-10-19-to-2026-10-25.csv');
 });
 test('validates calendar ranges and approved punches; empty export has headers and zero totals', () => {
@@ -61,6 +63,18 @@ test('range chips use company calendar and week start across month/year/DST edge
   assert.deepEqual(calendar.range('today', '2026-11-03'), { from: '2026-11-03', to: '2026-11-03' });
   assert.equal(calendar.today('America/Los_Angeles', new Date('2026-11-02T07:00:00Z')), '2026-11-01');
 });
+test('inline calendar and new presets handle leap years, six-row months and concise labels', () => {
+  assert.deepEqual(calendar.range('last2', '2027-01-01'), { from: '2026-12-14', to: '2026-12-27' });
+  assert.deepEqual(calendar.range('month', '2028-02-20'), { from: '2028-02-01', to: '2028-02-29' });
+  assert.equal(calendar.shiftMonth('2028-01-31', 1), '2028-02-29');
+  assert.equal(calendar.shiftMonth('2026-01-31', -1), '2025-12-31');
+  const days = calendar.monthDays('2026-11-01');
+  assert.equal(days.length, 42); assert.equal(days[0], '2026-10-26'); assert.equal(days.at(-1), '2026-12-06');
+  assert.equal(calendar.monthDays('2026-11-01', 'sunday')[0], '2026-11-01');
+  assert.equal(calendar.label('2026-10-19', '2026-10-25', 2026), 'Oct 19 – Oct 25');
+  assert.equal(calendar.label('2026-12-28', '2027-01-03', 2027), 'Dec 28, 2026 – Jan 3');
+});
+
 test('PDF stays one page for empty and large teams, with all workers retained', async () => {
   for (const count of [0, 75]) {
     const source = db(Array.from({ length: count }, (_, i) => card('2026-10-19', 8, { memberId: i + 1 })));

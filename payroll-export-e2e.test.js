@@ -16,11 +16,13 @@ const db = JSON.parse(fs.readFileSync(dbFile));
 const week = calendar.range('week', calendar.today(db.company.timezone), db.company.weekStart);
 // Disposable staging seed with approved/unapproved punches; never modifies the live demo.
 db.timeCards = [];
-for (const start of [week.from, calendar.addDays(week.from, -7)]) for (let day = 0; day < 5; day++) {
+for (const start of [week.from, calendar.addDays(week.from, -7), calendar.addDays(week.from, -14)]) for (let day = 0; day < 5; day++) {
   const date = calendar.addDays(start, day), inAt = date + 'T16:00:00Z';
   db.timeCards.push({ id: start + '-' + day, memberId: 1, projectId: day % 2 ? 2 : 1, date, status: 'approved', inAt, outAt: new Date(Date.parse(inAt) + 9 * 3600000).toISOString(), hours: 9 });
 }
 db.timeCards.push({ id: 'unapproved', memberId: 2, projectId: 1, status: 'submitted', inAt: week.from + 'T16:00:00Z', outAt: week.from + 'T20:00:00Z', hours: 4 });
+db.timeCards.push({id:'draft-payroll',memberId:3,projectId:1,status:'draft',inAt:week.from+'T16:00:00Z',outAt:week.from+'T19:00:00Z',hours:3});
+db.payPeriods=[{id:'previous-payroll',label:'Previous saved period',from:calendar.addDays(week.from,-14),to:calendar.addDays(week.from,-1),timeZone:db.company.timezone,status:'open'}];
 fs.writeFileSync(dbFile, JSON.stringify(db));
 fs.writeFileSync(path.join(root, 'platform.json'), JSON.stringify({ users: [], sessions: [] }));
 Object.assign(process.env, { PDL_DB_FILE: dbFile, PDL_PLATFORM_FILE: path.join(root, 'platform.json'), PDL_REQUIRE_AUTH: '1', PDL_SUPABASE_ENABLED: '0', PDL_TRANSACTIONAL_DB: 'off', PDL_PLATFORM_TRANSACTIONAL_DB: 'off', PDL_EMAIL_DEV_MODE: '1', PDL_STAGING: '0', NODE_ENV: 'test' });
@@ -45,157 +47,110 @@ function parseCsv(text) {
   }
   return rows;
 }
-async function installPickerHarness(page) {
-  // Native OS calendars are outside Playwright's DOM. Model their day-selection
-  // surfaces with trusted button clicks, rather than treating fill() as zero taps.
-  // The real application must call To.showPicker() to expose the second surface.
-  // Remy's iOS/Android run still verifies the platform picker itself.
-  await page.evaluate(({ from, to }) => {
-    const start = document.querySelector('#payroll-export-from'), end = document.querySelector('#payroll-export-to');
-    const popup = document.createElement('div'); popup.id = 'test-payroll-picker'; popup.hidden = true;
-    popup.style.cssText = 'position:fixed;inset:35% 20px auto;z-index:99999;padding:20px;background:white;color:black;border:2px solid black';
-    const pick = document.createElement('button'); pick.type = 'button'; popup.append(pick);
-    document.querySelector('#payroll-export-dialog').append(popup);
-    let active;
-    function open(input) { active = input; pick.textContent = input === start ? 'Pick From day' : 'Pick To day'; popup.hidden = false; }
-    start.addEventListener('click', event => { event.preventDefault(); open(start); });
-    end.showPicker = () => { window.payrollToPickerCalls = (window.payrollToPickerCalls || 0) + 1; open(end); };
-    pick.addEventListener('click', () => {
-      const input = active; popup.hidden = true; input.value = input === start ? from : to;
-      input.dispatchEvent(new Event('input', { bubbles: true })); input.dispatchEvent(new Event('change', { bubbles: true }));
-    });
-  }, { from: calendar.addDays(week.from, 2), to: calendar.addDays(week.from, 4) });
+
+async function tap(page, locator) {
+  const box = await locator.boundingBox(), viewport = page.viewportSize();
+  assert(box && box.x >= 0 && box.x + box.width <= viewport.width + .5 && box.y >= 56 && box.y + box.height <= viewport.height + .5, 'target fully on screen without an uncounted scroll: ' + JSON.stringify(box));
+  const hit=await locator.evaluate(el => { const r=el.getBoundingClientRect(), hit=document.elementFromPoint(r.x+r.width/2,r.y+r.height/2); return {ok:hit===el||el.contains(hit),hit:hit?.outerHTML.slice(0,300),target:el.outerHTML,box:{x:r.x,y:r.y,width:r.width,height:r.height}}; });
+  if(!hit.ok&&shots){fs.mkdirSync(shots,{recursive:true});await page.screenshot({path:path.join(shots,'failure.png')})}
+  assert(hit.ok, 'target receives the tap: '+JSON.stringify(hit));
+  await locator.click();
 }
-async function download(page, preset, limit) {
-  await page.evaluate(() => { window.payrollTapCount = 0; });
-  const start = performance.now();
-  await page.locator('#pay-period-panel [data-payroll-export-open]').click();
-  assert.equal(await page.locator('[data-payroll-range="week"]').getAttribute('aria-pressed'), 'true');
-  let range = calendar.range(preset === 'custom' ? 'week' : preset, calendar.today(db.company.timezone), db.company.weekStart);
-  if (preset !== 'week') await page.locator(`[data-payroll-range="${preset}"]`).click();
-  if (preset === 'custom') {
-    range = { from: calendar.addDays(week.from, 2), to: calendar.addDays(week.from, 4) };
-    assert.equal(await page.locator('#payroll-export-from').inputValue(), week.from);
-    assert.equal(await page.locator('#payroll-export-to').inputValue(), week.to);
-    const calls = await page.evaluate(() => window.payrollToPickerCalls || 0);
-    await page.locator('#payroll-export-from').click();
-    await page.getByRole('button', { name: 'Pick From day', exact: true }).click();
-    assert.equal(await page.evaluate(() => window.payrollToPickerCalls), calls + 1, 'From selection opens To without a tap');
-    await page.getByRole('button', { name: 'Pick To day', exact: true }).click();
+function verifyCsv(text, range) {
+  const rows=parseCsv(text), headers=rows.shift(); assert.deepEqual(headers,defaultTemplate.columns);
+  assert(headers.includes('from_date')&&headers.includes('to_date')); assert(!headers.includes('week_start'));
+  const records=rows.map(row=>Object.fromEntries(headers.map((key,i)=>[key,row[i]])));
+  assert(records.every(row=>row.job_name!=='WORKER TOTAL'));
+  assert.equal(new Set(records.map(row=>row.worker_id+'|'+row.job_name)).size,records.length,'one worker/job row for the whole range');
+  const expected=buildPayrollExport(db,range);
+  for(const [column,key] of [['reg_hours','REG'],['ot_hours','OT'],['dt_hours','DT'],['total_hours','total']])assert.equal(Math.round(records.reduce((sum,row)=>sum+Number(row[column]),0)*100),Math.round(expected.totals[key]*100));
+  for(const row of records){assert.equal(row.from_date,range.from);assert.equal(row.to_date,range.to)}
+  return expected;
+}
+async function checkComponent(page, root) {
+  await page.evaluate(async()=>{await Promise.all(document.getAnimations().filter(a=>a.effect?.getTiming().iterations!==Infinity).map(a=>a.finished.catch(()=>{})))});
+  const styles=await root.evaluate(el=>{
+    const rgb=s=>s.match(/[\d.]+/g).map(Number), lum=s=>rgb(s).slice(0,3).map(v=>(v/=255)<=.04045?v/12.92:((v+.055)/1.055)**2.4).reduce((n,v,i)=>n+v*[.2126,.7152,.0722][i],0);
+    return { overflow:Math.max(el.scrollWidth-el.clientWidth,document.documentElement.scrollWidth-innerWidth), colors:[...el.querySelectorAll('button,p,h2,th,strong')].filter(e=>e.checkVisibility()).map(e=>{const s=getComputedStyle(e);let p=e;while(p&&rgb(getComputedStyle(p).backgroundColor)[3]===0)p=p.parentElement;const a=lum(s.color),b=lum(getComputedStyle(p).backgroundColor);return{text:e.textContent,ratio:(Math.max(a,b)+.05)/(Math.min(a,b)+.05),height:e.tagName==='BUTTON'?e.getBoundingClientRect().height:48,forbidden:['rgb(219, 219, 219)','rgb(61, 61, 61)','rgb(20, 20, 20)'].some(c=>[s.color,s.backgroundColor,s.borderTopColor].includes(c))}})};
+  });
+  assert(styles.overflow<=1,JSON.stringify(styles));
+  for(const item of styles.colors){assert(item.ratio>=4.5,JSON.stringify(item));assert(item.height>=48,JSON.stringify(item));assert(!item.forbidden,JSON.stringify(item))}
+}
+async function landingDownload(page, preset) {
+  await page.evaluate(()=>{showPage('dashboard');window.scrollTo(0,0)});
+  await page.evaluate(async()=>{await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));await Promise.all(document.getAnimations().filter(a=>a.effect?.getTiming().iterations!==Infinity).map(a=>a.finished.catch(()=>{})))});
+  const root=page.locator('#payroll-landing'); await root.locator('[data-payroll-download="csv"]').waitFor({state:'visible'});
+  assert(await page.locator('#dashboard-page').evaluate(el=>el.classList.contains('active')),'start on the actual office landing');
+  assert.equal(await root.locator('[data-payroll-range="week"]').getAttribute('aria-pressed'),'true');
+  await page.evaluate(()=>{window.payrollTapCount=0}); const started=performance.now();
+  let range=calendar.range(preset==='custom'?'week':preset,calendar.today(db.company.timezone),db.company.weekStart);
+  if(preset!=='week')await tap(page,root.locator(`[data-payroll-range="${preset}"]`));
+  if(preset==='custom'){
+    range={from:calendar.addDays(week.from,2),to:calendar.addDays(week.from,4)};
+    assert.equal(await root.locator('input[type="date"]').count(),0,'no native date controls');
+    for(const date of [range.from,range.to])await tap(page,root.locator(`[data-payroll-day="${date}"]`));
+    assert.equal(await root.locator('[data-payroll-day].in-range').count(),3,'selected range highlighted');
   }
-  const [file] = await Promise.all([page.waitForEvent('download'), page.locator('[data-payroll-download="csv"]').click()]);
-  const csv = fs.readFileSync(await file.path(), 'utf8'), rows = parseCsv(csv);
-  assert.equal(file.suggestedFilename(), defaultTemplate.filename(range));
-  assert.deepEqual(rows.shift(), defaultTemplate.columns);
-  const totals = rows.filter(row => row[2] === 'WORKER TOTAL');
-  const expected = buildPayrollExport(db, range);
-  assert.equal(Math.round(totals.reduce((n, row) => n + Number(row[8]), 0) * 100), Math.round(expected.totals.total * 100));
-  assert.equal(expected.totals.total, preset === 'custom' ? 27 : 45, 'approved punch sum, excluding the submitted punch');
-  assert.deepEqual(totals[0].slice(5), preset === 'custom' ? ['22.00','5.00','0.00','27.00'] : ['40.00','5.00','0.00','45.00']);
-  const elapsed = performance.now() - start, taps = await page.evaluate(() => window.payrollTapCount);
-  assert.equal(taps, preset === 'week' ? 2 : preset === 'last' ? 3 : 6);
-  assert(taps <= limit, `${preset}: ${taps} taps exceeds ${limit}`);
-  assert(elapsed <= (preset === 'custom' ? 8000 : 5000), `${preset}: ${elapsed}ms exceeds its time budget`);
-  console.log(`Payroll ${page.viewportSize().width}px ${preset}: ${taps} taps, ${Math.round(elapsed)}ms, ${expected.totals.total} approved hours`);
-}
-async function bounds(page) {
-  const palette = await page.locator('#payroll-export-dialog').evaluate(el => ({ theme: document.documentElement.dataset.theme, border: getComputedStyle(el).borderTopColor, background: getComputedStyle(el).backgroundColor, primary: getComputedStyle(el.querySelector('[data-payroll-download="csv"]')).backgroundColor }));
-  if (palette.theme === 'dark') assert.equal(palette.border, 'rgb(110, 110, 110)');
-  assert.equal(palette.background, palette.theme === 'dark' ? 'rgb(0, 0, 0)' : 'rgb(247, 245, 240)');
-  assert.equal(palette.primary, 'rgb(255, 102, 0)');
-  const result = await page.evaluate(() => {
-    const dialog = document.querySelector('#payroll-export-dialog');
-    return { overflow: Math.max(document.documentElement.scrollWidth - innerWidth, dialog.scrollWidth - dialog.clientWidth), buttons: [...dialog.querySelectorAll('button')].filter(b => b.checkVisibility()).map(b => { const r = b.getBoundingClientRect(); return { text: b.textContent, height: r.height, left: r.left, right: r.right, bottom: r.bottom }; }) };
-  });
-  assert(result.overflow <= 1, JSON.stringify(result));
-  for (const b of result.buttons) assert(b.height >= 48 && b.left >= 0 && b.right <= page.viewportSize().width && b.bottom <= page.viewportSize().height, JSON.stringify(b));
-  const contrast = await page.locator('#payroll-export-dialog').evaluate(dialog => {
-    const rgb = color => color.match(/[\d.]+/g).map(Number);
-    const lum = color => rgb(color).slice(0, 3).map(v => (v /= 255) <= .04045 ? v / 12.92 : ((v + .055) / 1.055) ** 2.4).reduce((n, v, i) => n + v * [.2126,.7152,.0722][i], 0);
-    return [...dialog.querySelectorAll('h2,p,button,label,input')].filter(el => el.checkVisibility()).map(el => {
-      let parent = el; while (parent && rgb(getComputedStyle(parent).backgroundColor)[3] === 0) parent = parent.parentElement;
-      const css = getComputedStyle(el), a = lum(css.color), b = lum(getComputedStyle(parent).backgroundColor);
-      return { text: el.textContent, ratio: (Math.max(a,b)+.05)/(Math.min(a,b)+.05), min: parseFloat(css.fontSize) >= 24 || parseFloat(css.fontSize) >= 18.66 && Number(css.fontWeight) >= 700 ? 3 : 4.5 };
-    });
-  });
-  for (const item of contrast) assert(item.ratio >= item.min, JSON.stringify(item));
+  const [download]=await Promise.all([page.waitForEvent('download'),tap(page,root.locator('[data-payroll-download="csv"]'))]);
+  assert.equal(download.suggestedFilename(),defaultTemplate.filename(range));
+  const expected=verifyCsv(fs.readFileSync(await download.path(),'utf8'),range);
+  assert.equal(expected.totals.total,preset==='custom'?27:45);
+  const elapsed=performance.now()-started,taps=await page.evaluate(()=>window.payrollTapCount),limit=preset==='week'?2:preset==='last'?2:4,ms=preset==='week'?3000:preset==='last'?4000:8000;
+  assert.equal(taps,preset==='week'?1:preset==='last'?2:4);assert(taps<=limit);assert(elapsed<=ms,`${preset}: ${elapsed}ms > ${ms}`);
+  console.log(`Landing ${page.viewportSize().width}px ${preset}: ${taps} real taps, ${Math.round(elapsed)}ms, ${expected.totals.total} approved hours`);
+  await checkComponent(page,root);
 }
 async function main() {
-  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve)); base = 'http://127.0.0.1:' + server.address().port;
-  try {
-    browser = await chromium.launch({ executablePath: process.env.PDL_TEST_CHROME || (process.platform === 'win32' ? 'C:/Program Files/Google/Chrome/Application/chrome.exe' : '/usr/bin/google-chrome-stable'), headless: true, args: ['--no-sandbox', '--disable-dev-shm-usage'] });
-    const context = await browser.newContext({ acceptDownloads: true }), page = await context.newPage();
-    await page.addInitScript(() => { localStorage.setItem('pdl-analytics-consent','declined'); document.addEventListener('click', event => { if (event.isTrusted) window.payrollTapCount = (window.payrollTapCount || 0) + 1; }, true); });
-    const errors = []; page.on('pageerror', error => errors.push(error.message));
-    await login(page, seed.OFFICE_EMAIL);
-    await installPickerHarness(page);
-    const response = await context.request.get(base + '/api/payroll/export?' + new URLSearchParams({ ...week, format: 'csv' }));
-    assert.equal(response.status(), 200); assert.equal(response.headers()['cache-control'], 'private, no-store');
-    for (const query of ['from=bad&to=2026-10-25&format=csv', `from=${week.from}&to=${week.to}&format=x`]) assert.equal((await context.request.get(base + '/api/payroll/export?' + query)).status(), 400);
-    assert.equal((await context.request.post(base + '/api/payroll/export')).status(), 405);
-    for (const width of [390, 1280]) for (const theme of ['light', 'dark']) {
-      await page.setViewportSize({ width, height: width === 390 ? 844 : 800 });
-      await page.evaluate(theme => { document.documentElement.dataset.theme = theme; showPage('timecards'); }, theme);
-      await page.locator('#pay-period-panel [data-payroll-export-open]').waitFor({ state: 'visible' });
-      await page.evaluate(() => document.fonts.ready);
-      const entry = await page.locator('#pay-period-panel [data-payroll-export-open]').evaluate(el => ({ height: el.getBoundingClientRect().height, minimum: parseFloat(getComputedStyle(el).minHeight) }));
-      assert(entry.height >= 48 && entry.minimum >= 48, `${width}px export entry: ${JSON.stringify(entry)}`);
-      if (theme === 'dark') {
-        const tab = await page.locator('#timecards-page .time-workspace-tabs button.active').evaluate(el => ({ color: getComputedStyle(el).color, background: getComputedStyle(el).backgroundColor }));
-        assert.deepEqual(tab, { color: 'rgb(0, 0, 0)', background: 'rgb(255, 102, 0)' });
-        const luminance = color => color.match(/\d+/g).map(Number).map(v => (v /= 255) <= .04045 ? v / 12.92 : ((v + .055) / 1.055) ** 2.4).reduce((sum, v, i) => sum + v * [.2126, .7152, .0722][i], 0);
-        assert((luminance(tab.background) + .05) / (luminance(tab.color) + .05) >= 4.5, 'selected dark tab passes AA');
-      }
-      for (const preset of ['week', 'last', 'custom']) {
-        await download(page, preset, preset === 'custom' ? 6 : preset === 'last' ? 3 : 2);
-        await bounds(page);
-        if (shots && preset === 'week') { fs.mkdirSync(shots, { recursive: true }); await page.screenshot({ path: path.join(shots, `payroll-${theme}-${width}.png`) }); }
-        await page.locator('[data-payroll-close]').click();
+  await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));base='http://127.0.0.1:'+server.address().port;
+  try{
+    browser=await chromium.launch({executablePath:process.env.PDL_TEST_CHROME||(process.platform==='win32'?'C:/Program Files/Google/Chrome/Application/chrome.exe':'/usr/bin/google-chrome-stable'),headless:true,args:['--no-sandbox','--disable-dev-shm-usage']});
+    const context=await browser.newContext({acceptDownloads:true}),page=await context.newPage();
+    await page.addInitScript(()=>{localStorage.setItem('pdl-analytics-consent','declined');document.addEventListener('click',e=>{if(e.isTrusted)window.payrollTapCount=(window.payrollTapCount||0)+1},true)});
+    const errors=[];page.on('pageerror',e=>errors.push(e.message));await login(page,seed.OFFICE_EMAIL);
+    await page.waitForFunction(()=>!document.querySelector('#payroll-landing [data-payroll-download="csv"]')?.disabled);
+    assert(await page.locator('#dashboard-page').evaluate(el=>el.classList.contains('active')),'sign-in lands on dashboard');
+    const route='/api/payroll/export?'+new URLSearchParams({...week,format:'csv'});
+    const response=await context.request.get(base+route);assert.equal(response.status(),200);assert.equal(response.headers()['cache-control'],'private, no-store');verifyCsv(await response.text(),week);
+    assert.equal((await fetch(base+route)).status,401,'anonymous gets 401');
+    for(const query of ['from=bad&to=2026-10-25&format=csv',`from=${week.from}&to=${week.to}&format=x`])assert.equal((await context.request.get(base+'/api/payroll/export?'+query)).status(),400);
+    assert.equal((await context.request.post(base+'/api/payroll/export')).status(),405);
+    for(const width of [390,768,1280])for(const theme of ['light','dark']){
+      await page.setViewportSize({width,height:width===1280?800:844});await page.evaluate(theme=>{document.documentElement.dataset.theme=theme},theme);await page.evaluate(()=>document.fonts.ready);
+      for(const preset of ['week','last','custom']){
+        await landingDownload(page,preset);
+        if(shots){fs.mkdirSync(shots,{recursive:true});await page.screenshot({path:path.join(shots,`landing-${preset}-${theme}-${width}.png`)})}
       }
     }
+    const root=page.locator('#payroll-landing');await page.evaluate(()=>showPage('dashboard'));
+    for(const [preset,range] of [['last2',calendar.range('last2',calendar.today(db.company.timezone))],['period',db.payPeriods[0]],['month',calendar.range('month',calendar.today(db.company.timezone))]]){
+      await root.locator(`[data-payroll-range="${preset}"]`).click();const [file]=await Promise.all([page.waitForEvent('download'),root.locator('[data-payroll-download="csv"]').click()]);verifyCsv(fs.readFileSync(await file.path(),'utf8'),{from:range.from,to:range.to});
+    }
+    await root.locator('[data-payroll-range="custom"]').click();
+    const focused=root.locator('[data-payroll-day][tabindex="0"]');const original=await focused.getAttribute('data-payroll-day');await focused.focus();await focused.press('ArrowRight');
+    assert.equal(await page.evaluate(()=>document.activeElement.dataset.payrollDay),calendar.addDays(original,1));
+    await page.keyboard.press('Enter');await page.keyboard.press('ArrowRight');await page.keyboard.press('Space');
+    assert.equal(await root.locator('[data-payroll-day].in-range').count(),2,'keyboard selects range');
+    await root.locator('[data-month="1"]').click();const monthLabel=await root.locator('[data-month-label]').textContent();assert(monthLabel);
+    const emptyDays=await root.locator('[data-payroll-day]').evaluateAll(els=>els.filter(el=>!el.classList.contains('adjacent-month')).slice(10,12).map(el=>el.dataset.payrollDay));
+    for(const day of emptyDays)await root.locator(`[data-payroll-day="${day}"]`).click();
+    assert(await root.locator('[data-payroll-empty]').isVisible());assert(await root.locator('[data-payroll-download="csv"]').isDisabled());
+    await page.evaluate(()=>showPage('dashboard'));
+    assert.match(await root.locator('[data-payroll-count]').textContent(),/^2 punches/);
+    await root.locator('[data-payroll-approve]').click();assert.equal(await page.locator('#timecard-status').inputValue(),'unapproved');
+    const unapproved=await page.evaluate(()=>filteredTimeCards().map(c=>c.status).sort());assert.deepEqual(unapproved,['draft','submitted']);
     await page.locator('#pay-period-panel [data-payroll-export-open]').click();
-    await page.locator('[data-payroll-range="last"]').click();
-    await page.locator('[data-payroll-range="custom"]').click();
-    assert.equal(await page.locator('#payroll-export-from').inputValue(), week.from, 'Custom resets even after Last week');
-    assert.equal(await page.locator('#payroll-export-to').inputValue(), week.to);
-    const nextFrom = calendar.addDays(week.from, 9);
-    const advanced = await page.evaluate(from => {
-      const start = document.querySelector('#payroll-export-from'), end = document.querySelector('#payroll-export-to');
-      start.value = from; start.dispatchEvent(new Event('change', { bubbles: true }));
-      document.querySelector('#test-payroll-picker').hidden = true;
-      return end.value;
-    }, nextFrom);
-    assert.equal(advanced, calendar.range('week', nextFrom, db.company.weekStart).to, 'To advances to the end of the new From workweek');
-    for (const mode of ['missing', 'throws']) {
-      assert(await page.evaluate(mode => {
-        const start = document.querySelector('#payroll-export-from'), end = document.querySelector('#payroll-export-to'), picker = end.showPicker;
-        end.showPicker = mode === 'missing' ? undefined : () => { throw new DOMException('No user activation', 'NotAllowedError'); };
-        start.focus(); start.dispatchEvent(new Event('change', { bubbles: true }));
-        const focused = document.activeElement === end; end.showPicker = picker; return focused;
-      }, mode), mode + ' picker falls back to To focus');
-    }
-    await page.locator('[data-payroll-range="week"]').click();
-    assert.match(await page.locator('#payroll-export-count').textContent(), /1 punch not approved yet/);
-    const [pdf] = await Promise.all([page.waitForEvent('download'), page.locator('[data-payroll-download="pdf"]').click()]);
-    const bytes = fs.readFileSync(await pdf.path()); assert.equal(bytes.subarray(0, 5).toString(), '%PDF-');
-    assert.equal((bytes.toString('latin1').match(/\/Type \/Page\b/g) || []).length, 1, 'one-page PDF');
-    if (shots) fs.copyFileSync(await pdf.path(), path.join(shots, 'payroll-summary.pdf'));
-    await page.locator('#payroll-export-approve').click();
-    assert.equal(await page.locator('#timecard-from').inputValue(), week.from); assert.equal(await page.locator('#timecard-to').inputValue(), week.to);
-    assert.equal(await page.locator('#timecard-status').inputValue(), 'submitted');
-    await page.setViewportSize({ width: 390, height: 844 });
-    await page.evaluate(() => window.PDLCompanySettings.openPayPeriods());
-    await page.locator('#payroll-overtime-form').waitFor({ state: 'visible' });
-    for (const theme of ['light', 'dark']) {
-      await page.evaluate(theme => document.documentElement.dataset.theme = theme, theme);
-      const settingsEntry = await page.locator('#company-pay-periods [data-payroll-export-open]').boundingBox(); assert(settingsEntry.height >= 48);
-      const inline = await page.locator('.payroll-rule-hours').evaluateAll(labels => labels.map(label => { const parts = [...label.children].map(el => el.getBoundingClientRect()), input = label.querySelector('input').getBoundingClientRect(); return { top: Math.max(...parts.map(r => r.top)), bottom: Math.min(...parts.map(r => r.bottom)), right: Math.max(...parts.map(r => r.right)), boxRight: label.getBoundingClientRect().right, gap: parseFloat(getComputedStyle(label.parentElement).columnGap), width: input.width, height: input.height }; }));
-      for (const line of inline) { assert(line.top < line.bottom && line.right <= line.boxRight + .5, 'one-line overtime sentence fits its box: ' + JSON.stringify(line)); assert.equal(line.width, 48); assert.equal(line.height, 48); assert(line.gap >= 4); }
-    }
-    const field = await browser.newContext(), fieldPage = await field.newPage(); await login(fieldPage, seed.FIELD_EMAIL);
-    assert.equal((await field.request.get(base + '/api/payroll/export?' + new URLSearchParams({ ...week, format: 'csv' }))).status(), 403);
-    assert.equal(await fieldPage.locator('[data-payroll-export-open]:visible').count(), 0);
-    assert.deepEqual(errors, []); console.log('Payroll export API, staging-seed login, range totals, two-tap downloads, themes and field denial passed.');
-  } finally { await browser?.close(); await new Promise(resolve => server.close(resolve)); fs.rmSync(root, { recursive: true, force: true }); }
+    const modal=page.locator('#payroll-dialog-content');assert.equal(await modal.locator('[data-payroll-range]').count(),6);
+    await checkComponent(page,modal);
+    assert.equal(await page.locator('#payroll-export-dialog').evaluate(el=>getComputedStyle(el).borderTopColor),'rgb(110, 110, 110)');
+    const [pdf]=await Promise.all([page.waitForEvent('download'),modal.locator('[data-payroll-download="pdf"]').click()]);const bytes=fs.readFileSync(await pdf.path());assert.equal(bytes.subarray(0,5).toString(),'%PDF-');assert.equal((bytes.toString('latin1').match(/\/Type \/Page\b/g)||[]).length,1);
+    if(shots)fs.copyFileSync(await pdf.path(),path.join(shots,'payroll-summary.pdf'));
+    await modal.locator('[data-payroll-range="custom"]').click();for(let i=0;i<2;i++)await modal.locator('[data-month="1"]').click();const days=await modal.locator('[data-payroll-day]').evaluateAll(els=>els.slice(10,12).map(el=>el.dataset.payrollDay));for(const day of days)await modal.locator(`[data-payroll-day="${day}"]`).click();assert(await modal.locator('[data-payroll-empty]').isVisible());assert(await modal.locator('[data-payroll-download="csv"]').isDisabled());
+    await page.locator('[data-payroll-close]').click();
+    await page.setViewportSize({width:390,height:844});await page.evaluate(()=>window.PDLCompanySettings.openPayPeriods());await page.locator('#payroll-overtime-form').waitFor({state:'visible'});
+    const spacing=await page.locator('#company-pay-periods').evaluate(el=>{const a=el.querySelector('[data-payroll-export-open]').getBoundingClientRect(),b=el.querySelector('[data-pay-new]').getBoundingClientRect();return{gap:b.y>=a.bottom?b.y-a.bottom:b.x-a.right,height:a.height}});assert(spacing.gap>=8&&spacing.height>=48,JSON.stringify(spacing));
+    for(const theme of ['light','dark']){await page.evaluate(theme=>document.documentElement.dataset.theme=theme,theme);const inline=await page.locator('.payroll-rule-hours').evaluateAll(labels=>labels.map(label=>{const parts=[...label.children].map(el=>el.getBoundingClientRect()),input=label.querySelector('input').getBoundingClientRect();return{top:Math.max(...parts.map(r=>r.top)),bottom:Math.min(...parts.map(r=>r.bottom)),right:Math.max(...parts.map(r=>r.right)),boxRight:label.getBoundingClientRect().right,width:input.width,height:input.height,gap:parseFloat(getComputedStyle(label.parentElement).columnGap)}}));for(const line of inline){assert(line.top<line.bottom&&line.right<=line.boxRight+.5,JSON.stringify(line));assert.equal(line.width,48);assert.equal(line.height,48);assert(line.gap>=4)}}
+    const field=await browser.newContext(),fieldPage=await field.newPage();await login(fieldPage,seed.FIELD_EMAIL);assert.equal((await field.request.get(base+route)).status(),403);assert.equal(await fieldPage.locator('#payroll-landing:visible').count(),0);assert.equal(await fieldPage.locator('[data-payroll-export-open]:visible').count(),0);
+    assert.deepEqual(errors,[]);console.log('Landing payroll speed, real inline calendar, CSV sums, empty states, shared dialog, filtered review, keyboard, brand and access checks passed.');
+  }finally{await browser?.close();await new Promise(resolve=>server.close(resolve));fs.rmSync(root,{recursive:true,force:true})}
 }
-main().catch(error => { console.error(error); process.exitCode = 1; });
+main().catch(error=>{console.error(error);process.exitCode=1});

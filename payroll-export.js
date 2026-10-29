@@ -1,6 +1,7 @@
 'use strict';
 
 const path = require('node:path');
+const fs = require('node:fs');
 const csvCell = require('./csv-cell');
 const { splitHours, companyPayroll } = require('./payroll-overtime');
 const { isApproved } = require('./time-card-approval');
@@ -11,7 +12,7 @@ const calendar = require('./payroll-ranges');
 const CATEGORIES = ['REG', 'OT', 'DT'];
 const templates = Object.freeze({
   'murder-the-guesswork': Object.freeze({
-    columns: Object.freeze(['worker_name', 'worker_id', 'job_name', 'job_number', 'week_start', 'reg_hours', 'ot_hours', 'dt_hours', 'total_hours']),
+    columns: Object.freeze(['worker_name', 'worker_id', 'job_name', 'job_number', 'from_date', 'to_date', 'reg_hours', 'ot_hours', 'dt_hours', 'total_hours']),
     filename: ({ from, to }, format = 'csv') => `pdl-payroll-${from}-to-${to}.${format}`
   })
 });
@@ -69,16 +70,16 @@ function buildPayrollExport(db, { from, to }) {
   }).sort((a, b) => a.name.localeCompare(b.name) || String(a.memberId).localeCompare(String(b.memberId)));
   const exportRows = [];
   function values(worker, amounts, detail = {}) {
-    return { worker_name: worker.name, worker_id: worker.memberId, job_name: '', job_number: '', week_start: '', ...detail,
+    return { worker_name: worker.name, worker_id: worker.memberId, job_name: '', job_number: '', from_date: from, to_date: to, ...detail,
       reg_hours: amounts.REG.toFixed(2), ot_hours: amounts.OT.toFixed(2), dt_hours: amounts.DT.toFixed(2), total_hours: amounts.total.toFixed(2) };
   }
   for (const worker of workers) {
-    for (const week of worker.weeks) for (const job of week.jobs) {
+    for (const rows of groups(worker.weeks.flatMap(week => week.jobs), 'projectId')) {
+      const job = { projectId: rows[0].projectId, ...sum(rows) };
       const project = (db.projects || []).find(project => String(project.id) === String(job.projectId));
       exportRows.push(values(worker, job, { job_name: project?.name || (job.projectId == null ? 'Company time' : `Job ${job.projectId}`),
-        job_number: project?.code || '', week_start: week.weekStart }));
+        job_number: project?.code || '' }));
     }
-    exportRows.push(values(worker, worker, { job_name: 'WORKER TOTAL' }));
   }
   return { companyName: db.company.name || 'Company', from, to, timeZone, weekStart, overtime, workers, rows: exportRows,
     totals: sum(workers), approvedCount: weeks.reduce((count, week) => count + week.punches.length, 0), unapprovedCount };
@@ -111,10 +112,17 @@ async function payrollPdf(report) {
   doc.rect(0, 0, width, height).fill('#F7F5F0');
   doc.rect(0, 0, width, 78).fill('#000000');
   doc.rect(0, 78, width, 3).fill('#FF6600');
-  doc.fillColor('#FFFFFF').font('Anton').fontSize(26).text('PAYROLL SUMMARY', margin, 19);
-  doc.font('Inter').fontSize(10).text('Murder the Guesswork', margin, 54);
+  // Embed the exact supplied SVG paths and transforms, including its clear space.
+  const logo = fs.readFileSync(path.join(__dirname, 'assets', 'pdl-monogram.svg'), 'utf8');
+  const box = logo.match(/viewBox="([^"]+)"/)[1].split(/\s+/).map(Number);
+  const transform = logo.match(/translate\(([^,]+),([^\)]+)\) scale\(([^,]+),([^\)]+)\)/).slice(1).map(Number);
+  doc.save().translate(margin, 15).scale(48 / box[3]).translate(-box[0], -box[1]).translate(transform[0], transform[1]).scale(transform[2], transform[3]);
+  for (const match of logo.matchAll(/<path d="([^"]+)"/g)) doc.path(match[1]).fill('#FFFFFF');
+  doc.restore();
+  doc.fillColor('#FFFFFF').font('Anton').fontSize(26).text('PAYROLL SUMMARY', margin + 80, 19);
+  doc.font('Inter').fontSize(10).text('Murder the Guesswork', margin + 80, 54);
   doc.fillColor('#000000').font('InterBold').fontSize(14).text(report.companyName, margin, 96, { width: width - margin * 2 });
-  doc.font('Inter').fontSize(10).text(`${report.from} to ${report.to}  |  ${report.timeZone}`, margin, 102 + companyHeight);
+  doc.font('Inter').fontSize(10).text(calendar.label(report.from, report.to, calendar.today(report.timeZone).slice(0, 4)), margin, 102 + companyHeight);
   const rule = (value, label) => value == null ? `${label}: off` : `${label}: after ${value}h`;
   doc.text([rule(report.overtime.weeklyOver, 'Weekly OT'), rule(report.overtime.dailyOver, 'Daily OT'), rule(report.overtime.dailyDoubleOver, 'Daily DT')].join('  |  '), margin, 120 + companyHeight);
   doc.text(`Workweek starts ${report.weekStart === 'sunday' ? 'Sunday' : 'Monday'}. Approved punches only.`, margin, 135 + companyHeight);
@@ -136,7 +144,7 @@ async function payrollPdf(report) {
   if (!report.workers.length) row(['No approved punches in this range.', '', '', '', ''], 28);
   row(['GRAND TOTAL', ...CATEGORIES.map(key => report.totals[key].toFixed(2)), report.totals.total.toFixed(2)], 30, true);
   doc.font('Inter').fontSize(9).fillColor('#000000')
-    .text('Worker IDs in the CSV are PDL internal worker IDs, not payroll processor IDs.', margin, y + 20, { width: width - margin * 2 })
+    .text('Worker IDs are Pro Daily Link IDs until payroll IDs are added.', margin, y + 20, { width: width - margin * 2 })
     .text("Extra-work flags don't create a separate pay line. Overnight hours use the day the punch started.", margin, y + 37, { width: width - margin * 2 });
   if (report.unapprovedCount) doc.text(report.unapprovedCount === 1 ? "1 punch not approved yet. It's left out." : `${report.unapprovedCount} punches not approved yet. They're left out.`, margin, y + 65);
   doc.end();
