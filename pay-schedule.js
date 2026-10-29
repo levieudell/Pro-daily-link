@@ -145,10 +145,24 @@
     if (current.end < today) return current;
     return payPeriodFor(schedule, addDays(current.start, -1));
   }
-  function preview(period) {
-    if (!period) return '';
-    const format = value => new Intl.DateTimeFormat('en-US', { timeZone: 'UTC', weekday: 'short', month: 'short', day: 'numeric' }).format(new Date(value + 'T12:00:00Z'));
-    return `${format(period.start)} – ${format(period.end)}${period.cards_due ? ` · cards due ${format(period.cards_due)}` : ''}${period.payday ? ` · paid ${format(period.payday)}` : ''}`;
+  function formatDay(value) {
+    return new Intl.DateTimeFormat('en-US', { timeZone: 'UTC', weekday: 'short', month: 'short', day: 'numeric' }).format(new Date(value + 'T12:00:00Z'));
   }
-  return { FREQUENCIES, WEEKDAYS, emptySchedule, validateSchedule, payPeriodFor, listPayPeriods, lastEndedBefore, preview, weekday, addDays };
+  function previewParts(period) {
+    if (!period) return { range: '', detail: '' };
+    const range = `${formatDay(period.start)} – ${formatDay(period.end)}`;
+    const detail = [period.cards_due ? `cards due ${formatDay(period.cards_due)}` : '', period.payday ? `paid ${formatDay(period.payday)}` : ''].filter(Boolean).join(' · ');
+    return { range, detail };
+  }
+  function preview(period) {
+    const parts = previewParts(period);
+    if (!parts.range) return '';
+    return parts.detail ? `${parts.range} · ${parts.detail}` : parts.range;
+  }
+  function suggestedWeekly(weekStart) {
+    const start = weekStart === 'sunday' ? 0 : 1;
+    const period_end_weekday = (start + 6) % 7;
+    return validateSchedule({ ...emptySchedule(), frequency: 'weekly', period_end_weekday, cards_due_weekday: (period_end_weekday + 1) % 7, payday_weekday: 5 });
+  }
+  return { FREQUENCIES, WEEKDAYS, emptySchedule, validateSchedule, payPeriodFor, listPayPeriods, lastEndedBefore, preview, previewParts, suggestedWeekly, weekday, addDays };
 });

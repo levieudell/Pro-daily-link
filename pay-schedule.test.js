@@ -1,7 +1,7 @@
 'use strict';
 const assert = require('node:assert/strict');
 const { test } = require('node:test');
-const { payPeriodFor, listPayPeriods, lastEndedBefore, validateSchedule, emptySchedule } = require('./pay-schedule');
+const { payPeriodFor, listPayPeriods, lastEndedBefore, validateSchedule, emptySchedule, suggestedWeekly } = require('./pay-schedule');
 const weekly = extra => ({ ...emptySchedule(), frequency: 'weekly', period_end_weekday: 2, cards_due_weekday: 3, payday_weekday: 5, ...extra });
 
 test('Tuesday-end week is due Wednesday and paid Friday', () => {
@@ -78,6 +78,18 @@ test('changing the end weekday keeps due Wednesday and paid Friday', () => {
   assert.equal(period.end, '2026-10-29');
   assert.equal(period.cards_due, '2026-11-04');
   assert.equal(period.payday, '2026-10-30');
+});
+
+test('a new weekly schedule ends the day before the workweek, is due the next day, and is paid Friday', () => {
+  const monday = suggestedWeekly('monday');
+  assert.equal(monday.frequency, 'weekly');
+  assert.equal(monday.period_end_weekday, 0);
+  assert.equal(monday.cards_due_weekday, 1);
+  assert.equal(monday.payday_weekday, 5);
+  const sunday = suggestedWeekly('sunday');
+  assert.equal(sunday.period_end_weekday, 6);
+  assert.equal(sunday.cards_due_weekday, 0);
+  assert.equal(sunday.payday_weekday, 5);
 });
 
 test('twice a month still counts days after the period ends', () => {

@@ -1,7 +1,7 @@
 'use strict';
 const path=require('node:path');
 const PUBLIC_FILES=new Set([
-  'payroll-export-ui.js','payroll-export.css','payroll-ranges.js','pay-schedule.js','pay-schedule-ui.js',
+  'payroll-export-ui.js','payroll-export.css','payroll-ranges.js','payroll-access.js','pay-schedule.js','pay-schedule-ui.js',
   'office-dashboard.js','office-dashboard.css',
   'safety-pm-ui.js','safety-pm-ui.css','safety-workspace-ui.js','safety-workspace-ui.css',
   'company-timezone.js',

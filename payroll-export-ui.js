@@ -3,8 +3,8 @@
 (() => {
   const calendar = window.PDLPayrollRanges, dialog = document.querySelector('#payroll-export-dialog');
   const landing = document.querySelector('#payroll-landing');
-  const context = () => JSON.stringify([signedInCompanyId(), currentUser?.id, currentUser?.role, currentUser?.permissions, currentRole]);
-  const allowed = () => currentRole === 'office' && company?.features?.timeCards === true && (currentUser?.role === 'owner' || currentUser?.role === 'admin' && currentUser?.permissions?.manageTime === true);
+  const context = () => JSON.stringify([signedInCompanyId(), currentUser?.id, currentUser?.role, currentUser?.permissionGrants, currentRole]);
+  const allowed = () => window.PDLPermissions.payrollPageAllowed();
   const today = () => calendar.today(company?.timezone || 'America/Los_Angeles');
   const start = () => company?.weekStart || 'monday';
   const presets = [['week','This week'],['last','Last week'],['last2','Last 2 weeks'],['period','Last pay period'],['month','This month'],['custom','Custom']];
@@ -17,8 +17,8 @@
     function setCalendar(open) { root.classList.toggle('calendar-open', open); find('.payroll-calendar').hidden = !open; if (open && isLanding) root.scrollIntoView({block:'start'}); }
     function update() {
       const authorized = allowed();
-      if (!authorized) { controller?.abort(); identity = ''; if (isLanding) { root.replaceChildren(); root.remove(); } else { root.replaceChildren(); if (dialog.open) dialog.close(); dialog.remove(); } return; }
-      if (isLanding) { if (!root.isConnected) document.querySelector('#office-priorities').before(root); if (!root.querySelector('[data-payroll-download]')) paint(); root.hidden = false; }
+      if (!authorized) { controller?.abort(); identity = ''; if (isLanding) { root.replaceChildren(); root.remove(); } else { root.replaceChildren(); if (dialog.open) dialog.close(); dialog.remove(); } syncPayrollNav(); return; }
+      if (isLanding) { const page = document.querySelector('#payroll-page'); if (page && !root.isConnected) { const heading = page.querySelector('.page-heading'); if (heading) heading.after(root); else page.prepend(root); } if (!root.querySelector('[data-payroll-download]')) paint(); root.hidden = false; }
       else if (!root.querySelector('[data-payroll-download]')) { if (!dialog.isConnected) document.body.append(dialog); paint(); }
       if (identity !== context()) { controller?.abort(); identity = context(); choose('week'); return; }
       const period = lastPeriod(); find('[data-payroll-range="period"]').disabled = !period;
@@ -32,6 +32,7 @@
       find('[data-payroll-bar-count]').textContent = barCount;
       find('[data-payroll-bar-review]').hidden = pending || !unapproved;
       root.querySelectorAll('[data-payroll-download]').forEach(button => button.disabled = !hasHours || pending || busy);
+      syncPayrollNav();
     }
     function lastPeriod() {
       const scheduled = window.PDLPaySchedule?.lastEndedBefore?.(company?.payroll?.pay_schedule, today());
@@ -95,6 +96,14 @@
     }
     const component={update,reset(){identity=context();busy=false;choose('week');},close(){controller?.abort();controller=null;busy=false;},root};components.push(component);return component;
   }
+  function syncPayrollNav() {
+    const on = allowed();
+    const nav = document.querySelector('#payroll-nav');
+    const bar = document.querySelector('#payroll-phone-bar');
+    const onPayroll = document.querySelector('#payroll-page')?.classList.contains('active');
+    if (nav) nav.hidden = !on;
+    if (bar) bar.hidden = !on || !!onPayroll;
+  }
   const card=makeComponent(landing,true), modal=makeComponent(document.querySelector('#payroll-dialog-content'),false);
   document.addEventListener('click',event=>{if(event.target.closest('[data-payroll-export-open]')&&allowed()){modal.reset();dialog.showModal();}});
   dialog.querySelector('[data-payroll-close]').addEventListener('click',()=>dialog.close());
@@ -102,6 +111,7 @@
   const previousRender=renderTimeCards;
   renderTimeCards=function(){const result=previousRender.apply(this,arguments);components.forEach(component=>component.update());return result;};
   const previousPage=showPage;
-  showPage=function(page,...args){const result=previousPage.call(this,page,...args);if(page==='dashboard'){if(allowed())card.reset();else card.update();}return result;};
+  showPage=function(page,...args){if(page==='payroll'&&!allowed())page='dashboard';const result=previousPage.call(this,page,...args);if(page==='payroll'){if(allowed())card.reset();else card.update();}else syncPayrollNav();return result;};
+  document.addEventListener('click',async event=>{const button=event.target.closest('[data-payroll-grant]');if(!button||currentUser?.role!=='owner')return;const id=button.dataset.payrollGrant,granted=button.getAttribute('aria-pressed')!=='true';try{const updated=await api(`/api/users/${id}/payroll-access`,{method:'PATCH',body:JSON.stringify({payroll:granted})});const person=users.find(row=>Number(row.id)===Number(id));if(person)person.permissionGrants=updated.permissionGrants;renderTeamDirectory();notify(granted?'Payroll access granted':'Payroll access removed')}catch(error){notify(error.message)}});
   window.PDLPayrollExport={refresh(){components.forEach(component=>component.update());}};
 })();
