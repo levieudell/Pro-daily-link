@@ -19,7 +19,7 @@
 #payroll-overtime-settings :is(input,button):focus-visible { outline:2px solid var(--pdl-orange); outline-offset:2px; box-shadow:none; }
 #payroll-overtime-message:empty { display:none; }
 #payroll-overtime-message.is-error { border-left:2px solid var(--pdl-pink); padding:12px; scroll-margin:12px 0; }
-@media(max-width:600px) { #payroll-overtime-settings { padding:14px; } }
+@media(max-width:600px) { #payroll-overtime-settings { padding:6px; } #payroll-overtime-settings .payroll-rule { column-gap:4px; } #payroll-overtime-settings .payroll-rule-hours { white-space:nowrap; font-size:14px; } #payroll-overtime-settings .payroll-rule-hours[for="payroll-dailyDoubleOver"] { font-size:13px; } #payroll-overtime-settings input[type="number"] { width:48px; height:48px; min-height:48px; padding:4px; } }
 
 :root {
   --pdl-black: #000000;

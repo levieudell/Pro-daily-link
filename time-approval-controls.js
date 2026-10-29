@@ -50,7 +50,9 @@ else {
   function resetPayContext(){paySequence++;paySelected='';payList=[];paySummary=null;payConfigure=false;payEditing=null;payBusy=false;payFormZone='';const dialog=$('#pay-period-dialog');if(dialog?.open)dialog.close();for(const id of ['pay-period-label','pay-period-from','pay-period-to','pay-period-reason'])$('#'+id).value='';resetPayPreset();$('#pay-period-save').disabled=false;$('#company-pay-period-list').innerHTML='';$('#pay-period-zone').textContent='';$('#pay-period-form-error').textContent='';$('#pay-period-panel').innerHTML='';$('#pay-period-panel').hidden=true}
   const originalTimeFilter=filteredTimeCards;
   filteredTimeCards=function(){
-    const period=payList.find(p=>p.id===paySelected);if(!period||!timeCardOffice())return originalTimeFilter();
+    const period=payList.find(p=>p.id===paySelected);if(!timeCardOffice())return originalTimeFilter();
+    if(timeCardFilters().status==='unapproved'){const filters=timeCardFilters(),zone=period?.timeZone||company?.timezone||'America/Los_Angeles';return timeCards.filter(card=>!card.deletedAt&&!timeCardApproved(card)).map(card=>({...card,date:timePeriodDate(card,zone)})).filter(card=>card.date&&(!filters.from||card.date>=filters.from)&&(!filters.to||card.date<=filters.to)&&(filters.projectId==='all'||String(card.projectId)===filters.projectId)&&(filters.memberId==='all'||String(card.memberId)===filters.memberId))}
+    if(!period)return originalTimeFilter();
     const filters=timeCardFilters();return timeCards.filter(card=>!card.deletedAt).map(card=>({...card,date:timePeriodDate(card,period.timeZone)})).filter(card=>card.date&&(!filters.from||card.date>=filters.from)&&(!filters.to||card.date<=filters.to)&&(filters.projectId==='all'||String(card.projectId)===filters.projectId)&&(filters.memberId==='all'||String(card.memberId)===filters.memberId)&&(filters.status==='all'||(filters.status==='approved'?timeCardApproved(card):String(card.status).toLowerCase()===filters.status)));
   };
   const priorTimeRender=renderTimeCards;
@@ -82,11 +84,11 @@ else {
   };
   function drawPayPanel(){
     const selected=payList.find(p=>p.id===paySelected),s=paySummary,host=$('#pay-period-panel'),e=escapeHtml;
-    host.innerHTML=`<div class="pay-period-tools"><label>Company pay period<select id="pay-period-select"><option value="">Choose custom dates</option>${payList.map(p=>`<option value="${e(p.id)}" ${p.id===paySelected?'selected':''}>${e(p.label)} · ${e(p.from)} – ${e(p.to)}</option>`).join('')}</select></label>${payConfigure?'<button type="button" class="secondary" data-pay-settings>Manage pay periods</button>':''}${payConfigure&&selected&&!selected.exportCount?'<button type="button" class="secondary" data-pay-edit>Edit dates</button>':''}</div>${s?payPeriodReviewMarkup(s,payConfigure,payBusy):'<p class="input-help">Choose a company pay period to review approved hours and prepare a fixed export. Custom dates below filter the time-card list.</p>'}<p id="pay-period-message" class="form-message" role="alert" hidden></p>`;
+    host.innerHTML=`${payConfigure?'<button type="button" data-payroll-export-open>Payroll export</button>':''}<div class="pay-period-tools"><label>Company pay period<select id="pay-period-select"><option value="">Choose custom dates</option>${payList.map(p=>`<option value="${e(p.id)}" ${p.id===paySelected?'selected':''}>${e(p.label)} · ${e(p.from)} – ${e(p.to)}</option>`).join('')}</select></label>${payConfigure?'<button type="button" class="secondary" data-pay-settings>Manage pay periods</button>':''}${payConfigure&&selected&&!selected.exportCount?'<button type="button" class="secondary" data-pay-edit>Edit dates</button>':''}</div>${s?payPeriodReviewMarkup(s,payConfigure,payBusy):'<p class="input-help">Choose a company pay period to review approved hours and prepare a fixed export. Custom dates below filter the time-card list.</p>'}<p id="pay-period-message" class="form-message" role="alert" hidden></p>`;
   }
   function drawPaySettings(){
     const host=$('#company-pay-period-list'),allowed=timeCardOffice()&&timeCardsOn()&&(currentUser?.role==='owner'||currentUser?.role==='admin'&&currentUser?.permissions?.manageTime===true);drawPayrollSettings(allowed&&payConfigure);if(!allowed||!payConfigure){host.innerHTML='';return}
-    host.innerHTML=`<button type="button" class="primary" data-pay-new>New pay period</button><p class="input-help">Company timezone: ${escapeHtml(company?.timezone||'America/Los_Angeles')}. Each period keeps the timezone it was created with.</p>${payList.length?payList.map(p=>`<article class="company-period-row"><div><strong>${escapeHtml(p.label)}</strong><small>${escapeHtml(p.from)} through ${escapeHtml(p.to)} · ${escapeHtml(p.timeZone)}${p.exportCount?' · Fixed exports: '+p.exportCount:''}</small></div><button type="button" class="secondary" data-pay-use="${escapeHtml(p.id)}">Review time</button>${!p.exportCount?`<button type="button" class="secondary" data-pay-setting-edit="${escapeHtml(p.id)}">Edit dates</button>`:''}</article>`).join(''):'<p>No pay periods yet. Create your company’s first date range.</p>'}`;
+    host.innerHTML=`<button type="button" data-payroll-export-open>Payroll export</button><button type="button" class="primary" data-pay-new>New pay period</button><p class="input-help">Company timezone: ${escapeHtml(company?.timezone||'America/Los_Angeles')}. Each period keeps the timezone it was created with.</p>${payList.length?payList.map(p=>`<article class="company-period-row"><div><strong>${escapeHtml(p.label)}</strong><small>${escapeHtml(p.from)} through ${escapeHtml(p.to)} · ${escapeHtml(p.timeZone)}${p.exportCount?' · Fixed exports: '+p.exportCount:''}</small></div><button type="button" class="secondary" data-pay-use="${escapeHtml(p.id)}">Review time</button>${!p.exportCount?`<button type="button" class="secondary" data-pay-setting-edit="${escapeHtml(p.id)}">Edit dates</button>`:''}</article>`).join(''):'<p>No pay periods yet. Create your company’s first date range.</p>'}`;
   }
   let payrollSettingsKey='';
   function drawPayrollSettings(allowed){
@@ -126,7 +128,7 @@ else {
       finally{if(context===timeContext())fieldset.disabled=false}
     });
   }
-  window.PDLPayPeriods={refresh:refreshPayPeriods};
+  window.PDLPayPeriods={refresh:refreshPayPeriods,list:()=>payList.map(p=>({...p})),reviewRange(from,to){paySelected='';$('#timecard-from').value=from;$('#timecard-to').value=to;for(const id of ['timecard-job','timecard-person'])$('#'+id).value='all';$('#timecard-status').value='unapproved';$('#time-person-search').value='';renderTimeCards()}};
   function choosePayPeriod(id){paySelected=id;const p=payList.find(p=>p.id===id);$('#timecard-from').value=p?.from||'';$('#timecard-to').value=p?.to||'';for(const id of ['timecard-job','timecard-person','timecard-status'])$('#'+id).value='all';$('#time-person-search').value='';renderTimeCards()}
   async function refreshPayPeriods(){
     const context=timeContext(),sequence=++paySequence,selection=paySelected;
@@ -135,7 +137,7 @@ else {
       const result=await api('/api/pay-periods');if(context!==timeContext()||sequence!==paySequence)return;
       payList=result.periods;payConfigure=result.canConfigure;paySummary=null;
       if(selection&&payList.some(p=>p.id===selection)){const summary=await api('/api/pay-periods/'+selection+'/summary');if(context!==timeContext()||sequence!==paySequence)return;paySummary=summary}else paySelected='';
-      drawPayPanel();drawPaySettings();
+      drawPayPanel();drawPaySettings();window.PDLPayrollExport?.refresh();
     }catch(error){if(context===timeContext()&&sequence===paySequence){drawPayPanel();payMessage(error.message)}}
   }
   function payMessage(message){const host=$('#pay-period-message');if(host){host.textContent=message;host.hidden=false}}
