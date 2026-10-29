@@ -10,7 +10,7 @@
   const presets = [['week','This week'],['last','Last week'],['last2','Last 2 weeks'],['period','Last pay period'],['month','This month'],['custom','Custom']];
   const components = [];
   function makeComponent(root, isLanding) {
-    const paint = () => { root.innerHTML = `${isLanding?'<h2>PAYROLL</h2>':''}<div class="payroll-export-body"><p class="payroll-intro">Only approved punches count. Extra-work flags don't change pay.</p><div class="payroll-export-chips" role="group" aria-label="Payroll date range">${presets.map(([key,label])=>`<button type="button" data-payroll-range="${key}" aria-pressed="false">${label}</button>`).join('')}</div><div class="payroll-calendar" hidden><div class="payroll-calendar-nav"><button type="button" data-month="-1" aria-label="Previous month">‹</button><strong data-month-label></strong><button type="button" data-month="1" aria-label="Next month">›</button></div><p data-calendar-help role="status"></p><div data-calendar-grid></div><button type="button" data-calendar-close>Back to ranges</button></div><p data-payroll-range-label></p><p data-payroll-empty role="status" hidden>No approved hours in this range.</p><div data-payroll-warning hidden><p data-payroll-count></p><button type="button" data-payroll-approve>Review unapproved</button></div><p data-payroll-error role="alert"></p></div><footer><button type="button" data-payroll-bar-review hidden><span data-payroll-bar-count></span> · <span>Review</span></button><button type="button" data-payroll-download="csv">Download CSV</button><button type="button" data-payroll-download="pdf">PDF summary</button></footer>`; };
+    const paint = () => { root.innerHTML = `${isLanding?'<h2>PAYROLL</h2>':''}<div class="payroll-export-body"><p class="payroll-intro">Only approved punches count. Extra-work flags don't change pay.</p><div class="payroll-export-chips" role="group" aria-label="Payroll date range">${presets.map(([key,label])=>`<button type="button" data-payroll-range="${key}" aria-pressed="false">${label}</button>`).join('')}</div><div class="payroll-calendar" hidden><div class="payroll-calendar-nav"><button type="button" data-month="-1" aria-label="Previous month">‹</button><strong data-month-label></strong><button type="button" data-month="1" aria-label="Next month">›</button></div><p data-calendar-help role="status"></p><div data-calendar-grid></div><button type="button" data-calendar-close>Back to ranges</button></div><p data-payroll-range-label></p><p data-payroll-empty role="status" hidden>No approved hours in this range.</p><p data-payroll-error role="alert"></p></div><footer><button type="button" data-payroll-bar-review hidden><span data-payroll-bar-count></span><span data-payroll-bar-sep> · </span><span>Review</span></button><button type="button" data-payroll-download="csv">Download CSV</button><button type="button" data-payroll-download="pdf">PDF summary</button></footer>`; };
     const find = selector => root.querySelector(selector);
     let identity = '', range = null, preset = 'week', month = '', cursor = '', first = null, pending = false, picked = false, controller = null, busy = false;
     function error(text) { find('[data-payroll-error]').textContent = text; }
@@ -28,11 +28,9 @@
       const hasHours = cards.some(card => timeCardApproved(card) && Number(card.hours) > 0);
       find('[data-payroll-range-label]').textContent = range ? calendar.label(range.from, range.to, today().slice(0,4)) : '';
       find('[data-payroll-empty]').hidden = hasHours || pending;
-      find('[data-payroll-warning]').hidden = pending || !unapproved;
-      find('[data-payroll-count]').textContent = unapproved === 1 ? "1 punch not approved yet. It's left out." : `${unapproved} punches not approved yet. They're left out.`;
       const barCount = unapproved === 1 ? '1 punch not approved' : `${unapproved} punches not approved`;
       find('[data-payroll-bar-count]').textContent = barCount;
-      find('[data-payroll-bar-review]').hidden = !unapproved;
+      find('[data-payroll-bar-review]').hidden = pending || !unapproved;
       root.querySelectorAll('[data-payroll-download]').forEach(button => button.disabled = !hasHours || pending || busy);
     }
     function lastPeriod() { return (window.PDLPayPeriods?.list() || []).filter(p => p.to < today()).sort((a,b)=>b.to.localeCompare(a.to))[0] || null; }
@@ -63,7 +61,7 @@
         else { range={from:first<value?first:value,to:first>value?first:value}; first=null; pending=false; picked=true; }
         error(''); drawCalendar(); update(); find(`[data-payroll-day="${cursor}"]`)?.focus({preventScroll:true}); return;
       }
-      if(event.target.closest('[data-payroll-approve], [data-payroll-bar-review]') && range) { if(dialog.open)dialog.close(); showPage('timecards'); window.PDLPayPeriods.reviewRange(range.from,range.to); return; }
+      if(event.target.closest('[data-payroll-bar-review]') && range) { if(dialog.open)dialog.close(); showPage('timecards'); window.PDLPayPeriods.reviewRange(range.from,range.to); return; }
       const download=event.target.closest('[data-payroll-download]'); if(download) void save(download.dataset.payrollDownload);
     });
     root.addEventListener('keydown', event => {
