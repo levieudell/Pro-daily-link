@@ -41,6 +41,7 @@
       setCalendar(key === 'custom');
       if (key === 'custom') { month = today().slice(0,7) + '-01'; cursor = today(); drawCalendar(); }
       update();
+      if (isLanding && window.innerHeight <= 560 && !find('[data-payroll-bar-review]').hidden) root.scrollIntoView({block:'start'});
     }
     function drawCalendar() {
       const days = calendar.monthDays(month,start()), weekdays = start() === 'sunday' ? ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'] : ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];

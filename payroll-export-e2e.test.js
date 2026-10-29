@@ -106,6 +106,20 @@ async function landingDownload(page, preset) {
 async function settle(page) {
   await page.evaluate(async () => { await Promise.all(document.getAnimations().filter(a => a.effect?.getTiming().iterations !== Infinity).map(a => a.finished.catch(() => {}))); });
 }
+async function assertRowClearsFooter(page, root) {
+  await settle(page);
+  const info = await root.evaluate(el => {
+    const chips = [...el.querySelectorAll('[data-payroll-range]')];
+    const row2Bottom = Math.max(...chips.slice(3).map(chip => chip.getBoundingClientRect().bottom));
+    const label = el.querySelector('[data-payroll-range-label]');
+    const box = label.getBoundingClientRect();
+    const footerTop = el.querySelector('footer').getBoundingClientRect().top;
+    const hit = document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2);
+    return { row2Bottom, footerTop, top: box.top, bottom: box.bottom, innerHeight, text: label.textContent, hit: hit === label || !!label.contains(hit), hitText: hit ? hit.outerHTML.slice(0, 140) : null };
+  });
+  assert(info.row2Bottom <= info.footerTop + 0.5, 'chip row 2 sits above the footer: ' + JSON.stringify(info));
+  assert(info.top >= -0.5 && info.bottom <= info.innerHeight + 0.5 && info.bottom <= info.footerTop + 0.5 && info.hit, 'range line is fully visible: ' + JSON.stringify(info));
+}
 async function assertChipsHit(page, root) {
   await settle(page);
   const chips = root.locator('[data-payroll-range]');
@@ -225,8 +239,15 @@ async function main() {
       const landing = page.locator('#payroll-landing');
       await assertChipsHit(page, landing);
       await landing.locator('[data-payroll-range="last"]').click();
-      await page.evaluate(() => window.scrollTo(0,0));
+      if (viewport.height > 560) await page.evaluate(() => window.scrollTo(0,0));
       await assertChipsHit(page, landing);
+      if (viewport.width === 390 && viewport.height === 500) {
+        await assertRowClearsFooter(page, landing);
+        await page.evaluate(() => { document.documentElement.dataset.theme = 'dark'; });
+        await assertChipsHit(page, landing);
+        await assertRowClearsFooter(page, landing);
+        await page.evaluate(() => { document.documentElement.dataset.theme = 'light'; });
+      }
       await assertStickyFooter(page, landing);
       await landing.locator('[data-payroll-range="custom"]').click();
       await showMonth(landing, '2026-10');
