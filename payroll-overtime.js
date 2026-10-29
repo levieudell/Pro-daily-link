@@ -11,8 +11,11 @@ function companyPayroll(company = {}) {
   return { ...company.payroll, overtime: { ...DEFAULT_OVERTIME, ...company.payroll?.overtime } };
 }
 function validatePayroll(input) {
-  if (!input || typeof input !== 'object' || Array.isArray(input) || Object.keys(input).some(key => key !== 'overtime')) {
+  if (!input || typeof input !== 'object' || Array.isArray(input) || Object.keys(input).some(key => key !== 'overtime' && key !== 'pay_schedule')) {
     fail('Save overtime rules here. Change the workweek start in company settings.');
+  }
+  if (Object.hasOwn(input, 'pay_schedule') && !Object.hasOwn(input, 'overtime')) {
+    return { pay_schedule: require('./pay-schedule').validateSchedule(input.pay_schedule) };
   }
   const overtime = input.overtime;
   if (!overtime || typeof overtime !== 'object' || Array.isArray(overtime) || Object.keys(overtime).length !== 3) {
@@ -30,7 +33,9 @@ function validatePayroll(input) {
   if (overtime.dailyOver !== null && overtime.dailyDoubleOver !== null && overtime.dailyDoubleOver <= overtime.dailyOver) {
     fail('Double time must start after daily overtime.');
   }
-  return { overtime: { ...overtime } };
+  const saved = { overtime: { ...overtime } };
+  if (Object.hasOwn(input, 'pay_schedule')) saved.pay_schedule = require('./pay-schedule').validateSchedule(input.pay_schedule);
+  return saved;
 }
 function weekDate(date, weekStart) {
   const day = new Date(date + 'T00:00:00Z');

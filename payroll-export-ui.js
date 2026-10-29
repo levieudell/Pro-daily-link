@@ -33,7 +33,11 @@
       find('[data-payroll-bar-review]').hidden = pending || !unapproved;
       root.querySelectorAll('[data-payroll-download]').forEach(button => button.disabled = !hasHours || pending || busy);
     }
-    function lastPeriod() { return (window.PDLPayPeriods?.list() || []).filter(p => p.to < today()).sort((a,b)=>b.to.localeCompare(a.to))[0] || null; }
+    function lastPeriod() {
+      const scheduled = window.PDLPaySchedule?.lastEndedBefore?.(company?.payroll?.pay_schedule, today());
+      if (company?.payroll?.pay_schedule?.frequency) return scheduled ? { from: scheduled.start, to: scheduled.end } : null;
+      return (window.PDLPayPeriods?.list() || []).filter(p => p.to < today()).sort((a,b)=>b.to.localeCompare(a.to))[0] || null;
+    }
     function choose(key) {
       preset = key; first = null; pending = false; picked = false; error('');
       root.querySelectorAll('[data-payroll-range]').forEach(button => button.setAttribute('aria-pressed', String(button.dataset.payrollRange === key)));
@@ -41,7 +45,10 @@
       setCalendar(key === 'custom');
       if (key === 'custom') { month = today().slice(0,7) + '-01'; cursor = today(); drawCalendar(); }
       update();
-      if (isLanding && window.innerHeight <= 560 && !find('[data-payroll-bar-review]').hidden) root.scrollIntoView({block:'start'});
+      if (isLanding && key !== 'custom' && window.innerHeight <= 560 && !find('[data-payroll-bar-review]').hidden) {
+        root.scrollIntoView({block:'start'});
+        window.scrollBy(0, -8);
+      }
     }
     function drawCalendar() {
       const days = calendar.monthDays(month,start()), weekdays = start() === 'sunday' ? ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'] : ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
