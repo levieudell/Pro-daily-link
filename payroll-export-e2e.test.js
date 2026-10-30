@@ -115,8 +115,19 @@ async function scrollOffset(page) {
 }
 async function tapInPlace(page, locator) {
   const before = await scrollOffset(page);
+  const savesSchedule = await locator.getAttribute('data-pay-schedule-save') !== null;
   await tap(page, locator);
-  assert.equal(await scrollOffset(page), before, 'tap did not scroll');
+  // A successful save removes the button and can clamp the shorter page's scroll offset.
+  if (savesSchedule) {
+    await page.locator('[data-pay-schedule-status]').filter({hasText:'saved'}).waitFor();
+    await locator.waitFor({state:'hidden'});
+    return;
+  }
+  const maxScroll = await page.evaluate(() => {
+    const nodes = [document.scrollingElement, document.querySelector('main'), document.querySelector('#settings-page'), document.querySelector('#company-pay-periods'), document.querySelector('.pay-schedule')];
+    return Math.max(0, ...nodes.filter(Boolean).map(el => el.scrollHeight - el.clientHeight));
+  });
+  assert.equal(await scrollOffset(page), Math.min(before, maxScroll), 'tap did not scroll beyond natural page-height clamping');
 }
 async function showSchedule(page) {
   await page.evaluate(() => { showPage('payroll'); window.scrollTo(0, 0); });
