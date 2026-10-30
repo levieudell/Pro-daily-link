@@ -88,6 +88,8 @@
       const requestContext=identity, selected={from:range.from,to:range.to}, request=new AbortController(); controller=request; busy=true;error('');update();
       try {
         const response=await fetch('/api/payroll/export?'+new URLSearchParams({...selected,format}),{credentials:'same-origin',headers:{'X-PDL-Company':signedInCompanyId()},signal:request.signal});
+        if(identity!==requestContext||context()!==requestContext||request.signal.aborted)return;
+        if(response.status===403){window.PDLPermissions.denyExport();components.forEach(component=>component.update());return;}
         if(!response.ok)throw new Error((await response.json()).error||'Payroll download failed. Try again.');
         const blob=await response.blob(); if(identity!==requestContext||context()!==requestContext||request.signal.aborted||(!isLanding&&!dialog.open))return;
         const url=URL.createObjectURL(blob),link=document.createElement('a');link.href=url;link.download=`pdl-payroll-${selected.from}-to-${selected.to}.${format}`;link.hidden=true;document.body.append(link);link.click();link.remove();setTimeout(()=>URL.revokeObjectURL(url),1000);
@@ -103,6 +105,8 @@
     const onDashboard = document.querySelector('#dashboard-page')?.classList.contains('active');
     if (nav) nav.hidden = !on;
     if (bar) bar.hidden = !on || !onDashboard;
+    document.querySelectorAll('[data-payroll-export-open]').forEach(button=>button.hidden=!on);
+    if (!on && document.querySelector('#payroll-page')?.classList.contains('active')) showPage('dashboard', {historyMode:'replace'});
   }
   const card=makeComponent(landing,true), modal=makeComponent(document.querySelector('#payroll-dialog-content'),false);
   document.addEventListener('click',event=>{if(event.target.closest('[data-payroll-export-open]')&&allowed()){modal.reset();dialog.showModal();}});

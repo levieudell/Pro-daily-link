@@ -154,6 +154,14 @@ async function typeKept(page, selector, text) {
   assert.equal(state.focused, true, selector + ' keeps focus');
 }
 async function assertScheduleClear(page) {
+  // Readable labels make the schedule taller than the export card. Inspect it
+  // after bringing the schedule into view; the export speed path never scrolls.
+  if (page.viewportSize().width <= 420) await page.locator('#pay-schedule-form').evaluate(el => {
+    el.scrollIntoView({block:'start'});
+    const scroller=document.scrollingElement||document.documentElement;
+    const top=el.getBoundingClientRect().top;
+    if(top<56)scroller.scrollTop-=56-top;
+  });
   const rows = await page.evaluate(() => {
     const save = document.querySelector('[data-pay-schedule-save]');
     const shown = save && !save.hidden && getComputedStyle(save).display !== 'none';
@@ -262,6 +270,11 @@ async function main() {
       const started=performance.now();
       await tapInPlace(page,page.locator('#payroll-phone-bar button'));
       await page.locator('#payroll-page.active').waitFor();
+      assert(await page.locator('#payroll-page .page-heading h1').isVisible(), 'Payroll heading stays visible');
+      for (const label of ['Period ends', 'Time cards due', 'Payday']) assert(await page.locator('.pay-schedule-legend').filter({hasText:new RegExp(`^${label}$`)}).isVisible(), `${label} stays visible`);
+      assert(await page.locator('.pay-schedule-preview-title').isVisible());
+      const previewType = await page.locator('.pay-schedule-preview p, .pay-schedule-preview span').evaluateAll(els => els.map(el => { const s=getComputedStyle(el); return {size:parseFloat(s.fontSize),line:parseFloat(s.lineHeight)}; }));
+      assert(previewType.length && previewType.every(s=>s.size>=12&&s.line>=s.size*1.2-.01), JSON.stringify(previewType));
       await page.evaluate(()=>window.scrollTo(0,0));
       await tapInPlace(page,page.locator('#payroll-landing [data-payroll-range="last"]'));
       const [speedDownload]=await Promise.all([page.waitForEvent('download'),tapInPlace(page,page.locator('#payroll-landing [data-payroll-download="csv"]'))]);
@@ -529,19 +542,51 @@ async function main() {
     assert.equal((await denied.request.get(base+route)).status(),403);
     assert.equal((await denied.request.patch(base+'/api/company',{data:{payroll:{pay_schedule:{frequency:null}}},headers:{'X-PDL-Company':seed.COMPANY_ID}})).status(),403);
     assert.equal((await denied.request.patch(base+'/api/users/'+noaccessId+'/payroll-access',{data:{payroll:true},headers:{'X-PDL-Company':seed.COMPANY_ID}})).status(),403);
+    await deniedPage.evaluate(()=>{showPage('team');teamTab='accounts';renderTeamDirectory();});
+    assert.equal(await deniedPage.locator('[data-payroll-grant]').count(),0,'admin has no payroll grant toggles');
     const ownerCtx=await browser.newContext(),ownerPage=await ownerCtx.newPage();await login(ownerPage,seed.OWNER_EMAIL);await ownerPage.waitForFunction(()=>document.querySelector('#payroll-nav')&&!document.querySelector('#payroll-nav').hidden);
     assert.equal((await ownerCtx.request.get(base+route)).status(),200);
     await ownerPage.evaluate(()=>showPage('team'));
     await ownerPage.locator('[data-team-tab="accounts"]').click();
     await ownerPage.locator('.payroll-access-always').waitFor();
     assert.match(await ownerPage.locator('.payroll-access-always').innerText(),/Always on/);
+    await ownerPage.setViewportSize({width:390,height:667});
+    for (const theme of ['light','dark']) {
+      await ownerPage.evaluate(theme=>document.documentElement.dataset.theme=theme,theme);
+      const row=await ownerPage.locator('.payroll-access-always').evaluate(el=>{const r=el.getBoundingClientRect(),parent=el.parentElement,style=getComputedStyle(parent),label=parent.querySelector('.payroll-account-owner');return{width:r.width,available:parent.clientWidth-parseFloat(style.paddingLeft)-parseFloat(style.paddingRight),overflow:el.scrollWidth-el.clientWidth,color:getComputedStyle(label).color};});
+      assert(row.width>=row.available-1&&row.overflow<=1,JSON.stringify(row));
+      assert.equal(row.color,theme==='dark'?'rgb(255, 255, 255)':'rgb(0, 0, 0)');
+    }
     const grant=ownerPage.locator(`[data-payroll-grant="${noaccessId}"]`);
     await grant.click();
     await ownerPage.waitForFunction(id=>document.querySelector(`[data-payroll-grant="${id}"]`)?.getAttribute('aria-pressed')==='true',noaccessId);
     assert.equal((await denied.request.get(base+route)).status(),200,'grant takes effect');
+    await deniedPage.evaluate(async()=>{await api('/api/state');showPage('payroll');});
+    await deniedPage.locator('#payroll-page.active').waitFor();
     await grant.click();
     await ownerPage.waitForFunction(id=>document.querySelector(`[data-payroll-grant="${id}"]`)?.getAttribute('aria-pressed')==='false',noaccessId);
     assert.equal((await denied.request.get(base+route)).status(),403,'removing payroll revokes export');
+    await deniedPage.evaluate(()=>api('/api/state'));
+    assert.equal(await deniedPage.locator('#payroll-page.active, #payroll-nav:visible, #payroll-phone-bar:visible').count(),0,'next state refresh removes revoked access without reload');
+    // Use the time-enabled office session for the rejected-download path.
+    const officeId=db.users.find(user=>user.email===seed.OFFICE_EMAIL).id;
+    await page.evaluate(()=>showPage('payroll'));
+    await page.waitForFunction(()=>!document.querySelector('#payroll-landing [data-payroll-download="csv"]')?.disabled);
+    await ownerPage.locator(`[data-payroll-grant="${officeId}"]`).click();
+    await ownerPage.waitForFunction(id=>document.querySelector(`[data-payroll-grant="${id}"]`)?.getAttribute('aria-pressed')==='false',officeId);
+    await page.locator('#payroll-landing [data-payroll-download="csv"]').click();
+    await page.waitForFunction(()=>!document.querySelector('#payroll-page.active')&&document.querySelector('#payroll-nav').hidden);
+    assert.equal(await page.locator('#payroll-landing, #payroll-export-dialog').count(),0,'export 403 removes both components immediately');
+    for (const authFlag of [undefined,'0','1']) {
+      if(authFlag===undefined)delete process.env.PDL_REQUIRE_AUTH;else process.env.PDL_REQUIRE_AUTH=authFlag;
+      assert.equal((await fetch(base+route)).status,401,`${authFlag}: anonymous export`);
+      assert.equal((await denied.request.get(base+route)).status(),403,`${authFlag}: ungranted export`);
+      assert.equal((await ownerCtx.request.get(base+route)).status(),200,`${authFlag}: owner export`);
+      const grantRoute=base+'/api/users/'+noaccessId+'/payroll-access';
+      assert.equal((await fetch(grantRoute,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({payroll:true})})).status,401,`${authFlag}: anonymous grant`);
+      assert.equal((await denied.request.patch(grantRoute,{data:{payroll:true}})).status(),403,`${authFlag}: admin grant`);
+      assert.equal((await denied.request.patch(base+'/api/company',{data:{payroll:{pay_schedule:{frequency:null}}}})).status(),403,`${authFlag}: ungranted schedule`);
+    }
     assert.equal((await ownerCtx.request.patch(base+'/api/users/'+db.users.find(user=>user.role==='owner').id+'/payroll-access',{data:{payroll:false},headers:{'X-PDL-Company':seed.COMPANY_ID}})).status(),409);
     const field=await browser.newContext(),fieldPage=await field.newPage();await login(fieldPage,seed.FIELD_EMAIL);await fieldPage.waitForFunction(()=>!document.querySelector('#payroll-landing')&&!document.querySelector('#payroll-export-dialog'));assert.equal((await field.request.get(base+route)).status(),403);assert.equal((await field.request.patch(base+'/api/company',{data:{payroll:{pay_schedule:{frequency:'weekly',period_end_weekday:2}}},headers:{'X-PDL-Company':seed.COMPANY_ID}})).status(),403);assert.equal(await fieldPage.locator('#payroll-landing').count(),0,'field users have no payroll card in the DOM');assert.equal(await fieldPage.locator('#payroll-export-dialog').count(),0,'field users have no export dialog in the DOM');assert.equal(await fieldPage.locator('[data-payroll-export-open]:visible').count(),0);
     assert.equal(await fieldPage.locator('#payroll-nav:visible, #payroll-phone-bar:visible').count(),0,'field users never see Payroll navigation');
