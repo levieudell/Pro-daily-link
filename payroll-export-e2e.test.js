@@ -422,7 +422,7 @@ async function main() {
     };
     await tapInPlace(page,page.locator('[data-pay-frequency="biweekly"]'));
     await kept();
-    assert.match(await page.locator('#pay-schedule-form').innerText(),/Your last payroll end date/);
+    assert.equal(await page.getByRole('group', {name:'Your last payroll end date'}).count(),1);
     await tapInPlace(page,page.locator('[data-pay-frequency="weekly"]'));
     await kept();
     console.log('Desktop 1280x800 weekly default stays within 3 taps and keeps due and payday across Weekly > Every 2 weeks > Weekly');
