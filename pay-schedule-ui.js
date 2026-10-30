@@ -67,7 +67,7 @@
         const parts = scheduleApi.previewParts(period);
         return `<p class="pay-schedule-preview-period"><span class="pay-schedule-preview-range">${escapeHtml(parts.range)}</span>${parts.detail ? `<span class="pay-schedule-preview-pay">${escapeHtml(parts.detail)}</span>` : ''}</p>`;
       }).join('');
-      return { html: `<div class="pay-schedule-preview"><p class="pay-schedule-preview-title">Next 3 pay periods</p>${periods}</div>`, error: '' };
+      return { html: `<div class="pay-schedule-preview"><p class="pay-schedule-preview-title">Next pay periods</p>${periods}</div>`, error: '' };
     } catch (error) { return { html: '<div class="pay-schedule-preview"></div>', error: error.message }; }
   }
   function showError(text) {

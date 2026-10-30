@@ -371,7 +371,7 @@ async function main() {
       assert.equal(await page.locator(`[data-end-weekday="${defaultEnd}"]`).getAttribute('aria-pressed'),'true');
       assert.equal(await page.locator(`[data-due-weekday="${defaultDue}"]`).getAttribute('aria-pressed'),'true');
       assert.equal(await page.locator('[data-pay-weekday="5"]').getAttribute('aria-pressed'),'true');
-      assert.match(await page.locator('.pay-schedule-preview-title').evaluate(el=>el.textContent),/Next 3 pay periods/);
+      assert.match(await page.locator('.pay-schedule-preview-title').evaluate(el=>el.textContent),/Next pay periods/);
       await page.evaluate(()=>{window.payrollTapCount=0});
       await assertScheduleClear(page);
       const scheduleStarted=performance.now();
@@ -408,7 +408,7 @@ async function main() {
     assert.equal(await page.locator(`[data-end-weekday="${desktopEnd}"]`).getAttribute('aria-pressed'),'true');
     assert.equal(await page.locator(`[data-due-weekday="${desktopDue}"]`).getAttribute('aria-pressed'),'true');
     assert.equal(await page.locator('[data-pay-weekday="5"]').getAttribute('aria-pressed'),'true');
-    assert.match(await page.locator('.pay-schedule-preview-title').evaluate(el=>el.textContent),/Next 3 pay periods/);
+    assert.match(await page.locator('.pay-schedule-preview-title').evaluate(el=>el.textContent),/Next pay periods/);
     await assertScheduleClear(page);
     const desktopSave=await page.locator('[data-pay-schedule-save]').evaluate(el=>({position:getComputedStyle(el).position,h:el.getBoundingClientRect().height}));
     assert.deepEqual(desktopSave,{position:'static',h:48});
