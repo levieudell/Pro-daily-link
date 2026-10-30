@@ -122,6 +122,8 @@
 #payroll-nav[hidden], #payroll-phone-bar[hidden] { display:none !important; }
 .payroll-phone-bar { display:none; }
 .payroll-grant { box-sizing:border-box; min-height:48px; height:48px; padding:0 12px; border:2px solid var(--pdl-gray); border-radius:6px; background:var(--pdl-offwhite); color:var(--pdl-black); font:700 14px/1.2 Inter,sans-serif; }
+#account-list .payroll-grant { border-color:var(--pdl-gray) !important; }
+:root[data-theme="dark"] #account-list .account-row :is(small, .exact-email, .account-role) { color:var(--pdl-white) !important; }
 .payroll-grant[aria-pressed="true"] { background:var(--pdl-orange); color:var(--pdl-black); border-color:var(--pdl-orange); }
 :root[data-theme="dark"] .payroll-grant { background:var(--pdl-black); color:var(--pdl-white); }
 :root[data-theme="dark"] .payroll-grant[aria-pressed="true"] { background:var(--pdl-orange); color:var(--pdl-black); }

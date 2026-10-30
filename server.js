@@ -2449,7 +2449,7 @@ async function handleTimeRecords(req,res,url){
   json(res,404,{error:'Not found'});return true
 }
 async function handlePayrollExport(req,res,url){
-  if(url.pathname!=='/api/payroll/export')return false;
+  if(!['/api/payroll/export','/api/payroll/punches'].includes(url.pathname))return false;
   const db=readDb(),user=authenticateRequestAccount(req,db).auth?.user;
   if(!user){json(res,401,{error:'Authentication required'});return true}
   if(!payrollAccess.can(user,'payroll')){
@@ -2457,6 +2457,13 @@ async function handlePayrollExport(req,res,url){
   }
   if(!timeCardsEnabled(db.company)){json(res,403,{error:'Time cards must be enabled for payroll export.'});return true}
   if(req.method!=='GET'){res.setHeader('Allow','GET');json(res,405,{error:'Use GET to download payroll.'});return true}
+  if(url.pathname==='/api/payroll/punches'){
+    // Company-wide availability for payroll, independent of time-management scopes.
+    json(res,200,(db.timeCards||[]).filter(card=>!card.deletedAt).map(card=>({
+      inAt:card.inAt,hours:card.hours,status:card.status,state:card.state,
+      approvalStatus:card.approvalStatus,approvedAt:card.approvedAt,approvedBy:card.approvedBy
+    })));return true;
+  }
   try{
     const format=url.searchParams.get('format');
     if(!['csv','pdf'].includes(format)){json(res,400,{error:'Choose CSV or PDF for payroll export.'});return true}

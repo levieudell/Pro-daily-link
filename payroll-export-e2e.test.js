@@ -40,6 +40,42 @@ async function login(page, email) {
   await page.locator('form#login button.primary').click();
   await page.waitForFunction(() => typeof currentUser !== 'undefined' && currentUser && typeof showPage === 'function');
 }
+async function assertPayrollEntry(page, allowed) {
+  await page.addInitScript(() => {
+    window.payrollEntryFrames = [];
+    const inspect = () => {
+      const shell = document.querySelector('.app-shell');
+      const loader = document.querySelector('.workspace-loader');
+      if (shell?.checkVisibility({visibilityProperty:true}) && !loader?.checkVisibility({visibilityProperty:true})) {
+        window.payrollEntryFrames.push(document.querySelector('.page.active')?.id);
+      }
+      requestAnimationFrame(inspect);
+    };
+    requestAnimationFrame(inspect);
+  });
+  // Make the startup access race repeatable, including a reload with saved role.
+  await page.route('**/api/state*', async route => {
+    await new Promise(resolve => setTimeout(resolve, 180));
+    await route.continue().catch(error => { if (!/already handled|Target.*closed/.test(error.message)) throw error; });
+  });
+  for (const reload of [false, true]) {
+    if (reload) await page.reload(); else { await page.goto('about:blank'); await page.goto(base + '/app#payroll'); }
+    const expected = allowed ? 'payroll-page' : 'dashboard-page';
+    await page.waitForFunction(expected => window.pdlWorkspaceStateReady && document.documentElement.classList.contains('workspace-ready') && document.querySelector('.page.active')?.id === expected, expected).catch(async error => {
+      console.error('Payroll entry state', await page.evaluate(() => ({hash:location.hash,role:currentRole,ready:window.pdlWorkspaceStateReady,classes:document.documentElement.className,active:document.querySelector('.page.active')?.id})));
+      throw error;
+    });
+    await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+    const frames = await page.evaluate(() => window.payrollEntryFrames);
+    assert(frames.length > 0, 'sampled visible startup frames');
+    assert(frames.every(id => id === expected), `${reload?'reload':'fresh'}: no previous screen flash: ${JSON.stringify(frames)}`);
+    assert.equal(new URL(page.url()).hash, allowed ? '#payroll' : '#dashboard');
+    if (allowed) await page.waitForFunction(() => !document.querySelector('#payroll-landing [data-payroll-download="csv"]')?.disabled);
+    if (!reload && !allowed) await page.evaluate(() => history.replaceState(null, '', '#payroll'));
+  }
+  await page.unrouteAll({behavior:'wait'});
+  console.log(`Payroll fresh/reload ${allowed?'allowed':'denied'}: correct page without a visible old screen`);
+}
 function parseCsv(text) {
   const rows = []; let row = [], value = '', quoted = false;
   for (let i = 0; i < text.length; i++) {
@@ -544,7 +580,9 @@ async function main() {
     assert.equal((await denied.request.patch(base+'/api/users/'+noaccessId+'/payroll-access',{data:{payroll:true},headers:{'X-PDL-Company':seed.COMPANY_ID}})).status(),403);
     await deniedPage.evaluate(()=>{showPage('team');teamTab='accounts';renderTeamDirectory();});
     assert.equal(await deniedPage.locator('[data-payroll-grant]').count(),0,'admin has no payroll grant toggles');
+    await assertPayrollEntry(deniedPage,false);
     const ownerCtx=await browser.newContext(),ownerPage=await ownerCtx.newPage();await login(ownerPage,seed.OWNER_EMAIL);await ownerPage.waitForFunction(()=>document.querySelector('#payroll-nav')&&!document.querySelector('#payroll-nav').hidden);
+    await assertPayrollEntry(ownerPage,true);
     assert.equal((await ownerCtx.request.get(base+route)).status(),200);
     await ownerPage.evaluate(()=>showPage('team'));
     await ownerPage.locator('[data-team-tab="accounts"]').click();
@@ -556,6 +594,11 @@ async function main() {
       const row=await ownerPage.locator('.payroll-access-always').evaluate(el=>{const r=el.getBoundingClientRect(),parent=el.parentElement,style=getComputedStyle(parent),label=parent.querySelector('.payroll-account-owner');return{width:r.width,available:parent.clientWidth-parseFloat(style.paddingLeft)-parseFloat(style.paddingRight),overflow:el.scrollWidth-el.clientWidth,color:getComputedStyle(label).color};});
       assert(row.width>=row.available-1&&row.overflow<=1,JSON.stringify(row));
       assert.equal(row.color,theme==='dark'?'rgb(255, 255, 255)':'rgb(0, 0, 0)');
+      const grantStyles=await ownerPage.locator('#account-list .payroll-grant').evaluateAll(elements=>elements.map(el=>{const s=getComputedStyle(el);return{border:s.borderTopColor,bg:s.backgroundColor,color:s.color};}));
+      assert(grantStyles.length>0);
+      const palette=['rgb(0, 0, 0)','rgb(255, 255, 255)','rgb(247, 245, 240)','rgb(255, 102, 0)','rgb(110, 110, 110)'];
+      for(const styles of grantStyles){assert.equal(styles.border,'rgb(110, 110, 110)');assert(Object.values(styles).every(color=>palette.includes(color)),JSON.stringify(styles));}
+      if(theme==='dark')for(const color of await ownerPage.locator('#account-list .account-row small').evaluateAll(elements=>elements.map(el=>getComputedStyle(el).color)))assert.equal(color,'rgb(255, 255, 255)');
     }
     const grant=ownerPage.locator(`[data-payroll-grant="${noaccessId}"]`);
     await grant.click();
@@ -563,6 +606,22 @@ async function main() {
     assert.equal((await denied.request.get(base+route)).status(),200,'grant takes effect');
     await deniedPage.evaluate(async()=>{await api('/api/state');showPage('payroll');});
     await deniedPage.locator('#payroll-page.active').waitFor();
+    await assertPayrollEntry(deniedPage,true);
+    assert.equal(await deniedPage.evaluate(()=>currentUser.permissions.manageTime),false,'payroll grant does not grant time management');
+    assert.equal((await denied.request.get(base+'/api/time-cards')).status(),403,'Time cards access stays restricted');
+    const payrollPunches=await denied.request.get(base+'/api/payroll/punches');
+    assert.equal(payrollPunches.status(),200);
+    assert.equal((await payrollPunches.json()).length,db.timeCards.length,'payroll availability includes company-wide punches');
+    await deniedPage.locator('#payroll-landing [data-payroll-range="last"]').click();
+    await deniedPage.waitForFunction(()=>!document.querySelector('#payroll-landing [data-payroll-download="csv"]')?.disabled);
+    assert.equal(await deniedPage.locator('[data-payroll-empty]').first().isHidden(),true);
+    const [grantedDownload]=await Promise.all([deniedPage.waitForEvent('download'),deniedPage.locator('#payroll-landing [data-payroll-download="csv"]').click()]);
+    const grantedCsv=fs.readFileSync(await grantedDownload.path(),'utf8');
+    const lastRange=calendar.range('last',calendar.today(db.company.timezone),db.company.weekStart);
+    verifyCsv(grantedCsv,lastRange);
+    const lastRoute=base+'/api/payroll/export?'+new URLSearchParams({...lastRange,format:'csv'});
+    assert.equal(grantedCsv,await (await ownerCtx.request.get(lastRoute)).text(),'granted admin and owner export the same company hours');
+    assert.equal(grantedCsv,await (await context.request.get(lastRoute)).text(),'granted admin and office demo export the same company hours');
     await grant.click();
     await ownerPage.waitForFunction(id=>document.querySelector(`[data-payroll-grant="${id}"]`)?.getAttribute('aria-pressed')==='false',noaccessId);
     assert.equal((await denied.request.get(base+route)).status(),403,'removing payroll revokes export');
@@ -582,6 +641,8 @@ async function main() {
       assert.equal((await fetch(base+route)).status,401,`${authFlag}: anonymous export`);
       assert.equal((await denied.request.get(base+route)).status(),403,`${authFlag}: ungranted export`);
       assert.equal((await ownerCtx.request.get(base+route)).status(),200,`${authFlag}: owner export`);
+      assert.equal((await fetch(base+'/api/payroll/punches')).status,401,`${authFlag}: anonymous payroll availability`);
+      assert.equal((await denied.request.get(base+'/api/payroll/punches')).status(),403,`${authFlag}: ungranted payroll availability`);
       const grantRoute=base+'/api/users/'+noaccessId+'/payroll-access';
       assert.equal((await fetch(grantRoute,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({payroll:true})})).status,401,`${authFlag}: anonymous grant`);
       assert.equal((await denied.request.patch(grantRoute,{data:{payroll:true}})).status(),403,`${authFlag}: admin grant`);
@@ -590,6 +651,8 @@ async function main() {
     assert.equal((await ownerCtx.request.patch(base+'/api/users/'+db.users.find(user=>user.role==='owner').id+'/payroll-access',{data:{payroll:false},headers:{'X-PDL-Company':seed.COMPANY_ID}})).status(),409);
     const field=await browser.newContext(),fieldPage=await field.newPage();await login(fieldPage,seed.FIELD_EMAIL);await fieldPage.waitForFunction(()=>!document.querySelector('#payroll-landing')&&!document.querySelector('#payroll-export-dialog'));assert.equal((await field.request.get(base+route)).status(),403);assert.equal((await field.request.patch(base+'/api/company',{data:{payroll:{pay_schedule:{frequency:'weekly',period_end_weekday:2}}},headers:{'X-PDL-Company':seed.COMPANY_ID}})).status(),403);assert.equal(await fieldPage.locator('#payroll-landing').count(),0,'field users have no payroll card in the DOM');assert.equal(await fieldPage.locator('#payroll-export-dialog').count(),0,'field users have no export dialog in the DOM');assert.equal(await fieldPage.locator('[data-payroll-export-open]:visible').count(),0);
     assert.equal(await fieldPage.locator('#payroll-nav:visible, #payroll-phone-bar:visible').count(),0,'field users never see Payroll navigation');
+    await assertPayrollEntry(fieldPage,false);
+    assert.equal((await field.request.get(base+'/api/payroll/punches')).status(),403);
     await fieldPage.evaluate(()=>showPage('payroll'));
     assert.equal(await fieldPage.locator('#payroll-page.active').count(),0,'field users cannot open the Payroll page');
     assert.deepEqual(errors,[]);console.log('Landing payroll speed, real inline calendar, CSV sums, empty states, shared dialog, filtered review, keyboard, brand and access checks passed.');

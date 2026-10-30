@@ -9,6 +9,30 @@
   const start = () => company?.weekStart || 'monday';
   const presets = [['week','This week'],['last','Last week'],['last2','Last 2 weeks'],['period','Last pay period'],['month','This month'],['custom','Custom']];
   const components = [];
+  // Payroll access does not imply permission to view or manage Time cards.
+  let payrollCards = [], cardsIdentity = '', cardsRequest = null, cardsReady = false;
+  const stateReady = () => window.pdlWorkspaceStateReady === true;
+  function refreshCards(force = false) {
+    if (!stateReady()) return;
+    if (!allowed()) {
+      cardsRequest?.abort(); cardsRequest = null; cardsIdentity = ''; cardsReady = false; payrollCards = [];
+      return;
+    }
+    const identity = context();
+    if (!force && cardsIdentity === identity && (cardsReady || cardsRequest)) return;
+    cardsRequest?.abort();
+    const request = new AbortController(); cardsRequest = request; cardsIdentity = identity; cardsReady = false; payrollCards = [];
+    fetch('/api/payroll/punches', {credentials:'same-origin',headers:{'X-PDL-Company':signedInCompanyId()},signal:request.signal})
+      .then(async response => {
+        if (request.signal.aborted || context() !== identity) return;
+        if (response.status === 403) { window.PDLPermissions.denyExport(); return; }
+        if (!response.ok) throw new Error('Payroll hours could not load. Refresh to try again.');
+        const cards = await response.json();
+        if (!request.signal.aborted && context() === identity) { payrollCards = cards; cardsReady = true; }
+      })
+      .catch(error => { if (!request.signal.aborted) components.forEach(component => component.root.querySelector('[data-payroll-error]')?.replaceChildren(error.message)); })
+      .finally(() => { if (cardsRequest === request) { cardsRequest = null; components.forEach(component => component.update()); } });
+  }
   function makeComponent(root, isLanding) {
     const paint = () => { root.innerHTML = `${isLanding?'<h2>PAYROLL</h2>':''}<div class="payroll-export-body"><p class="payroll-intro">Only approved punches count. Extra-work flags don't change pay.</p><div class="payroll-export-chips" role="group" aria-label="Payroll date range">${presets.map(([key,label])=>`<button type="button" data-payroll-range="${key}" aria-pressed="false">${label}</button>`).join('')}</div><div class="payroll-calendar" hidden><div class="payroll-calendar-nav"><button type="button" data-month="-1" aria-label="Previous month">‹</button><strong data-month-label></strong><button type="button" data-month="1" aria-label="Next month">›</button></div><p data-calendar-help role="status"></p><div data-calendar-grid></div><button type="button" data-calendar-close>Back to ranges</button></div><p data-payroll-range-label></p><p data-payroll-empty role="status" hidden>No approved hours in this range.</p><p data-payroll-error role="alert"></p></div><footer><button type="button" data-payroll-bar-review hidden><span data-payroll-bar-count></span><span data-payroll-bar-sep> · </span><span>Review</span></button><button type="button" data-payroll-download="csv">Download CSV</button><button type="button" data-payroll-download="pdf">PDF summary</button></footer>`; };
     const find = selector => root.querySelector(selector);
@@ -16,6 +40,7 @@
     function error(text) { find('[data-payroll-error]').textContent = text; }
     function setCalendar(open) { root.classList.toggle('calendar-open', open); find('.payroll-calendar').hidden = !open; if (open && isLanding) root.scrollIntoView({block:'start'}); }
     function update() {
+      if (!stateReady()) return;
       const authorized = allowed();
       if (!authorized) { controller?.abort(); identity = ''; if (isLanding) { root.replaceChildren(); root.remove(); } else { root.replaceChildren(); if (dialog.open) dialog.close(); dialog.remove(); } syncPayrollNav(); return; }
       if (isLanding) { const page = document.querySelector('#payroll-page'); if (page && !root.isConnected) { const heading = page.querySelector('.page-heading'); if (heading) heading.after(root); else page.prepend(root); } if (!root.querySelector('[data-payroll-download]')) paint(); root.hidden = false; }
@@ -23,11 +48,11 @@
       if (identity !== context()) { controller?.abort(); identity = context(); choose('week'); return; }
       const period = lastPeriod(); find('[data-payroll-range="period"]').disabled = !period;
       find('[data-payroll-range="period"]').title = period ? '' : 'No previous saved pay period.';
-      const cards = range ? timeCards.filter(card => { const date = timePeriodDate(card, company?.timezone || 'America/Los_Angeles'); return !card.deletedAt && date && date >= range.from && date <= range.to; }) : [];
+      const cards = range ? payrollCards.filter(card => { const date = timePeriodDate(card, company?.timezone || 'America/Los_Angeles'); return !card.deletedAt && date && date >= range.from && date <= range.to; }) : [];
       const unapproved = cards.filter(card => !timeCardApproved(card)).length;
       const hasHours = cards.some(card => timeCardApproved(card) && Number(card.hours) > 0);
       find('[data-payroll-range-label]').textContent = range ? calendar.label(range.from, range.to, today().slice(0,4)) : '';
-      find('[data-payroll-empty]').hidden = hasHours || pending;
+      find('[data-payroll-empty]').hidden = !cardsReady || hasHours || pending;
       const barCount = unapproved === 1 ? '1 punch not approved' : `${unapproved} punches not approved`;
       find('[data-payroll-bar-count]').textContent = barCount;
       find('[data-payroll-bar-review]').hidden = pending || !unapproved;
@@ -99,6 +124,7 @@
     const component={update,reset(){identity=context();busy=false;choose('week');},close(){controller?.abort();controller=null;busy=false;},root};components.push(component);return component;
   }
   function syncPayrollNav() {
+    if (!stateReady()) return;
     const on = allowed();
     const nav = document.querySelector('#payroll-nav');
     const bar = document.querySelector('#payroll-phone-bar');
@@ -106,16 +132,23 @@
     if (nav) nav.hidden = !on;
     if (bar) bar.hidden = !on || !onDashboard;
     document.querySelectorAll('[data-payroll-export-open]').forEach(button=>button.hidden=!on);
-    if (!on && document.querySelector('#payroll-page')?.classList.contains('active')) showPage('dashboard', {historyMode:'replace'});
+    if (!on && document.querySelector('#payroll-page')?.classList.contains('active')) showPage('payroll', {historyMode:'replace'});
   }
   const card=makeComponent(landing,true), modal=makeComponent(document.querySelector('#payroll-dialog-content'),false);
   document.addEventListener('click',event=>{if(event.target.closest('[data-payroll-export-open]')&&allowed()){modal.reset();dialog.showModal();}});
   dialog.querySelector('[data-payroll-close]').addEventListener('click',()=>dialog.close());
   dialog.addEventListener('close',()=>modal.close());
   const previousRender=renderTimeCards;
-  renderTimeCards=function(){const result=previousRender.apply(this,arguments);components.forEach(component=>component.update());return result;};
+  renderTimeCards=function(){const result=previousRender.apply(this,arguments);refreshCards(true);components.forEach(component=>component.update());return result;};
   const previousPage=showPage;
-  showPage=function(page,...args){if(page==='payroll'&&!allowed())page='dashboard';const result=previousPage.call(this,page,...args);if(page==='payroll'){if(allowed())card.reset();else card.update();}else syncPayrollNav();return result;};
+  showPage=function(page,...args){
+    // Keep the requested hash while state (including grants and company features) loads.
+    if(page==='payroll'&&!stateReady())return;
+    if(page==='payroll'&&!allowed()){page='dashboard';args[0]={...args[0],payrollDenied:true};}
+    const result=previousPage.call(this,page,...args);
+    if(page==='payroll'){refreshCards();card.update();card.reset();}else syncPayrollNav();
+    return result;
+  };
   document.addEventListener('click',async event=>{const button=event.target.closest('[data-payroll-grant]');if(!button||currentUser?.role!=='owner')return;const id=button.dataset.payrollGrant,granted=button.getAttribute('aria-pressed')!=='true';try{const updated=await api(`/api/users/${id}/payroll-access`,{method:'PATCH',body:JSON.stringify({payroll:granted})});const person=users.find(row=>Number(row.id)===Number(id));if(person)person.permissionGrants=updated.permissionGrants;renderTeamDirectory();notify(granted?'Payroll access granted':'Payroll access removed')}catch(error){notify(error.message)}});
-  window.PDLPayrollExport={refresh(){components.forEach(component=>component.update());}};
+  window.PDLPayrollExport={refresh(){refreshCards(true);components.forEach(component=>component.update());}};
 })();
