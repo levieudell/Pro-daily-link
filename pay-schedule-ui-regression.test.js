@@ -55,6 +55,15 @@ module.exports = async function checkScheduleUi(page, showSchedule) {
     }
     await page.locator('[data-pay-frequency="semimonthly"]').click();
     const payday = '[data-offset="payday_offset_days"]';
+    await page.locator(payday).fill('-1');
+    await page.locator('[data-pay-schedule-save]').click();
+    const errorText = 'Payday must be a whole number from 0 to 30.';
+    assert.equal(await page.getByText(errorText, { exact: true }).count(), 1, `${theme}: one validation message`);
+    assert.equal(await page.locator(payday).getAttribute('aria-invalid'), 'true');
+    assert(await page.locator(payday).evaluate(el => el.closest('label').nextElementSibling.matches('[data-pay-schedule-error]')), 'error sits beside the invalid field');
+    await page.locator(payday).fill('3');
+    assert.equal(await page.locator('[data-pay-schedule-error]').textContent(), '');
+    assert.equal(await page.locator(payday).getAttribute('aria-invalid'), null);
     for (const selector of [payday, '[data-pay-schedule-save]']) {
       await page.locator(selector).focus();
       const focus = await page.locator(selector).evaluate(el => {
