@@ -298,6 +298,7 @@ async function main() {
     await page.setViewportSize({width:390,height:844});await page.evaluate(()=>window.PDLCompanySettings.openPayPeriods());await page.locator('#payroll-overtime-form').waitFor({state:'visible'});
     const spacing=await page.locator('#company-pay-periods').evaluate(el=>{const a=el.querySelector('[data-payroll-export-open]').getBoundingClientRect(),b=el.querySelector('[data-pay-new]').getBoundingClientRect();return{gap:b.y>=a.bottom?b.y-a.bottom:b.x-a.right,height:a.height,newHeight:b.height}});assert(spacing.gap>=8&&spacing.height>=48&&spacing.newHeight>=48,JSON.stringify(spacing));
     for(const theme of ['light','dark']){await page.evaluate(theme=>document.documentElement.dataset.theme=theme,theme);const inline=await page.locator('.payroll-rule-hours').evaluateAll(labels=>labels.map(label=>{const parts=[...label.children].map(el=>el.getBoundingClientRect()),input=label.querySelector('input').getBoundingClientRect();return{top:Math.max(...parts.map(r=>r.top)),bottom:Math.min(...parts.map(r=>r.bottom)),right:Math.max(...parts.map(r=>r.right)),boxRight:label.getBoundingClientRect().right,width:input.width,height:input.height,gap:parseFloat(getComputedStyle(label.parentElement).columnGap)}}));for(const line of inline){assert(line.top<line.bottom&&line.right<=line.boxRight+.5,JSON.stringify(line));assert.equal(line.width,48);assert.equal(line.height,48);assert(line.gap>=4)}}
+    await require('./pay-schedule-ui-regression.test')(page);
     const scheduleCounts=[];
     for (const height of [844, 667]) for (const theme of ['light', 'dark']) {
       await page.setViewportSize({width:390,height});
@@ -357,7 +358,7 @@ async function main() {
     await tapInPlace(page,page.locator('[data-pay-weekday="5"]'));
     await assertScheduleClear(page);
     const desktopSave=await page.locator('[data-pay-schedule-save]').evaluate(el=>({position:getComputedStyle(el).position,h:el.getBoundingClientRect().height}));
-    assert.deepEqual(desktopSave,{position:'static',h:48});
+    assert.deepEqual(desktopSave,{position:'sticky',h:48});
     const kept=async()=>{
       assert.equal(await page.locator('[data-due-weekday="3"]').getAttribute('aria-pressed'),'true');
       assert.equal(await page.locator('[data-pay-weekday="5"]').getAttribute('aria-pressed'),'true');

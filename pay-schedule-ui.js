@@ -100,11 +100,29 @@
   });
   host.addEventListener('input', event => {
     const field = event.target;
-    if (field.matches('[data-end-index]')) { draft.semimonthly_end_days ||= [15, 'last']; draft.semimonthly_end_days[Number(field.dataset.endIndex)] = Number(field.value); }
-    else if (field.matches('[data-month-end]')) draft.monthly_end_day = Number(field.value);
+    if (field.matches('[data-end-index]')) {
+      draft.semimonthly_end_days ||= [15, 'last']; draft.semimonthly_end_days[Number(field.dataset.endIndex)] = Number(field.value);
+      host.querySelector(`[data-end-last="${field.dataset.endIndex}"]`).setAttribute('aria-pressed', 'false');
+    }
+    else if (field.matches('[data-month-end]')) {
+      draft.monthly_end_day = Number(field.value);
+      host.querySelector('[data-month-last]').setAttribute('aria-pressed', 'false');
+    }
     else if (field.matches('[data-offset]')) draft[field.dataset.offset] = field.value === '' ? null : Number(field.value);
     else return;
     refreshInputs();
+  });
+  function revealFocusedInput() {
+    requestAnimationFrame(() => {
+      const field = document.activeElement;
+      if (host.contains(field) && field.matches('input')) field.scrollIntoView({ block: 'center', inline: 'nearest' });
+    });
+  }
+  host.addEventListener('focusin', revealFocusedInput);
+  let keyboardResize;
+  window.visualViewport?.addEventListener('resize', () => {
+    clearTimeout(keyboardResize);
+    keyboardResize = setTimeout(revealFocusedInput, 100);
   });
   async function save() {
     const message = host.querySelector('[data-pay-schedule-error]');

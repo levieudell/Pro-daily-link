@@ -65,10 +65,10 @@
 :root[data-theme="dark"] .pay-schedule button { background:var(--pdl-black); color:var(--pdl-white); }
 .pay-schedule button[aria-pressed="true"], .pay-schedule [data-pay-schedule-save] { background:var(--pdl-orange) !important; color:var(--pdl-black) !important; border-color:var(--pdl-orange) !important; }
 .pay-schedule [data-pay-schedule-save] { position:sticky; bottom:0; z-index:6; width:100%; height:48px; min-height:48px; margin:4px 0 0; }
-@media (min-width:768px) { .pay-schedule [data-pay-schedule-save] { position:static; } }
 .pay-schedule [hidden] { display:none !important; }
 .pay-schedule-preview { margin:4px 0; padding:0; }
 .pay-schedule input[type="number"] { box-sizing:border-box; width:72px; height:48px; margin:0; border:2px solid var(--pdl-gray); background:var(--pdl-offwhite); color:var(--pdl-black); font:400 16px Inter,sans-serif; }
+.pay-schedule input { scroll-margin-bottom:72px; }
 .pay-schedule-offsets input[type="number"] { width:100%; }
 :root[data-theme="dark"] .pay-schedule input[type="number"] { background:var(--pdl-black) !important; color:var(--pdl-white) !important; border:2px solid var(--pdl-gray) !important; }
 .pay-schedule :is([data-pay-schedule-status],[data-pay-schedule-error]):empty { display:none; }
