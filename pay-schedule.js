@@ -159,10 +159,8 @@
     if (!parts.range) return '';
     return parts.detail ? `${parts.range} · ${parts.detail}` : parts.range;
   }
-  function suggestedWeekly(weekStart) {
-    const start = weekStart === 'sunday' ? 0 : 1;
-    const period_end_weekday = (start + 6) % 7;
-    return validateSchedule({ ...emptySchedule(), frequency: 'weekly', period_end_weekday, cards_due_weekday: (period_end_weekday + 1) % 7, payday_weekday: 5 });
+  function suggestedWeekly() {
+    return validateSchedule({ ...emptySchedule(), frequency: 'weekly', period_end_weekday: 0, cards_due_weekday: 1, payday_weekday: 5 });
   }
   return { FREQUENCIES, WEEKDAYS, emptySchedule, validateSchedule, payPeriodFor, listPayPeriods, lastEndedBefore, preview, previewParts, suggestedWeekly, weekday, addDays };
 });

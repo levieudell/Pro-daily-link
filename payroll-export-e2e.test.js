@@ -366,7 +366,7 @@ async function main() {
       const periodTab=await page.locator('#settings-tab-periods').evaluate(el=>({bg:getComputedStyle(el).backgroundColor,color:getComputedStyle(el).color}));
       assert.deepEqual(periodTab,theme==='dark'?{bg:'rgb(255, 255, 255)',color:'rgb(0, 0, 0)'}:{bg:'rgb(0, 0, 0)',color:'rgb(255, 255, 255)'});
       await showSchedule(page);
-      const defaultEnd=db.company.weekStart==='sunday'?'6':'0', defaultDue=db.company.weekStart==='sunday'?'0':'1';
+      const defaultEnd='0', defaultDue='1';
       await page.waitForFunction(()=>document.querySelector('[data-pay-frequency="weekly"]')?.getAttribute('aria-pressed')==='true'&&document.querySelector('[data-pay-schedule-save]')&&!document.querySelector('[data-pay-schedule-save]').hidden);
       assert.equal(await page.locator(`[data-end-weekday="${defaultEnd}"]`).getAttribute('aria-pressed'),'true');
       assert.equal(await page.locator(`[data-due-weekday="${defaultDue}"]`).getAttribute('aria-pressed'),'true');
@@ -383,7 +383,7 @@ async function main() {
       await page.locator('[data-pay-schedule-save]').waitFor({state:'hidden'});
       const scheduleTaps=await page.evaluate(()=>window.payrollTapCount),scheduleElapsed=performance.now()-scheduleStarted;
       assert(scheduleTaps<=3,`weekly setup at 390x${height} ${theme} took ${scheduleTaps} taps`);
-      assert(scheduleElapsed<10000,`${height} ${theme}: ${scheduleElapsed}ms`);
+      assert(scheduleElapsed<5000,`${height} ${theme}: ${scheduleElapsed}ms`);
       console.log(`Weekly default 390x${height} ${theme}: ${scheduleTaps} taps, ${Math.round(scheduleElapsed)}ms`);
       await page.evaluate(()=>{window.payrollTapCount=0});
       await tapInPlace(page,page.locator('[data-pay-frequency="biweekly"]'));
@@ -401,7 +401,7 @@ async function main() {
       company=await api('/api/company',{method:'PATCH',body:JSON.stringify({payroll:{pay_schedule:{frequency:null}}})});
     });
     await showSchedule(page);
-    const desktopEnd=db.company.weekStart==='sunday'?'6':'0', desktopDue=db.company.weekStart==='sunday'?'0':'1';
+    const desktopEnd='0', desktopDue='1';
     await page.waitForFunction(()=>document.querySelector('[data-pay-frequency="weekly"]')?.getAttribute('aria-pressed')==='true'&&!document.querySelector('[data-pay-schedule-save]')?.hidden);
     await page.evaluate(()=>{window.payrollTapCount=0});
     assert.equal(await page.locator('#settings-tab-company').evaluate(el=>getComputedStyle(el).borderTopColor),'rgb(110, 110, 110)');

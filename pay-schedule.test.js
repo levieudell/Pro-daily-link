@@ -80,15 +80,15 @@ test('changing the end weekday keeps due Wednesday and paid Friday', () => {
   assert.equal(period.payday, '2026-10-30');
 });
 
-test('a new weekly schedule ends the day before the workweek, is due the next day, and is paid Friday', () => {
+test('a new weekly schedule ends Sunday, is due Monday, and is paid Friday regardless of workweek', () => {
   const monday = suggestedWeekly('monday');
   assert.equal(monday.frequency, 'weekly');
   assert.equal(monday.period_end_weekday, 0);
   assert.equal(monday.cards_due_weekday, 1);
   assert.equal(monday.payday_weekday, 5);
   const sunday = suggestedWeekly('sunday');
-  assert.equal(sunday.period_end_weekday, 6);
-  assert.equal(sunday.cards_due_weekday, 0);
+  assert.equal(sunday.period_end_weekday, 0);
+  assert.equal(sunday.cards_due_weekday, 1);
   assert.equal(sunday.payday_weekday, 5);
 });
 
