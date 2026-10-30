@@ -87,6 +87,11 @@ module.exports = async function checkScheduleUi(page, showSchedule) {
         const r = el.getBoundingClientRect(); return { top: r.top, bottom: r.bottom, height: r.height, hit: document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2) === el };
       });
       assert(bounds.top >= 56 && bounds.bottom <= 800 && bounds.height >= 48 && bounds.hit, `${frequency} ${theme}: ${JSON.stringify(bounds)}`);
+      const previewClear = await page.locator('.pay-schedule-preview').evaluate(el => {
+        const save = document.querySelector('[data-pay-schedule-save]').getBoundingClientRect();
+        return [...el.querySelectorAll('.pay-schedule-preview-period')].every(line => line.getBoundingClientRect().bottom <= save.top);
+      });
+      assert(previewClear, `${frequency} ${theme}: preview must stay above Save without scrolling`);
     }
     await open(theme, { width: 390, height: 667 });
     await page.evaluate(() => { window.payrollTapCount = 0; });

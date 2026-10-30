@@ -73,6 +73,7 @@
 .pay-schedule input[type="number"][disabled] { border:2px solid var(--pdl-gray) !important; }
 #company-pay-period-list { margin-top:16px; }
 @media (min-width:1100px) {
+  #payroll-page .pay-schedule [data-pay-schedule-save] { position:static; }
   #payroll-page { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:16px; align-items:start; }
   #payroll-page > .page-heading { grid-column:1 / -1; }
 }

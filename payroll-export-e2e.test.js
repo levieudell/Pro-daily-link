@@ -410,7 +410,7 @@ async function main() {
     assert.match(await page.locator('.pay-schedule-preview-title').evaluate(el=>el.textContent),/Next 3 pay periods/);
     await assertScheduleClear(page);
     const desktopSave=await page.locator('[data-pay-schedule-save]').evaluate(el=>({position:getComputedStyle(el).position,h:el.getBoundingClientRect().height}));
-    assert.deepEqual(desktopSave,{position:'sticky',h:48});
+    assert.deepEqual(desktopSave,{position:'static',h:48});
     await tapInPlace(page,page.locator('[data-pay-schedule-save]'));
     await page.locator('[data-pay-schedule-status]').filter({hasText:'saved'}).waitFor();
     assert(await page.evaluate(()=>window.payrollTapCount)<=3,'desktop default setup stays within 3 taps');
