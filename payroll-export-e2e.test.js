@@ -249,6 +249,16 @@ async function main() {
       await settle(page);
       const barStyle=await page.locator('#payroll-phone-bar button').evaluate(el=>{const s=getComputedStyle(el),r=el.getBoundingClientRect();return{bg:s.backgroundColor,color:s.color,h:r.height}});
       assert.deepEqual(barStyle,{bg:'rgb(255, 102, 0)',color:'rgb(0, 0, 0)',h:48});
+      await page.evaluate(() => {
+        window.payrollFrames = []; window.trackPayrollFrames = true;
+        document.querySelector('#payroll-phone-bar button').addEventListener('click', () => {
+          const sample = () => {
+            window.payrollFrames.push([...document.querySelectorAll('.page.active')].map(el => el.id));
+            if (window.trackPayrollFrames) requestAnimationFrame(sample);
+          };
+          requestAnimationFrame(sample);
+        }, { once: true });
+      });
       const started=performance.now();
       await tapInPlace(page,page.locator('#payroll-phone-bar button'));
       await page.locator('#payroll-page.active').waitFor();
@@ -258,7 +268,9 @@ async function main() {
       assert.equal(speedDownload.suggestedFilename().endsWith('.csv'),true);
       const speedTaps=await page.evaluate(()=>window.payrollTapCount),speedElapsed=performance.now()-started;
       assert(speedTaps<=3,`payroll ${height} ${theme} took ${speedTaps} taps`);
-      assert(speedElapsed<10000,`${speedElapsed}ms`);
+      assert(speedElapsed<4000,`${speedElapsed}ms`);
+      const frames = await page.evaluate(() => { window.trackPayrollFrames = false; return window.payrollFrames; });
+      assert(frames.length > 0 && frames.every(ids => ids.length === 1 && ids[0] === 'payroll-page'), `no old page flashes: ${JSON.stringify(frames)}`);
       assert.equal(await scrollOffset(page),0);
       payrollSpeed.push({height,theme,taps:speedTaps,ms:Math.round(speedElapsed)});
       console.log(`Payroll page 390x${height} ${theme}: ${speedTaps} taps, ${Math.round(speedElapsed)}ms`);
@@ -532,6 +544,9 @@ async function main() {
     assert.equal((await denied.request.get(base+route)).status(),403,'removing payroll revokes export');
     assert.equal((await ownerCtx.request.patch(base+'/api/users/'+db.users.find(user=>user.role==='owner').id+'/payroll-access',{data:{payroll:false},headers:{'X-PDL-Company':seed.COMPANY_ID}})).status(),409);
     const field=await browser.newContext(),fieldPage=await field.newPage();await login(fieldPage,seed.FIELD_EMAIL);await fieldPage.waitForFunction(()=>!document.querySelector('#payroll-landing')&&!document.querySelector('#payroll-export-dialog'));assert.equal((await field.request.get(base+route)).status(),403);assert.equal((await field.request.patch(base+'/api/company',{data:{payroll:{pay_schedule:{frequency:'weekly',period_end_weekday:2}}},headers:{'X-PDL-Company':seed.COMPANY_ID}})).status(),403);assert.equal(await fieldPage.locator('#payroll-landing').count(),0,'field users have no payroll card in the DOM');assert.equal(await fieldPage.locator('#payroll-export-dialog').count(),0,'field users have no export dialog in the DOM');assert.equal(await fieldPage.locator('[data-payroll-export-open]:visible').count(),0);
+    assert.equal(await fieldPage.locator('#payroll-nav:visible, #payroll-phone-bar:visible').count(),0,'field users never see Payroll navigation');
+    await fieldPage.evaluate(()=>showPage('payroll'));
+    assert.equal(await fieldPage.locator('#payroll-page.active').count(),0,'field users cannot open the Payroll page');
     assert.deepEqual(errors,[]);console.log('Landing payroll speed, real inline calendar, CSV sums, empty states, shared dialog, filtered review, keyboard, brand and access checks passed.');
   }finally{await browser?.close();await new Promise(resolve=>server.close(resolve));fs.rmSync(root,{recursive:true,force:true})}
 }
