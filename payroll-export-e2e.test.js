@@ -6,6 +6,7 @@ const path = require('node:path');
 const { chromium } = require('playwright-core');
 const seed = require('./staging-seed');
 const calendar = require('./payroll-ranges');
+const paySchedule = require('./pay-schedule');
 const { buildPayrollExport, defaultTemplate } = require('./payroll-export');
 const root = fs.mkdtempSync(path.join(os.tmpdir(), 'pdl-payroll-export-'));
 const dbFile = path.join(root, 'db.json');
@@ -106,19 +107,44 @@ async function landingDownload(page, preset) {
 async function settle(page) {
   await page.evaluate(async () => { await Promise.all(document.getAnimations().filter(a => a.effect?.getTiming().iterations !== Infinity).map(a => a.finished.catch(() => {}))); });
 }
-async function assertRowClearsFooter(page, root) {
-  await settle(page);
-  const info = await root.evaluate(el => {
-    const chips = [...el.querySelectorAll('[data-payroll-range]')];
-    const row2Bottom = Math.max(...chips.slice(3).map(chip => chip.getBoundingClientRect().bottom));
-    const label = el.querySelector('[data-payroll-range-label]');
-    const box = label.getBoundingClientRect();
-    const footerTop = el.querySelector('footer').getBoundingClientRect().top;
-    const hit = document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2);
-    return { row2Bottom, footerTop, top: box.top, bottom: box.bottom, innerHeight, text: label.textContent, hit: hit === label || !!label.contains(hit), hitText: hit ? hit.outerHTML.slice(0, 140) : null };
+async function scrollOffset(page) {
+  return page.evaluate(() => {
+    const nodes = [document.scrollingElement, document.querySelector('main'), document.querySelector('#settings-page'), document.querySelector('#company-pay-periods'), document.querySelector('.pay-schedule')];
+    return Math.max(window.scrollY, document.documentElement.scrollTop, document.body.scrollTop, ...nodes.filter(Boolean).map(el => el.scrollTop || 0));
   });
-  assert(info.row2Bottom <= info.footerTop + 0.5, 'chip row 2 sits above the footer: ' + JSON.stringify(info));
-  assert(info.top >= -0.5 && info.bottom <= info.innerHeight + 0.5 && info.bottom <= info.footerTop + 0.5 && info.hit, 'range line is fully visible: ' + JSON.stringify(info));
+}
+async function tapInPlace(page, locator) {
+  assert.equal(await scrollOffset(page), 0, 'page is already at the top');
+  await tap(page, locator);
+  assert.equal(await scrollOffset(page), 0, 'tap did not scroll');
+}
+async function typeKept(page, selector, text) {
+  const locator = page.locator(selector);
+  await locator.click();
+  await locator.evaluate(el => { el.focus(); el.select(); });
+  await page.keyboard.type(text, { delay: 20 });
+  const state = await page.evaluate(sel => { const el = document.querySelector(sel); return { value: el ? el.value : '', focused: document.activeElement === el }; }, selector);
+  assert.equal(state.value, text, selector);
+  assert.equal(state.focused, true, selector + ' keeps focus');
+}
+async function assertScheduleClear(page) {
+  assert.equal(await scrollOffset(page), 0, 'schedule fits without scrolling');
+  const rows = await page.evaluate(() => {
+    const save = document.querySelector('[data-pay-schedule-save]');
+    const shown = save && !save.hidden && getComputedStyle(save).display !== 'none';
+    const saveRect = shown ? save.getBoundingClientRect() : null;
+    return [...document.querySelectorAll('#pay-schedule-form button, #pay-schedule-form p, #pay-schedule-form label, #pay-schedule-form input')].filter(el => !el.hidden && getComputedStyle(el).display !== 'none' && getComputedStyle(el).visibility !== 'hidden').map(el => {
+      const r = el.getBoundingClientRect();
+      const hit = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+      const overlaps = !!saveRect && el !== save && r.bottom > saveRect.top + 0.5 && r.top < saveRect.bottom - 0.5 && r.right > saveRect.left + 0.5 && r.left < saveRect.right - 0.5;
+      return { text: el.textContent.trim().slice(0, 90), tag: el.tagName, top: Math.round(r.top), bottom: Math.round(r.bottom), height: Math.round(r.height), width: Math.round(r.width), inView: r.top >= 56 && r.bottom <= innerHeight + 0.5 && r.left >= -0.5 && r.right <= innerWidth + 0.5, hit: hit === el || !!el.contains(hit), overlaps, save: el.hasAttribute('data-pay-schedule-save'), hitText: hit ? hit.outerHTML.slice(0, 160) : null };
+    });
+  });
+  assert(rows.length > 0, 'schedule controls are on screen');
+  for (const row of rows) {
+    assert(row.inView && row.hit && !row.overlaps, JSON.stringify(row));
+    if (row.tag === 'BUTTON') assert(row.height >= 48 && row.width >= 48, JSON.stringify(row));
+  }
 }
 async function assertChipsHit(page, root) {
   await settle(page);
@@ -241,13 +267,6 @@ async function main() {
       await landing.locator('[data-payroll-range="last"]').click();
       if (viewport.height > 560) await page.evaluate(() => window.scrollTo(0,0));
       await assertChipsHit(page, landing);
-      if (viewport.width === 390 && viewport.height === 500) {
-        await assertRowClearsFooter(page, landing);
-        await page.evaluate(() => { document.documentElement.dataset.theme = 'dark'; });
-        await assertChipsHit(page, landing);
-        await assertRowClearsFooter(page, landing);
-        await page.evaluate(() => { document.documentElement.dataset.theme = 'light'; });
-      }
       await assertStickyFooter(page, landing);
       await landing.locator('[data-payroll-range="custom"]').click();
       await showMonth(landing, '2026-10');
@@ -279,7 +298,124 @@ async function main() {
     await page.setViewportSize({width:390,height:844});await page.evaluate(()=>window.PDLCompanySettings.openPayPeriods());await page.locator('#payroll-overtime-form').waitFor({state:'visible'});
     const spacing=await page.locator('#company-pay-periods').evaluate(el=>{const a=el.querySelector('[data-payroll-export-open]').getBoundingClientRect(),b=el.querySelector('[data-pay-new]').getBoundingClientRect();return{gap:b.y>=a.bottom?b.y-a.bottom:b.x-a.right,height:a.height,newHeight:b.height}});assert(spacing.gap>=8&&spacing.height>=48&&spacing.newHeight>=48,JSON.stringify(spacing));
     for(const theme of ['light','dark']){await page.evaluate(theme=>document.documentElement.dataset.theme=theme,theme);const inline=await page.locator('.payroll-rule-hours').evaluateAll(labels=>labels.map(label=>{const parts=[...label.children].map(el=>el.getBoundingClientRect()),input=label.querySelector('input').getBoundingClientRect();return{top:Math.max(...parts.map(r=>r.top)),bottom:Math.min(...parts.map(r=>r.bottom)),right:Math.max(...parts.map(r=>r.right)),boxRight:label.getBoundingClientRect().right,width:input.width,height:input.height,gap:parseFloat(getComputedStyle(label.parentElement).columnGap)}}));for(const line of inline){assert(line.top<line.bottom&&line.right<=line.boxRight+.5,JSON.stringify(line));assert.equal(line.width,48);assert.equal(line.height,48);assert(line.gap>=4)}}
-    const field=await browser.newContext(),fieldPage=await field.newPage();await login(fieldPage,seed.FIELD_EMAIL);await fieldPage.waitForFunction(()=>!document.querySelector('#payroll-landing')&&!document.querySelector('#payroll-export-dialog'));assert.equal((await field.request.get(base+route)).status(),403);assert.equal(await fieldPage.locator('#payroll-landing').count(),0,'field users have no payroll card in the DOM');assert.equal(await fieldPage.locator('#payroll-export-dialog').count(),0,'field users have no export dialog in the DOM');assert.equal(await fieldPage.locator('[data-payroll-export-open]:visible').count(),0);
+    await require('./pay-schedule-ui-regression.test')(page);
+    const scheduleCounts=[];
+    for (const height of [844, 667]) for (const theme of ['light', 'dark']) {
+      await page.setViewportSize({width:390,height});
+      await settle(page);
+      await page.evaluate(async theme=>{
+        document.documentElement.dataset.theme=theme;
+        company=await api('/api/company',{method:'PATCH',body:JSON.stringify({payroll:{pay_schedule:{frequency:null}}})});
+        window.PDLCompanySettings.openPayPeriods();
+      },theme);
+      await page.locator('#pay-schedule-form').waitFor();
+      await page.waitForFunction(()=>{const save=document.querySelector('[data-pay-schedule-save]');return !!save&&save.hidden&&!document.querySelector('[data-end-weekday]')});
+      await settle(page);
+      await page.evaluate(()=>{window.scrollTo(0,0);document.querySelector('main')?.scrollTo(0,0);window.payrollTapCount=0});
+      const periodTab=await page.locator('#settings-tab-periods').evaluate(el=>({bg:getComputedStyle(el).backgroundColor,color:getComputedStyle(el).color}));
+      assert.deepEqual(periodTab,theme==='dark'?{bg:'rgb(255, 255, 255)',color:'rgb(0, 0, 0)'}:{bg:'rgb(0, 0, 0)',color:'rgb(255, 255, 255)'});
+      assert.equal(await page.locator('[data-pay-schedule-save]').isHidden(),true);
+      const scheduleStarted=performance.now();
+      await tapInPlace(page,page.locator('[data-pay-frequency="weekly"]'));
+      await tapInPlace(page,page.locator('[data-end-weekday="2"]'));
+      await tapInPlace(page,page.locator('[data-due-weekday="3"]'));
+      await tapInPlace(page,page.locator('[data-pay-weekday="5"]'));
+      await assertScheduleClear(page);
+      const bar=await page.locator('[data-pay-schedule-save]').evaluate(el=>({position:getComputedStyle(el).position,bottom:getComputedStyle(el).bottom,h:el.getBoundingClientRect().height}));
+      assert.deepEqual(bar,{position:'sticky',bottom:'0px',h:48});
+      await tapInPlace(page,page.locator('[data-pay-schedule-save]'));
+      await page.locator('[data-pay-schedule-status]').filter({hasText:'saved'}).waitFor();
+      assert.equal(await page.locator('[data-pay-schedule-status]').evaluate(el=>getComputedStyle(el).borderLeftWidth),'0px');
+      await page.locator('[data-pay-schedule-save]').waitFor({state:'hidden'});
+      const scheduleTaps=await page.evaluate(()=>window.payrollTapCount),scheduleElapsed=performance.now()-scheduleStarted;
+      assert(scheduleTaps<=6,`weekly setup at 390x${height} ${theme} took ${scheduleTaps} taps`);
+      assert(scheduleElapsed<10000,`${height} ${theme}: ${scheduleElapsed}ms`);
+      console.log(`Weekly Tue-end 390x${height} ${theme}: ${scheduleTaps} taps, ${Math.round(scheduleElapsed)}ms`);
+      await page.evaluate(()=>{window.payrollTapCount=0});
+      await tapInPlace(page,page.locator('[data-pay-frequency="biweekly"]'));
+      await tapInPlace(page,page.locator('[data-anchor]').first());
+      assert.equal(await page.evaluate(()=>window.payrollTapCount),2);
+      await assertScheduleClear(page);
+      console.log(`Every 2 weeks plus anchor 390x${height} ${theme}: 2 taps`);
+      scheduleCounts.push({height,theme,weekly:scheduleTaps,biweekly:2,ms:Math.round(scheduleElapsed)});
+    }
+    console.log('Pay schedule phone taps '+JSON.stringify(scheduleCounts));
+    await page.setViewportSize({width:1280,height:800});
+    await settle(page);
+    await page.evaluate(async()=>{
+      document.documentElement.dataset.theme='light';
+      company=await api('/api/company',{method:'PATCH',body:JSON.stringify({payroll:{pay_schedule:{frequency:null}}})});
+      window.PDLCompanySettings.openPayPeriods();
+    });
+    await page.locator('#pay-schedule-form').waitFor();
+    await page.waitForFunction(()=>{const save=document.querySelector('[data-pay-schedule-save]');return !!save&&save.hidden&&!document.querySelector('[data-end-weekday]')});
+    await settle(page);
+    await page.evaluate(()=>{window.scrollTo(0,0);document.querySelector('main')?.scrollTo(0,0);window.payrollTapCount=0});
+    assert.equal(await page.locator('#settings-tab-company').evaluate(el=>getComputedStyle(el).borderTopColor),'rgb(110, 110, 110)');
+    await tapInPlace(page,page.locator('[data-pay-frequency="weekly"]'));
+    await tapInPlace(page,page.locator('[data-end-weekday="2"]'));
+    await tapInPlace(page,page.locator('[data-due-weekday="3"]'));
+    await tapInPlace(page,page.locator('[data-pay-weekday="5"]'));
+    await assertScheduleClear(page);
+    const desktopSave=await page.locator('[data-pay-schedule-save]').evaluate(el=>({position:getComputedStyle(el).position,h:el.getBoundingClientRect().height}));
+    assert.deepEqual(desktopSave,{position:'sticky',h:48});
+    const kept=async()=>{
+      assert.equal(await page.locator('[data-due-weekday="3"]').getAttribute('aria-pressed'),'true');
+      assert.equal(await page.locator('[data-pay-weekday="5"]').getAttribute('aria-pressed'),'true');
+    };
+    await kept();
+    await tapInPlace(page,page.locator('[data-pay-schedule-save]'));
+    await page.locator('[data-pay-schedule-status]').filter({hasText:'saved'}).waitFor();
+    await tapInPlace(page,page.locator('[data-pay-frequency="biweekly"]'));
+    await kept();
+    await tapInPlace(page,page.locator('[data-pay-frequency="weekly"]'));
+    await kept();
+    console.log('Desktop 1280x800 weekly flow on screen, due and payday kept across Weekly > Every 2 weeks > Weekly');
+    await tapInPlace(page,page.locator('[data-end-weekday="4"]'));
+    assert.equal(await page.locator('[data-due-weekday="3"]').getAttribute('aria-pressed'),'true','end Thursday keeps due Wednesday');
+    assert.equal(await page.locator('[data-pay-weekday="5"]').getAttribute('aria-pressed'),'true','end Thursday keeps paid Friday');
+    await tapInPlace(page,page.locator('[data-due-weekday="3"]'));
+    assert.equal(await page.locator('[data-due-weekday="3"]').getAttribute('aria-pressed'),'false');
+    const clearedPreview=await page.locator('.pay-schedule-preview').innerText();
+    assert.doesNotMatch(clearedPreview,/cards due/);
+    assert.match(clearedPreview,/paid/);
+    console.log('End Thursday keeps due Wed and paid Fri; tapping due again clears it');
+    await page.setViewportSize({width:390,height:667});
+    await settle(page);
+    await page.evaluate(()=>{document.documentElement.dataset.theme='dark';window.scrollTo(0,0);document.querySelector('main')?.scrollTo(0,0)});
+    await tapInPlace(page,page.locator('[data-pay-frequency="semimonthly"]'));
+    await assertScheduleClear(page);
+    const darkColors=await page.evaluate(()=>{
+      const style=sel=>{const el=document.querySelector(sel);const s=getComputedStyle(el);return{color:s.color,bg:s.backgroundColor,border:s.borderTopColor}};
+      return{label:style('#pay-schedule-form > p'),preview:style('.pay-schedule-preview p'),input:style('.pay-schedule input[type="number"]'),tab:getComputedStyle(document.querySelector('#settings-tab-company')).borderTopColor};
+    });
+    assert.equal(darkColors.label.color,'rgb(255, 255, 255)');
+    assert.equal(darkColors.preview.color,'rgb(255, 255, 255)');
+    assert.deepEqual(darkColors.input,{color:'rgb(255, 255, 255)',bg:'rgb(0, 0, 0)',border:'rgb(110, 110, 110)'});
+    assert.equal(darkColors.tab,'rgb(110, 110, 110)');
+    assert.equal(await page.locator('[data-offset="cards_due_offset_days"]').inputValue(),'');
+    assert.equal(await page.locator('[data-offset="payday_offset_days"]').inputValue(),'');
+    const offsetCopy=await page.locator('.pay-schedule-offsets').innerText();
+    assert.match(offsetCopy,/Time cards due:[\s\S]*days after the period ends/);
+    assert.match(offsetCopy,/Payday:[\s\S]*days after the period ends/);
+    await typeKept(page,'[data-end-index="0"]','15');
+    await typeKept(page,'[data-end-index="1"]','20');
+    await typeKept(page,'[data-offset="cards_due_offset_days"]','12');
+    await typeKept(page,'[data-offset="payday_offset_days"]','10');
+    await page.locator('[data-pay-frequency="monthly"]').click();
+    await typeKept(page,'[data-month-end]','21');
+    await typeKept(page,'[data-offset="cards_due_offset_days"]','11');
+    await typeKept(page,'[data-offset="payday_offset_days"]','16');
+    console.log('Twice a month and Monthly keep each typed number and its focus at 390x667');
+    assert.equal((await context.request.patch(base+'/api/company',{data:{payroll:{pay_schedule:{frequency:'weekly'}}},headers:{'X-PDL-Company':seed.COMPANY_ID}})).status(),400);
+    assert.equal((await context.request.patch(base+'/api/company',{data:{payroll:{pay_schedule:{frequency:'weekly',period_end_weekday:2,cards_due_offset_days:1}}},headers:{'X-PDL-Company':seed.COMPANY_ID}})).status(),400);
+    assert.equal((await context.request.patch(base+'/api/company',{data:{payroll:{pay_schedule:{frequency:'monthly',monthly_end_day:'last',payday_weekday:5}}},headers:{'X-PDL-Company':seed.COMPANY_ID}})).status(),400);
+    const scheduleToday=calendar.today('America/Los_Angeles');
+    const expectedPeriod=paySchedule.lastEndedBefore({...paySchedule.emptySchedule(),frequency:'weekly',period_end_weekday:2,cards_due_weekday:3,payday_weekday:5},scheduleToday);
+    await page.evaluate(()=>showPage('dashboard'));
+    await page.locator('#payroll-landing [data-payroll-range="period"]').click();
+    assert.equal(await page.locator('#payroll-landing [data-payroll-range-label]').innerText(),calendar.label(expectedPeriod.start,expectedPeriod.end,scheduleToday.slice(0,4)));
+    const field=await browser.newContext(),fieldPage=await field.newPage();await login(fieldPage,seed.FIELD_EMAIL);await fieldPage.waitForFunction(()=>!document.querySelector('#payroll-landing')&&!document.querySelector('#payroll-export-dialog'));assert.equal((await field.request.get(base+route)).status(),403);assert.equal((await field.request.patch(base+'/api/company',{data:{payroll:{pay_schedule:{frequency:'weekly',period_end_weekday:2}}},headers:{'X-PDL-Company':seed.COMPANY_ID}})).status(),403);assert.equal(await fieldPage.locator('#payroll-landing').count(),0,'field users have no payroll card in the DOM');assert.equal(await fieldPage.locator('#payroll-export-dialog').count(),0,'field users have no export dialog in the DOM');assert.equal(await fieldPage.locator('[data-payroll-export-open]:visible').count(),0);
     assert.deepEqual(errors,[]);console.log('Landing payroll speed, real inline calendar, CSV sums, empty states, shared dialog, filtered review, keyboard, brand and access checks passed.');
   }finally{await browser?.close();await new Promise(resolve=>server.close(resolve));fs.rmSync(root,{recursive:true,force:true})}
 }
