@@ -48,6 +48,14 @@ module.exports = async function checkScheduleUi(page) {
     }
     await page.locator('[data-pay-frequency="semimonthly"]').click();
     const payday = '[data-offset="payday_offset_days"]';
+    for (const selector of [payday, '[data-pay-schedule-save]']) {
+      await page.locator(selector).focus();
+      const focus = await page.locator(selector).evaluate(el => {
+        const style = getComputedStyle(el);
+        return { outline: style.outline, offset: style.outlineOffset, shadow: style.boxShadow };
+      });
+      assert.deepEqual(focus, { outline: 'rgb(255, 102, 0) solid 2px', offset: '2px', shadow: 'none' }, `${theme} ${selector} brand focus ring`);
+    }
     assert(await page.locator(payday).evaluate(el => parseFloat(getComputedStyle(el).scrollMarginBottom) >= 72));
     await page.locator(payday).focus();
     // Chromium headless has no OS keyboard: reduce its viewport to the visible keyboard area.

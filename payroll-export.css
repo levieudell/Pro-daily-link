@@ -69,6 +69,12 @@
 .pay-schedule-preview { margin:4px 0; padding:0; }
 .pay-schedule input[type="number"] { box-sizing:border-box; width:72px; height:48px; margin:0; border:2px solid var(--pdl-gray); background:var(--pdl-offwhite); color:var(--pdl-black); font:400 16px Inter,sans-serif; }
 .pay-schedule input { scroll-margin-bottom:72px; }
+.pay-schedule :is(input, button):focus,
+.pay-schedule :is(input, button):focus-visible {
+  outline:2px solid #FF6600 !important;
+  outline-offset:2px !important;
+  box-shadow:none !important;
+}
 .pay-schedule-offsets input[type="number"] { width:100%; }
 :root[data-theme="dark"] .pay-schedule input[type="number"] { background:var(--pdl-black) !important; color:var(--pdl-white) !important; border:2px solid var(--pdl-gray) !important; }
 .pay-schedule :is([data-pay-schedule-status],[data-pay-schedule-error]):empty { display:none; }
