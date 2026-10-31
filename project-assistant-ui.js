@@ -18,7 +18,7 @@
     if (row.action === 'note' || row.action === 'todo') return `<h3>Review this exact project ${row.action === 'note' ? 'note' : 'to-do'}</h3><dl><dt>Project</dt><dd>${escape(row.projectName)}</dd><dt>Text</dt><dd class="assistant-instructions">${escape(row.text)}</dd><dt>Visibility</dt><dd>${escape(row.visibility)}</dd><dt>Deadline</dt><dd>${row.dueDate ? `${row.deadline === 'today' ? 'Due today: ' : ''}${escape(row.dueDate)} · ${escape(row.timezone)}` : 'No deadline'}</dd>${row.action === 'todo' ? '<dt>Assignee / status</dt><dd>Unassigned · Open</dd>' : ''}<dt>Notifications</dt><dd>${escape(row.notification)}</dd></dl><p>Nothing saved yet. Confirm only if this project and text are correct.</p>`;
     return `<h3>Review this exact assignment</h3><dl><dt>Project</dt><dd>${escape(row.projectName)}</dd><dt>Person</dt><dd>${escape(row.memberName)}${Number.isSafeInteger(row.memberId) ? ' (ID ' + row.memberId + ')' : ''}</dd><dt>Date and hours</dt><dd>${escape(row.date)} · ${escape(row.start)}–${escape(row.end)} · ${escape(row.timezone)}</dd><dt>Task</dt><dd>${escape(row.activity)}</dd><dt>Daily instructions</dt><dd class="assistant-instructions">${escape(row.instructions)}</dd><dt>Notification</dt><dd>${escape(row.notification)}</dd></dl>${result.conflicts.length ? '<h4>Resolve these conflicts before saving</h4><ul>' + result.conflicts.map(row => `<li>${escape(row.message)} ${escape(row.date)} ${escape(row.start || '')}${row.end ? '–' + escape(row.end) : ''}</li>`).join('') + '</ul>' : '<p>No current conflicts. Availability and access will be checked again when you confirm.</p>'}`;
   }
-  function createAssistant({ document, window, getWorkspace, request, onSaved = () => {}, timeoutMs = 25000, SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition }) {
+  function createAssistant({ document, window, getWorkspace, request, onSaved = () => {}, timeoutMs = 25000, clockAction = null, clockLabel = () => "Clock in", SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition }) {
     const pendingReads = new Set();
     const abortPending = () => { for (const controller of pendingReads) controller.abort(); };
     async function bounded(task, cancellable = true) {
@@ -36,7 +36,17 @@
       return bounded(signal => request(path, payload, signal), cancellable);
     };
     const launcher = document.createElement('button'); launcher.type = 'button'; launcher.id = 'project-assistant-launcher'; launcher.hidden = true;
-    launcher.className = 'project-assistant-launcher'; launcher.setAttribute('aria-label', 'Open project assistant'); launcher.setAttribute('aria-haspopup', 'dialog'); launcher.innerHTML = mascot;
+    launcher.className = 'project-assistant-launcher'; launcher.setAttribute('aria-label', 'Open quick actions'); launcher.setAttribute('aria-haspopup', 'dialog'); launcher.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M12 5v14M5 12h14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>';
+    const quick = document.createElement('dialog'); quick.id = 'project-quick-actions'; quick.className = 'project-quick-actions'; quick.setAttribute('aria-label', 'Quick actions');
+    const clockButton = document.createElement('button'); clockButton.type = 'button'; clockButton.textContent = 'Clock in';
+    const assistantButton = document.createElement('button'); assistantButton.type = 'button'; assistantButton.textContent = 'Assistant';
+    const closeQuick = document.createElement('button'); closeQuick.type = 'button'; closeQuick.textContent = 'Close';
+    quick.append(clockButton, assistantButton, closeQuick);
+    const closeActions = () => { quick.close(); launcher.focus(); };
+    closeQuick.onclick = closeActions;
+    quick.addEventListener('cancel', event => { event.preventDefault(); closeActions(); });
+    clockButton.onclick = () => { if (!getWorkspace()?.user?.id || !clockAction) return; closeActions(); clockAction(); };
+    assistantButton.onclick = () => { closeActions(); open(); };
     const dialog = document.createElement('dialog'); dialog.id = 'project-assistant-dialog'; dialog.className = 'project-assistant-dialog'; dialog.setAttribute('aria-labelledby', 'project-assistant-title');
     dialog.innerHTML = `<div class="assistant-heading"><span class="assistant-mascot">${mascot}</span><div><h2 id="project-assistant-title">Project assistant</h2><p>Schedules, notes &amp; to-dos</p></div><button type="button" class="secondary" data-assistant-close aria-label="Close project assistant">Close</button></div>
       <p class="input-help">When AI interpretation is enabled, Send and Talk share your request, draft, company date/timezone and limited permitted project/team display names with OpenAI. Stored reports, files, billing and customer contacts are excluded. Nothing saves before preview and Confirm.</p>
@@ -66,7 +76,7 @@
         </div><div data-assistant-note-fields hidden><label>Exact project note / to-do<textarea data-assistant-noteText rows="4" required maxlength="5000"></textarea></label><label data-assistant-deadline-label>To-do deadline<select data-assistant-deadline><option value="none">No deadline</option><option value="today">Due today (company timezone)</option><option value="date">Choose an exact date</option></select></label><label data-assistant-due-date-label hidden>Exact due date<input data-assistant-dueDate type="date"></label><p class="input-help">Visible to the authorized project team through existing project access. No assignee, notification blast, or public sharing.</p></div>
         <button type="submit" class="primary" data-assistant-preview>Preview changes</button></form>
       </section></details>`;
-    document.body.append(launcher, dialog);
+    document.body.append(launcher, quick, dialog);
     const node = name => dialog.querySelector(`[data-assistant-${name}]`), fieldNames = ['memberId', 'date', 'timezone', 'start', 'end', 'activity', 'instructions'], extraNames = ['action', 'noteText', 'deadline', 'dueDate'], batchNames = ['memberIds','startDate','endDate','weekdays','batchStart','batchEnd'];
     let identity = '', sequence = 0, preview = null, uncertain = false, busy = false, saving = false, activeSave = 0, recognition = null, projectId = null, speechSequence = 0, conversation = [], authorizedContext = null, deadlineExplicit = false, chatState=chatAPI.createChat({projects:getWorkspace().projects});
     const newId=()=>window.crypto?.randomUUID?.()||globalThis.crypto?.randomUUID?.();
@@ -161,12 +171,15 @@
     function reset() { abortPending();aiMode=null;aiState='';aiReply=null;aiHistory=[];aiSession=newId();manualDirty=false;sequence++; stopSpeech(); invalidate(); uncertain = false; projectId = null; authorizedContext=null;deadlineExplicit=false;chatState=chatAPI.createChat({projects:getWorkspace().projects});conversation = []; node('conversation').innerHTML = '';node('prompt').hidden=false;node('details').open=false;node('navigation').hidden=true;node('converse-status').textContent='';busy = false; node('action').value = 'schedule'; node('deadline').value = 'none'; node('noteText').value = ''; node('dueDate').value = ''; setBusy(false); node('confirm').textContent = 'Confirm and save'; node('work').hidden = true; [...fieldNames,...batchNames].forEach(name => node(name).value = ''); node('text').value = ''; message(''); }
     function close() { if (saving) return; stopSpeech(); sequence++; if (!uncertain) reset(); dialog.close(); launcher.focus(); }
     function sync() {
-      const workspace = getWorkspace(), next = workspaceIdentity(); launcher.hidden = !permitted(workspace);
+      const workspace = getWorkspace(), next = workspaceIdentity(); launcher.hidden = !(permitted(workspace) || (clockAction && workspace?.user?.id));
+      clockButton.hidden = !clockAction || !workspace?.user?.id; clockButton.textContent = clockLabel();
+      assistantButton.hidden = !permitted(workspace);
+      if (quick.open && (launcher.hidden || (identity && identity !== next))) quick.close();
       if (identity && identity !== next) { reset(); if (dialog.open) dialog.close(); }
       identity = next;
     }
     function open() {
-      sync(); if (launcher.hidden || dialog.open) return;
+      sync(); if (!permitted(getWorkspace()) || dialog.open) return;
       if (!uncertain) { reset(); const choices = (getWorkspace().projects || []).filter(row => !row.archived && !['Completed', 'Cancelled'].includes(row.status)); node('project').innerHTML = '<option value="">Choose a project</option>' + choices.map(row => `<option value="${Number(row.id)}">${escape(row.name)}</option>`).join(''); }
       dialog.showModal();if(!guided.supported)node('converse-status').textContent='Microphone unavailable here. You can type.';(uncertain ? node('confirm') : node('text')).focus();
     }
@@ -237,19 +250,21 @@
       session.onend = () => { if (recognition === session) { recognition = null; node('dictate').textContent = 'Dictate'; } };
       try { session.start(); node('dictate').textContent = 'Stop dictation'; } catch { stopSpeech(); message('Dictation is unavailable. Type or use your keyboard microphone.', true); }
     }
-    launcher.onclick = open; node('close').onclick = close; node('project').onchange = selectProject; node('chat').onclick = chat; node('form').onsubmit = makePreview;
+    launcher.onclick = () => { sync(); if (launcher.hidden) return; quick.showModal(); (clockButton.hidden ? assistantButton : clockButton).focus(); }; node('close').onclick = close; node('project').onchange = selectProject; node('chat').onclick = chat; node('form').onsubmit = makePreview;
     node('confirm').onclick = confirm; node('edit').onclick = () => { if (!busy && !uncertain) { stopSpeech(); invalidate();node('details').open=true; (['schedule','schedule_batch'].includes(node('action').value) ? node('activity') : node('noteText')).focus(); message('Edit the fields, then build a fresh preview.'); } }; node('dictate').onclick = dictate; node('voice-session').onclick = () => { if(voice.listening)voice.stop();else{stopSpeech();voice.start();} }; node('read-preview').onclick = ()=>{guided.stop();readPreview();};node('converse').onclick=()=>{if(guided.active)guided.stop();else if(!busy&&!uncertain){stopSpeech();guided.start();}};node('chat-form').onsubmit=sendMessage;node('cancel').onclick=()=>{if(!saving&&!uncertain){reset();node('text').focus();}};node('back').onclick=async()=>{if(!busy&&!uncertain){stopSpeech();const result=await processMessage('back');if(result.message)addTurn('Assistant',result.message);}};
     for (const name of [...fieldNames, ...extraNames, ...batchNames, 'text']) node(name).addEventListener('input', () => { if (!uncertain) { stopSpeech(); sequence++; invalidate(); applyMode();if(name!=='text'&&authorizedContext){chatState.adopt(draftPayload(),projectId,authorizedContext);manualDirty=true;} } });
     node('action').onchange = () => { if (!busy && !uncertain) { stopSpeech(); sequence++; invalidate(); deadlineExplicit=false;applyMode();if(authorizedContext){chatState.adopt(draftPayload(),projectId,authorizedContext);manualDirty=true;} } }; node('deadline').onchange = ()=>{node('action').onchange();deadlineExplicit=true;};node('text').onkeydown=event=>{if(event.key==='Enter'&&(event.ctrlKey||event.metaKey)){event.preventDefault();void sendMessage();}};
     dialog.addEventListener('cancel', event => { event.preventDefault(); close(); }); dialog.addEventListener('close', () => {abortPending();stopSpeech();});
     window.addEventListener('blur', pauseForBackground); document.addEventListener?.('visibilitychange', () => { if (document.hidden) pauseForBackground(); }); window.addEventListener('focus', sync); window.addEventListener('storage', sync); window.addEventListener('popstate', close); sync();
-    return { sync, open, close, selectProject, chat, sendMessage, makePreview, confirm, launcher, dialog };
+    return { sync, open, close, selectProject, chat, sendMessage, makePreview, confirm, launcher, dialog, quick, clockButton, assistantButton };
   }
   return { escape, permitted, previewMarkup, createAssistant };
 });
 
 if (typeof window !== 'undefined' && window.PDLProjectAssistant && typeof currentUser !== 'undefined') {
   const projectAssistant = window.PDLProjectAssistant.createAssistant({ document, window,
+    clockAction: () => { renderFieldClock(); document.getElementById('start-day-button').click(); },
+    clockLabel: () => { renderFieldClock(); return document.getElementById('start-day-button')?.textContent || 'Clock in'; },
     getWorkspace: () => ({ companyId: signedInCompanyId() || company?.id, user: currentUser && { id: currentUser.id, role: currentUser.role, projectIds: currentUser.projectIds, assignedCrews: currentUser.assignedCrews, permissions: currentUser.permissions }, currentRole, projects: (projects || []).map(({ id, name, archived, status }) => ({ id, name, archived, status })) }),
     request: async (path, payload, signal) => { const response = await fetch(path, { method: payload ? 'POST' : 'GET', signal, credentials: 'include', cache: 'no-store', headers: { 'Content-Type': 'application/json', 'X-PDL-Company': signedInCompanyId() || company?.id || '' }, ...(payload ? { body: JSON.stringify(payload) } : {}) }); const data = await response.json(); if (!response.ok) { const error = new Error(data.error || 'Request unavailable.'); error.status = response.status; throw error; } return data; },
     onSaved: async (isCurrent, signal) => { const response = await fetch('/api/state', { signal, credentials: 'include', cache: 'no-store', headers: { 'X-PDL-Company': signedInCompanyId() || company?.id || '' } }); if (!response.ok) throw new Error('Schedule refresh failed.'); const state = await response.json(); if (!isCurrent()) return; assignments = state.assignments || []; renderSchedule(); renderActivities(); renderDashboardSummary(); }
