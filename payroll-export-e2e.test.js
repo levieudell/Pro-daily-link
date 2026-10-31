@@ -372,6 +372,9 @@ async function main() {
       }
     }
     const root=page.locator('#payroll-landing');await page.evaluate(()=>showPage('payroll'));
+    const refreshedSummary=page.waitForResponse(response=>response.url().includes('/api/payroll/summary?')&&response.status()===200);
+    await page.evaluate(()=>window.PDLPayrollExport.refresh());
+    await refreshedSummary;
     await root.locator('[data-more-ranges]').click();
     for(const [preset,range] of [['last2',calendar.range('last2',calendar.today(db.company.timezone))],['period',db.payPeriods[0]],['month',calendar.range('month',calendar.today(db.company.timezone))]]){
       await root.locator(`[data-payroll-range="${preset}"]`).click();const [file]=await Promise.all([page.waitForEvent('download'),root.locator('[data-payroll-download="csv"]').click()]);verifyCsv(fs.readFileSync(await file.path(),'utf8'),{from:range.from,to:range.to});
@@ -386,7 +389,9 @@ async function main() {
     await root.locator('[data-change-range]').click();
     await root.locator('[data-payroll-day]').nth(8).click();
     assert(await root.locator('[data-payroll-download="csv"]').isDisabled());
+    assert.match(await root.locator('[data-payroll-range-label]').innerText(),/ · 1 day$/);
     await root.locator('[data-calendar-close]').click();
+    assert.equal(await root.locator('[data-change-range]').evaluate(el=>el===document.activeElement),true);
     assert.equal(await root.locator('[data-payroll-range-label]').innerText(),selectedLabel,'closing an unfinished selection keeps the previous range');
     assert.equal(await root.locator('[data-payroll-download="csv"]').isDisabled(),downloadWasDisabled);
     await root.locator('[data-change-range]').click();

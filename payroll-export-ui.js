@@ -10,6 +10,7 @@
   const presets = [['week','This week'],['last','Last week'],['custom','Custom'],['last2','Last 2 weeks'],['period','Last pay period'],['month','This month']];
   const components = [];
   // Payroll access does not imply permission to view or manage Time cards.
+  let cardsRevision = 0;
   let payrollCards = [], cardsIdentity = '', cardsRequest = null, cardsReady = false;
   const stateReady = () => window.pdlWorkspaceStateReady === true;
   function refreshCards(force = false) {
@@ -28,7 +29,7 @@
         if (response.status === 403) { window.PDLPermissions.denyExport(); return; }
         if (!response.ok) throw new Error('Payroll hours could not load. Refresh to try again.');
         const cards = await response.json();
-        if (!request.signal.aborted && context() === identity) { payrollCards = cards; cardsReady = true; }
+        if (!request.signal.aborted && context() === identity) { payrollCards = cards; cardsReady = true; cardsRevision++; }
       })
       .catch(error => { if (!request.signal.aborted) components.forEach(component => component.root.querySelector('[data-payroll-error]')?.replaceChildren(error.message)); })
       .finally(() => { if (cardsRequest === request) { cardsRequest = null; components.forEach(component => component.update()); } });
@@ -43,7 +44,7 @@
     const safe = value => String(value ?? '').replace(/[&<>"']/g, character => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[character]));
     function refreshSummary() {
       if (!range || pending || !cardsReady || (isLanding ? !document.querySelector('#payroll-page')?.classList.contains('active') : !dialog.open)) return;
-      const key = JSON.stringify([identity, range, payrollCards, company?.payroll?.overtime, company?.weekStart, company?.timezone]);
+      const key = JSON.stringify([identity, range, cardsRevision, company?.payroll?.overtime, company?.weekStart, company?.timezone]);
       if (key === summaryKey) return;
       summaryKey = key; summaryRequest?.abort();
       const request = new AbortController(), requestIdentity = identity; summaryRequest = request;
@@ -73,7 +74,8 @@
       const cards = range ? payrollCards.filter(card => { const date = timePeriodDate(card, company?.timezone || 'America/Los_Angeles'); return !card.deletedAt && date && date >= range.from && date <= range.to; }) : [];
       const unapproved = cards.filter(card => !timeCardApproved(card)).length;
       const hasHours = cards.some(card => timeCardApproved(card) && Number(card.hours) > 0);
-      find('[data-payroll-range-label]').textContent = range ? calendar.label(range.from, range.to, today().slice(0,4)) + ` · ${Math.round((Date.parse(range.to)-Date.parse(range.from))/86400000)+1} days` : '';
+      const dayCount = range ? Math.round((Date.parse(range.to)-Date.parse(range.from))/86400000)+1 : 0;
+      find('[data-payroll-range-label]').textContent = range ? calendar.label(range.from, range.to, today().slice(0,4)) + ` · ${dayCount} ${dayCount === 1 ? 'day' : 'days'}` : '';
       find('[data-payroll-empty]').hidden = !cardsReady || hasHours || pending;
       const barCount = unapproved === 1 ? '1 punch not approved' : `${unapproved} punches not approved`;
       find('[data-payroll-bar-count]').textContent = barCount;
@@ -116,7 +118,7 @@
       if(event.target.closest('[data-change-range]')) { setCalendar(true); drawCalendar(); return; }
       const chip = event.target.closest('[data-payroll-range]'); if(chip) { choose(chip.dataset.payrollRange); return; }
       const arrow = event.target.closest('[data-month]'); if(arrow) { month=calendar.shiftMonth(month,Number(arrow.dataset.month)); drawCalendar(); return; }
-      if(event.target.closest('[data-calendar-close]')) { if(pending) { range=selectionBefore; pending=false; first=null; } setCalendar(false); update(); return; }
+      if(event.target.closest('[data-calendar-close]')) { if(pending) { range=selectionBefore; pending=false; first=null; } setCalendar(false); update(); find('[data-change-range]').focus({preventScroll:true}); return; }
       const day = event.target.closest('[data-payroll-day]'); if(day) {
         const value=day.dataset.payrollDay; cursor=value;
         if(!pending) { selectionBefore={...range}; first=value; range={from:value,to:value}; pending=true; picked=false; }
