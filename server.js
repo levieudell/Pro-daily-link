@@ -43,7 +43,7 @@ const { createSafetyHandler } = require('./safety-engine');
 const { applySafetyEvidence, guardSafetyReportRequest } = require('./safety-report-policy');
 const companyTimezone = require('./company-timezone');
 const { createProjectAssistantHandler } = require('./project-assistant');
-const { assistantPath, permittedCompany } = require('./project-assistant-access');
+const { enabled: assistantEnabled, assistantPath, permittedCompany } = require('./project-assistant-access');
 const { createAIHandler, legacyFallback, normalAIAvailable } = require('./project-assistant-ai');
 const { createAssignmentRows } = require('./assignment-records');
 const { createRevenueReporter } = require('./revenue-reporting');
@@ -3948,6 +3948,7 @@ const server=http.createServer(async(req,res)=>{
       if(assistantPath(url.pathname)){
         const pilotDb=freshestTenantSnapshot(locatedDatabase),{auth,status}=authenticateRequestAccount(req,pilotDb);
         if(!auth)return json(res,status,{error:'Authentication required'});
+        if(!assistantEnabled)return json(res,403,{error:'The assistant is temporarily disabled.'});
         if(!permittedCompany(pilotDb.company?.id))return json(res,403,{error:'Project assistant access is not enabled for this company.'})
       }
       if(req.method==='POST'&&/^\/api\/projects\/\d+\/assistant\/chat$/.test(url.pathname)||(req.method==='POST'&&url.pathname==='/api/assistant/interpret')||(req.method==='GET'&&url.pathname==='/api/assistant/context')){
