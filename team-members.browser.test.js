@@ -78,7 +78,7 @@ fs.mkdirSync(path.join(__dirname, 'output'), { recursive: true });
     fs.mkdirSync(path.join(__dirname,'docs','team-members'),{recursive:true});
     for(const width of [390,1280])for(const theme of ['light','dark']){
       await page.setViewportSize({width,height:width===390?667:800});
-      await page.evaluate(theme=>{document.documentElement.dataset.theme=theme;setNavigationOpen(false);},theme);
+      await page.evaluate(theme=>{document.documentElement.dataset.theme=theme;setNavigationOpen(false);document.activeElement?.blur();window.scrollTo(0,0);},theme);
       assert.equal(await card.evaluate(el=>getComputedStyle(el).borderTopColor),'rgb(110, 110, 110)');
       await page.screenshot({path:`docs/team-members/directory-${theme}-${width}.png`,animations:'disabled'});
       await card.focus();await page.keyboard.press('Enter');await dialog.waitFor();await dialog.evaluate(async el=>{await Promise.all(el.getAnimations({subtree:true}).map(animation=>animation.finished.catch(()=>{})));});

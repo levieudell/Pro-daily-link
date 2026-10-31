@@ -1,11 +1,14 @@
 /* Team members share the brand in both themes. */
 #team-page, #team-details-modal { --team-surface:#FFFFFF; --team-ink:#000000; }
 :root[data-theme="dark"] #team-page, :root[data-theme="dark"] #team-details-modal { --team-surface:#000000; --team-ink:#FFFFFF; }
-#team-grid { grid-template-columns:repeat(auto-fill,minmax(min(100%,250px),1fr)); gap:16px; }
-#team-page .team-member-card { display:flex; flex-direction:column; align-items:flex-start; text-align:left; gap:8px; padding:20px; color:var(--team-ink)!important; background:var(--team-surface)!important; border:1px solid #6E6E6E!important; font:400 16px/1.4 Inter,sans-serif; cursor:pointer; }
-#team-page .team-member-card .avatar { background:#000000; color:#FFFFFF; border:1px solid #6E6E6E; }
-#team-page .team-member-name { font-weight:700; font-size:20px; }
-#team-page .team-member-open { font-weight:700; margin-top:auto; padding-top:8px; }
+#team-grid { grid-template-columns:repeat(auto-fill,minmax(min(100%,320px),1fr)); gap:12px; }
+#team-page .team-member-card { display:grid; grid-template-columns:44px minmax(0,1fr) 16px; align-items:center; text-align:left; gap:14px; padding:18px; min-height:96px; border-radius:12px; box-shadow:none; color:var(--team-ink)!important; background:var(--team-surface)!important; border:1px solid #6E6E6E!important; font:400 16px/1.4 Inter,sans-serif; cursor:pointer; }
+#team-page .team-member-card .avatar { width:44px; height:44px; margin:0; background:#000000; color:#FFFFFF; border:1px solid #6E6E6E; font:700 14px Inter,sans-serif; }
+#team-page .team-member-copy { display:grid; min-width:0; gap:4px; }
+#team-page .team-member-name { font-weight:700; font-size:17px; line-height:1.3; overflow-wrap:anywhere; }
+#team-page .team-member-meta { font-size:13px; line-height:1.4; overflow-wrap:anywhere; }
+#team-page .team-member-working { font-size:12px; font-weight:700; padding-left:10px; border-left:3px solid #FF6600; margin-top:4px; overflow-wrap:anywhere; }
+#team-page .team-member-open { font-size:24px; line-height:1; font-weight:400; margin:0; padding:0; }
 #team-details-modal { width:min(640px,calc(100vw - 24px)); max-height:calc(100dvh - 24px); padding:0; border:1px solid #6E6E6E!important; background:var(--team-surface); color:var(--team-ink); }
 #team-details-modal[open] { display:flex; flex-direction:column; }
 #team-details-modal .modal-header { flex:none; display:flex; justify-content:space-between; align-items:center; background:#000000; color:#FFFFFF; border-bottom:3px solid #FF6600; padding:16px; }

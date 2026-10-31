@@ -83,7 +83,9 @@
       const member = row.member;
       const active = member && workdays.find(day => day.status === 'active' && (day.memberIds || []).map(Number).includes(Number(member.id)));
       const project = active && projects.find(project => Number(project.id) === Number(active.projectId));
-      return `<button type="button" class="panel member-card team-member-card" data-team-member="${row.key}" aria-haspopup="dialog"><span class="avatar">${esc(userInitials(row.name))}</span><span class="team-member-name">${esc(row.name)}</span><span>${esc(member?.role || String(row.accounts[0]?.role || '').replaceAll('_', ' '))}</span><span>${esc(member?.crew || 'No crew')}</span><span>${active ? 'Clocked in' + (project ? ' · ' + esc(project.name) : '') : 'Off site'}</span><span class="team-member-login">${row.accounts.length ? row.accounts.some(user => user.status === 'Active') ? 'Login active' : 'Login deactivated' : 'No login yet'}</span><span class="team-member-open">View details →</span></button>`;
+      const role = member?.role || String(row.accounts[0]?.role || '').replaceAll('_', ' ');
+      const subtitle = [role, member?.crew].filter(Boolean).join(' · ');
+      return `<button type="button" class="panel member-card team-member-card" data-team-member="${row.key}" aria-haspopup="dialog" aria-label="View ${esc(row.name)} details"><span class="avatar" aria-hidden="true">${esc(userInitials(row.name))}</span><span class="team-member-copy"><span class="team-member-name">${esc(row.name)}</span><span class="team-member-meta">${esc(subtitle)}</span>${active ? `<span class="team-member-working">Clocked in${project ? ' · ' + esc(project.name) : ''}</span>` : ''}</span><span class="team-member-open" aria-hidden="true">›</span></button>`;
     }).join('') || '<p>No team members yet. Add your first person.</p>';
     $('#team-grid').querySelectorAll('[data-team-member]').forEach(button => button.onclick = () => openDetails(button.dataset.teamMember));
   };
