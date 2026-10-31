@@ -7,9 +7,10 @@
   const allowed = () => window.PDLPermissions.payrollPageAllowed();
   const today = () => calendar.today(company?.timezone || 'America/Los_Angeles');
   const start = () => company?.weekStart || 'monday';
-  const presets = [['week','This week'],['last','Last week'],['last2','Last 2 weeks'],['period','Last pay period'],['month','This month'],['custom','Custom']];
+  const presets = [['week','This week'],['last','Last week'],['custom','Custom'],['last2','Last 2 weeks'],['period','Last pay period'],['month','This month']];
   const components = [];
   // Payroll access does not imply permission to view or manage Time cards.
+  let cardsRevision = 0;
   let payrollCards = [], cardsIdentity = '', cardsRequest = null, cardsReady = false;
   const stateReady = () => window.pdlWorkspaceStateReady === true;
   function refreshCards(force = false) {
@@ -28,21 +29,43 @@
         if (response.status === 403) { window.PDLPermissions.denyExport(); return; }
         if (!response.ok) throw new Error('Payroll hours could not load. Refresh to try again.');
         const cards = await response.json();
-        if (!request.signal.aborted && context() === identity) { payrollCards = cards; cardsReady = true; }
+        if (!request.signal.aborted && context() === identity) { payrollCards = cards; cardsReady = true; cardsRevision++; }
       })
       .catch(error => { if (!request.signal.aborted) components.forEach(component => component.root.querySelector('[data-payroll-error]')?.replaceChildren(error.message)); })
       .finally(() => { if (cardsRequest === request) { cardsRequest = null; components.forEach(component => component.update()); } });
   }
   function makeComponent(root, isLanding) {
-    const paint = () => { root.innerHTML = `${isLanding?'<h2>EXPORT</h2>':''}<div class="payroll-export-body"><p class="payroll-intro">Only approved punches count. Extra-work flags don't change pay.</p><div class="payroll-export-chips" role="group" aria-label="Payroll date range">${presets.map(([key,label])=>`<button type="button" data-payroll-range="${key}" aria-pressed="false">${label}</button>`).join('')}</div><div class="payroll-calendar" hidden><div class="payroll-calendar-nav"><button type="button" data-month="-1" aria-label="Previous month">‹</button><strong data-month-label></strong><button type="button" data-month="1" aria-label="Next month">›</button></div><p data-calendar-help role="status"></p><div data-calendar-grid></div><button type="button" data-calendar-close>Back to ranges</button></div><p data-payroll-range-label></p><p data-payroll-empty role="status" hidden>No approved hours in this range.</p><p data-payroll-error role="alert"></p></div><footer><button type="button" data-payroll-bar-review hidden><span data-payroll-bar-count></span><span data-payroll-bar-sep> · </span><span>Review</span></button><button type="button" data-payroll-download="csv">Download CSV</button><button type="button" data-payroll-download="pdf">PDF summary</button></footer>`; };
+    const paint = () => { root.innerHTML = `${isLanding?'<h2>EXPORT</h2>':''}<div class="payroll-export-body"><p class="payroll-intro">Only approved punches count. Extra-work flags don't change pay.</p><div class="payroll-export-chips" role="group" aria-label="Payroll date range">${presets.slice(0,3).map(([key,label])=>`<button type="button" data-payroll-range="${key}" aria-pressed="false">${label}</button>`).join('')}<button type="button" data-more-ranges aria-expanded="false">More</button></div><div class="payroll-more-ranges" hidden>${presets.slice(3).map(([key,label])=>`<button type="button" data-payroll-range="${key}" aria-pressed="false">${label}</button>`).join('')}</div><div class="payroll-calendar" hidden><div class="payroll-calendar-nav"><button type="button" data-month="-1" aria-label="Previous month">‹</button><strong data-month-label></strong><button type="button" data-month="1" aria-label="Next month">›</button><button type="button" data-calendar-close aria-label="Close calendar">×</button></div><p data-calendar-help role="status"></p><div data-calendar-grid></div></div><div class="payroll-range-summary"><p data-payroll-range-label></p><button type="button" data-change-range hidden>Change</button></div><p data-payroll-readiness role="status">Loading approved hours…</p><button type="button" data-payroll-bar-review hidden><span data-payroll-bar-count></span><span data-payroll-bar-sep> · </span><span>Review</span></button><div class="payroll-totals" aria-label="Approved hours"></div><p data-payroll-empty role="status" hidden>No approved hours in this range.</p><p data-payroll-error role="alert"></p></div><footer><button type="button" data-payroll-download="csv">Download CSV</button><button type="button" data-payroll-download="pdf">PDF summary</button></footer><section class="payroll-workers" aria-label="Worker hours"><h3>WORKER HOURS</h3><div data-worker-breakdown></div></section>`; };
     const find = selector => root.querySelector(selector);
-    let identity = '', range = null, preset = 'week', month = '', cursor = '', first = null, pending = false, picked = false, controller = null, busy = false;
+    let summaryKey = '', summaryRequest = null;
+    let identity = '', range = null, preset = 'week', month = '', cursor = '', first = null, selectionBefore = null, pending = false, picked = false, controller = null, busy = false;
     function error(text) { find('[data-payroll-error]').textContent = text; }
-    function setCalendar(open) { root.classList.toggle('calendar-open', open); find('.payroll-calendar').hidden = !open; if (open && isLanding) root.scrollIntoView({block:'start'}); }
+    function setCalendar(open) { root.classList.toggle('calendar-open', open); find('.payroll-calendar').hidden = !open; find('[data-change-range]').hidden = open || preset !== 'custom'; if (open && isLanding) root.scrollIntoView({block:'start'}); }
+    const safe = value => String(value ?? '').replace(/[&<>"']/g, character => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[character]));
+    function refreshSummary() {
+      if (!range || pending || !cardsReady || (isLanding ? !document.querySelector('#payroll-page')?.classList.contains('active') : !dialog.open)) return;
+      const key = JSON.stringify([identity, range, cardsRevision, company?.payroll?.overtime, company?.weekStart, company?.timezone]);
+      if (key === summaryKey) return;
+      summaryKey = key; summaryRequest?.abort();
+      const request = new AbortController(), requestIdentity = identity; summaryRequest = request;
+      find('[data-payroll-readiness]').textContent = 'Loading approved hours…';
+      find('.payroll-totals').replaceChildren(); find('[data-worker-breakdown]').replaceChildren();
+      fetch('/api/payroll/summary?' + new URLSearchParams(range), {credentials:'same-origin', headers:{'X-PDL-Company':signedInCompanyId()}, signal:request.signal})
+        .then(async response => {
+          if (request.signal.aborted || key !== summaryKey || context() !== requestIdentity) return;
+          if(response.status === 403) { window.PDLPermissions.denyExport(); return; }
+          if(!response.ok) throw new Error('Payroll summary could not load. Refresh to try again.');
+          const report = await response.json();
+          if(request.signal.aborted || key !== summaryKey || context() !== requestIdentity || !allowed()) return;
+          find('[data-payroll-readiness]').textContent = report.unapprovedCount ? `${report.unapprovedCount} punches need approval` : report.totals.total > 0 ? 'Ready to export' : 'No approved hours in this range.';
+          find('.payroll-totals').innerHTML = [['Workers',report.workers.length],['REG',report.totals.REG.toFixed(2)],['OT',report.totals.OT.toFixed(2)],['DT',report.totals.DT.toFixed(2)]].map(([label,value])=>`<div><span>${label}</span><strong>${value}</strong></div>`).join('');
+          find('[data-worker-breakdown]').innerHTML = report.workers.map(worker => `<details><summary><span>${safe(worker.name)}<small>Approved hours</small></span><strong>${worker.total.toFixed(2)} h</strong></summary><p>REG ${worker.REG.toFixed(2)} · OT ${worker.OT.toFixed(2)} · DT ${worker.DT.toFixed(2)}</p>${report.rows.filter(row=>String(row.worker_id)===String(worker.memberId)).map(row=>`<p class="payroll-job"><span>${safe(row.job_name)}</span><strong>${safe(row.total_hours)} h</strong></p>`).join('')}</details>`).join('') || '<p>No approved hours yet.</p>';
+        }).catch(failure => { if(!request.signal.aborted) { error(failure.message); find('[data-payroll-readiness]').textContent = 'Summary unavailable'; } });
+    }
     function update() {
       if (!stateReady()) return;
       const authorized = allowed();
-      if (!authorized) { controller?.abort(); identity = ''; if (isLanding) { root.replaceChildren(); root.remove(); } else { root.replaceChildren(); if (dialog.open) dialog.close(); dialog.remove(); } syncPayrollNav(); return; }
+      if (!authorized) { summaryRequest?.abort(); summaryKey = ''; controller?.abort(); identity = ''; if (isLanding) { root.replaceChildren(); root.remove(); } else { root.replaceChildren(); if (dialog.open) dialog.close(); dialog.remove(); } syncPayrollNav(); return; }
       if (isLanding) { const page = document.querySelector('#payroll-page'); if (page && !root.isConnected) { const heading = page.querySelector('.page-heading'); if (heading) heading.after(root); else page.prepend(root); } if (!root.querySelector('[data-payroll-download]')) paint(); root.hidden = false; }
       else if (!root.querySelector('[data-payroll-download]')) { if (!dialog.isConnected) document.body.append(dialog); paint(); }
       if (identity !== context()) { controller?.abort(); identity = context(); choose('week'); return; }
@@ -51,12 +74,17 @@
       const cards = range ? payrollCards.filter(card => { const date = timePeriodDate(card, company?.timezone || 'America/Los_Angeles'); return !card.deletedAt && date && date >= range.from && date <= range.to; }) : [];
       const unapproved = cards.filter(card => !timeCardApproved(card)).length;
       const hasHours = cards.some(card => timeCardApproved(card) && Number(card.hours) > 0);
-      find('[data-payroll-range-label]').textContent = range ? calendar.label(range.from, range.to, today().slice(0,4)) : '';
+      const dayCount = range ? Math.round((Date.parse(range.to)-Date.parse(range.from))/86400000)+1 : 0;
+      find('[data-payroll-range-label]').textContent = range ? calendar.label(range.from, range.to, today().slice(0,4)) + ` · ${dayCount} ${dayCount === 1 ? 'day' : 'days'}` : '';
       find('[data-payroll-empty]').hidden = !cardsReady || hasHours || pending;
       const barCount = unapproved === 1 ? '1 punch not approved' : `${unapproved} punches not approved`;
       find('[data-payroll-bar-count]').textContent = barCount;
       find('[data-payroll-bar-review]').hidden = pending || !unapproved;
+      find('[data-payroll-readiness]').hidden = Boolean(unapproved);
+      find('[data-payroll-empty]').hidden = true;
       root.querySelectorAll('[data-payroll-download]').forEach(button => button.disabled = !hasHours || pending || busy);
+      find('[data-change-range]').hidden = preset !== 'custom' || root.classList.contains('calendar-open');
+      refreshSummary();
       syncPayrollNav();
     }
     function lastPeriod() {
@@ -83,17 +111,19 @@
       find('[data-calendar-help]').textContent = pending ? 'Choose the last day.' : picked ? 'Range selected. Choose a day to start again.' : 'Choose the first day, then the last day.';
       const rows = []; for(let i=0;i<days.length;i+=7) rows.push(days.slice(i,i+7));
       if (!days.includes(cursor)) cursor = month;
-      find('[data-calendar-grid]').innerHTML = `<table role="grid" aria-label="${monthLabel}"><thead><tr>${weekdays.map(day=>`<th scope="col">${day}</th>`).join('')}</tr></thead><tbody>${rows.map(row=>`<tr>${row.map(day=>{const selected=range&&day>=range.from&&day<=range.to;const label=new Intl.DateTimeFormat('en-US',{dateStyle:'full',timeZone:'UTC'}).format(new Date(day+'T12:00:00Z'));return `<td aria-selected="${Boolean(selected)}"><button type="button" data-payroll-day="${day}" tabindex="${day===cursor?0:-1}" aria-label="${label}" aria-pressed="${Boolean(selected)}" ${day===today()?'aria-current="date"':''} class="${selected?'in-range ':''}${day.slice(0,7)!==month.slice(0,7)?'adjacent-month':''}">${Number(day.slice(-2))}</button></td>`}).join('')}</tr>`).join('')}</tbody></table>`;
+      find('[data-calendar-grid]').innerHTML = `<table role="grid" aria-label="${monthLabel}"><thead><tr>${weekdays.map(day=>`<th scope="col">${day}</th>`).join('')}</tr></thead><tbody>${rows.map(row=>`<tr>${row.map(day=>{const selected=range&&day>=range.from&&day<=range.to;const label=new Intl.DateTimeFormat('en-US',{dateStyle:'full',timeZone:'UTC'}).format(new Date(day+'T12:00:00Z'));return `<td aria-selected="${Boolean(selected)}"><button type="button" data-payroll-day="${day}" tabindex="${day===cursor?0:-1}" aria-label="${label}" aria-pressed="${Boolean(selected)}" ${day===today()?'aria-current="date"':''} class="${selected?'in-range ':''}${range&&(day===range.from||day===range.to)?'range-end ':''}${day.slice(0,7)!==month.slice(0,7)?'adjacent-month':''}">${Number(day.slice(-2))}</button></td>`}).join('')}</tr>`).join('')}</tbody></table>`;
     }
     root.addEventListener('click', event => {
+      if(event.target.closest('[data-more-ranges]')) { const button=find('[data-more-ranges]'), panel=find('.payroll-more-ranges'); panel.hidden=!panel.hidden; button.setAttribute('aria-expanded',String(!panel.hidden)); return; }
+      if(event.target.closest('[data-change-range]')) { setCalendar(true); drawCalendar(); return; }
       const chip = event.target.closest('[data-payroll-range]'); if(chip) { choose(chip.dataset.payrollRange); return; }
       const arrow = event.target.closest('[data-month]'); if(arrow) { month=calendar.shiftMonth(month,Number(arrow.dataset.month)); drawCalendar(); return; }
-      if(event.target.closest('[data-calendar-close]')) { setCalendar(false); return; }
+      if(event.target.closest('[data-calendar-close]')) { if(pending) { range=selectionBefore; pending=false; first=null; } setCalendar(false); update(); find('[data-change-range]').focus({preventScroll:true}); return; }
       const day = event.target.closest('[data-payroll-day]'); if(day) {
         const value=day.dataset.payrollDay; cursor=value;
-        if(!pending) { first=value; range={from:value,to:value}; pending=true; picked=false; }
+        if(!pending) { selectionBefore={...range}; first=value; range={from:value,to:value}; pending=true; picked=false; }
         else { range={from:first<value?first:value,to:first>value?first:value}; first=null; pending=false; picked=true; }
-        error(''); drawCalendar(); update(); find(`[data-payroll-day="${cursor}"]`)?.focus({preventScroll:true}); return;
+        error(''); drawCalendar(); update(); if(picked) { setCalendar(false); find('[data-change-range]').focus({preventScroll:true}); } else find(`[data-payroll-day="${cursor}"]`)?.focus({preventScroll:true}); return;
       }
       if(event.target.closest('[data-payroll-bar-review]') && range) { if(dialog.open)dialog.close(); showPage('timecards'); window.PDLPayPeriods.reviewRange(range.from,range.to); return; }
       const download=event.target.closest('[data-payroll-download]'); if(download) void save(download.dataset.payrollDownload);
@@ -121,7 +151,7 @@
       } catch(failure) { if(!request.signal.aborted&&identity===requestContext&&context()===requestContext)error(failure.message); }
       finally { if(controller===request){controller=null;busy=false;update();} }
     }
-    const component={update,reset(){identity=context();busy=false;choose('week');},close(){controller?.abort();controller=null;busy=false;},root};components.push(component);return component;
+    const component={update,reset(){identity=context();busy=false;choose('week');find('.payroll-more-ranges').hidden=true;find('[data-more-ranges]').setAttribute('aria-expanded','false');},close(){controller?.abort();controller=null;busy=false;},root};components.push(component);return component;
   }
   function syncPayrollNav() {
     if (!stateReady()) return;
@@ -132,7 +162,7 @@
     if (!on && document.querySelector('#payroll-page')?.classList.contains('active')) showPage('payroll', {historyMode:'replace'});
   }
   const card=makeComponent(landing,true), modal=makeComponent(document.querySelector('#payroll-dialog-content'),false);
-  document.addEventListener('click',event=>{if(event.target.closest('[data-payroll-export-open]')&&allowed()){modal.reset();dialog.showModal();}});
+  document.addEventListener('click',event=>{if(event.target.closest('[data-payroll-export-open]')&&allowed()){modal.reset();dialog.showModal();modal.update();}});
   dialog.querySelector('[data-payroll-close]').addEventListener('click',()=>dialog.close());
   dialog.addEventListener('close',()=>modal.close());
   const previousRender=renderTimeCards;

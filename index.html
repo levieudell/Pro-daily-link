@@ -19,7 +19,7 @@
   <link rel="stylesheet" href="project-site-visits-ui.css?v=20261026-pm-visit3" />
   <link rel="stylesheet" href="project-assistant-ui.css?v=20261031-clock-launcher" />
   <link rel="stylesheet" href="design-system.css?v=20261021-field-clock-button1" />
-  <link rel="stylesheet" href="payroll-export.css?v=20261030-payroll-r7" />
+  <link rel="stylesheet" href="payroll-export.css?v=20261031-dashboard" />
   <link rel="stylesheet" href="office-dashboard.css?v=20261031-company-clock" />
   <link rel="manifest" href="manifest.webmanifest" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
@@ -128,7 +128,7 @@
       <section class="page" id="payroll-page">
         <div class="page-heading"><div><p class="eyebrow">PAY</p><h1>PAYROLL</h1><p>Download approved hours and set the pay schedule.</p></div></div>
         <section id="payroll-landing" class="payroll-component" aria-label="Payroll" hidden></section>
-        <section id="pay-schedule-settings" class="pay-schedule" aria-label="Pay schedule" hidden></section>
+        <details class="payroll-schedule-disclosure"><summary><span>PAY SCHEDULE</span><span>Edit</span></summary><section id="pay-schedule-settings" class="pay-schedule" aria-label="Pay schedule" hidden></section></details>
       </section>
 
       <section class="page" id="actions-page">
@@ -595,8 +595,8 @@
   <script src="payroll-access.js?v=20261030-payroll-r3"></script>
   <script src="payroll-ranges.js?v=20261029-payroll-p1b-r3"></script>
   <script src="pay-schedule.js?v=20261029-payroll-r2d"></script>
-  <script src="pay-schedule-ui.js?v=20261030-payroll-r6"></script>
-  <script src="payroll-export-ui.js?v=20261030-payroll-r7"></script>
+  <script src="pay-schedule-ui.js?v=20261031-dashboard"></script>
+  <script src="payroll-export-ui.js?v=20261031-dashboard3"></script>
   <script src="company-settings-tabs.js?v=20261004-pay-periods"></script>
   <script src="office-workspace.js?v=20261005-office-recovery"></script>
   <script src="reporting-controls.js?v=20261014-review3"></script>
