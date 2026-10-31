@@ -144,7 +144,7 @@
   showPage=function(page,...args){
     // Keep the requested hash while state (including grants and company features) loads.
     if(page==='payroll'&&!stateReady())return;
-    if(page==='payroll'&&!allowed()){page='dashboard';args[0]={...args[0],payrollDenied:true};}
+    if(page==='payroll'&&!allowed())page=defaultPage();
     const result=previousPage.call(this,page,...args);
     if(page==='payroll'){refreshCards();card.update();card.reset();}else syncPayrollNav();
     return result;

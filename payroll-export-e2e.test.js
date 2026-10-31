@@ -14,6 +14,8 @@ const password = 'local-payroll-test-only';
 seed.ensureStagingDatabase(dbFile, { PDL_STAGING_OWNER_PASSWORD: password, PDL_STAGING_FIELD_PASSWORD: password });
 seed.ensureStagingOfficeUser(dbFile, { PDL_STAGING: '1', PDL_STAGING_OFFICE_PASSWORD: password });
 const db = JSON.parse(fs.readFileSync(dbFile));
+const foremanEmail = 'payroll-test-foreman@example.test';
+db.users.push({...db.users.find(user=>user.email===seed.FIELD_EMAIL),id:Math.max(...db.users.map(user=>user.id))+1,email:foremanEmail,role:'foreman'});
 const week = calendar.range('week', calendar.today(db.company.timezone), db.company.weekStart);
 // Disposable staging seed with approved/unapproved punches; never modifies the live demo.
 db.timeCards = [];
@@ -40,7 +42,7 @@ async function login(page, email) {
   await page.locator('form#login button.primary').click();
   await page.waitForFunction(() => typeof currentUser !== 'undefined' && currentUser && typeof showPage === 'function');
 }
-async function assertPayrollEntry(page, allowed) {
+async function assertPayrollEntry(page, allowed, home = 'dashboard') {
   await page.addInitScript(() => {
     window.payrollEntryFrames = [];
     const inspect = () => {
@@ -58,9 +60,10 @@ async function assertPayrollEntry(page, allowed) {
     await new Promise(resolve => setTimeout(resolve, 180));
     await route.continue().catch(error => { if (!/already handled|Target.*closed/.test(error.message)) throw error; });
   });
-  for (const reload of [false, true]) {
-    if (reload) await page.reload(); else { await page.goto('about:blank'); await page.goto(base + '/app#payroll'); }
-    const expected = allowed ? 'payroll-page' : 'dashboard-page';
+  for (const mode of ['fresh','home-reload','payroll-reload']) {
+    if (mode === 'fresh') { await page.goto('about:blank'); await page.goto(base + '/app#payroll'); }
+    else { if(mode==='payroll-reload')await page.evaluate(()=>history.replaceState(null,'','#payroll')); await page.reload(); }
+    const expected = (allowed ? 'payroll' : home) + '-page';
     await page.waitForFunction(expected => window.pdlWorkspaceStateReady && document.documentElement.classList.contains('workspace-ready') && document.querySelector('.page.active')?.id === expected, expected).catch(async error => {
       console.error('Payroll entry state', await page.evaluate(() => ({hash:location.hash,role:currentRole,ready:window.pdlWorkspaceStateReady,classes:document.documentElement.className,active:document.querySelector('.page.active')?.id})));
       throw error;
@@ -68,10 +71,9 @@ async function assertPayrollEntry(page, allowed) {
     await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
     const frames = await page.evaluate(() => window.payrollEntryFrames);
     assert(frames.length > 0, 'sampled visible startup frames');
-    assert(frames.every(id => id === expected), `${reload?'reload':'fresh'}: no previous screen flash: ${JSON.stringify(frames)}`);
-    assert.equal(new URL(page.url()).hash, allowed ? '#payroll' : '#dashboard');
+    assert(frames.every(id => id === expected), `${mode}: no previous screen flash: ${JSON.stringify(frames)}`);
+    assert.equal(new URL(page.url()).hash, allowed ? '#payroll' : '#'+home);
     if (allowed) await page.waitForFunction(() => !document.querySelector('#payroll-landing [data-payroll-download="csv"]')?.disabled);
-    if (!reload && !allowed) await page.evaluate(() => history.replaceState(null, '', '#payroll'));
   }
   await page.unrouteAll({behavior:'wait'});
   console.log(`Payroll fresh/reload ${allowed?'allowed':'denied'}: correct page without a visible old screen`);
@@ -651,7 +653,13 @@ async function main() {
     assert.equal((await ownerCtx.request.patch(base+'/api/users/'+db.users.find(user=>user.role==='owner').id+'/payroll-access',{data:{payroll:false},headers:{'X-PDL-Company':seed.COMPANY_ID}})).status(),409);
     const field=await browser.newContext(),fieldPage=await field.newPage();await login(fieldPage,seed.FIELD_EMAIL);await fieldPage.waitForFunction(()=>!document.querySelector('#payroll-landing')&&!document.querySelector('#payroll-export-dialog'));assert.equal((await field.request.get(base+route)).status(),403);assert.equal((await field.request.patch(base+'/api/company',{data:{payroll:{pay_schedule:{frequency:'weekly',period_end_weekday:2}}},headers:{'X-PDL-Company':seed.COMPANY_ID}})).status(),403);assert.equal(await fieldPage.locator('#payroll-landing').count(),0,'field users have no payroll card in the DOM');assert.equal(await fieldPage.locator('#payroll-export-dialog').count(),0,'field users have no export dialog in the DOM');assert.equal(await fieldPage.locator('[data-payroll-export-open]:visible').count(),0);
     assert.equal(await fieldPage.locator('#payroll-nav:visible, #payroll-phone-bar:visible').count(),0,'field users never see Payroll navigation');
-    await assertPayrollEntry(fieldPage,false);
+    await assertPayrollEntry(fieldPage,false,'myday');
+    const foreman=await browser.newContext(),foremanPage=await foreman.newPage();
+    await login(foremanPage,foremanEmail);
+    assert.equal((await foreman.request.get(base+'/api/auth/me').then(response=>response.json())).accessRole,'foreman');
+    await assertPayrollEntry(foremanPage,false,'myday');
+    assert.equal((await foreman.request.get(base+route)).status(),403);
+    assert.equal(await foremanPage.locator('#payroll-nav:visible, #payroll-phone-bar:visible, #dashboard-page:visible').count(),0);
     assert.equal((await field.request.get(base+'/api/payroll/punches')).status(),403);
     await fieldPage.evaluate(()=>showPage('payroll'));
     assert.equal(await fieldPage.locator('#payroll-page.active').count(),0,'field users cannot open the Payroll page');
