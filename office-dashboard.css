@@ -474,3 +474,17 @@ dialog#start-day-modal[data-self-only="true"]{padding:0;width:min(560px,calc(100
 #start-day-modal[data-self-only="true"] #confirm-start-day{background:#FF6600;color:#000000}
 :root[data-theme="dark"] #start-day-modal[data-self-only="true"],:root[data-theme="dark"] #start-day-modal[data-self-only="true"] :is(input,select,textarea,.modal-actions,.timestamp-preview){background:#000000;color:#FFFFFF}
 :root[data-theme="dark"] #start-day-modal[data-self-only="true"] :is(label,legend,.input-help,#start-day-members){color:#FFFFFF}
+
+#start-day-modal[data-self-only="true"] :is(.labor-fieldset,.timestamp-preview),#start-day-modal[data-self-only="true"] label:has(#start-day-photo-tags),#start-day-modal[data-self-only="true"] .modal-actions .secondary{display:none}
+.personal-clock-options{display:flex;flex-wrap:wrap;gap:12px;margin:16px 0}
+.personal-clock-options[hidden],#start-day-modal label[hidden]{display:none!important}
+.personal-clock-options button{min-height:48px;padding:8px 16px;background:#000000;color:#FFFFFF;border:1px solid #6E6E6E!important;border-radius:8px;font:700 16px Inter,sans-serif}
+dialog#personal-clock-modal{padding:0;width:min(480px,calc(100vw - 24px));max-height:calc(100dvh - 24px);overflow:auto;background:#F7F5F0;color:#000000;border:1px solid #6E6E6E!important;font-family:Inter,sans-serif}
+.personal-clock-header{display:flex;align-items:center;justify-content:space-between;padding:8px 16px;background:#000000;color:#FFFFFF;border-bottom:3px solid #FF6600}
+.personal-clock-header h2{font:22px Anton,sans-serif;color:#FFFFFF;margin:0}
+.personal-clock-header button{width:44px;height:44px;padding:0;background:#000000;color:#FFFFFF;border:0;font-size:28px}
+.personal-clock-body{padding:20px}.personal-clock-timer{text-align:center;border:1px solid #6E6E6E;border-radius:12px;padding:20px 8px;background:#000000;color:#FFFFFF}
+.personal-clock-timer p{margin:0 0 16px;font-weight:700;color:#FFFFFF}.personal-clock-timer small{color:#FFFFFF}.personal-clock-timer strong{display:block;font:clamp(44px,12vw,64px) Anton,sans-serif;color:#FFFFFF;font-variant-numeric:tabular-nums}
+.personal-clock-footer{padding:16px;border-top:1px solid #6E6E6E}.personal-clock-footer button{width:100%;min-height:48px;background:#FF6600;color:#000000;border:1px solid #000000;font:700 16px Inter,sans-serif;border-radius:8px}
+#personal-clock-modal button:focus-visible{outline:2px solid #FF6600!important;outline-offset:2px;box-shadow:none!important}
+:root[data-theme="dark"] dialog#personal-clock-modal{background:#000000;color:#FFFFFF}
