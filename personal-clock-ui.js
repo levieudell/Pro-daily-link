@@ -57,7 +57,7 @@
   document.body.append(dialog);
   let interval;
   const current = () => {
-    const id=Number(currentUser?.memberId);
+    const id=Number(currentUser?.memberId);if(!id)return null;
     const day=(workdays||[]).find(row=>row.status==='active'&&(row.memberIds||[]).map(Number).includes(id));
     const card=(timeCards||[]).find(row=>Number(row.memberId)===id&&!row.outAt);
     return day?{day,projectId:day.projectId,startedAt:day.startedAt}:card?{card,projectId:card.projectId,startedAt:card.inAt}:null;
@@ -71,8 +71,23 @@
     dialog.querySelector('[data-clock-elapsed]').textContent=[Math.floor(seconds/3600),Math.floor(seconds/60)%60,seconds%60].map(value=>String(value).padStart(2,'0')).join(':');
     for(const name of ['note','photo'])dialog.querySelector(`[data-clock-${name}]`).hidden=!project;
   };
+  const identity=()=>`${signedInCompanyId()||company?.id||''}:${currentUser?.id||''}:${currentUser?.memberId||''}`;
+  const ownOpenCards=()=>JSON.stringify((timeCards||[]).filter(row=>row.activityCodeId&&!row.outAt&&Number(row.memberId)===Number(currentUser?.memberId)));
+  let refreshing;
+  const refreshCompanyClock=()=>{
+    if(!currentUser?.id||!Number(currentUser.memberId))return Promise.resolve();
+    const key=identity();if(refreshing?.key===key)return refreshing.promise;
+    const before=ownOpenCards();
+    const promise=(async()=>{
+      try{const card=await api('/api/time-cards/company-clock');
+        if(identity()!==key||ownOpenCards()!==before)return;
+        if(card){const index=timeCards.findIndex(row=>Number(row.id)===Number(card.id));if(index<0)timeCards.push(card);else timeCards[index]=card;}
+        else timeCards=timeCards.filter(row=>!(row.activityCodeId&&!row.outAt&&Number(row.memberId)===Number(currentUser?.memberId)));
+      }catch{}finally{if(refreshing?.key===key)refreshing=null;syncLauncher();}
+    })();refreshing={key,promise};return promise;
+  };
   const open=async()=>{
-    try{const card=await api('/api/time-cards/company-clock');if(card){const index=timeCards.findIndex(row=>Number(row.id)===Number(card.id));if(index<0)timeCards.push(card);else timeCards[index]=card;}}catch{}
+    const key=identity();await refreshCompanyClock();if(identity()!==key||!currentUser?.id)return;
     if(!current())return openStartDay({selfOnly:true});
     update();if(!dialog.open)dialog.showModal();clearInterval(interval);interval=setInterval(update,1000);
   };
@@ -81,5 +96,22 @@
   dialog.querySelector('[data-clock-out]').onclick=()=>{close();renderFieldClock();document.getElementById('start-day-button').click();};
   dialog.querySelector('[data-clock-photo]').onclick=()=>{const active=current();if(!active)return close();const index=projects.findIndex(p=>Number(p.id)===Number(active.projectId));if(index<0)return;close();openProjectPhoto(index,{workdayId:active.day?.id||null});};
   dialog.querySelector('[data-clock-note]').onclick=()=>{const active=current();if(!active)return close();const index=projects.findIndex(p=>Number(p.id)===Number(active.projectId));if(index<0)return;close();const report=reports.find(row=>Number(row.workdayId)===Number(active.day?.id));openReport(report||null,{projectIndex:index});};
+  const launcher=document.getElementById('project-assistant-launcher');
+  const plusMarkup=launcher.innerHTML,openActions=launcher.onclick;
+  const clockMarkup='<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="2"/><path d="M12 12h5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><path class="clock-launcher-hand" d="M12 12V6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>';
+  let lastRunning;
+  const syncLauncher=()=>{
+    const running=Boolean(currentUser?.id&&current());
+    if(running!==lastRunning){launcher.innerHTML=running?clockMarkup:plusMarkup;launcher.classList.toggle('clock-running',running);launcher.setAttribute('aria-label',running?'View running clock':'Open quick actions');launcher.title=running?'Clock running — view timer':'Quick actions';lastRunning=running;}
+  };
+  launcher.onclick=event=>{syncLauncher();if(currentUser?.id&&current())void open();else openActions.call(launcher,event);};
+  const originalRender=renderEverything;
+  renderEverything=function(...args){const result=originalRender.apply(this,args);syncLauncher();void refreshCompanyClock();return result;};
+  let lastIdentity=identity();
+  const launcherInterval=setInterval(()=>{syncLauncher();const next=identity();if(next!==lastIdentity){lastIdentity=next;void refreshCompanyClock();}},1000);
+  window.addEventListener('focus',()=>{syncLauncher();void refreshCompanyClock();});
+  window.addEventListener('pagehide',()=>clearInterval(interval));
+  window.addEventListener('pageshow',()=>{syncLauncher();void refreshCompanyClock();if(dialog.open){update();clearInterval(interval);interval=setInterval(update,1000);}});
+  syncLauncher();void refreshCompanyClock();
   window.PDLPersonalClock={open};
 })();

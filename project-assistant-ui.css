@@ -20,3 +20,7 @@
 .project-quick-actions button:focus-visible{outline:2px solid #FF6600;outline-offset:2px;box-shadow:none}
 :root[data-theme="dark"] .project-quick-actions{background:#000000;color:#FFFFFF}
 :root[data-theme="dark"] .project-quick-actions button:not(:first-child){background:#000000;color:#FFFFFF}
+
+.clock-running .clock-launcher-hand{transform-origin:12px 12px;animation:clock-launcher-tick 60s steps(60,end) infinite}
+@keyframes clock-launcher-tick{to{transform:rotate(360deg)}}
+@media(prefers-reduced-motion:reduce){.clock-running .clock-launcher-hand{animation:none}}
