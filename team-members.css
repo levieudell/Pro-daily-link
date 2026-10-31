@@ -2,7 +2,7 @@
 #team-page, #team-details-modal { --team-surface:#FFFFFF; --team-ink:#000000; }
 :root[data-theme="dark"] #team-page, :root[data-theme="dark"] #team-details-modal { --team-surface:#000000; --team-ink:#FFFFFF; }
 #team-grid { grid-template-columns:repeat(auto-fill,minmax(min(100%,250px),1fr)); gap:16px; }
-#team-page .team-member-card { display:flex; flex-direction:column; align-items:flex-start; text-align:left; gap:8px; padding:20px; color:var(--team-ink); background:var(--team-surface); border:1px solid #6E6E6E; font:400 16px/1.4 Inter,sans-serif; cursor:pointer; }
+#team-page .team-member-card { display:flex; flex-direction:column; align-items:flex-start; text-align:left; gap:8px; padding:20px; color:var(--team-ink)!important; background:var(--team-surface)!important; border:1px solid #6E6E6E!important; font:400 16px/1.4 Inter,sans-serif; cursor:pointer; }
 #team-page .team-member-card .avatar { background:#000000; color:#FFFFFF; border:1px solid #6E6E6E; }
 #team-page .team-member-name { font-weight:700; font-size:20px; }
 #team-page .team-member-open { font-weight:700; margin-top:auto; padding-top:8px; }
