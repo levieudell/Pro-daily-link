@@ -637,16 +637,20 @@ async function main() {
     await assertPayrollEntry(ownerPage,true);
     assert.equal((await ownerCtx.request.get(base+route)).status(),200);
     await ownerPage.evaluate(()=>showPage('team'));
-    await ownerPage.locator('[data-team-tab="accounts"]').click();
+    await ownerPage.locator('[data-team-tab="employees"]').click();
+    const openAccount=async id=>{await ownerPage.evaluate(id=>{document.querySelector('#team-details-modal').close();const user=users.find(row=>Number(row.id)===Number(id));document.querySelector(`[data-team-member="${user.memberId?'member-'+user.memberId:'user-'+user.id}"]`).click();},id);await ownerPage.locator('#team-details-modal').evaluate(async el=>{await Promise.all(el.getAnimations({subtree:true}).map(a=>a.finished.catch(()=>{})));});};
+    const ownerId=await ownerPage.evaluate(()=>currentUser.id);await openAccount(ownerId);
     await ownerPage.locator('.payroll-access-always').waitFor();
     assert.match(await ownerPage.locator('.payroll-access-always').innerText(),/Always on/);
     for (const width of [390,1280]) for (const theme of ['light','dark']) {
       await ownerPage.setViewportSize({width,height:width===390?667:800});
       await ownerPage.evaluate(theme=>document.documentElement.dataset.theme=theme,theme);
+      await openAccount(ownerId);
       const row=await ownerPage.locator('.payroll-access-always').evaluate(el=>{const r=el.getBoundingClientRect(),column=el.parentElement,label=el.closest('.account-row').querySelector('.payroll-account-owner');return{left:r.left,nameLeft:column.querySelector('strong').getBoundingClientRect().left,emailLeft:column.querySelector('.exact-email').getBoundingClientRect().left,width:r.width,available:column.clientWidth,overflow:el.scrollWidth-el.clientWidth,color:getComputedStyle(label).color};});
       assert(Math.abs(row.left-row.nameLeft)<1&&Math.abs(row.left-row.emailLeft)<1&&row.width>=row.available-1&&row.overflow<=1,JSON.stringify(row));
       assert.equal(row.color,theme==='dark'?'rgb(255, 255, 255)':'rgb(0, 0, 0)');
-      const accountButtons=await ownerPage.locator('#account-list .account-row button').evaluateAll(elements=>elements.map(el=>{
+      await openAccount(noaccessId);
+      const accountButtons=await ownerPage.locator('#team-details-modal .account-row button').evaluateAll(elements=>elements.map(el=>{
         const s=getComputedStyle(el),lum=color=>color.match(/[\d.]+/g).slice(0,3).map(v=>{v=Number(v)/255;return v<=.04045?v/12.92:((v+.055)/1.055)**2.4}).reduce((sum,v,i)=>sum+v*[.2126,.7152,.0722][i],0),a=lum(s.color),b=lum(s.backgroundColor);
         return{text:el.textContent,grant:el.classList.contains('payroll-grant'),pressed:el.getAttribute('aria-pressed'),bg:s.backgroundColor,color:s.color,border:s.borderTopColor,contrast:(Math.max(a,b)+.05)/(Math.min(a,b)+.05)};
       }));
@@ -658,11 +662,11 @@ async function main() {
         assert.equal(button.border,'rgb(110, 110, 110)');assert(button.contrast>=4.5,JSON.stringify(button));
         if(button.grant)assert.equal(button.text,'Payroll access: '+(on?'On':'Off'));
       }
-      const grantStyles=await ownerPage.locator('#account-list .payroll-grant').evaluateAll(elements=>elements.map(el=>{const s=getComputedStyle(el);return{border:s.borderTopColor,bg:s.backgroundColor,color:s.color};}));
+      const grantStyles=await ownerPage.locator('#team-details-modal .payroll-grant').evaluateAll(elements=>elements.map(el=>{const s=getComputedStyle(el);return{border:s.borderTopColor,bg:s.backgroundColor,color:s.color};}));
       assert(grantStyles.length>0);
       const palette=['rgb(0, 0, 0)','rgb(255, 255, 255)','rgb(247, 245, 240)','rgb(255, 102, 0)','rgb(110, 110, 110)'];
       for(const styles of grantStyles){assert.equal(styles.border,'rgb(110, 110, 110)');assert(Object.values(styles).every(color=>palette.includes(color)),JSON.stringify(styles));}
-      if(theme==='dark')for(const color of await ownerPage.locator('#account-list .account-row small').evaluateAll(elements=>elements.map(el=>getComputedStyle(el).color)))assert.equal(color,'rgb(255, 255, 255)');
+      if(theme==='dark')for(const color of await ownerPage.locator('#team-details-modal .account-row small').evaluateAll(elements=>elements.map(el=>getComputedStyle(el).color)))assert.equal(color,'rgb(255, 255, 255)');
     }
     const grant=ownerPage.locator(`[data-payroll-grant="${noaccessId}"]`);
     await grant.click();
