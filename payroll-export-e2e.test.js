@@ -92,7 +92,8 @@ function parseCsv(text) {
 
 async function tap(page, locator) {
   const box = await locator.boundingBox(), viewport = page.viewportSize();
-  assert(box && box.x >= 0 && box.x + box.width <= viewport.width + .5 && box.y >= 56 && box.y + box.height <= viewport.height + .5, 'target fully on screen without an uncounted scroll: ' + JSON.stringify(box));
+  const top = await locator.evaluate(el => el.closest('.topbar') ? 0 : 56);
+  assert(box && box.x >= 0 && box.x + box.width <= viewport.width + .5 && box.y >= top && box.y + box.height <= viewport.height + .5, 'target fully on screen without an uncounted scroll: ' + JSON.stringify(box));
   const hit=await locator.evaluate(el => { const r=el.getBoundingClientRect(), hit=document.elementFromPoint(r.x+r.width/2,r.y+r.height/2); return {ok:hit===el||el.contains(hit),hit:hit?.outerHTML.slice(0,300),target:el.outerHTML,box:{x:r.x,y:r.y,width:r.width,height:r.height}}; });
   if(!hit.ok&&shots){fs.mkdirSync(shots,{recursive:true});await page.screenshot({path:path.join(shots,'failure.png')})}
   assert(hit.ok, 'target receives the tap: '+JSON.stringify(hit));
@@ -289,20 +290,19 @@ async function main() {
     assert.equal(await page.locator('#dashboard-page .payroll-component, #dashboard-page #payroll-landing, #dashboard-page .pay-schedule').count(),0,'overview has no payroll markup');
     await page.setViewportSize({width:390,height:844});
     await page.reload();
-    await page.waitForFunction(()=>typeof showPage==='function'&&document.querySelector('#dashboard-page')?.classList.contains('active')&&document.querySelector('#payroll-phone-bar:not([hidden]) button'));
+    await page.waitForFunction(()=>typeof showPage==='function'&&document.querySelector('#dashboard-page')?.classList.contains('active')&&document.querySelector('#payroll-nav:not([hidden])'));
     await page.waitForFunction(()=>!document.querySelector('#toast')?.classList.contains('visible'));
     const payrollSpeed=[];
     for (const height of [844,667]) for (const theme of ['light','dark']) {
       await page.setViewportSize({width:390,height});
       await settle(page);
       await page.evaluate(theme=>{document.documentElement.dataset.theme=theme;showPage('dashboard');window.scrollTo(0,0);window.payrollTapCount=0},theme);
-      await page.waitForFunction(()=>!document.querySelector('#payroll-phone-bar')?.hidden&&!document.querySelector('#toast')?.classList.contains('visible'));
+      await page.waitForFunction(()=>!document.querySelector('#payroll-nav')?.hidden&&!document.querySelector('#toast')?.classList.contains('visible'));
       await settle(page);
-      const barStyle=await page.locator('#payroll-phone-bar button').evaluate(el=>{const s=getComputedStyle(el),r=el.getBoundingClientRect();return{bg:s.backgroundColor,color:s.color,h:r.height}});
-      assert.deepEqual(barStyle,{bg:'rgb(255, 102, 0)',color:'rgb(0, 0, 0)',h:48});
+      assert.equal(await page.locator('#payroll-phone-bar').count(),0,'Overview has no fixed Payroll bar');
       await page.evaluate(() => {
         window.payrollFrames = []; window.trackPayrollFrames = true;
-        document.querySelector('#payroll-phone-bar button').addEventListener('click', () => {
+        document.querySelector('#payroll-nav').addEventListener('click', () => {
           const sample = () => {
             window.payrollFrames.push([...document.querySelectorAll('.page.active')].map(el => el.id));
             if (window.trackPayrollFrames) requestAnimationFrame(sample);
@@ -311,7 +311,9 @@ async function main() {
         }, { once: true });
       });
       const started=performance.now();
-      await tapInPlace(page,page.locator('#payroll-phone-bar button'));
+      await tapInPlace(page,page.locator('#menu-button'));
+      await settle(page);
+      await tapInPlace(page,page.locator('#payroll-nav'));
       await page.locator('#payroll-page.active').waitFor();
       assert(await page.locator('#payroll-page .page-heading h1').isVisible(), 'Payroll heading stays visible');
       for (const label of ['Period ends', 'Time cards due', 'Payday']) assert(await page.locator('.pay-schedule-legend').filter({hasText:new RegExp(`^${label}$`)}).isVisible(), `${label} stays visible`);
@@ -323,8 +325,8 @@ async function main() {
       const [speedDownload]=await Promise.all([page.waitForEvent('download'),tapInPlace(page,page.locator('#payroll-landing [data-payroll-download="csv"]'))]);
       assert.equal(speedDownload.suggestedFilename().endsWith('.csv'),true);
       const speedTaps=await page.evaluate(()=>window.payrollTapCount),speedElapsed=performance.now()-started;
-      assert.equal(await scrollOffset(page),0,'three-tap export requires no scroll');
-      assert(speedTaps<=3,`payroll ${height} ${theme} took ${speedTaps} taps`);
+      assert.equal(await scrollOffset(page),0,'menu export requires no scroll');
+      assert.equal(speedTaps,4,`payroll ${height} ${theme} took ${speedTaps} taps`);
       assert(speedElapsed<4000,`${speedElapsed}ms`);
       const frames = await page.evaluate(() => { window.trackPayrollFrames = false; return window.payrollFrames; });
       assert(frames.length > 0 && frames.every(ids => ids.length === 1 && ids[0] === 'payroll-page'), `no old page flashes: ${JSON.stringify(frames)}`);
@@ -579,7 +581,7 @@ async function main() {
     const noaccessId=db.users.find(user=>user.email===seed.OFFICE_NOACCESS_EMAIL).id;
     const denied=await browser.newContext(),deniedPage=await denied.newPage();await login(deniedPage,seed.OFFICE_NOACCESS_EMAIL);await deniedPage.waitForFunction(()=>document.querySelector('#dashboard-page')?.classList.contains('active'));
     assert.equal(await deniedPage.locator('#payroll-nav').isHidden(),true,'office without payroll has no nav item');
-    assert.equal(await deniedPage.locator('#payroll-phone-bar').isHidden(),true);
+    assert.equal(await deniedPage.locator('#payroll-phone-bar').count(),0);
     await deniedPage.evaluate(()=>showPage('payroll'));
     assert.equal(await deniedPage.locator('#dashboard-page').evaluate(el=>el.classList.contains('active')),true,'#payroll without access returns to the overview');
     assert.equal(await deniedPage.locator('#payroll-landing').count(),0);

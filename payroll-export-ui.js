@@ -127,10 +127,7 @@
     if (!stateReady()) return;
     const on = allowed();
     const nav = document.querySelector('#payroll-nav');
-    const bar = document.querySelector('#payroll-phone-bar');
-    const onDashboard = document.querySelector('#dashboard-page')?.classList.contains('active');
     if (nav) nav.hidden = !on;
-    if (bar) bar.hidden = !on || !onDashboard;
     document.querySelectorAll('[data-payroll-export-open]').forEach(button=>button.hidden=!on);
     if (!on && document.querySelector('#payroll-page')?.classList.contains('active')) showPage('payroll', {historyMode:'replace'});
   }
