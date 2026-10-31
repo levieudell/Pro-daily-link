@@ -28,6 +28,8 @@ db.timeCards.push({id:'draft-payroll',memberId:3,projectId:1,status:'draft',inAt
 const lastWeekDay = calendar.addDays(week.from, -7);
 db.timeCards.push({ id: 'unapproved-last', memberId: 2, projectId: 1, status: 'draft', inAt: lastWeekDay + 'T16:00:00Z', outAt: lastWeekDay + 'T20:00:00Z', hours: 4 });
 db.timeCards.push({ id: 'unapproved-oct21', memberId: 4, projectId: 1, status: 'draft', inAt: '2026-10-21T15:00:00Z', outAt: '2026-10-21T22:45:00Z', hours: 7.75 });
+const zeroDate=calendar.shiftMonth(calendar.today(db.company.timezone).slice(0,7)+'-01',1).slice(0,7)+'-11';
+db.timeCards.push({id:'zero-approved',memberId:1,projectId:1,status:'approved',inAt:zeroDate+'T16:00:00Z',outAt:zeroDate+'T17:00:00Z',hours:0});
 db.payPeriods=[{id:'previous-payroll',label:'Previous saved period',from:calendar.addDays(week.from,-14),to:calendar.addDays(week.from,-1),timeZone:db.company.timezone,status:'open'}];
 fs.writeFileSync(dbFile, JSON.stringify(db));
 fs.writeFileSync(path.join(root, 'platform.json'), JSON.stringify({ users: [], sessions: [] }));

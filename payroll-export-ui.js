@@ -56,7 +56,7 @@
           if(!response.ok) throw new Error('Payroll summary could not load. Refresh to try again.');
           const report = await response.json();
           if(request.signal.aborted || key !== summaryKey || context() !== requestIdentity || !allowed()) return;
-          find('[data-payroll-readiness]').textContent = report.unapprovedCount ? `${report.unapprovedCount} punches need approval` : report.approvedCount ? 'Ready to export' : 'No approved hours in this range.';
+          find('[data-payroll-readiness]').textContent = report.unapprovedCount ? `${report.unapprovedCount} punches need approval` : report.totals.total > 0 ? 'Ready to export' : 'No approved hours in this range.';
           find('.payroll-totals').innerHTML = [['Workers',report.workers.length],['REG',report.totals.REG.toFixed(2)],['OT',report.totals.OT.toFixed(2)],['DT',report.totals.DT.toFixed(2)]].map(([label,value])=>`<div><span>${label}</span><strong>${value}</strong></div>`).join('');
           find('[data-worker-breakdown]').innerHTML = report.workers.map(worker => `<details><summary><span>${safe(worker.name)}<small>Approved hours</small></span><strong>${worker.total.toFixed(2)} h</strong></summary><p>REG ${worker.REG.toFixed(2)} · OT ${worker.OT.toFixed(2)} · DT ${worker.DT.toFixed(2)}</p>${report.rows.filter(row=>String(row.worker_id)===String(worker.memberId)).map(row=>`<p class="payroll-job"><span>${safe(row.job_name)}</span><strong>${safe(row.total_hours)} h</strong></p>`).join('')}</details>`).join('') || '<p>No approved hours yet.</p>';
         }).catch(failure => { if(!request.signal.aborted) { error(failure.message); find('[data-payroll-readiness]').textContent = 'Summary unavailable'; } });
