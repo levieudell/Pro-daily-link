@@ -54,7 +54,7 @@ server.listen(4201, async () => {
     assert.match(appJs, /resetTeamMemberForm\(\)/);
     assert.doesNotMatch(appJs, /role\?'field'/);
     assert.match(html, /id="team-member-modal"><form method="dialog" autocomplete="off">/);
-    assert.match(html, /id="member-account-role" autocomplete="off"><option value="" selected>Employee record only/);
+    assert.match(html, /id="member-account-role" autocomplete="off"><option value="" selected>Team member only/);
     assert.match(appJs, /historyLines/);
     assert.match(appJs, /function timeCardApproved/);
     assert.match(appJs, /locked=timeCardApproved\(card\)/);
