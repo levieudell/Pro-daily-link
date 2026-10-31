@@ -123,6 +123,11 @@ async function landingDownload(page, preset) {
   await page.evaluate(async()=>{await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));await Promise.all(document.getAnimations().filter(a=>a.effect?.getTiming().iterations!==Infinity).map(a=>a.finished.catch(()=>{})))});
   const root=page.locator('#payroll-landing'); await root.locator('[data-payroll-download="csv"]').waitFor({state:'visible'});
   assert(await page.locator('#payroll-page').evaluate(el=>el.classList.contains('active')),'payroll opens on its own page');
+  assert.equal(await page.locator('#payroll-page .page-heading h1').innerText(),'PAYROLL');
+  assert.equal(await root.locator('h2').innerText(),'EXPORT');
+  assert.equal(await page.locator('.pay-schedule-heading').innerText(),'PAY SCHEDULE');
+  const scheduleHeading=await page.locator('.pay-schedule-heading').evaluate(el=>({font:getComputedStyle(el).fontFamily,gap:el.nextElementSibling.querySelector('.pay-schedule-choices').getBoundingClientRect().top-el.getBoundingClientRect().bottom}));
+  assert.match(scheduleHeading.font,/Anton/);assert(Math.abs(scheduleHeading.gap-16)<1,JSON.stringify(scheduleHeading));
   assert.equal(await root.locator('[data-payroll-range="week"]').getAttribute('aria-pressed'),'true');
   await page.evaluate(()=>{window.payrollTapCount=0}); const started=performance.now();
   let range=calendar.range(preset==='custom'?'week':preset,calendar.today(db.company.timezone),db.company.weekStart);
@@ -313,11 +318,12 @@ async function main() {
       assert(await page.locator('.pay-schedule-preview-title').isVisible());
       const previewType = await page.locator('.pay-schedule-preview p, .pay-schedule-preview span').evaluateAll(els => els.map(el => { const s=getComputedStyle(el); return {size:parseFloat(s.fontSize),line:parseFloat(s.lineHeight)}; }));
       assert(previewType.length && previewType.every(s=>s.size>=12&&s.line>=s.size*1.2-.01), JSON.stringify(previewType));
-      await page.evaluate(()=>window.scrollTo(0,0));
+      assert.equal(await scrollOffset(page),0,'Payroll opens with the export path above the fold');
       await tapInPlace(page,page.locator('#payroll-landing [data-payroll-range="last"]'));
       const [speedDownload]=await Promise.all([page.waitForEvent('download'),tapInPlace(page,page.locator('#payroll-landing [data-payroll-download="csv"]'))]);
       assert.equal(speedDownload.suggestedFilename().endsWith('.csv'),true);
       const speedTaps=await page.evaluate(()=>window.payrollTapCount),speedElapsed=performance.now()-started;
+      assert.equal(await scrollOffset(page),0,'three-tap export requires no scroll');
       assert(speedTaps<=3,`payroll ${height} ${theme} took ${speedTaps} taps`);
       assert(speedElapsed<4000,`${speedElapsed}ms`);
       const frames = await page.evaluate(() => { window.trackPayrollFrames = false; return window.payrollFrames; });
@@ -590,12 +596,24 @@ async function main() {
     await ownerPage.locator('[data-team-tab="accounts"]').click();
     await ownerPage.locator('.payroll-access-always').waitFor();
     assert.match(await ownerPage.locator('.payroll-access-always').innerText(),/Always on/);
-    await ownerPage.setViewportSize({width:390,height:667});
-    for (const theme of ['light','dark']) {
+    for (const width of [390,1280]) for (const theme of ['light','dark']) {
+      await ownerPage.setViewportSize({width,height:width===390?667:800});
       await ownerPage.evaluate(theme=>document.documentElement.dataset.theme=theme,theme);
-      const row=await ownerPage.locator('.payroll-access-always').evaluate(el=>{const r=el.getBoundingClientRect(),parent=el.parentElement,style=getComputedStyle(parent),label=parent.querySelector('.payroll-account-owner');return{width:r.width,available:parent.clientWidth-parseFloat(style.paddingLeft)-parseFloat(style.paddingRight),overflow:el.scrollWidth-el.clientWidth,color:getComputedStyle(label).color};});
-      assert(row.width>=row.available-1&&row.overflow<=1,JSON.stringify(row));
+      const row=await ownerPage.locator('.payroll-access-always').evaluate(el=>{const r=el.getBoundingClientRect(),column=el.parentElement,label=el.closest('.account-row').querySelector('.payroll-account-owner');return{left:r.left,nameLeft:column.querySelector('strong').getBoundingClientRect().left,emailLeft:column.querySelector('.exact-email').getBoundingClientRect().left,width:r.width,available:column.clientWidth,overflow:el.scrollWidth-el.clientWidth,color:getComputedStyle(label).color};});
+      assert(Math.abs(row.left-row.nameLeft)<1&&Math.abs(row.left-row.emailLeft)<1&&row.width>=row.available-1&&row.overflow<=1,JSON.stringify(row));
       assert.equal(row.color,theme==='dark'?'rgb(255, 255, 255)':'rgb(0, 0, 0)');
+      const accountButtons=await ownerPage.locator('#account-list .account-row button').evaluateAll(elements=>elements.map(el=>{
+        const s=getComputedStyle(el),lum=color=>color.match(/[\d.]+/g).slice(0,3).map(v=>{v=Number(v)/255;return v<=.04045?v/12.92:((v+.055)/1.055)**2.4}).reduce((sum,v,i)=>sum+v*[.2126,.7152,.0722][i],0),a=lum(s.color),b=lum(s.backgroundColor);
+        return{text:el.textContent,grant:el.classList.contains('payroll-grant'),pressed:el.getAttribute('aria-pressed'),bg:s.backgroundColor,color:s.color,border:s.borderTopColor,contrast:(Math.max(a,b)+.05)/(Math.min(a,b)+.05)};
+      }));
+      assert(accountButtons.some(button=>/Reset password|Replace temporary password/.test(button.text))&&accountButtons.some(button=>button.text==='Edit access')&&accountButtons.some(button=>button.text==='Deactivate'));
+      for(const button of accountButtons){
+        const on=button.grant&&button.pressed==='true';
+        assert.equal(button.bg,on?'rgb(255, 102, 0)':theme==='dark'?'rgb(0, 0, 0)':'rgb(255, 255, 255)',JSON.stringify(button));
+        assert.equal(button.color,on||theme==='light'?'rgb(0, 0, 0)':'rgb(255, 255, 255)',JSON.stringify(button));
+        assert.equal(button.border,'rgb(110, 110, 110)');assert(button.contrast>=4.5,JSON.stringify(button));
+        if(button.grant)assert.equal(button.text,'Payroll access: '+(on?'On':'Off'));
+      }
       const grantStyles=await ownerPage.locator('#account-list .payroll-grant').evaluateAll(elements=>elements.map(el=>{const s=getComputedStyle(el);return{border:s.borderTopColor,bg:s.backgroundColor,color:s.color};}));
       assert(grantStyles.length>0);
       const palette=['rgb(0, 0, 0)','rgb(255, 255, 255)','rgb(247, 245, 240)','rgb(255, 102, 0)','rgb(110, 110, 110)'];
@@ -605,6 +623,7 @@ async function main() {
     const grant=ownerPage.locator(`[data-payroll-grant="${noaccessId}"]`);
     await grant.click();
     await ownerPage.waitForFunction(id=>document.querySelector(`[data-payroll-grant="${id}"]`)?.getAttribute('aria-pressed')==='true',noaccessId);
+    assert.equal(await grant.innerText(),'Payroll access: On');
     assert.equal((await denied.request.get(base+route)).status(),200,'grant takes effect');
     await deniedPage.evaluate(async()=>{await api('/api/state');showPage('payroll');});
     await deniedPage.locator('#payroll-page.active').waitFor();
@@ -626,6 +645,7 @@ async function main() {
     assert.equal(grantedCsv,await (await context.request.get(lastRoute)).text(),'granted admin and office demo export the same company hours');
     await grant.click();
     await ownerPage.waitForFunction(id=>document.querySelector(`[data-payroll-grant="${id}"]`)?.getAttribute('aria-pressed')==='false',noaccessId);
+    assert.equal(await grant.innerText(),'Payroll access: Off');
     assert.equal((await denied.request.get(base+route)).status(),403,'removing payroll revokes export');
     await deniedPage.evaluate(()=>api('/api/state'));
     assert.equal(await deniedPage.locator('#payroll-page.active, #payroll-nav:visible, #payroll-phone-bar:visible').count(),0,'next state refresh removes revoked access without reload');

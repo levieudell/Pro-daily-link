@@ -52,6 +52,7 @@
 :root[data-theme="dark"] .pay-schedule { color:var(--pdl-white); }
 :root[data-theme="dark"] .pay-schedule :is(p, label) { color:var(--pdl-white) !important; }
 .pay-schedule h3 { display:none; }
+.pay-schedule .pay-schedule-heading { margin:0 0 16px; color:inherit; font:24px/1.2 Anton,sans-serif; }
 .pay-schedule p, .pay-schedule legend, .pay-schedule label { margin:0 0 4px; color:inherit; font:400 14px/1.4 Inter,sans-serif; }
 .pay-schedule-choices, .pay-schedule-days, .pay-schedule-weekdays { display:grid; gap:8px; margin:0 0 8px; }
 .pay-schedule-choices, .pay-schedule-days { grid-template-columns:repeat(4,minmax(48px,1fr)); }
@@ -123,11 +124,14 @@
 .payroll-phone-bar { display:none; }
 .payroll-grant { box-sizing:border-box; min-height:48px; height:48px; padding:0 12px; border:2px solid var(--pdl-gray); border-radius:6px; background:var(--pdl-offwhite); color:var(--pdl-black); font:700 14px/1.2 Inter,sans-serif; }
 #account-list .payroll-grant { border-color:var(--pdl-gray) !important; }
+#account-list .account-row button { background:var(--pdl-white) !important; color:var(--pdl-black) !important; border-color:var(--pdl-gray) !important; font-family:Inter,sans-serif; }
+:root[data-theme="dark"] #account-list .account-row button { background:var(--pdl-black) !important; color:var(--pdl-white) !important; }
+:root #account-list .account-row .payroll-grant[aria-pressed="true"] { background:var(--pdl-orange) !important; color:var(--pdl-black) !important; }
 :root[data-theme="dark"] #account-list .account-row :is(small, .exact-email, .account-role) { color:var(--pdl-white) !important; }
 .payroll-grant[aria-pressed="true"] { background:var(--pdl-orange); color:var(--pdl-black); border-color:var(--pdl-orange); }
 :root[data-theme="dark"] .payroll-grant { background:var(--pdl-black); color:var(--pdl-white); }
 :root[data-theme="dark"] .payroll-grant[aria-pressed="true"] { background:var(--pdl-orange); color:var(--pdl-black); }
-.payroll-access-always { flex-basis:100%; grid-column:1 / -1; width:100%; font:700 14px/1.2 Inter,sans-serif; }
+.payroll-access-always { display:block; width:100%; font:700 14px/1.2 Inter,sans-serif; }
 .account-row > .payroll-account-owner { color:var(--pdl-black); }
 :root[data-theme="dark"] .account-row > .payroll-account-owner { color:var(--pdl-white); }
 .pay-period-schedule-link { margin:0 0 12px; }
