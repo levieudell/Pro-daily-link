@@ -71,7 +71,11 @@ const {server}=require('./server');
    }
    await page.evaluate(()=>{workdays.push({id:987654,projectId:projects[0].id,memberIds:[Number(currentUser.memberId)],status:'active',startedAt:new Date(Date.now()-65000).toISOString()});});
    let ends=0;await page.route('**/api/workdays/987654/end',async route=>{ends++;await route.fulfill({status:400,contentType:'application/json',body:JSON.stringify({error:'Synthetic clock-out refusal'})});});
-   await page.locator('#project-assistant-launcher').click();await page.locator('#project-quick-actions').getByRole('button',{name:'Clock out',exact:true}).click();
+   await page.locator('#project-assistant-launcher.clock-running').waitFor();
+   assert.equal(await page.locator('#project-assistant-launcher').getAttribute('aria-label'),'View running clock');
+   const hand=page.locator('.clock-launcher-hand');assert.equal(await hand.evaluate(el=>getComputedStyle(el).animationName),'clock-launcher-tick');
+   await page.emulateMedia({reducedMotion:'reduce'});assert.equal(await hand.evaluate(el=>getComputedStyle(el).animationName),'none');await page.emulateMedia({reducedMotion:'no-preference'});
+   await page.locator('#project-assistant-launcher').click();assert.equal(await page.locator('#project-quick-actions').isVisible(),false,'running clock skips the action menu');
    await page.locator('#personal-clock-modal').waitFor({state:'visible'});assert(await page.locator('#personal-clock-modal').isVisible());assert.equal(ends,0,'viewing running timer must not clock out');
    const elapsed=await page.locator('[data-clock-elapsed]').textContent();await page.waitForTimeout(1100);assert.notEqual(await page.locator('[data-clock-elapsed]').textContent(),elapsed,'timer ticks');
    assert(await page.locator('[data-clock-note]').isVisible());assert(await page.locator('[data-clock-photo]').isVisible());
@@ -85,9 +89,14 @@ const {server}=require('./server');
    const [createdResponse]=await Promise.all([page.waitForResponse(r=>r.url().endsWith('/api/time-cards/company-clock')&&r.request().method()==='POST'),page.locator('#confirm-start-day').click()]);
    assert.equal(createdResponse.status(),201,await createdResponse.text());const card=await createdResponse.json();assert.equal(card.projectId,null);assert.equal(card.memberId,db.users.find(u=>u.email===email).memberId);
    await page.locator('#personal-clock-modal').waitFor({state:'visible'});assert.equal(await page.locator('[data-clock-job]').textContent(),card.activityName);
+   await page.locator('[data-clock-close]').click();await page.reload();
+   await page.locator('#project-assistant-launcher.clock-running').waitFor();await page.locator('#project-assistant-launcher').click();await page.locator('#personal-clock-modal').waitFor({state:'visible'});
+   assert.equal(await page.locator('[data-clock-job]').textContent(),card.activityName,'company activity restores after reload');
+   const shown=(await page.locator('[data-clock-elapsed]').textContent()).split(':').map(Number);const elapsedSeconds=shown[0]*3600+shown[1]*60+shown[2];assert(Math.abs(elapsedSeconds-Math.floor((Date.now()-Date.parse(card.inAt))/1000))<=2,'timer uses the saved start time');
    const duplicate=await page.request.post(base+'/api/time-cards/company-clock',{data:{activityCodeId:activity,memberId:999,projectId:1}});assert.equal(duplicate.status(),409);
    const own=await page.request.get(base+'/api/time-cards/company-clock');assert.equal((await own.json()).id,card.id);
    const [closedResponse]=await Promise.all([page.waitForResponse(r=>r.url().endsWith('/api/time-cards/'+card.id+'/clock-out')),page.locator('[data-clock-out]').click()]);assert.equal(closedResponse.status(),200);assert((await closedResponse.json()).outAt);
+   await page.waitForFunction(()=>!document.querySelector('#project-assistant-launcher').classList.contains('clock-running'));assert.equal(await page.locator('#project-assistant-launcher').getAttribute('aria-label'),'Open quick actions');
    await context.close();
   }
   console.log('Quick actions: plus and existing clock-in flow available to owner, office, field and foreman in both themes.');
