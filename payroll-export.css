@@ -120,8 +120,7 @@
   #payroll-page .pay-schedule-preview-period { margin-bottom:2px; line-height:1.2; }
   #payroll-page .pay-schedule [data-pay-schedule-save] { margin:16px 0 0; }
 }
-#payroll-nav[hidden], #payroll-phone-bar[hidden] { display:none !important; }
-.payroll-phone-bar { display:none; }
+#payroll-nav[hidden] { display:none !important; }
 .payroll-grant { box-sizing:border-box; min-height:48px; height:48px; padding:0 12px; border:2px solid var(--pdl-gray); border-radius:6px; background:var(--pdl-offwhite); color:var(--pdl-black); font:700 14px/1.2 Inter,sans-serif; }
 #account-list .payroll-grant { border-color:var(--pdl-gray) !important; }
 #account-list .account-row button { background:var(--pdl-white) !important; color:var(--pdl-black) !important; border-color:var(--pdl-gray) !important; font-family:Inter,sans-serif; }
@@ -136,11 +135,6 @@
 :root[data-theme="dark"] .account-row > .payroll-account-owner { color:var(--pdl-white); }
 .pay-period-schedule-link { margin:0 0 12px; }
 .pay-period-schedule-link a { color:inherit; font-weight:700; }
-@media (max-width:760px) {
-  .payroll-phone-bar:not([hidden]) { position:fixed; left:0; right:0; bottom:0; z-index:7; display:grid; box-sizing:border-box; height:56px; margin:0; padding:4px 8px; background:var(--pdl-offwhite); border-top:2px solid var(--pdl-gray); }
-  :root[data-theme="dark"] .payroll-phone-bar:not([hidden]) { background:var(--pdl-black); }
-  .payroll-phone-bar button { height:48px; min-height:48px; border:0; border-radius:6px; background:var(--pdl-orange) !important; color:var(--pdl-black) !important; font:700 16px/1 Inter,sans-serif; }
-}
 @media (max-width:420px) and (max-height:844px) {
   #payroll-page { padding-top:8px; }
   #payroll-page .page-heading { min-height:0; margin-bottom:4px; }
