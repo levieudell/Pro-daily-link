@@ -11,6 +11,7 @@ const { spawn } = require('node:child_process');
 let chromium;
 for (const dependency of [
   'playwright',
+  'playwright-core',
   process.env.PDL_PLAYWRIGHT_MODULE,
   path.join(os.homedir(), '.cache', 'codex-runtimes', 'codex-primary-runtime', 'dependencies', 'node', 'node_modules', 'playwright')
 ].filter(Boolean)) {
@@ -21,6 +22,7 @@ const browserPath = process.env.PDL_BROWSER_PATH || [
   'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe',
   'C:/Program Files/Google/Chrome/Application/chrome.exe',
   '/usr/bin/google-chrome',
+  '/usr/bin/google-chrome-stable',
   '/usr/bin/chromium'
 ].find(file => fs.existsSync(file));
 fs.mkdirSync(path.join(__dirname, 'output'), { recursive: true });
