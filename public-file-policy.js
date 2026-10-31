@@ -7,7 +7,7 @@ const PUBLIC_FILES=new Set([
   'company-timezone.js',
   'schedule-approved-labor.js',
   'project-assistant-access.js',
-  'project-assistant-ui.js','project-assistant-ui.css','project-assistant-voice.js','project-assistant-conversation.js','project-assistant-chat.js','project-assistant-names.js',
+  'personal-clock-ui.js','project-assistant-ui.js','project-assistant-ui.css','project-assistant-voice.js','project-assistant-conversation.js','project-assistant-chat.js','project-assistant-names.js',
   'index.html','landing.html','about.html','blog.html','login.html','signup.html','forgot-password.html','reset-password.html','verify-email.html','guest.html','platform.html','platform-login.html','platform-forgot-password.html','platform-reset-password.html','support.html','privacy.html','terms.html',
   'robots.txt','sitemap.xml','llms.txt','MCP.md','vs/raken.html','vs/procore.html','vs/paper-daily-logs.html','change-order.html','change-order.js',
   'platform-revenue.css','project-notes-ui.css','project-site-visits-ui.css','design-system.css','styles.css','landing.css','landing-demo.css','enterprise-pricing.css','public-content.css','login.css','signup.css','guest.css','platform.css','platform-mobile.css','legal.css','estimate-mobile.css',

@@ -264,7 +264,7 @@
 
 if (typeof window !== 'undefined' && window.PDLProjectAssistant && typeof currentUser !== 'undefined') {
   const projectAssistant = window.PDLProjectAssistant.createAssistant({ document, window,
-    clockAction: () => { renderFieldClock(); const selfId=Number(currentUser?.memberId), active=(workdays||[]).some(row=>row.status==='active'&&(row.memberIds||[]).map(Number).includes(selfId))||(timeCards||[]).some(row=>Number(row.memberId)===selfId&&!row.outAt); if(active)document.getElementById('start-day-button').click();else openStartDay({selfOnly:true}); },
+    clockAction: () => window.PDLPersonalClock.open(),
     clockLabel: () => { renderFieldClock(); return document.getElementById('start-day-button')?.textContent || 'Clock in'; },
     getWorkspace: () => ({ companyId: signedInCompanyId() || company?.id, user: currentUser && { id: currentUser.id, role: currentUser.role, projectIds: currentUser.projectIds, assignedCrews: currentUser.assignedCrews, permissions: currentUser.permissions }, currentRole, projects: (projects || []).map(({ id, name, archived, status }) => ({ id, name, archived, status })) }),
     request: async (path, payload, signal) => { const response = await fetch(path, { method: payload ? 'POST' : 'GET', signal, credentials: 'include', cache: 'no-store', headers: { 'Content-Type': 'application/json', 'X-PDL-Company': signedInCompanyId() || company?.id || '' }, ...(payload ? { body: JSON.stringify(payload) } : {}) }); const data = await response.json(); if (!response.ok) { const error = new Error(data.error || 'Request unavailable.'); error.status = response.status; throw error; } return data; },

@@ -48,6 +48,11 @@ const {server}=require('./server');
     assert.equal(styles.bg,'rgb(255, 102, 0)');assert.equal(styles.color,'rgb(0, 0, 0)');assert(styles.height>=48);
     await clock.click();assert(await page.locator('#start-day-modal').isVisible(),'existing clock-in dialog opens for '+email);
     assert.equal(await menu.isVisible(),false);
+    assert.equal(await page.locator('#start-day-note').isVisible(),false,'note stays tucked away');
+    assert.equal(await page.locator('#start-day-photos').isVisible(),false,'native file input stays tucked away');
+    assert.equal(await page.locator('#start-day-modal .labor-fieldset').isVisible(),false);
+    assert.equal(await page.locator('#start-day-modal .modal-actions .secondary').isVisible(),false);
+    await page.locator('#start-day-modal').getByRole('button',{name:'Add note',exact:true}).click();assert(await page.locator('#start-day-note').isVisible());
     assert.equal(await page.locator('#start-day-project').inputValue(),'','personal shortcut starts with no job');
     assert.equal(await page.locator('#start-day-members input').count(),0,'no crew selectors');
     let submitted;
@@ -64,6 +69,13 @@ const {server}=require('./server');
     assert.equal(brand.header,'rgb(0, 0, 0)');assert.equal(brand.rule,'rgb(255, 102, 0)');assert.equal(brand.button,'rgb(255, 102, 0)');assert.equal(brand.text,'rgb(0, 0, 0)');assert(brand.bottom<=brand.height && brand.overflow<=1,JSON.stringify(brand));
     await page.evaluate(()=>document.querySelector('#start-day-modal').close());
    }
+   await page.evaluate(()=>{workdays.push({id:987654,projectId:projects[0].id,memberIds:[Number(currentUser.memberId)],status:'active',startedAt:new Date(Date.now()-65000).toISOString()});});
+   let ends=0;await page.route('**/api/workdays/987654/end',async route=>{ends++;await route.fulfill({status:400,contentType:'application/json',body:JSON.stringify({error:'Synthetic clock-out refusal'})});});
+   await page.locator('#project-assistant-launcher').click();await page.locator('#project-quick-actions').getByRole('button',{name:'Clock out',exact:true}).click();
+   assert(await page.locator('#personal-clock-modal').isVisible());assert.equal(ends,0,'viewing running timer must not clock out');
+   const elapsed=await page.locator('[data-clock-elapsed]').textContent();await page.waitForTimeout(1100);assert.notEqual(await page.locator('[data-clock-elapsed]').textContent(),elapsed,'timer ticks');
+   assert(await page.locator('[data-clock-note]').isVisible());assert(await page.locator('[data-clock-photo]').isVisible());
+   await Promise.all([page.waitForResponse(response=>response.url().endsWith('/api/workdays/987654/end')),page.locator('[data-clock-out]').click()]);assert.equal(ends,1,'explicit Clock out uses the existing end route once');
    await context.close();
   }
   console.log('Quick actions: plus and existing clock-in flow available to owner, office, field and foreman in both themes.');
