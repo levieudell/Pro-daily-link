@@ -701,6 +701,7 @@ async function main() {
     const officeId=db.users.find(user=>user.email===seed.OFFICE_EMAIL).id;
     await page.evaluate(()=>showPage('payroll'));
     await page.waitForFunction(()=>!document.querySelector('#payroll-landing [data-payroll-download="csv"]')?.disabled);
+    await openAccount(officeId);
     await ownerPage.locator(`[data-payroll-grant="${officeId}"]`).click();
     await ownerPage.waitForFunction(id=>document.querySelector(`[data-payroll-grant="${id}"]`)?.getAttribute('aria-pressed')==='false',officeId);
     await page.locator('#payroll-landing [data-payroll-download="csv"]').click();
