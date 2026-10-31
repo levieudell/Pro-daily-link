@@ -372,6 +372,7 @@ async function main() {
       }
     }
     const root=page.locator('#payroll-landing');await page.evaluate(()=>showPage('payroll'));
+    await page.waitForFunction(()=>document.querySelector('#payroll-landing [data-worker-breakdown] summary strong')?.textContent==='45.00 h');
     const refreshedSummary=page.waitForResponse(response=>response.url().includes('/api/payroll/summary?')&&response.status()===200);
     await page.evaluate(()=>window.PDLPayrollExport.refresh());
     await refreshedSummary;
