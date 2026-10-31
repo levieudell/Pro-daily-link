@@ -1,0 +1,68 @@
+.safety-program,.safety-project-details{--safety-bg:var(--pdl-offwhite,#F7F5F0);--safety-ink:var(--pdl-black,#000000);--safety-card:var(--pdl-white,#FFFFFF);color:var(--safety-ink);font-family:Inter,sans-serif}
+:root[data-theme="dark"] :is(.safety-program,.safety-project-details){--safety-bg:var(--pdl-black,#000000);--safety-ink:var(--pdl-white,#FFFFFF);--safety-card:var(--pdl-black,#000000)}
+#safety-page{max-width:1320px;margin-inline:auto}
+.safety-program :is(h2,h3){color:var(--safety-ink);margin:0 0 12px}
+.safety-program h2{font-family:Anton,sans-serif;font-weight:400;font-size:24px;letter-spacing:.02em}
+.safety-program h3{font:700 17px/1.4 Inter,sans-serif}
+.safety-program p{color:var(--safety-ink)!important;font-size:14px;line-height:1.5;margin:8px 0 16px}
+.safety-program :is(button,input,select,textarea){font:400 16px/1.4 Inter,sans-serif;min-height:48px;border:1px solid #6E6E6E!important;border-radius:8px;background:var(--safety-card)!important;color:var(--safety-ink)!important;max-width:100%;box-shadow:none!important}
+.safety-program button{font-weight:700;padding:10px 16px;cursor:pointer}
+.safety-program button.primary,.safety-program-nav button[aria-pressed="true"]{background:#FF6600!important;color:#000000!important;border-color:#FF6600!important}
+.safety-program button:disabled{cursor:wait;opacity:.65}
+.safety-program :is(button,input,textarea,select,summary,a):focus-visible{outline:2px solid #FF6600!important;outline-offset:2px;box-shadow:none!important}
+.safety-program :is(input,select,textarea){padding:10px;width:100%;scroll-margin:76px 0}
+.safety-program label{display:grid;gap:8px;margin:14px 0;font-weight:700;color:var(--safety-ink)!important}
+.safety-program :is(input,textarea)::placeholder{color:#6E6E6E;opacity:1}
+:root[data-theme="dark"] .safety-program :is(input,textarea)::placeholder{color:#FFFFFF;font-style:italic;font-weight:400}
+.safety-program-toolbar,.safety-program-nav{display:flex;flex-wrap:wrap;gap:10px;margin-bottom:20px;align-items:center}
+.safety-program-nav{border-bottom:1px solid #6E6E6E;padding-bottom:16px}
+.safety-metrics{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px;margin-bottom:28px}
+.safety-metrics article{border:1px solid #6E6E6E!important;border-top:3px solid #FF6600!important;border-radius:12px;padding:20px;background:var(--safety-card)}
+.safety-metrics strong{display:block;font:400 40px/1.2 Anton,sans-serif;margin-bottom:8px}
+.safety-metrics span{font-size:14px;font-weight:700}
+.safety-overview-grid{display:grid;grid-template-columns:1fr 1fr;gap:24px}
+.safety-overview-grid>section{min-width:0}
+.safety-record{display:flex;align-items:center;flex-wrap:wrap;gap:12px;padding:20px;margin:12px 0;border:1px solid #6E6E6E!important;border-radius:12px;background:var(--safety-card)}
+.safety-record>div{flex:1 1 200px;min-width:0;overflow-wrap:anywhere}
+.safety-program .safety-kicker{font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px}
+.safety-program .safety-empty{padding:24px;border:1px dashed #6E6E6E;border-radius:12px}
+.safety-program summary,.safety-project-details>summary{min-height:48px;cursor:pointer;padding:14px 0;font-weight:700}
+.safety-program details{border-bottom:1px solid #6E6E6E;margin:16px 0}
+.safety-program a{color:var(--safety-ink)!important;text-decoration:underline;text-underline-offset:3px}
+.safety-program .safety-preserve{white-space:pre-wrap;overflow-wrap:anywhere}
+.safety-program fieldset{border:1px solid #6E6E6E;border-radius:8px;margin:16px 0;padding:12px}
+.safety-program .safety-check{display:flex;align-items:center;gap:12px;min-height:48px;margin:0;font-weight:400}
+.safety-program .safety-check input{width:24px;height:24px;min-height:24px;accent-color:#FF6600;flex-shrink:0}
+.safety-form-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
+dialog#safety-program-dialog{padding:0;width:min(680px,calc(100vw - 24px));max-width:680px;max-height:calc(100dvh - 24px);background:var(--safety-bg)!important;color:var(--safety-ink)!important;border:1px solid #6E6E6E!important;border-radius:12px;overflow:hidden}
+#safety-program-dialog::backdrop{background:#000000;opacity:.65}
+#safety-program-dialog form{display:flex;flex-direction:column;max-height:calc(100dvh - 26px);margin:0}
+dialog#safety-program-dialog[open]{animation:none;opacity:1;transform:none}
+dialog#safety-program-dialog form{padding:0!important}
+#safety-program-dialog header{display:flex;align-items:center;justify-content:space-between;gap:16px;background:#000000;border-bottom:3px solid #FF6600;padding:12px 20px;flex-shrink:0}
+#safety-program-dialog header h2{color:#FFFFFF;margin:0;font-size:24px}
+#safety-program-dialog header button{color:#FFFFFF!important;background:#000000!important;font-size:26px;width:48px;padding:0;flex-shrink:0}
+#safety-program-dialog .safety-dialog-scroll{padding:8px 20px 24px;overflow-y:auto;min-height:0;overscroll-behavior:contain;scroll-padding:20px}
+#safety-program-dialog footer{display:flex;justify-content:flex-end;gap:12px;padding:16px 20px;background:var(--safety-bg)!important;border-top:1px solid #6E6E6E;flex-shrink:0}
+.safety-program .safety-program-error{border-left:3px solid #FF6600;padding:12px;font-weight:700}
+.safety-project-details{margin-top:28px;border-top:1px solid #6E6E6E}
+/* Bring the existing project checks along without changing their workflow. */
+:is(#safety-page,.safety-pm-dialog){--line:#6E6E6E;--safety-border:#6E6E6E;--safety-paper:#FFFFFF;--safety-tint:#F7F5F0;--safety-ink:#000000;--safety-muted:#000000;--muted:#000000;--surface-panel:#FFFFFF;--safety-green:#000000;--safety-green-deep:#000000;--safety-gold:#FF6600;--safety-red:#000000;--safety-blue:#000000}
+:root[data-theme="dark"] :is(#safety-page,.safety-pm-dialog){--safety-paper:#000000;--safety-tint:#000000;--safety-ink:#FFFFFF;--safety-muted:#FFFFFF;--muted:#FFFFFF;--surface-panel:#000000;--safety-green:#FFFFFF;--safety-red:#FFFFFF;--safety-blue:#FFFFFF}
+:is(#safety-page,.safety-pm-dialog) :is(h1,h2,h3){font-family:Anton,sans-serif;font-weight:400}
+:is(.safety-project-details,.safety-pm-dialog) :is(button,input,select,textarea){min-height:48px;font-family:Inter,sans-serif;background:var(--safety-paper)!important;color:var(--safety-ink)!important;border-color:#6E6E6E!important;box-shadow:none!important}
+:is(.safety-project-details,.safety-pm-dialog) :is(button,input,select,textarea,a,summary):focus-visible{outline:2px solid #FF6600!important;outline-offset:2px;box-shadow:none!important}
+:is(.safety-project-details,.safety-pm-dialog) :is(.primary,.safety-command-primary,button[aria-selected="true"],button[type="submit"]){background:#FF6600!important;color:#000000!important;border-color:#FF6600!important}
+#safety-page .safety-command-card{background:#000000!important;box-shadow:none;border-top:3px solid #FF6600}
+#safety-page .safety-command-card:after{display:none}
+#safety-page .safety-command-card :is(p,span,h2){color:#FFFFFF!important;background:transparent;border-color:#6E6E6E}
+:is(.safety-project-details,.safety-pm-dialog) :is(.safety-workspace-notice,.safety-readiness span,.safety-metric-grid article,.safety-action-grid button>span,.safety-calm-empty,.safety-calm-empty>span,.safety-followup-list article,.safety-record-state,.safety-check-dot,.safety-hazard-mark,.safety-record-icon,.safety-v3-badge,.safety-v3-source-grid>div,.safety-v3-source-grid>article,.safety-v3-setup,.safety-v3-action,.safety-v3-runner,.safety-v3-complete){background:var(--safety-paper)!important;color:var(--safety-ink)!important;border-color:#6E6E6E!important;box-shadow:none!important}
+.safety-pm-dialog :is(small,label,p){color:var(--safety-ink)!important}
+.safety-pm-dialog .safety-header{background:#000000!important;border-bottom:3px solid #FF6600}
+.safety-pm-dialog .safety-header :is(h2,p,small,button){color:#FFFFFF!important;background:#000000!important}
+#safety-page .safety-workspace-heading :is(p,.eyebrow){color:var(--safety-ink)!important}
+:root[data-theme="dark"] :is(#safety-dashboard,#safety-program-dialog,#platform-safety-library) :is(input,textarea,select,button,.safety-record,.safety-metrics article){background:#000000!important;color:#FFFFFF!important;border-color:#6E6E6E!important}
+:root[data-theme="dark"] :is(#safety-dashboard,#safety-program-dialog,#platform-safety-library) :is(button.primary,button[aria-pressed="true"]){background:#FF6600!important;color:#000000!important;border-color:#FF6600!important}
+:root[data-theme="dark"] #safety-dashboard .safety-metrics article{border-top-color:#FF6600!important}
+@media(max-width:700px){#safety-dashboard>.safety-program-toolbar{display:grid;grid-template-columns:1fr 1fr;gap:8px}#safety-dashboard>.safety-program-toolbar button{font-size:14px;padding:8px}.safety-workspace-heading{margin-bottom:16px}.safety-metrics{margin-bottom:20px}}
+@media(max-width:700px){.safety-metrics{grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.safety-metrics article{padding:16px}.safety-overview-grid{grid-template-columns:1fr}.safety-program-nav{gap:6px}.safety-program-nav button{padding:10px 12px;font-size:14px}.safety-form-grid{grid-template-columns:1fr}.safety-program-toolbar>button{flex:1 1 auto}.safety-record{padding:16px}#safety-program-dialog footer>button{flex:1;padding:10px;font-size:14px}}

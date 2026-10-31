@@ -49,6 +49,8 @@ const SAFE_COLLECTION_NAMES = new Set([
   'reportingExports',
   'reports',
   'safetyDays',
+  'safetyMeetings',
+  'safetyTopics',
   'sessions',
   'subcontractorLinks',
   'subcontractors',
