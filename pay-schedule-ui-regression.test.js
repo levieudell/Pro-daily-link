@@ -2,7 +2,7 @@
 const assert = require('node:assert/strict');
 
 // Runs inside the authenticated payroll browser test, against the actual settings UI.
-module.exports = async function checkScheduleUi(page) {
+module.exports = async function checkScheduleUi(page, showSchedule) {
   async function open(theme, size) {
     await page.setViewportSize(size);
     await page.evaluate(async theme => {
@@ -10,7 +10,8 @@ module.exports = async function checkScheduleUi(page) {
       company = await api('/api/company', { method: 'PATCH', body: JSON.stringify({ payroll: { pay_schedule: { frequency: null } } }) });
       window.PDLCompanySettings.openPayPeriods();
     }, theme);
-    await page.waitForFunction(() => document.querySelector('[data-pay-schedule-save]')?.hidden && !document.querySelector('[data-end-weekday]'));
+    if (showSchedule) await showSchedule(page);
+    else await page.waitForFunction(() => document.querySelector('[data-pay-schedule-save]')?.hidden && !document.querySelector('[data-end-weekday]'));
     await page.evaluate(async () => {
       await Promise.all(document.getAnimations().filter(a => a.effect?.getTiming().iterations !== Infinity).map(a => a.finished.catch(() => {})));
       window.scrollTo(0, 0); document.querySelector('main')?.scrollTo(0, 0);
@@ -36,6 +37,12 @@ module.exports = async function checkScheduleUi(page) {
       for (const [input, button] of pairs) {
         await page.locator(button).click();
         assert.equal(await page.locator(input).inputValue(), '');
+        if (showSchedule) {
+          // The payroll page intentionally disables number entry while Last day is on.
+          assert(await page.locator(input).isDisabled());
+          assert.equal(await page.locator(button).getAttribute('aria-pressed'), 'true');
+          continue;
+        }
         await page.locator(input).evaluate(el => { window.scheduleInputNode = el; });
         await enter(input, '21');
         assert.equal(await page.locator(button).getAttribute('aria-pressed'), 'false', 'typing turns Last day off');
@@ -48,6 +55,15 @@ module.exports = async function checkScheduleUi(page) {
     }
     await page.locator('[data-pay-frequency="semimonthly"]').click();
     const payday = '[data-offset="payday_offset_days"]';
+    await page.locator(payday).fill('-1');
+    await page.locator('[data-pay-schedule-save]').click();
+    const errorText = 'Payday must be a whole number from 0 to 30.';
+    assert.equal(await page.getByText(errorText, { exact: true }).count(), 1, `${theme}: one validation message`);
+    assert.equal(await page.locator(payday).getAttribute('aria-invalid'), 'true');
+    assert(await page.locator(payday).evaluate(el => el.closest('label').nextElementSibling.matches('[data-pay-schedule-error]')), 'error sits beside the invalid field');
+    await page.locator(payday).fill('3');
+    assert.equal(await page.locator('[data-pay-schedule-error]').textContent(), '');
+    assert.equal(await page.locator(payday).getAttribute('aria-invalid'), null);
     for (const selector of [payday, '[data-pay-schedule-save]']) {
       await page.locator(selector).focus();
       const focus = await page.locator(selector).evaluate(el => {
@@ -80,6 +96,11 @@ module.exports = async function checkScheduleUi(page) {
         const r = el.getBoundingClientRect(); return { top: r.top, bottom: r.bottom, height: r.height, hit: document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2) === el };
       });
       assert(bounds.top >= 56 && bounds.bottom <= 800 && bounds.height >= 48 && bounds.hit, `${frequency} ${theme}: ${JSON.stringify(bounds)}`);
+      const previewClear = await page.locator('.pay-schedule-preview').evaluate(el => {
+        const save = document.querySelector('[data-pay-schedule-save]').getBoundingClientRect();
+        return [...el.querySelectorAll('.pay-schedule-preview-period')].every(line => line.getBoundingClientRect().bottom <= save.top);
+      });
+      assert(previewClear, `${frequency} ${theme}: preview must stay above Save without scrolling`);
     }
     await open(theme, { width: 390, height: 667 });
     await page.evaluate(() => { window.payrollTapCount = 0; });

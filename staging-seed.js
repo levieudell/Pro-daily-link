@@ -17,6 +17,7 @@ const COMPANY_NAME = 'DEMO | Alder Ridge Builders';
 const OWNER_EMAIL = 'levi+owner@prodailylink.com';
 const FIELD_EMAIL = 'levi+field@prodailylink.com';
 const OFFICE_EMAIL = 'office-demo@prodailylink.com';
+const OFFICE_NOACCESS_EMAIL = 'office-noaccess@prodailylink.com';
 const OFFICE_NAME = 'DEMO Office Manager';
 // admin is the office login. Any role other than field opens the office daily
 // view, and New daily report plus office routes allow admin. The demo tenant
@@ -244,6 +245,7 @@ function ensureStagingOfficeUser(file, env = process.env, now = new Date()) {
     email: OFFICE_EMAIL,
     role: OFFICE_ROLE,
     permissions: { ...(existing?.permissions || {}), manageTime: true },
+    permissionGrants: [...new Set([...(Array.isArray(existing?.permissionGrants) ? existing.permissionGrants : []), 'payroll'])],
     memberId: member.id,
     status: 'Active',
     projectIds: [],
@@ -263,6 +265,37 @@ function ensureStagingOfficeUser(file, env = process.env, now = new Date()) {
   const index = db.users.findIndex(row => row.id === user.id);
   if (index >= 0) db.users[index] = user;
   else db.users.push(user);
+  const noaccessExisting = db.users.find(row => String(row?.email || '').toLowerCase() === OFFICE_NOACCESS_EMAIL);
+  const noaccessCred = credential(password);
+  const noaccessCreatedAt = noaccessExisting?.createdAt || now.toISOString();
+  const noaccess = {
+    ...(noaccessExisting || {}),
+    id: noaccessExisting?.id ?? nextNumericId(db.users),
+    companyId: COMPANY_ID,
+    name: 'Office without payroll',
+    email: OFFICE_NOACCESS_EMAIL,
+    role: 'admin',
+    permissions: { ...(noaccessExisting?.permissions || {}), manageTime: false },
+    permissionGrants: [],
+    memberId: noaccessExisting?.memberId || null,
+    status: 'Active',
+    projectIds: [],
+    mustSetPassword: false,
+    preferredLanguage: noaccessExisting?.preferredLanguage || 'en',
+    emailVerifiedAt: noaccessExisting?.emailVerifiedAt || noaccessCreatedAt,
+    createdAt: noaccessCreatedAt,
+    passwordSalt: noaccessCred.passwordSalt,
+    passwordHash: noaccessCred.passwordHash
+  };
+  delete noaccess.setupHash;
+  delete noaccess.setupSalt;
+  delete noaccess.setupExpiresAt;
+  delete noaccess.resetTokenHash;
+  delete noaccess.resetExpiresAt;
+  delete noaccess.resetRequestedAt;
+  const noaccessIndex = db.users.findIndex(row => row.id === noaccess.id);
+  if (noaccessIndex >= 0) db.users[noaccessIndex] = noaccess;
+  else db.users.push(noaccess);
   writeDatabase(file, db);
   console.info(`Staging office demo user ${existing ? 'refreshed' : 'created'}: ${OFFICE_EMAIL}`);
   return { applied: true, created: !existing, id: user.id };
@@ -274,6 +307,7 @@ module.exports = {
   OWNER_EMAIL,
   FIELD_EMAIL,
   OFFICE_EMAIL,
+  OFFICE_NOACCESS_EMAIL,
   OFFICE_NAME,
   OFFICE_ROLE,
   TIMEZONE,
