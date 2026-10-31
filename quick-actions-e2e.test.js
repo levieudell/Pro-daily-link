@@ -39,6 +39,7 @@ const {server}=require('./server');
     await page.locator('#project-assistant-launcher').click();
     await page.evaluate(async()=>{await Promise.all(document.getAnimations().filter(a=>a.effect?.getTiming().iterations!==Infinity).map(a=>a.finished.catch(()=>{})));});
     const menu=page.locator('#project-quick-actions');assert(await menu.isVisible());
+    assert.equal(await menu.getByRole('button',{name:'Assistant',exact:true}).isVisible(),false);
     const clock=menu.getByRole('button',{name:'Clock in',exact:true});assert(await clock.isVisible());
     const styles=await clock.evaluate(el=>{const s=getComputedStyle(el);return {bg:s.backgroundColor,color:s.color,height:el.getBoundingClientRect().height};});
     assert.equal(styles.bg,'rgb(255, 102, 0)');assert.equal(styles.color,'rgb(0, 0, 0)');assert(styles.height>=48);

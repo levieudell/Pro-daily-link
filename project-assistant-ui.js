@@ -18,7 +18,8 @@
     if (row.action === 'note' || row.action === 'todo') return `<h3>Review this exact project ${row.action === 'note' ? 'note' : 'to-do'}</h3><dl><dt>Project</dt><dd>${escape(row.projectName)}</dd><dt>Text</dt><dd class="assistant-instructions">${escape(row.text)}</dd><dt>Visibility</dt><dd>${escape(row.visibility)}</dd><dt>Deadline</dt><dd>${row.dueDate ? `${row.deadline === 'today' ? 'Due today: ' : ''}${escape(row.dueDate)} · ${escape(row.timezone)}` : 'No deadline'}</dd>${row.action === 'todo' ? '<dt>Assignee / status</dt><dd>Unassigned · Open</dd>' : ''}<dt>Notifications</dt><dd>${escape(row.notification)}</dd></dl><p>Nothing saved yet. Confirm only if this project and text are correct.</p>`;
     return `<h3>Review this exact assignment</h3><dl><dt>Project</dt><dd>${escape(row.projectName)}</dd><dt>Person</dt><dd>${escape(row.memberName)}${Number.isSafeInteger(row.memberId) ? ' (ID ' + row.memberId + ')' : ''}</dd><dt>Date and hours</dt><dd>${escape(row.date)} · ${escape(row.start)}–${escape(row.end)} · ${escape(row.timezone)}</dd><dt>Task</dt><dd>${escape(row.activity)}</dd><dt>Daily instructions</dt><dd class="assistant-instructions">${escape(row.instructions)}</dd><dt>Notification</dt><dd>${escape(row.notification)}</dd></dl>${result.conflicts.length ? '<h4>Resolve these conflicts before saving</h4><ul>' + result.conflicts.map(row => `<li>${escape(row.message)} ${escape(row.date)} ${escape(row.start || '')}${row.end ? '–' + escape(row.end) : ''}</li>`).join('') + '</ul>' : '<p>No current conflicts. Availability and access will be checked again when you confirm.</p>'}`;
   }
-  function createAssistant({ document, window, getWorkspace, request, onSaved = () => {}, timeoutMs = 25000, clockAction = null, clockLabel = () => "Clock in", SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition }) {
+  function createAssistant({ document, window, getWorkspace, request, onSaved = () => {}, timeoutMs = 25000, assistantEnabled = accessAPI?.enabled === true, clockAction = null, clockLabel = () => "Clock in", SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition }) {
+    const assistantPermitted = workspace => assistantEnabled && permitted(workspace);
     const pendingReads = new Set();
     const abortPending = () => { for (const controller of pendingReads) controller.abort(); };
     async function bounded(task, cancellable = true) {
@@ -32,7 +33,7 @@
       finally { clearTimeout(timer); controller.signal.removeEventListener('abort', onAbort); pendingReads.delete(controller); }
     }
     const boundedRequest = (path, payload, cancellable = true) => {
-      if (!permitted(getWorkspace())) return Promise.reject(Object.assign(new Error('Project assistant access is unavailable.'), { status: 403 }));
+      if (!assistantPermitted(getWorkspace())) return Promise.reject(Object.assign(new Error('Project assistant access is unavailable.'), { status: 403 }));
       return bounded(signal => request(path, payload, signal), cancellable);
     };
     const launcher = document.createElement('button'); launcher.type = 'button'; launcher.id = 'project-assistant-launcher'; launcher.hidden = true;
@@ -82,14 +83,14 @@
     const newId=()=>window.crypto?.randomUUID?.()||globalThis.crypto?.randomUUID?.();
     let aiMode=null, aiState='', aiReply=null, aiSession=newId(), aiHistory=[], manualDirty=false;
     const workspaceIdentity = () => { const { companyId, user, currentRole } = getWorkspace(); return JSON.stringify({ companyId, user, currentRole }); };
-    const current = version => dialog.open && version === sequence && identity === workspaceIdentity() && permitted(getWorkspace());
+    const current = version => dialog.open && version === sequence && identity === workspaceIdentity() && assistantPermitted(getWorkspace());
     const message = (text, error = false) => { node('message').textContent = text; node('message').setAttribute('role', error ? 'alert' : 'status'); };
-    const voice = voiceAPI.createVoiceSession({document,window,SpeechRecognition,canContinue:()=>dialog.open&&Boolean(projectId)&&identity===workspaceIdentity()&&permitted(getWorkspace())&&!busy&&!uncertain,
+    const voice = voiceAPI.createVoiceSession({document,window,SpeechRecognition,canContinue:()=>dialog.open&&Boolean(projectId)&&identity===workspaceIdentity()&&assistantPermitted(getWorkspace())&&!busy&&!uncertain,
       onTranscript:text=>{invalidate();const combined=(node('text').value+' '+text).trim();if(combined.length>6000){voice.stop('Transcript limit reached. Review or shorten the text before continuing.');return;}node('text').value=combined;message('Voice text is a draft. Ask for suggested fields or preview completed fields; nothing is saved.');},
       onCommand:async command=>{if(command==='suggest'){const pending=chat(),version=sequence,voiceCurrent=voice.checkpoint();await pending;if(current(version)&&voiceCurrent())voice.read(node('message').textContent);}else if(command==='preview'){const pending=makePreview(),version=sequence,voiceCurrent=voice.checkpoint();await pending;if(current(version)&&voiceCurrent()&&preview)voice.read(node('review').textContent);}else if(command==='read')readPreview();else if(command==='cancel'&&!busy&&!uncertain){invalidate();(['schedule','schedule_batch'].includes(node('action').value)?node('activity'):node('noteText')).focus();message('Preview cancelled. Nothing saved.');}},
       onStatus:(text,listening)=>{node('voice-status').textContent=text;node('voice-session').textContent=listening?'Stop voice prototype':'Start voice prototype';node('voice-session').setAttribute('aria-pressed',String(listening));}});
     const guided = conversationAPI.createConversation({document, window, SpeechRecognition,
-      canContinue:()=>dialog.open&&identity===workspaceIdentity()&&permitted(getWorkspace())&&!uncertain&&!saving,
+      canContinue:()=>dialog.open&&identity===workspaceIdentity()&&assistantPermitted(getWorkspace())&&!uncertain&&!saving,
       getContext:()=>authorizedContext||{project:{name:''},timezone:''},getDraft:()=>chatState.context?chatState.draft:{action:'chat'},
       nextSlot:()=>aiReply?(aiReply.ready?null:'clarification'):chatState.slot||(!chatState.ready?'project':null),nextQuestion:()=>aiReply?.message||(chatState.ready?'Say preview these changes to hear the exact proposal, or change and a field name.':chatState.question()),
       answerTurn:async(text,isVoiceCurrent)=>processMessage(text,isVoiceCurrent,false),canClarifyYes:()=>aiReply?.canAcceptYes||chatState.canAcceptYes,onPrompt:text=>addTurn('Assistant',text),
@@ -171,15 +172,15 @@
     function reset() { abortPending();aiMode=null;aiState='';aiReply=null;aiHistory=[];aiSession=newId();manualDirty=false;sequence++; stopSpeech(); invalidate(); uncertain = false; projectId = null; authorizedContext=null;deadlineExplicit=false;chatState=chatAPI.createChat({projects:getWorkspace().projects});conversation = []; node('conversation').innerHTML = '';node('prompt').hidden=false;node('details').open=false;node('navigation').hidden=true;node('converse-status').textContent='';busy = false; node('action').value = 'schedule'; node('deadline').value = 'none'; node('noteText').value = ''; node('dueDate').value = ''; setBusy(false); node('confirm').textContent = 'Confirm and save'; node('work').hidden = true; [...fieldNames,...batchNames].forEach(name => node(name).value = ''); node('text').value = ''; message(''); }
     function close() { if (saving) return; stopSpeech(); sequence++; if (!uncertain) reset(); dialog.close(); launcher.focus(); }
     function sync() {
-      const workspace = getWorkspace(), next = workspaceIdentity(); launcher.hidden = !(permitted(workspace) || (clockAction && workspace?.user?.id));
+      const workspace = getWorkspace(), next = workspaceIdentity(); launcher.hidden = !(assistantPermitted(workspace) || (clockAction && workspace?.user?.id));
       clockButton.hidden = !clockAction || !workspace?.user?.id; clockButton.textContent = clockLabel();
-      assistantButton.hidden = !permitted(workspace);
+      assistantButton.hidden = !assistantPermitted(workspace);
       if (quick.open && (launcher.hidden || (identity && identity !== next))) quick.close();
       if (identity && identity !== next) { reset(); if (dialog.open) dialog.close(); }
       identity = next;
     }
     function open() {
-      sync(); if (!permitted(getWorkspace()) || dialog.open) return;
+      sync(); if (!assistantPermitted(getWorkspace()) || dialog.open) return;
       if (!uncertain) { reset(); const choices = (getWorkspace().projects || []).filter(row => !row.archived && !['Completed', 'Cancelled'].includes(row.status)); node('project').innerHTML = '<option value="">Choose a project</option>' + choices.map(row => `<option value="${Number(row.id)}">${escape(row.name)}</option>`).join(''); }
       dialog.showModal();if(!guided.supported)node('converse-status').textContent='Microphone unavailable here. You can type.';(uncertain ? node('confirm') : node('text')).focus();
     }
