@@ -2449,7 +2449,7 @@ async function handleTimeRecords(req,res,url){
   json(res,404,{error:'Not found'});return true
 }
 async function handlePayrollExport(req,res,url){
-  if(!['/api/payroll/export','/api/payroll/punches'].includes(url.pathname))return false;
+  if(!['/api/payroll/export','/api/payroll/punches','/api/payroll/summary'].includes(url.pathname))return false;
   const db=readDb(),user=authenticateRequestAccount(req,db).auth?.user;
   if(!user){json(res,401,{error:'Authentication required'});return true}
   if(!payrollAccess.can(user,'payroll')){
@@ -2465,6 +2465,10 @@ async function handlePayrollExport(req,res,url){
     })));return true;
   }
   try{
+    if(url.pathname==='/api/payroll/summary'){
+      res.setHeader('Cache-Control','private, no-store');
+      json(res,200,payrollExport.buildPayrollExport(db,{from:url.searchParams.get('from'),to:url.searchParams.get('to')}));return true;
+    }
     const format=url.searchParams.get('format');
     if(!['csv','pdf'].includes(format)){json(res,400,{error:'Choose CSV or PDF for payroll export.'});return true}
     const report=payrollExport.buildPayrollExport(db,{from:url.searchParams.get('from'),to:url.searchParams.get('to')});

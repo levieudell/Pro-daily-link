@@ -37,7 +37,18 @@ require('./database/supabase').loadLocalEnv = () => {};
 const { server } = require('./server');
 let browser, base;
 const shots = process.env.PDL_PAYROLL_SCREENSHOTS;
+// This suite reloads six roles repeatedly. Respect the real per-IP limit rather
+// than letting a burst of test-only reloads turn access assertions into 429s.
+async function reserveRequestBudget(page) {
+  const response = await page.request.get(base + '/api/auth/me');
+  const remaining = Number(response.headers()['ratelimit-remaining']);
+  if (Number.isFinite(remaining) && remaining < 150) {
+    const until = Number(response.headers()['ratelimit-reset']) * 1000;
+    await new Promise(resolve => setTimeout(resolve, Math.max(0, until - Date.now()) + 100));
+  }
+}
 async function login(page, email) {
+  await reserveRequestBudget(page);
   await page.goto(base + '/login.html'); await page.locator('#email').fill(email); await page.locator('#password').fill(password);
   await page.locator('form#login button.primary').click();
   await page.waitForFunction(() => typeof currentUser !== 'undefined' && currentUser && typeof showPage === 'function');
@@ -61,6 +72,7 @@ async function assertPayrollEntry(page, allowed, home = 'dashboard') {
     await route.continue().catch(error => { if (!/already handled|Target.*closed/.test(error.message)) throw error; });
   });
   for (const mode of ['fresh','home-reload','payroll-reload']) {
+    await reserveRequestBudget(page);
     if (mode === 'fresh') { await page.goto('about:blank'); await page.goto(base + '/app#payroll'); }
     else { if(mode==='payroll-reload')await page.evaluate(()=>history.replaceState(null,'','#payroll')); await page.reload(); }
     const expected = (allowed ? 'payroll' : home) + '-page';
@@ -126,9 +138,8 @@ async function landingDownload(page, preset) {
   assert(await page.locator('#payroll-page').evaluate(el=>el.classList.contains('active')),'payroll opens on its own page');
   assert.equal(await page.locator('#payroll-page .page-heading h1').innerText(),'PAYROLL');
   assert.equal(await root.locator('h2').innerText(),'EXPORT');
-  assert.equal(await page.locator('.pay-schedule-heading').innerText(),'PAY SCHEDULE');
-  const scheduleHeading=await page.locator('.pay-schedule-heading').evaluate(el=>({font:getComputedStyle(el).fontFamily,gap:el.nextElementSibling.querySelector('.pay-schedule-choices').getBoundingClientRect().top-el.getBoundingClientRect().bottom}));
-  assert.match(scheduleHeading.font,/Anton/);assert(Math.abs(scheduleHeading.gap-16)<1,JSON.stringify(scheduleHeading));
+  assert.match(await page.locator('.payroll-schedule-disclosure > summary span').first().innerText(),/^PAY SCHEDULE/);
+  assert.equal(await page.locator('.payroll-schedule-disclosure').getAttribute('open'),null);
   assert.equal(await root.locator('[data-payroll-range="week"]').getAttribute('aria-pressed'),'true');
   await page.evaluate(()=>{window.payrollTapCount=0}); const started=performance.now();
   let range=calendar.range(preset==='custom'?'week':preset,calendar.today(db.company.timezone),db.company.weekStart);
@@ -136,6 +147,7 @@ async function landingDownload(page, preset) {
   if(preset==='custom'){
     range={from:calendar.addDays(week.from,2),to:calendar.addDays(week.from,4)};
     assert.equal(await root.locator('input[type="date"]').count(),0,'no native date controls');
+    if(shots&&page.viewportSize().width===390&&page.viewportSize().height===844){const theme=await page.evaluate(()=>document.documentElement.dataset.theme);await page.screenshot({path:path.join(shots,`calendar-${theme}-390x844.png`)});}
     for(const date of [range.from,range.to])await tap(page,root.locator(`[data-payroll-day="${date}"]`));
     assert.equal(await root.locator('[data-payroll-day].in-range').count(),3,'selected range highlighted');
   }
@@ -146,6 +158,13 @@ async function landingDownload(page, preset) {
   const elapsed=performance.now()-started,taps=await page.evaluate(()=>window.payrollTapCount),limit=preset==='week'?2:preset==='last'?2:4,ms=preset==='week'?3000:preset==='last'?4000:8000;
   assert.equal(taps,preset==='week'?1:preset==='last'?2:4);assert(taps<=limit);assert(elapsed<=ms,`${preset}: ${elapsed}ms > ${ms}`);
   console.log(`Landing ${page.viewportSize().width}px ${preset}: ${taps} real taps, ${Math.round(elapsed)}ms, ${expected.totals.total} approved hours`);
+  await page.waitForFunction(total => document.querySelector('#payroll-landing [data-worker-breakdown] summary strong')?.textContent === total.toFixed(2)+' h', expected.totals.total);
+  const displayed = await root.locator('.payroll-totals strong').allTextContents();
+  assert.deepEqual(displayed,[String(expected.workers.length),expected.totals.REG.toFixed(2),expected.totals.OT.toFixed(2),expected.totals.DT.toFixed(2)]);
+  assert.equal(await root.locator('.payroll-calendar').isVisible(),false,'calendar collapses after a complete range');
+  await root.locator('[data-worker-breakdown] summary').first().click();
+  assert.equal(await root.locator('.payroll-job:visible').count(),expected.rows.length,'expand the worker to see every job');
+  await root.locator('[data-worker-breakdown] summary').first().click();
   await checkComponent(page,root);
 }
 async function settle(page) {
@@ -175,6 +194,7 @@ async function tapInPlace(page, locator) {
 }
 async function showSchedule(page) {
   await page.evaluate(() => { showPage('payroll'); window.scrollTo(0, 0); });
+  await page.locator('.payroll-schedule-disclosure').evaluate(el=>el.open=true);
   await page.locator('#pay-schedule-form').waitFor();
   const size = page.viewportSize();
   const box = await page.locator('#pay-schedule-form').boundingBox();
@@ -225,9 +245,9 @@ async function assertScheduleClear(page) {
 }
 async function assertChipsHit(page, root) {
   await settle(page);
-  const chips = root.locator('[data-payroll-range]');
-  assert.equal(await chips.count(), 6);
-  for (let i = 0; i < 6; i++) {
+  const chips = root.locator('[data-payroll-range]:visible');
+  assert.equal(await chips.count(), 3);
+  for (let i = 0; i < 3; i++) {
     const info = await chips.nth(i).evaluate(el => {
       const r = el.getBoundingClientRect();
       const hit = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
@@ -317,10 +337,7 @@ async function main() {
       await page.locator('#payroll-page.active').waitFor();
       await page.waitForFunction(() => document.querySelector('.sidebar').getBoundingClientRect().right <= 0);
       assert(await page.locator('#payroll-page .page-heading h1').isVisible(), 'Payroll heading stays visible');
-      for (const label of ['Period ends', 'Time cards due', 'Payday']) assert(await page.locator('.pay-schedule-legend').filter({hasText:new RegExp(`^${label}$`)}).isVisible(), `${label} stays visible`);
-      assert(await page.locator('.pay-schedule-preview-title').isVisible());
-      const previewType = await page.locator('.pay-schedule-preview p, .pay-schedule-preview span').evaluateAll(els => els.map(el => { const s=getComputedStyle(el); return {size:parseFloat(s.fontSize),line:parseFloat(s.lineHeight)}; }));
-      assert(previewType.length && previewType.every(s=>s.size>=12&&s.line>=s.size*1.2-.01), JSON.stringify(previewType));
+      assert.equal(await page.locator('.payroll-schedule-disclosure').getAttribute('open'),null,'schedule starts collapsed');
       assert.equal(await scrollOffset(page),0,'Payroll opens with the export path above the fold');
       await tapInPlace(page,page.locator('#payroll-landing [data-payroll-range="last"]'));
       const [speedDownload]=await Promise.all([page.waitForEvent('download'),tapInPlace(page,page.locator('#payroll-landing [data-payroll-download="csv"]'))]);
@@ -338,6 +355,10 @@ async function main() {
     console.log('Payroll phone taps '+JSON.stringify(payrollSpeed));
     const route='/api/payroll/export?'+new URLSearchParams({...week,format:'csv'});
     const response=await context.request.get(base+route);assert.equal(response.status(),200);assert.equal(response.headers()['cache-control'],'private, no-store');verifyCsv(await response.text(),week);
+    const summaryResponse=await context.request.get(base+'/api/payroll/summary?'+new URLSearchParams(week));
+    assert.equal(summaryResponse.status(),200);
+    assert.deepEqual((await summaryResponse.json()).totals,buildPayrollExport(db,week).totals);
+    assert.equal((await fetch(base+'/api/payroll/summary?'+new URLSearchParams(week))).status,401);
     assert.equal((await fetch(base+route)).status,401,'anonymous gets 401');
     for(const query of ['from=bad&to=2026-10-25&format=csv',`from=${week.from}&to=${week.to}&format=x`])assert.equal((await context.request.get(base+'/api/payroll/export?'+query)).status(),400);
     assert.equal((await context.request.post(base+'/api/payroll/export')).status(),405);
@@ -349,6 +370,7 @@ async function main() {
       }
     }
     const root=page.locator('#payroll-landing');await page.evaluate(()=>showPage('payroll'));
+    await root.locator('[data-more-ranges]').click();
     for(const [preset,range] of [['last2',calendar.range('last2',calendar.today(db.company.timezone))],['period',db.payPeriods[0]],['month',calendar.range('month',calendar.today(db.company.timezone))]]){
       await root.locator(`[data-payroll-range="${preset}"]`).click();const [file]=await Promise.all([page.waitForEvent('download'),root.locator('[data-payroll-download="csv"]').click()]);verifyCsv(fs.readFileSync(await file.path(),'utf8'),{from:range.from,to:range.to});
     }
@@ -357,10 +379,19 @@ async function main() {
     assert.equal(await page.evaluate(()=>document.activeElement.dataset.payrollDay),calendar.addDays(original,1));
     await page.keyboard.press('Enter');await page.keyboard.press('ArrowRight');await page.keyboard.press('Space');
     assert.equal(await root.locator('[data-payroll-day].in-range').count(),2,'keyboard selects range');
+    const selectedLabel = await root.locator('[data-payroll-range-label]').innerText();
+    const downloadWasDisabled = await root.locator('[data-payroll-download="csv"]').isDisabled();
+    await root.locator('[data-change-range]').click();
+    await root.locator('[data-payroll-day]').nth(8).click();
+    assert(await root.locator('[data-payroll-download="csv"]').isDisabled());
+    await root.locator('[data-calendar-close]').click();
+    assert.equal(await root.locator('[data-payroll-range-label]').innerText(),selectedLabel,'closing an unfinished selection keeps the previous range');
+    assert.equal(await root.locator('[data-payroll-download="csv"]').isDisabled(),downloadWasDisabled);
+    await root.locator('[data-change-range]').click();
     await root.locator('[data-month="1"]').click();const monthLabel=await root.locator('[data-month-label]').textContent();assert(monthLabel);
     const emptyDays=await root.locator('[data-payroll-day]').evaluateAll(els=>els.filter(el=>!el.classList.contains('adjacent-month')).slice(10,12).map(el=>el.dataset.payrollDay));
     for(const day of emptyDays)await root.locator(`[data-payroll-day="${day}"]`).click();
-    assert(await root.locator('[data-payroll-empty]').isVisible());assert(await root.locator('[data-payroll-download="csv"]').isDisabled());
+    await page.waitForFunction(()=>document.querySelector('#payroll-landing [data-payroll-readiness]')?.textContent==='No approved hours in this range.');assert(await root.locator('[data-payroll-download="csv"]').isDisabled());
     await page.evaluate(()=>showPage('payroll'));
     assert.match((await root.locator('[data-payroll-bar-review]').innerText()).replace(/\s+/g,' '),/^2 punches not approved · Review$/);
     await assertStickyFooter(page, root);
@@ -372,7 +403,7 @@ async function main() {
     assert.equal(await page.locator('#payroll-export-dialog').evaluate(el=>getComputedStyle(el).borderTopColor),'rgb(110, 110, 110)');
     const [pdf]=await Promise.all([page.waitForEvent('download'),modal.locator('[data-payroll-download="pdf"]').click()]);const bytes=fs.readFileSync(await pdf.path());assert.equal(bytes.subarray(0,5).toString(),'%PDF-');assert.equal((bytes.toString('latin1').match(/\/Type \/Page\b/g)||[]).length,1);
     if(shots)fs.copyFileSync(await pdf.path(),path.join(shots,'payroll-summary.pdf'));
-    await modal.locator('[data-payroll-range="custom"]').click();for(let i=0;i<2;i++)await modal.locator('[data-month="1"]').click();const days=await modal.locator('[data-payroll-day]').evaluateAll(els=>els.slice(10,12).map(el=>el.dataset.payrollDay));for(const day of days)await modal.locator(`[data-payroll-day="${day}"]`).click();assert(await modal.locator('[data-payroll-empty]').isVisible());assert(await modal.locator('[data-payroll-download="csv"]').isDisabled());
+    await modal.locator('[data-payroll-range="custom"]').click();for(let i=0;i<2;i++)await modal.locator('[data-month="1"]').click();const days=await modal.locator('[data-payroll-day]').evaluateAll(els=>els.slice(10,12).map(el=>el.dataset.payrollDay));for(const day of days)await modal.locator(`[data-payroll-day="${day}"]`).click();await page.waitForFunction(()=>document.querySelector('#payroll-dialog-content [data-payroll-readiness]')?.textContent==='No approved hours in this range.');assert(await modal.locator('[data-payroll-download="csv"]').isDisabled());
     await page.locator('[data-payroll-close]').click();
     for (const width of [390, 1280]) for (const theme of ['light', 'dark']) {
       await page.setViewportSize({width, height: width === 1280 ? 800 : 844});
@@ -400,7 +431,7 @@ async function main() {
       await landing.locator('[data-payroll-day="2026-10-23"]').click();
       await page.evaluate(() => window.scrollTo(0,0));
       await assertStickyFooter(page, landing);
-      assert.equal(await landing.locator('.payroll-calendar').isVisible(), true);
+      assert.equal(await landing.locator('.payroll-calendar').isVisible(), false);
       if (viewport.height === 500 && viewport.width === 390) {
         await landing.locator('[data-payroll-bar-review]').click();
         assert.equal(await page.locator('#timecard-status').inputValue(), 'unapproved');
@@ -418,7 +449,7 @@ async function main() {
       await dialog.locator('[data-payroll-day="2026-10-21"]').click();
       await dialog.locator('[data-payroll-day="2026-10-23"]').click();
       await assertStickyFooter(page, dialog);
-      assert.equal(await dialog.locator('.payroll-calendar').isVisible(), true);
+      assert.equal(await dialog.locator('.payroll-calendar').isVisible(), false);
       await page.locator('[data-payroll-close]').click();
     }
     await page.setViewportSize({width:390,height:844});await page.evaluate(()=>window.PDLCompanySettings.openPayPeriods());await page.locator('#payroll-overtime-form').waitFor({state:'visible'});
@@ -515,7 +546,7 @@ async function main() {
     const desktopFit=await page.evaluate(()=>{
       const save=document.querySelector('[data-pay-schedule-save]').getBoundingClientRect();
       const lines=[...document.querySelectorAll('.pay-schedule-preview-range, .pay-schedule-preview-pay')].map(el=>{const r=el.getBoundingClientRect();return{text:el.textContent.trim(),top:r.top,bottom:r.bottom,overflow:el.scrollWidth-el.clientWidth}});
-      const orange=[...document.querySelectorAll('button')].filter(el=>!el.hasAttribute('data-pay-schedule-save')&&!el.hidden&&getComputedStyle(el).display!=='none'&&getComputedStyle(el).backgroundColor==='rgb(255, 102, 0)');
+      const orange=[...document.querySelectorAll('button')].filter(el=>!el.hasAttribute('data-pay-schedule-save')&&el.checkVisibility()&&getComputedStyle(el).backgroundColor==='rgb(255, 102, 0)');
       let gap=null;
       for (const el of orange) {
         const r=el.getBoundingClientRect();
@@ -529,7 +560,8 @@ async function main() {
     assert.equal(desktopFit.lines.length,6,'each of the next 3 periods has a range line and a cards/paid line');
     assert(desktopFit.saveTop>=56&&desktopFit.saveBottom<=800&&desktopFit.saveHeight>=48,JSON.stringify(desktopFit));
     for (const line of desktopFit.lines) assert(line.bottom<=800&&line.top>=56,JSON.stringify(desktopFit));
-    assert(desktopFit.gap>=16,`orange controls need 16px, gap was ${desktopFit.gap}`);
+    if(shots)await page.screenshot({path:path.join(shots,'schedule-desktop-open.png')});
+    assert(desktopFit.gap>=16,`orange controls need 16px: ${JSON.stringify(desktopFit)}`);
     console.log(`Desktop biweekly anchor fits: save y=${Math.round(desktopFit.saveTop)}-${Math.round(desktopFit.saveBottom)}, nearest orange gap ${Math.round(desktopFit.gap)}px`);
     await page.setViewportSize({width:390,height:667});
     await settle(page);
@@ -577,8 +609,9 @@ async function main() {
     const scheduleToday=calendar.today('America/Los_Angeles');
     const expectedPeriod=paySchedule.lastEndedBefore(paySchedule.suggestedWeekly(db.company.weekStart),scheduleToday);
     await page.evaluate(()=>showPage('payroll'));
+    await page.locator('#payroll-landing [data-more-ranges]').click();
     await page.locator('#payroll-landing [data-payroll-range="period"]').click();
-    assert.equal(await page.locator('#payroll-landing [data-payroll-range-label]').innerText(),calendar.label(expectedPeriod.start,expectedPeriod.end,scheduleToday.slice(0,4)));
+    assert((await page.locator('#payroll-landing [data-payroll-range-label]').innerText()).startsWith(calendar.label(expectedPeriod.start,expectedPeriod.end,scheduleToday.slice(0,4))));
     const noaccessId=db.users.find(user=>user.email===seed.OFFICE_NOACCESS_EMAIL).id;
     const denied=await browser.newContext(),deniedPage=await denied.newPage();await login(deniedPage,seed.OFFICE_NOACCESS_EMAIL);await deniedPage.waitForFunction(()=>document.querySelector('#dashboard-page')?.classList.contains('active'));
     assert.equal(await deniedPage.locator('#payroll-nav').isHidden(),true,'office without payroll has no nav item');
@@ -661,8 +694,11 @@ async function main() {
     await page.locator('#payroll-landing [data-payroll-download="csv"]').click();
     await page.waitForFunction(()=>!document.querySelector('#payroll-page.active')&&document.querySelector('#payroll-nav').hidden);
     assert.equal(await page.locator('#payroll-landing, #payroll-export-dialog').count(),0,'export 403 removes both components immediately');
+    await reserveRequestBudget(ownerPage);
     for (const authFlag of [undefined,'0','1']) {
       if(authFlag===undefined)delete process.env.PDL_REQUIRE_AUTH;else process.env.PDL_REQUIRE_AUTH=authFlag;
+      assert.equal((await denied.request.get(base+'/api/payroll/summary?'+new URLSearchParams(week))).status(),403);
+      assert.equal((await fetch(base+'/api/payroll/summary?'+new URLSearchParams(week))).status,401);
       assert.equal((await fetch(base+route)).status,401,`${authFlag}: anonymous export`);
       assert.equal((await denied.request.get(base+route)).status(),403,`${authFlag}: ungranted export`);
       assert.equal((await ownerCtx.request.get(base+route)).status(),200,`${authFlag}: owner export`);
@@ -684,8 +720,19 @@ async function main() {
     assert.equal((await foreman.request.get(base+route)).status(),403);
     assert.equal(await foremanPage.locator('#payroll-nav:visible, #payroll-phone-bar:visible, #dashboard-page:visible').count(),0);
     assert.equal((await field.request.get(base+'/api/payroll/punches')).status(),403);
+    assert.equal((await field.request.get(base+'/api/payroll/summary?'+new URLSearchParams(week))).status(),403);
     await fieldPage.evaluate(()=>showPage('payroll'));
     assert.equal(await fieldPage.locator('#payroll-page.active').count(),0,'field users cannot open the Payroll page');
+    if(shots) for(const size of [{width:390,height:667},{width:390,height:844},{width:1280,height:800}]) for(const theme of ['light','dark']) {
+      await ownerPage.setViewportSize(size);
+      await ownerPage.evaluate(theme=>{document.documentElement.dataset.theme=theme;document.querySelector('.payroll-schedule-disclosure').open=false;showPage('payroll');window.scrollTo(0,0)},theme);
+      await ownerPage.locator('[data-worker-breakdown] summary').first().waitFor();
+      await settle(ownerPage);
+      await ownerPage.screenshot({path:path.join(shots,`dashboard-${theme}-${size.width}x${size.height}.png`)});
+      await ownerPage.locator('#payroll-landing [data-payroll-range="custom"]').click();
+      await settle(ownerPage);
+      await ownerPage.screenshot({path:path.join(shots,`picker-${theme}-${size.width}x${size.height}.png`)});
+    }
     assert.deepEqual(errors,[]);console.log('Landing payroll speed, real inline calendar, CSV sums, empty states, shared dialog, filtered review, keyboard, brand and access checks passed.');
   }finally{await browser?.close();await new Promise(resolve=>server.close(resolve));fs.rmSync(root,{recursive:true,force:true})}
 }
