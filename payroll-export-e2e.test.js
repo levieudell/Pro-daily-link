@@ -315,6 +315,7 @@ async function main() {
       await settle(page);
       await tapInPlace(page,page.locator('#payroll-nav'));
       await page.locator('#payroll-page.active').waitFor();
+      await page.waitForFunction(() => document.querySelector('.sidebar').getBoundingClientRect().right <= 0);
       assert(await page.locator('#payroll-page .page-heading h1').isVisible(), 'Payroll heading stays visible');
       for (const label of ['Period ends', 'Time cards due', 'Payday']) assert(await page.locator('.pay-schedule-legend').filter({hasText:new RegExp(`^${label}$`)}).isVisible(), `${label} stays visible`);
       assert(await page.locator('.pay-schedule-preview-title').isVisible());
