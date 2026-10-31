@@ -99,8 +99,8 @@
   const element = id => document.getElementById(id);
   const isSpanish = () => (typeof preferredLanguage !== 'undefined' ? preferredLanguage : document.documentElement.lang || 'en').startsWith('es');
   const words = {
-    'Safety': 'Seguridad', 'FIELD SAFETY': 'SEGURIDAD EN CAMPO',
-    'Keep safety work visible, close the loop, and keep the record.': 'Mantenga visible el trabajo de seguridad, cierre pendientes y conserve el registro.',
+    'Safety': 'Seguridad', 'COMPANY SAFETY': 'SEGURIDAD DE LA EMPRESA',
+    'Hold the talk. Fix the hazard. Keep the record.': 'Dé la charla. Corrija el peligro. Conserve el registro.',
     'Manage forms': 'Administrar formularios', 'Project': 'Proyecto', 'Work date': 'Fecha de trabajo', 'Refresh': 'Actualizar',
     'Start safety check': 'Iniciar revisión', 'Continue safety check': 'Continuar revisión', 'Review follow-up': 'Revisar seguimiento', 'View today’s record': 'Ver registro de hoy',
     'Report hazard': 'Reportar peligro', 'Toolbox talk': 'Charla de seguridad', 'Forms': 'Formularios',
@@ -282,7 +282,7 @@
     tabs.innerHTML = tabsMarkup();
     panels.innerHTML = TABS.map(tab => `<section role="tabpanel" id="safety-panel-${tab.id}" aria-labelledby="safety-tab-${tab.id}" tabindex="0" ${state.tab === tab.id ? '' : 'hidden'}>${state.tab === tab.id ? panelMarkup(tab.id) : ''}</section>`).join('');
     const heading = element('safety-page')?.querySelector('.safety-workspace-heading');
-    if (heading) { heading.querySelector('.eyebrow').textContent = tr('FIELD SAFETY'); heading.querySelector('h1').textContent = tr('Safety'); heading.querySelector('p:last-child').textContent = tr('Keep safety work visible, close the loop, and keep the record.'); }
+    if (heading) { heading.querySelector('.eyebrow').textContent = tr('COMPANY SAFETY'); heading.querySelector('h1').textContent = tr('Safety'); heading.querySelector('p:last-child').textContent = tr('Hold the talk. Fix the hazard. Keep the record.'); }
     const manage = element('safety-manage-forms'); if (manage) manage.textContent = tr('Manage forms');
     const projectSelect = element('safety-workspace-project'), dateInput = element('safety-workspace-date'), refresh = element('safety-workspace-refresh'), tablist = element('safety-workspace-tabs');
     if (projectSelect?.closest('label')?.firstChild) projectSelect.closest('label').firstChild.textContent = `${tr('Project')} `;

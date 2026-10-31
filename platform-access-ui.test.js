@@ -19,14 +19,14 @@ check(access.hasCapability({active: true, capabilities: ['invented:permission']}
 check(access.canView({active: true, capabilities: policy.ALL_CAPABILITIES}, '__proto__'), false);
 
 const expectedViews = {
-  platform_owner: ['overview', 'customers', 'onboarding', 'support', 'subscriptions', 'ai', 'blog', 'help', 'team', 'growth'],
-  customer_success: ['overview', 'customers', 'onboarding', 'support', 'subscriptions', 'blog', 'help', 'growth'],
-  onboarding: ['overview', 'customers', 'onboarding', 'blog', 'help'],
-  support: ['overview', 'customers', 'support', 'blog', 'help'],
+  platform_owner: ['overview', 'customers', 'onboarding', 'support', 'subscriptions', 'ai', 'blog', 'safety', 'help', 'team', 'growth'],
+  customer_success: ['overview', 'customers', 'onboarding', 'support', 'subscriptions', 'blog', 'safety', 'help', 'growth'],
+  onboarding: ['overview', 'customers', 'onboarding', 'blog', 'safety', 'help'],
+  support: ['overview', 'customers', 'support', 'blog', 'safety', 'help'],
   billing: ['overview', 'customers', 'subscriptions', 'team'],
-  engineering: ['overview', 'customers', 'support', 'ai', 'blog', 'help', 'team'],
-  sales: ['overview', 'customers', 'subscriptions', 'blog', 'help', 'growth'],
-  content: ['overview', 'blog', 'help']
+  engineering: ['overview', 'customers', 'support', 'ai', 'blog', 'safety', 'help', 'team'],
+  sales: ['overview', 'customers', 'subscriptions', 'blog', 'safety', 'help', 'growth'],
+  content: ['overview', 'blog', 'safety', 'help']
 };
 for (const [role, views] of Object.entries(expectedViews)) {
   const user = dto(role);

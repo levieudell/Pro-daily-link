@@ -20,7 +20,7 @@ const PLATFORM_USER_STATUSES = new Set(['Active', 'Inactive']);
 const IDENTITY_ATTRIBUTE_MAX_LENGTH = 80;
 const PLATFORM_COLLECTIONS = new Set([
   'users', 'notes', 'sessions', 'demoRequests', 'followUps',
-  'growthOpportunities', 'helpItems', 'onboardingOrders', 'auditEvents',
+  'growthOpportunities', 'helpItems', 'safetyTopics', 'onboardingOrders', 'auditEvents',
   'supportGrants', 'supportTickets', 'tenantDeletionCleanupJobs', 'blogPosts'
 ]);
 const digest = bytes => crypto.createHash('sha256').update(bytes).digest('hex');

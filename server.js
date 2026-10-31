@@ -40,6 +40,8 @@ const reportRates = require('./report-rate-policy');
 const { createProjectNotesHandler } = require('./project-notes');
 const { createSiteVisitsHandler, organizeSiteVisit, fallbackOrganize, prepareSiteVisitFinish, commitSiteVisitFinish } = require('./project-site-visits');
 const { createSafetyHandler } = require('./safety-engine');
+const { createSafetyProgramHandler } = require('./safety-program');
+const { createPlatformSafetyHandler } = require('./platform-safety-library');
 const { applySafetyEvidence, guardSafetyReportRequest } = require('./safety-report-policy');
 const companyTimezone = require('./company-timezone');
 const { createProjectAssistantHandler } = require('./project-assistant');
@@ -1809,6 +1811,7 @@ function platformStaffDto(user){
 function platformRouteAccess(req,url){
   const pathname=url.pathname,method=req.method;
   if(pathname.startsWith('/api/platform/auth/'))return null;
+  if(/^\/api\/platform\/safety-topics(?:\/[^/]+)?$/.test(pathname))return{capability:method==='GET'?PLATFORM_CAPABILITIES.CONTENT_READ:PLATFORM_CAPABILITIES.HELP_CONTENT_WRITE};
   if(pathname==='/api/platform/overview'&&method==='GET')return{capability:PLATFORM_CAPABILITIES.OVERVIEW_READ};
   if(pathname==='/api/platform/demo-requests')return{capability:method==='GET'?PLATFORM_CAPABILITIES.GROWTH_READ:PLATFORM_CAPABILITIES.GROWTH_WRITE};
   if(/^\/api\/platform\/demo-requests\/[a-f0-9-]+$/.test(pathname))return{capability:PLATFORM_CAPABILITIES.GROWTH_WRITE};
@@ -2675,6 +2678,17 @@ function canAccessSafetyDate(db, user, projectId, date, method = 'GET') {
     const projectIndex = (db.projects || []).findIndex(row => Number(row.id) === Number(projectId));
     return (db.reports || []).some(report => Number(report.project) === projectIndex && report.dateIso === date && !report.deletedAt && (report.foreman === member.name || (report.laborEntries || []).some(entry => Number(entry.memberId) === memberId)));
 }
+const handleSafetyProgram = createSafetyProgramHandler({
+  readDb, writeDb, readPlatform:async()=>{if(PLATFORM_REPOSITORY_MODE==='primary'&&platformStateStore)await platformStateStore.refresh();return readPlatform();}, body, json, authenticatedUser:projectNotesUser, canAccessProject:canAccessSafetyProject, canAccessDate:canAccessSafetyDate,
+  canAccessMember(db,user,id){
+    if(['owner','admin'].includes(user.role))return true;
+    if(user.role==='project_manager')return managerScope(db,user).memberIds.has(id);
+    const member=(db.team||[]).find(row=>Number(row.id)===Number(user.memberId));
+    return Boolean(member&&(id===Number(member.id)||user.role==='foreman'&&member.crew&&(db.team||[]).some(row=>Number(row.id)===id&&row.crew===member.crew)));
+  }
+});
+const handlePlatformSafety = createPlatformSafetyHandler({readPlatform,writePlatform,body,json,audit:platformAudit,
+  canRead:req=>platformCan(req,PLATFORM_CAPABILITIES.CONTENT_READ),canWrite:platformContentAllowed});
 const handleSafety = createSafetyHandler({
   readDb, writeDb, body, json, authenticatedUser: projectNotesUser, canAccessProject: canAccessSafetyProject, canAccessDate: canAccessSafetyDate
 });
@@ -2992,6 +3006,7 @@ async function api(req,res,url){
   if(req.method==='POST'&&url.pathname==='/api/platform/blog'){if(!platformContentAllowed(req))return json(res,403,{error:'Content publishing permission required'});const input=await body(req),platform=readPlatform(),payload=blogPayload(input);if(payload.error)return json(res,400,{error:payload.error});platform.blogPosts ||= [];if(platform.blogPosts.some(post=>post.slug===payload.slug))return json(res,409,{error:'Use a different title or URL slug'});const now=new Date().toISOString(),row={id:crypto.randomUUID(),...payload,createdAt:now,updatedAt:now,publishedAt:payload.status==='Published'?now:null,createdBy:req.platformAuth?.user?.name||'Platform owner'};platform.blogPosts.unshift(row);platformAudit(platform,req,'blog_post_created',`${row.title} · ${row.status}`);await writePlatform(platform,{changedBy:String(req.platformAuth.user.id)});return json(res,201,row)}
   const blogAdminRoute=url.pathname.match(/^\/api\/platform\/blog\/([a-f0-9-]+)$/);if(blogAdminRoute&&req.method==='PATCH'){if(!platformContentAllowed(req))return json(res,403,{error:'Content publishing permission required'});const input=await body(req),platform=readPlatform(),row=(platform.blogPosts||[]).find(post=>post.id===blogAdminRoute[1]);if(!row)return json(res,404,{error:'Blog post not found'});const payload=blogPayload(input,row);if(payload.error)return json(res,400,{error:payload.error});if((platform.blogPosts||[]).some(post=>post.id!==row.id&&post.slug===payload.slug))return json(res,409,{error:'Use a different title or URL slug'});const wasPublished=row.status==='Published',now=new Date().toISOString();Object.assign(row,payload,{updatedAt:now});if(payload.status==='Published'&&!wasPublished)row.publishedAt=now;if(payload.status==='Draft')row.publishedAt=null;platformAudit(platform,req,'blog_post_updated',`${row.title} · ${row.status}`);await writePlatform(platform,{changedBy:String(req.platformAuth.user.id)});return json(res,200,row)}
   if(blogAdminRoute&&req.method==='DELETE'){if(!platformContentAllowed(req))return json(res,403,{error:'Content publishing permission required'});const platform=readPlatform(),index=(platform.blogPosts||[]).findIndex(post=>post.id===blogAdminRoute[1]);if(index<0)return json(res,404,{error:'Blog post not found'});const [row]=platform.blogPosts.splice(index,1);platformAudit(platform,req,'blog_post_deleted',row.title);await writePlatform(platform,{changedBy:String(req.platformAuth.user.id)});return json(res,200,{ok:true})}
+  if(await handlePlatformSafety(req,res,url))return;
   if(req.method==='GET'&&url.pathname==='/api/platform/help'){const platform=readPlatform();return json(res,200,(platform.helpItems||[]).slice().sort((a,b)=>(a.order||0)-(b.order||0)))}
   if(req.method==='POST'&&url.pathname==='/api/platform/help'){const input=await body(req),platform=readPlatform(),types=['article','video','document','faq'],audiences=['all','office','field'];if(!input.title?.trim()||!types.includes(input.type)||!audiences.includes(input.audience))return json(res,400,{error:'Title, content type, and audience are required'});platform.helpItems ||= [];const row={id:crypto.randomUUID(),title:input.title.trim().slice(0,140),type:input.type,audience:input.audience,category:String(input.category||'Getting started').trim().slice(0,80),summary:String(input.summary||'').trim().slice(0,500),content:String(input.content||'').trim().slice(0,8000),url:String(input.url||'').trim().slice(0,1000),status:input.status==='Draft'?'Draft':'Published',order:Number(input.order)||platform.helpItems.length+1,createdAt:new Date().toISOString(),updatedAt:new Date().toISOString()};platform.helpItems.push(row);platformAudit(platform,req,'help_content_created',row.title);await writePlatform(platform,{changedBy:String(req.platformAuth.user.id)});return json(res,201,row)}
   const helpUpdate=url.pathname.match(/^\/api\/platform\/help\/([a-f0-9-]+)$/);if(helpUpdate&&req.method==='PATCH'){const input=await body(req),platform=readPlatform(),row=(platform.helpItems||[]).find(item=>item.id===helpUpdate[1]);if(!row)return json(res,404,{error:'Help item not found'});for(const key of ['title','category','summary','content','url'])if(input[key]!==undefined)row[key]=String(input[key]).trim();if(['article','video','document','faq'].includes(input.type))row.type=input.type;if(['all','office','field'].includes(input.audience))row.audience=input.audience;if(['Draft','Published'].includes(input.status))row.status=input.status;if(Number.isFinite(Number(input.order)))row.order=Number(input.order);row.updatedAt=new Date().toISOString();platformAudit(platform,req,'help_content_updated',row.title);await writePlatform(platform,{changedBy:String(req.platformAuth.user.id)});return json(res,200,row)}
@@ -3080,6 +3095,7 @@ async function api(req,res,url){
   if(process.env.PDL_REQUIRE_AUTH==='1'&&!url.pathname.startsWith('/api/guest/')&&!url.pathname.startsWith('/api/change-order/')){const db=readDb(),{auth,status}=authenticateRequestAccount(req,db),user=auth?.user;if(!auth)return json(res,status,{error:status===404?'Resource not found':'Authentication required'});const access=accountAccess(db.company),accessRoute=url.pathname==='/api/account-access'||url.pathname.startsWith('/api/billing');if(access.locked&&!accessRoute)return json(res,402,{error:access.reason,code:'subscription_required',access});const ownerRoute=url.pathname==='/api/users'||/^\/api\/users\//.test(url.pathname);if(ownerRoute&&user.role!=='owner')return json(res,403,{error:'Account owner permission required'});const officeRoute=['/api/production','/api/insights','/api/exceptions','/api/action-center','/api/schedule/today','/api/catalog','/api/estimate-imports'].some(route=>url.pathname.startsWith(route))||(url.pathname==='/api/changes'||url.pathname.startsWith('/api/changes/'))&&!url.pathname.startsWith('/api/changes/from-field')&&url.pathname!=='/api/changes/mine'||url.pathname.includes('/approve')||url.pathname.includes('/disposition');if(officeRoute&&!['owner','admin','project_manager'].includes(user.role))return json(res,403,{error:'Office permission required'})}
   if(await handleProjectNotes(req,res,url))return;
   if(await handleSiteVisits(req,res,url))return;
+  if(await handleSafetyProgram(req,res,url))return;
   if(await handleSafety(req,res,url))return;
   if(process.env.PDL_REQUIRE_AUTH==='1'&&(subcontractorCreate||subcontractorUpdate||subcontractorProfile||subcontractorReminder||subcontractorArchive)&&!['owner','admin'].includes(req.auth?.user?.role))return json(res,403,{error:'Account Owner or Admin permission required'});
   if(process.env.PDL_REQUIRE_AUTH==='1'&&(subcontractorLinkCreate||subcontractorLinkRevoke)&&!['owner','admin','project_manager'].includes(req.auth?.user?.role))return json(res,403,{error:'Office permission required'});

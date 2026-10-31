@@ -13,13 +13,14 @@
   <link rel="stylesheet" href="assets/brand-fonts.css?v=20261028-office1" />
   <link rel="stylesheet" href="styles.css?v=20261014-review3-20261017-fieldreview1-office1-mobile3-20261019-schedule1-c1photo-nogo1-20261027-c1append1-c3dqty1-c3dqty3-c3dqty4-c3dqty5-c3dqty6-c3dqty7-c3dqty8-c3dqty9-20261028-field1-field4-20261029-field6" />
   <link rel="stylesheet" href="estimate-mobile.css" />
-  <link rel="stylesheet" href="safety-pm-ui.css?v=20261026-safetyv3" />
-  <link rel="stylesheet" href="safety-workspace-ui.css?v=20261026-safetyv3" />
+  <link rel="stylesheet" href="safety-pm-ui.css?v=20261031-safety-dashboard" />
+  <link rel="stylesheet" href="safety-workspace-ui.css?v=20261031-safety-dashboard" />
+  <link rel="stylesheet" href="safety-dashboard-ui.css?v=20261031-safety-dashboard" />
   <link rel="stylesheet" href="project-notes-ui.css?v=20261005-notes-focus" />
   <link rel="stylesheet" href="project-site-visits-ui.css?v=20261026-pm-visit3" />
   <link rel="stylesheet" href="project-assistant-ui.css?v=20261031-clock-launcher" />
   <link rel="stylesheet" href="design-system.css?v=20261021-field-clock-button1" />
-  <link rel="stylesheet" href="payroll-export.css?v=20261031-dashboard" />
+  <link rel="stylesheet" href="payroll-export.css?v=20261031-page-visibility" />
   <link rel="stylesheet" href="office-dashboard.css?v=20261031-company-clock" />
   <link rel="manifest" href="manifest.webmanifest" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
@@ -238,7 +239,9 @@
       </section>
 
       <section class="page safety-workspace-page" id="safety-page">
-        <div class="page-heading safety-workspace-heading"><div><p class="eyebrow">FIELD SAFETY</p><h1>Safety</h1><p>Keep safety work visible, close the loop, and keep the record.</p></div><button type="button" class="secondary safety-manager-action" id="safety-manage-forms">Manage forms</button></div>
+        <div class="page-heading safety-workspace-heading"><div><p class="eyebrow">COMPANY SAFETY</p><h1>Safety</h1><p>Hold the talk. Fix the hazard. Keep the record.</p></div><button type="button" class="secondary safety-manager-action" id="safety-manage-forms">Manage forms</button></div>
+        <div id="safety-dashboard" class="safety-program" aria-label="Company safety dashboard"><p>Loading safety records…</p></div>
+        <details class="safety-project-details"><summary>Project checks &amp; hazards</summary>
         <section class="panel safety-workspace-context" aria-label="Safety project and work date">
           <label>Project<select id="safety-workspace-project" aria-label="Safety project"></select></label>
           <label>Work date<input id="safety-workspace-date" type="date" required aria-label="Safety work date"></label>
@@ -247,6 +250,7 @@
         <nav class="safety-workspace-tabs" id="safety-workspace-tabs" role="tablist" aria-label="Safety workspace"></nav>
         <p class="safety-workspace-notice" id="safety-workspace-notice" role="status" aria-live="polite" hidden></p>
         <div class="safety-workspace-panels" id="safety-workspace-panels"></div>
+        </details>
       </section>
 
       <section class="page" id="team-page">
@@ -610,7 +614,8 @@
   <script src="project-assistant-ui.js?v=20261031-simple-clock"></script>
   <script src="personal-clock-ui.js?v=20261031-clock-launcher"></script>
   <script src="safety-pm-ui.js?v=20261026-safetyv3"></script>
-  <script src="safety-workspace-ui.js?v=20261026-safetyv3"></script>
+  <script src="safety-workspace-ui.js?v=20261031-safety-dashboard"></script>
+  <script src="safety-dashboard-ui.js?v=20261031-safety-dashboard"></script>
   <script src="project-site-visits-ui.js?v=20261026-pm-visit3"></script>
   <script src="office-dashboard.js?v=20261028-field1-20261029-field6"></script>
 </body>

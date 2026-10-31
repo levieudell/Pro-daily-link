@@ -60,6 +60,7 @@ fs.mkdirSync(path.join(__dirname, 'output'), { recursive: true });
     await page.waitForURL(/#safety$/);
     const workspace = page.locator('#safety-page');
     await workspace.waitFor({ state: 'visible' });
+    await workspace.locator('.safety-project-details > summary').click();
     const tabs = workspace.getByRole('tab');
     await tabs.first().waitFor();
     assert.equal(await tabs.count(), 3, 'Safety workspace exposes exactly three primary destinations');
@@ -112,13 +113,17 @@ fs.mkdirSync(path.join(__dirname, 'output'), { recursive: true });
 
     // A daily report keeps its contextual entry into the same current record.
     const reportDialog = page.locator('#report-modal');
-    await page.locator('.top-actions [data-open-report]').click();
+    await page.locator('.nav-item[data-page="projects"]').click();
+    await page.locator('#project-cards [data-open-project]').first().click();
+    await page.locator('#project-detail-modal [data-project-detail-tab="dailies"]').click();
+    await page.locator('#project-detail-modal [data-office-new-daily]').click();
     await reportDialog.waitFor({ state: 'visible' });
     await reportDialog.locator('#report-open-safety').click();
     await dialog.waitFor({ state: 'visible' });
     await dialog.locator('.safety-v3-check').first().waitFor();
     await dialog.locator('[data-safety-close]').click();
     await reportDialog.locator('#close-report').click();
+    if(await page.locator('#project-detail-modal').isVisible()) await page.locator('#project-detail-modal .close-button').click();
 
     // Phone layout keeps all three destinations visible and actions finger-sized.
     await page.setViewportSize({ width: 390, height: 844 });
