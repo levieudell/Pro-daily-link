@@ -396,7 +396,11 @@ async function assertWhiteSecondary(page, selector) {
       assert.equal(await page.locator('#start-day-modal .modal-header').evaluate(el => getComputedStyle(el).borderBottomColor), 'rgb(255, 102, 0)');
       await assertContrast(page, '#start-day-modal', theme + ' clock-in');
       await assertPalette(page, '#start-day-modal');
+      assert.equal(await page.locator('#start-day-modal .timestamp-preview').isVisible(), false, 'compact clock hides the old explanation');
+      await page.locator('#start-day-modal .clock-crew-details summary').click();
+      await assertContrast(page, '#start-day-modal', theme + ' expanded crew');
       if (theme === 'dark') await assertWhiteSecondary(page, '#start-day-modal');
+      await page.locator('#start-day-modal .clock-crew-details summary').click();
       if (theme === 'dark') assert.equal(await page.locator('#start-day-modal .timestamp-preview').evaluate(el => getComputedStyle(el).backgroundColor), 'rgb(0, 0, 0)');
       if (shots) {
         fs.mkdirSync(shots, { recursive: true });
