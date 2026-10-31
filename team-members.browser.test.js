@@ -90,6 +90,19 @@ fs.mkdirSync(path.join(__dirname, 'output'), { recursive: true });
       assert(await dialog.evaluate(el=>el.scrollWidth<=el.clientWidth+1),JSON.stringify(await dialog.evaluate(el=>[el,...el.querySelectorAll('*')].filter(n=>n.getBoundingClientRect().right>el.getBoundingClientRect().right).map(n=>({tag:n.tagName,cls:n.className,width:n.getBoundingClientRect().width})))));
       await page.screenshot({path:`docs/team-members/details-${theme}-${width}.png`});
       await dialog.locator('[data-team-close]').click();
+      await page.evaluate(id=>openUserModal(users.find(row=>row.id===id)),user.id);
+      await page.locator('#user-role').selectOption('project_manager');
+      const access=page.locator('#user-modal');
+      await access.evaluate(async el=>{await Promise.all(el.getAnimations({subtree:true}).map(a=>a.finished.catch(()=>{})));});
+      for(const selector of ['#user-projects','#user-crews','.permission-grid']){
+        const choices=await access.locator(selector+' input[type=checkbox]').evaluateAll(inputs=>inputs.map(input=>{const box=input.getBoundingClientRect(),row=input.closest('label').getBoundingClientRect();return {width:box.width,height:box.height,rowHeight:row.height,offset:box.left-row.left};}));
+        assert(choices.length>0);
+        for(const choice of choices){assert.equal(choice.width,20);assert.equal(choice.height,20);assert(choice.rowHeight>=48);assert(choice.offset>=0&&choice.offset<=16);}
+      }
+      assert(await access.evaluate(el=>el.scrollWidth<=el.clientWidth+1));
+      await page.locator('#user-project-access').scrollIntoViewIfNeeded();
+      await page.screenshot({path:`docs/team-members/access-${theme}-${width}.png`,animations:'disabled'});
+      await access.evaluate(el=>el.close());
     }
     await card.click();await dialog.locator('[data-edit-profile]').click();await dialog.locator('[name=phone]').fill('555-0100');await dialog.locator('[type=submit]').click();
     await page.waitForFunction(id=>team.find(row=>row.id===id)?.phone==='555-0100',member.id);

@@ -44,3 +44,18 @@
 #team-details-modal .team-profile-summary dd { margin:4px 0 0; overflow-wrap:anywhere; font-size:16px; }
 #team-details-modal #team-profile-form { padding:0; gap:12px; }
 #team-details-modal [hidden] { display:none!important; }
+
+/* Access choices are compact checkbox rows, never full-width text inputs. */
+#user-modal { width:min(680px,calc(100vw - 24px)); max-width:calc(100vw - 24px); max-height:calc(100dvh - 24px); }
+#user-modal :is(#user-project-access,#user-crew-access,.permission-grid) { min-width:0; }
+#user-modal .access-group-title { font:700 16px/1.4 Inter,sans-serif; margin-bottom:8px; }
+#user-modal .member-picker { display:grid; gap:4px; width:100%; max-height:208px; padding:6px; border:1px solid #6E6E6E; background:#FFFFFF; }
+#user-modal :is(.member-picker label,.permission-grid .check-row) { display:grid; grid-template-columns:20px minmax(0,1fr); align-items:center; gap:12px; min-height:48px; margin:0; padding:10px; font:500 15px/1.4 Inter,sans-serif; overflow-wrap:anywhere; color:#000000!important; background:#FFFFFF!important; border-color:#6E6E6E!important; }
+#user-modal :is(.member-picker,.permission-grid) input[type="checkbox"] { appearance:auto; width:20px!important; height:20px!important; min-width:20px!important; min-height:20px!important; max-width:20px; max-height:20px; margin:0!important; padding:0!important; align-self:center; justify-self:start; accent-color:#FF6600; box-shadow:none!important; }
+#user-modal :is(#user-project-access,#user-crew-access)>.input-help { display:block; margin:8px 0 0; font:400 13px/1.45 Inter,sans-serif; color:#000000!important; }
+#user-modal .permission-grid { gap:8px; margin-top:16px; }
+#user-modal :is(.member-picker,.permission-grid) input:focus-visible { outline:2px solid #FF6600!important; outline-offset:2px!important; box-shadow:none!important; }
+:root[data-theme="dark"] #user-modal :is(.member-picker,.member-picker label,.permission-grid .check-row) { background:#000000!important; color:#FFFFFF!important; border-color:#6E6E6E!important; }
+:root[data-theme="dark"] #user-modal :is(#user-project-access,#user-crew-access)>.input-help { color:#FFFFFF!important; }
+@media(max-width:700px) { #user-modal .permission-grid { grid-template-columns:1fr; } }
+#user-modal :is(input,select,button):focus, #user-modal :is(input,select,button):focus-visible { outline:2px solid #FF6600!important; outline-offset:2px!important; box-shadow:none!important; }
