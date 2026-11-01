@@ -91,6 +91,7 @@ fs.mkdirSync(path.join(__dirname, 'output'), { recursive: true });
       const color=await dialog.evaluate(el=>getComputedStyle(el).color);assert.equal(color,theme==='dark'?'rgb(255, 255, 255)':'rgb(0, 0, 0)');
       await page.screenshot({path:`docs/crew-details/overview-${theme}-${width}.png`,animations:'disabled'});
       await dialog.locator('[data-crew-search]').fill('not a job');assert(await dialog.locator('[data-crew-no-jobs]').isVisible());
+      const jobCode=await page.evaluate(()=>projects.find(row=>row.id===3).code);if(jobCode){await dialog.locator('[data-crew-search]').fill(jobCode);assert.equal(await dialog.locator('[data-crew-jobs] button:visible').count(),1);}
       await dialog.locator('[data-crew-search]').fill('');
       await dialog.locator('[data-crew-jobs]').scrollIntoViewIfNeeded();
       await page.screenshot({path:`docs/crew-details/history-${theme}-${width}.png`,animations:'disabled'});
