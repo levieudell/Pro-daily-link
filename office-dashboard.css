@@ -503,7 +503,8 @@ dialog#personal-clock-modal{padding:0;width:min(480px,calc(100vw - 24px));max-he
 #report-modal.report-office-compact :is(input,textarea,select,button):focus-visible{outline:2px solid var(--pdl-orange)!important;outline-offset:2px;box-shadow:none!important}
 #report-modal.report-office-compact :is(input,textarea){font-family:Inter,sans-serif;font-size:16px;scroll-margin-block:72px}
 #report-modal.report-office-compact :is(input,textarea)::placeholder{font-weight:400;color:var(--field-placeholder);opacity:1}
-#report-modal.report-office-compact .report-step-scroll{scroll-padding-block:72px;padding-bottom:80px}
+#report-modal.report-office-compact .report-step-scroll{scroll-padding-block:72px}
+#report-modal.report-office-compact [data-report-step="2"] .report-step-scroll{padding-bottom:80px}
 #report-modal.report-office-compact .report-submit-status:not(:empty){border-left:3px solid var(--pdl-orange)!important}
 #project-modal .project-form-library{background:var(--pdl-offwhite);border:1px solid var(--pdl-gray);color:var(--pdl-black);min-width:0}
 #project-modal .project-template-options{grid-template-columns:minmax(0,1fr)}
