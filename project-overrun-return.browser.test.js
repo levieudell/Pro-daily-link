@@ -54,7 +54,7 @@ const executablePath = process.env.PDL_BROWSER_PATH || ['C:/Program Files/Google
     await page.locator('#project-detail-modal').waitFor({state:'visible'});
     await page.locator('[data-health-tab="schedule"]').click();
     await page.locator('[data-project-detail-pane="schedule"].active').waitFor({state:'visible'});
-    await page.locator('[data-health-tab="estimate"]').click();
+    await page.locator('[data-project-detail-tab="estimate"]').click();
     await page.locator('[data-project-detail-pane="estimate"].active').waitFor({state:'visible'});
     await page.locator('#project-detail-modal .close-button').click();
     await page.locator('#project-detail-modal').waitFor({state:'hidden'});
