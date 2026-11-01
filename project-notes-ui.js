@@ -94,7 +94,7 @@ else {
   const previousLoadRole=loadRole;
   loadRole=async function(...args){leaveProject();return previousLoadRole(...args)};
   const previousShowPage=showPage;
-  showPage=function(...args){if(active)leaveProject();return previousShowPage(...args)};
+  showPage=function(...args){if(active)leaveProject();const result=previousShowPage(...args);if(currentRole==='office'){if(args[0]==='projects'&&typeof renderProjectCards==='function')renderProjectCards($('#project-search')?.value||'');if(args[0]==='dashboard'&&typeof renderTable==='function')renderTable();}return result};
   const projectDialog=$('#project-detail-modal');
   if(projectDialog){
     projectDialog.addEventListener('close',()=>{

@@ -45,6 +45,11 @@ const executablePath = process.env.PDL_BROWSER_PATH || ['C:/Program Files/Google
       renderProjectCards();
     });
     assert.match(await card.locator('.project-health-reason').innerText(),/85%.*approved.*4 scheduled workdays/);
+    await page.evaluate(()=>{productionData.projects[0].items[0].actualQuantity=85;window.warningShifts=assignments;assignments=assignments.slice(0,1);showPage('dashboard');showPage('projects');});
+    assert.equal(await card.locator('.project-card-actions .status').innerText(),'On track','updated schedule is checked on return');
+    await page.evaluate(()=>{assignments=window.warningShifts;delete window.warningShifts;showPage('dashboard');showPage('projects');});
+    assert.match(await card.locator('.project-health-reason').innerText(),/4 scheduled workdays/);
+
     await card.locator('[data-open-health]').click();
     await page.locator('#project-detail-modal').waitFor({state:'visible'});
     await page.locator('[data-health-tab="schedule"]').click();
