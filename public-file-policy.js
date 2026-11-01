@@ -1,6 +1,7 @@
 'use strict';
 const path=require('node:path');
 const PUBLIC_FILES=new Set([
+  'job-details-ui.js','job-details.css',
   'messages-inbox.js','messages-inbox.css',
   'payroll-export-ui.js','payroll-export.css','payroll-ranges.js','payroll-access.js','pay-schedule.js','pay-schedule-ui.js',
   'office-dashboard.js','office-dashboard.css',

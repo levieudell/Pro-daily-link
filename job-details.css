@@ -1,0 +1,74 @@
+/* Job details: one scrolling body, compact navigation, existing job controls. */
+#project-detail-modal.job-details {--job-bg:#F7F5F0;--job-text:#000000;--job-paper:#FFFFFF;width:min(1040px,calc(100vw - 24px));max-width:calc(100vw - 24px);max-height:calc(100dvh - 24px);padding:0;border:1px solid #6E6E6E;border-radius:12px;box-shadow:none;color:var(--job-text);background:var(--job-bg);overflow:hidden;}
+:root[data-theme="dark"] #project-detail-modal.job-details {--job-bg:#000000;--job-text:#FFFFFF;--job-paper:#000000;}
+#project-detail-modal.job-details>form {display:flex;flex-direction:column;max-height:calc(100dvh - 26px);padding:0;margin:0;overflow:hidden;min-width:0;}
+#project-detail-modal.job-details .modal-header {flex:none;position:relative;top:auto;margin:0;padding:12px 16px;gap:12px;background:#000000;color:#FFFFFF;border:0;border-bottom:3px solid #FF6600;box-shadow:none;}
+#project-detail-modal.job-details .modal-header .eyebrow {display:none;}
+#project-detail-modal.job-details .modal-header h2 {font:400 24px/1.15 Anton,sans-serif;color:#FFFFFF;text-transform:uppercase;overflow-wrap:anywhere;margin:0;}
+#project-detail-modal.job-details .close-button {flex:0 0 48px;width:48px;height:48px;min-height:48px;padding:0;background:#000000;color:#FFFFFF;border:1px solid #6E6E6E;border-radius:8px;font:400 30px Inter,sans-serif;}
+#project-detail-modal.job-details #project-detail-content {flex:1;min-height:0;overflow-y:auto;overflow-x:hidden;padding:0 16px 20px;scroll-padding-top:72px;}
+#project-detail-modal.job-details :is(button,input,select,textarea,summary) {font-family:Inter,sans-serif;}
+#project-detail-modal.job-details :is(h3,h4) {font-family:Anton,sans-serif;font-weight:400;}
+#project-detail-modal.job-details .project-detail-tabs {position:sticky;top:0;z-index:3;display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:4px;width:100%;margin:0 0 16px;padding:8px 0;background:var(--job-bg);border-bottom:1px solid #6E6E6E;overflow:visible;}
+#project-detail-modal.job-details .project-detail-tabs button {min-width:0;min-height:48px;margin:0;padding:8px 4px;border:0;border-radius:6px;background:transparent;color:var(--job-text);font-size:14px;font-weight:700;white-space:normal;box-shadow:none;}
+#project-detail-modal.job-details .project-detail-tabs button.active {background:#FF6600!important;color:#000000!important;border:0!important;}
+#project-detail-modal.job-details .project-detail-tabs button span {background:transparent;color:inherit;font-size:11px;}
+#project-detail-modal.job-details .job-more-panel {grid-column:1/-1;padding:12px 0 4px;}
+#project-detail-modal.job-details .job-more-links {display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;}
+#project-detail-modal.job-details .job-more-links button {text-align:left;padding:12px;border:1px solid #6E6E6E!important;background:var(--job-paper);}
+#project-detail-modal.job-details [hidden] {display:none!important;}
+#project-detail-modal.job-details .job-more-open>.project-detail-pane {display:none!important;}
+#project-detail-modal.job-details .job-overview-summary {display:grid;gap:12px;margin-bottom:16px;}
+#project-detail-modal.job-details .project-health-banner {display:block;margin:0;padding:12px;border:1px solid #6E6E6E!important;background:var(--job-paper)!important;color:var(--job-text)!important;border-radius:8px;}
+#project-detail-modal.job-details .project-health-banner.risk {border-left:4px solid #FF6600!important;}
+#project-detail-modal.job-details .project-health-banner :is(strong,p,small) {color:var(--job-text)!important;}
+#project-detail-modal.job-details .project-health-banner strong {font:400 22px Anton,sans-serif;}
+#project-detail-modal.job-details .project-health-banner p {margin-top:6px;font-size:14px;line-height:1.45;}
+#project-detail-modal.job-details .detail-meta {display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;margin:0;}
+#project-detail-modal.job-details .detail-meta>div {min-width:0;padding:10px;background:transparent;border:0;border-bottom:1px solid #6E6E6E;border-radius:0;}
+#project-detail-modal.job-details .detail-meta small {color:var(--job-text);font-size:11px;}
+#project-detail-modal.job-details .detail-meta strong {font-size:13px;overflow-wrap:anywhere;}
+#project-detail-modal.job-details .project-site-quickbar {margin:0;gap:8px;}
+#project-detail-modal.job-details :is(.project-site-quickbar button,.project-health-links button) {min-height:48px;padding:10px;border:1px solid #6E6E6E!important;border-radius:8px;background:var(--job-paper)!important;color:var(--job-text)!important;font-weight:700;box-shadow:none;}
+#project-detail-modal.job-details .project-site-quickbar button.primary {background:#FF6600!important;color:#000000!important;border-color:#FF6600!important;}
+#project-detail-modal.job-details .job-forms {margin-top:12px;border:1px solid #6E6E6E;border-radius:8px;padding:0 12px;background:var(--job-paper);}
+#project-detail-modal.job-details .job-forms>summary {min-height:48px;padding:14px 0;cursor:pointer;font-weight:700;}
+#project-detail-modal.job-details .project-form-library {margin:0;padding:12px 0;border:0!important;background:transparent!important;box-shadow:none;gap:12px;}
+#project-detail-modal.job-details .project-template-option {border:1px solid #6E6E6E;background:var(--job-bg);color:var(--job-text);min-height:48px;align-items:center;}
+#project-detail-modal.job-details .project-template-option input {accent-color:#FF6600;min-width:22px;width:22px;height:22px;}
+#project-detail-modal.job-details .project-template-option small {color:var(--job-text);}
+#project-detail-modal.job-details .project-command {margin:0;padding:0;background:transparent;box-shadow:none;border:0;}
+#project-detail-modal.job-details .project-command-hero {display:block;padding:0;margin:0 0 12px;background:transparent;color:var(--job-text);}
+#project-detail-modal.job-details .project-command-hero :is(h3,.eyebrow,.project-site-primary) {display:none;}
+#project-detail-modal.job-details .project-command-hero p {color:var(--job-text);font-size:14px;}
+#project-detail-modal.job-details .project-command-grid {gap:10px;}
+#project-detail-modal.job-details .project-command-grid article {padding:12px;background:var(--job-paper);border:1px solid #6E6E6E;box-shadow:none;color:var(--job-text);border-radius:8px;}
+#project-detail-modal.job-details .project-command-grid :is(p,small,strong) {color:var(--job-text);}
+#project-detail-modal.job-details :is(button,input,select,textarea,summary):focus-visible {outline:2px solid #FF6600!important;outline-offset:2px!important;box-shadow:none!important;}
+#project-detail-modal.job-details-loading #project-detail-content {visibility:hidden;}
+#project-detail-modal.job-details-loading>form::after {content:'Opening job…';padding:20px;color:var(--job-text);}
+@media(max-width:600px){
+  #project-detail-modal.job-details .detail-meta {grid-template-columns:repeat(2,minmax(0,1fr));}
+  #project-detail-modal.job-details .job-more-links {grid-template-columns:repeat(2,minmax(0,1fr));}
+  #project-detail-modal.job-details .project-detail-tabs button {font-size:12px;}
+  #project-detail-modal.job-details .project-template-options {grid-template-columns:1fr;}
+  #project-detail-modal.job-details .project-command-grid {grid-template-columns:1fr 1fr;}
+}
+
+#project-detail-modal.job-details {--muted:var(--job-text);--text:var(--job-text);--line:#6E6E6E;--panel:var(--job-paper);--visit-bg:var(--job-bg);--visit-paper:var(--job-paper);--visit-text:var(--job-text);--visit-muted:var(--job-text);--visit-line:#6E6E6E;}
+#project-detail-modal.job-details :is(button.secondary,.project-command button,.job-forms button) {min-height:48px;background:var(--job-paper)!important;color:var(--job-text)!important;border:1px solid #6E6E6E!important;box-shadow:none;}
+#project-detail-modal.job-details button.primary {min-height:48px;background:#FF6600!important;color:#000000!important;border:1px solid #FF6600!important;}
+#project-detail-modal.job-details :is(input,select,textarea) {background:var(--job-paper)!important;color:var(--job-text)!important;border-color:#6E6E6E!important;}
+#project-detail-modal.job-details .job-more-open .project-detail-tabs {position:static;}
+
+#project-detail-modal.job-details>form {padding:0!important;margin:0!important;}
+#project-detail-modal.job-details .modal-header {background:#000000!important;color:#FFFFFF!important;border-bottom:3px solid #FF6600!important;}
+#project-detail-modal.job-details .project-detail-tabs button {transition:none;}
+#project-detail-modal.job-details .project-detail-tabs>button {display:flex;align-items:center;justify-content:center;gap:5px;}
+#project-detail-modal.job-details .project-detail-pane {border-top:0;padding-top:0;}
+
+#project-detail-modal.job-details :is(button,select,summary) {min-height:48px;}
+#project-detail-modal.job-details :is(input:not([type="checkbox"]):not([type="radio"]),select,textarea) {font-size:16px;}
+#project-detail-modal.job-details>form {background:var(--job-bg)!important;color:var(--job-text);}
+
+#project-detail-modal.job-details .job-more-open .project-detail-tabs>[data-project-detail-tab].active {background:transparent!important;color:var(--job-text)!important;}
