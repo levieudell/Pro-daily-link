@@ -36,7 +36,7 @@ const anchor=new Date(`${today}T12:00:00Z`),sunday=new Date(anchor);sunday.setUT
 const isoUTC=d=>d.toISOString().slice(0,10);
 const targetDates=[...Array(7)].map((_,i)=>{const d=new Date(sunday);d.setUTCDate(sunday.getUTCDate()+i);return isoUTC(d)});
 const sourceDates=[...Array(7)].map((_,i)=>{const d=new Date(sunday);d.setUTCDate(sunday.getUTCDate()-7+i);return isoUTC(d)});
-const db={company:{id:companyId,name:'Synthetic repeat',demo:true,timezone:'UTC'},projects:[{id:101,name:'North Ridge'},{id:102,name:'South Yard'}],team:[{id:7,name:'Chloe',crew:'A'},{id:8,name:'Andi',crew:'A'},{id:9,name:'Ben',crew:'B'}],assignments:[
+const db={company:{id:companyId,name:'Synthetic repeat',demo:true,timezone:'UTC',weekStart:'sunday'},projects:[{id:101,name:'North Ridge'},{id:102,name:'South Yard'}],team:[{id:7,name:'Chloe',crew:'A'},{id:8,name:'Andi',crew:'A'},{id:9,name:'Ben',crew:'B'}],assignments:[
   {id:1,projectId:101,date:sourceDates[1],start:'06:00',end:'14:00',crew:'A',memberIds:[7,8],activity:'Excavation'},
   {id:2,projectId:102,date:sourceDates[2],start:'07:00',end:'15:00',crew:'B',memberIds:[9],activity:'Grading'},
   {id:3,projectId:101,date:sourceDates[1],start:'15:00',end:'16:00',crew:'A',memberIds:[8],activity:'Site prep'},
