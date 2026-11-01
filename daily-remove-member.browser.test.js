@@ -141,4 +141,3 @@ fs.mkdirSync(path.join(__dirname, 'output'), { recursive: true });
     assert.deepEqual(errors,[]);console.log('Daily member removal passed: add/remove/re-add, unchanged hours and metadata, real save/reopen, no team or clock mutations, responsive themes.');
   }finally{await browser?.close();if(child?.exitCode==null)child.kill();}
 })().catch(error=>{console.error(error);process.exitCode=1;});
-
