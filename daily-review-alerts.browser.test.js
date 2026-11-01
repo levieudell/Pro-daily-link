@@ -42,6 +42,27 @@ const executablePath = process.env.PDL_BROWSER_PATH || ['C:/Program Files/Google
     assert(!/ready to submit/.test(await page.locator('#report-gaps').innerText()));
     await page.evaluate(()=>{document.querySelector('.production-quantity').value='300';updateReportGaps();});
     assert(!/Enter a quantity/.test(await page.locator('#report-gaps').innerText()));
+    fs.mkdirSync('docs/daily-review-alerts',{recursive:true});
+    // Persisted legacy unmatched flags must visibly resolve into actual work rows.
+    const legacy={project:0,dateIso:'2026-11-01',status:'Draft',originalNotes:'Installed 300 linear feet of wall.',notes:'Installed 300 linear feet of wall.',summary:'No production or labor recorded.',productionEntries:[],laborEntries:[],scopeFlags:[{id:'legacy-wall',kind:'extra',reason:'no_match',description:'Wall',quantity:300,unit:'LF',decision:null}]};
+    for(const choice of ['estimate','extra']){
+      await page.evaluate(report=>{document.querySelector('#report-modal').close();openReport(report);showReportStep(2);},{...legacy,scopeFlags:legacy.scopeFlags.map(flag=>({...flag,id:flag.id+choice}))});
+      await page.locator(`[data-flag-choice="${choice}"]`).click();
+      if(choice==='estimate'){
+        await page.locator('[data-pick-line]').selectOption('991');
+        assert.match(await page.locator('#field-choice-feedback').innerText(),/Linked to Lock.*300 LF/);
+      }else assert.match(await page.locator('#field-choice-feedback').innerText(),/Marked as extra work.*300 LF/);
+      assert.equal(await page.locator('.production-quantity').inputValue(),'300','decision keeps the stated quantity');
+      assert.match(await page.locator('#report-summary').inputValue(),/300 linear feet/,'empty legacy summary uses source notes');
+      for(const theme of ['light','dark']){
+        await page.evaluate(theme=>document.documentElement.dataset.theme=theme,theme);
+        await page.locator('#field-choice-feedback').evaluate(el=>el.scrollIntoView({block:'center'}));
+        await page.screenshot({path:`docs/daily-review-alerts/choice-${choice}-${theme}-390.png`});
+      }
+    }
+    await page.evaluate(()=>{document.querySelector('#report-summary').value='My office summary';showReportStep(2);});
+    assert.equal(await page.locator('#report-summary').inputValue(),'My office summary','manual summary stays intact');
+    await page.evaluate(()=>{document.querySelector('#report-modal').close();openReport(null,{projectIndex:0,dateIso:companyTodayIso()});addProductionRow({estimateItemId:991,description:'Lock+Load Wall',quantity:0,unit:'LF',laborHours:0.05});showReportStep(2);});
     // CSS fixture uses the real decision-button classes without invoking extraction.
     await page.evaluate(()=>{
       const host=document.createElement('article');host.className='field-flag';host.id='alert-brand-fixture';

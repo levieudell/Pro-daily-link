@@ -68,7 +68,7 @@ fs.mkdirSync(path.join(__dirname, 'output'), { recursive: true });
     await page.evaluate(async()=>{await openProject(projects[0].id);});
     assert(await page.locator('#project-modal').evaluate(el=>el.scrollWidth<=el.clientWidth+1),'project forms must fit phone width');
     await page.evaluate(()=>document.querySelector('#project-modal').close());
-    const note='Worked on the lock and load wall for 30 hours by myself. Forgot to clock in last two days. I got 300 linear feet of wall installed, and ran the excavator for 12 hours.';
+    const note='Worked on the Lock+Load Wall for 30 hours by myself. Forgot to clock in last two days. I got 300 linear feet of Lock+Load Wall installed, and ran the excavator for 12 hours.';
     await page.route('**/api/ai/extract',async route=>{const data=route.request().postDataJSON();delete data.projectId;data.estimateItems=[{id:991,name:'Lock+Load Wall',unit:'LF',plannedQuantity:500}];const response=await route.fetch({postData:JSON.stringify(data)});await route.fulfill({response});});
     await page.evaluate(async note=>{projects[0].estimateItems=[{id:991,name:'Lock+Load Wall',unit:'LF',plannedQuantity:500}];const draft=await api('/api/reports',{method:'POST',body:JSON.stringify({project:0,dateIso:companyTodayIso(),status:'Draft',notes:note,summary:'No production or labor recorded.',productionEntries:[],laborEntries:[]})});reports.unshift(draft);openReport(draft);showReportStep(1);},note);
     await page.locator('#report-next-step').click();
