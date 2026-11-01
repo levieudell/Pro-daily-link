@@ -378,7 +378,15 @@ async function main() {
     await refreshedSummary;
     await root.locator('[data-more-ranges]').click();
     for(const [preset,range] of [['last2',calendar.range('last2',calendar.today(db.company.timezone))],['period',db.payPeriods[0]],['month',calendar.range('month',calendar.today(db.company.timezone))]]){
-      await root.locator(`[data-payroll-range="${preset}"]`).click();const [file]=await Promise.all([page.waitForEvent('download'),root.locator('[data-payroll-download="csv"]').click()]);verifyCsv(fs.readFileSync(await file.path(),'utf8'),{from:range.from,to:range.to});
+      await root.locator(`[data-payroll-range="${preset}"]`).click();
+      // At a month boundary the seeded workweeks can leave This month empty.
+      // The product correctly disables downloads instead of creating an empty CSV.
+      if(buildPayrollExport(db,{from:range.from,to:range.to}).totals.total===0){
+        await page.waitForFunction(()=>document.querySelector('#payroll-landing [data-payroll-readiness]')?.textContent==='No approved hours in this range.');
+        assert(await root.locator('[data-payroll-download="csv"]').isDisabled());
+      }else{
+        const [file]=await Promise.all([page.waitForEvent('download'),root.locator('[data-payroll-download="csv"]').click()]);verifyCsv(fs.readFileSync(await file.path(),'utf8'),{from:range.from,to:range.to});
+      }
     }
     await root.locator('[data-payroll-range="custom"]').click();
     const focused=root.locator('[data-payroll-day][tabindex="0"]');const original=await focused.getAttribute('data-payroll-day');await focused.focus();await focused.press('ArrowRight');
