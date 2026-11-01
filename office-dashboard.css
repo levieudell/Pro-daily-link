@@ -525,3 +525,30 @@ dialog#personal-clock-modal{padding:0;width:min(480px,calc(100vw - 24px));max-he
 
 #report-modal .report-review-safety { display: inline-flex; align-items: center; justify-content: center; min-height: 48px; margin-top: 12px; padding: 8px 16px; background: #FF6600; color: #000000; border: 2px solid #000000; font-family: Inter, sans-serif; font-weight: 700; }
 #report-modal .report-review-safety:focus-visible { outline: 2px solid #FF6600; outline-offset: 2px; }
+
+/* Blocking daily feedback must stand apart from neutral report cards. */
+#report-modal:is(.report-office-compact,.report-field-compact) :is(#report-gaps.attention,#report-submit-status.visible:not(.success):not(.warning)) {
+  border:2px solid var(--pdl-pink)!important;
+  border-left-width:6px!important;
+  background:var(--surface-canvas)!important;
+  color:var(--text-primary)!important;
+}
+#report-modal:is(.report-office-compact,.report-field-compact) #report-submit-status.visible.warning {
+  border:2px solid var(--pdl-orange)!important;
+  border-left-width:6px!important;
+}
+#report-modal:is(.report-office-compact,.report-field-compact) .field-flag button {
+  min-height:48px;
+  background:var(--pdl-black)!important;
+  color:var(--pdl-white)!important;
+  border:2px solid var(--pdl-gray)!important;
+  font:700 16px Inter,sans-serif;
+}
+#report-modal:is(.report-office-compact,.report-field-compact) .field-flag button.is-selected {
+  background:var(--pdl-orange)!important;
+  color:var(--pdl-black)!important;
+  border-color:var(--pdl-orange)!important;
+}
+
+#report-modal #report-submit-status:focus { outline:none!important; box-shadow:none!important; }
+#report-modal #report-submit-status:focus-visible { outline:2px solid var(--pdl-orange)!important; outline-offset:2px; }

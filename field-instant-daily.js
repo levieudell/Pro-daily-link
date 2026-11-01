@@ -1070,7 +1070,21 @@ var fieldScopeFlags=[];
   }
   if(typeof updateReportGaps==='function'){
     const beforeGaps=updateReportGaps;
-    updateReportGaps=function(){beforeGaps();if(pendingDailyHours()){const target=$('#report-gaps');if(target){target.className='report-gaps attention';target.innerHTML='<strong>Review hours by day</strong><span>Enter the hours worked on this report date. The notes cover multiple days.</span>';}}};
+    updateReportGaps=function(){
+      beforeGaps();
+      if(!dailyCompact())return;
+      const target=$('#report-gaps');if(!target)return;
+      const lines=[...$$('.production-entry')].map(row=>({quantity:row.querySelector('.production-quantity')?.value,extra:row.dataset.extraWork==='true',needsQuantity:estimateLineNeedsQuantity(row)}));
+      const blockers=FieldDailyScope.sendGate({flags:fieldScopeFlags,lines}).block;
+      if(pendingDailyHours())blockers.push('Enter the hours worked on this report date. The notes cover multiple days.');
+      if(blockers.length){
+        if(target.classList.contains('complete'))target.innerHTML='<strong>Still needs your input</strong>';
+        target.className='report-gaps attention';
+        for(const message of blockers){if(target.textContent.includes(message))continue;const line=document.createElement('span');line.textContent=message;target.append(line);}
+      }else if(target.classList.contains('complete')){
+        const heading=target.querySelector('strong');if(heading)heading.textContent='Production and hours checked';
+      }
+    };
   }
   if(typeof saveDailyReport==='function'){const saveBefore=saveDailyReport;saveDailyReport=async function(status,saveOptions){if(status!=='Draft'&&pendingDailyHours()){const message=$('#report-submit-status');if(message){message.textContent='Enter the hours worked on this report date. The notes cover multiple days.';message.classList.add('visible');message.scrollIntoView({block:'nearest'});}return false;}const review=$('#field-review-next'),field=$('#report-next');if(review&&field&&typeof FieldDailyScope!=='undefined'&&FieldDailyScope.mergedNext)field.value=FieldDailyScope.mergedNext(field.value,review.value);harvestFlagAnswers();syncEstimateBindings();dropEmptyLines();if(dailyCompact()){applyLaborAllocation();stampExtraMinutes()}const reportId=Number(typeof editingReportId==='undefined'?0:editingReportId);const saved=await saveBefore(status,saveOptions);const stored=saved&&saved.id?saved:(typeof reports==='undefined'?null:reports.find(row=>Number(row.id)===reportId));if(stored&&String(stored.status||'')!=='Draft'&&typeof timeCards!=='undefined'){let changed=false;for(const card of timeCards){if(!card||!card.outAt||Number(card.reportId)!==Number(stored.id))continue;const cardStatus=String(card.status||'').trim().toLowerCase();if(cardStatus!=='draft'&&cardStatus!=='rejected')continue;card.status='submitted';if(card.fieldAccess)card.fieldAccess={...card.fieldAccess,canEdit:false,canSubmit:false,reason:'This time is awaiting review. Ask your office time administrator to return it to Draft if a correction is needed.'};changed=true}if(changed&&typeof renderFieldClock==='function')renderFieldClock();else if(changed&&typeof renderFieldClockHours==='function')renderFieldClockHours()}return saved}}
   if(typeof confirmReportDiscard==='function'){const officeConfirm=confirmReportDiscard;confirmReportDiscard=function(){if(typeof currentRole!=='undefined'&&currentRole==='field')return true;return officeConfirm()}}
