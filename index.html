@@ -21,7 +21,7 @@
   <link rel="stylesheet" href="project-assistant-ui.css?v=20261031-clock-launcher" />
   <link rel="stylesheet" href="design-system.css?v=20261021-field-clock-button1" />
   <link rel="stylesheet" href="payroll-export.css?v=20261031-page-visibility" />
-  <link rel="stylesheet" href="office-dashboard.css?v=20261101-project-overrun-return" />
+  <link rel="stylesheet" href="office-dashboard.css?v=20261101-project-early-warning" />
   <link rel="manifest" href="manifest.webmanifest" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="default" />
@@ -223,7 +223,7 @@
       <section class="page" id="projects-page">
         <div class="page-heading"><div><p class="eyebrow">CUSTOMERS & WORK</p><h1>Projects</h1><p>Track customers, job sites, estimates, and actual production.</p></div><button class="primary" id="new-project">＋ New project</button></div>
         <div class="project-view-tabs"><button class="active" data-project-view="active">Active projects</button><button data-project-view="archived">Archived</button></div>
-        <div class="filter-row"><div class="search-box">⌕ <input id="project-search" placeholder="Search projects or customers" /></div><select id="project-status-filter" aria-label="Filter projects by status"><option value="all">All statuses</option><option>On track</option><option>At risk</option><option>Ahead</option><option>Delayed</option></select></div>
+        <div class="filter-row"><div class="search-box">⌕ <input id="project-search" placeholder="Search projects or customers" /></div><select id="project-status-filter" aria-label="Filter projects by status"><option value="all">All statuses</option><option>On track</option><option>At risk</option><option>Ahead</option><option>Delayed</option><option>Not enough information</option></select></div>
         <div class="project-results-summary" id="project-results-summary" role="status" aria-live="polite"></div>
         <div class="project-card-grid" id="project-cards"></div>
       </section>
@@ -600,8 +600,8 @@
   <script src="report-labor-review.js?v=20261009-labor-exclusions"></script>
   <script src="company-timezone.js?v=20261014-review3"></script>
   <script src="schedule-approved-labor.js?v=20261008-approved-evidence"></script>
-  <script src="report-work-details.js?v=20261101-project-overrun-return"></script>
-  <script src="app.js?v=20261101-project-overrun-return"></script>
+  <script src="report-work-details.js?v=20261101-project-early-warning"></script>
+  <script src="app.js?v=20261101-project-early-warning"></script>
   <script src="field-daily-scope.js?v=20261101-daily-notes"></script>
   <script src="field-instant-daily.js?v=20261101-daily-safety-scope"></script>
   <script src="estimate-mobile.js"></script>
@@ -614,8 +614,8 @@
   <script src="company-settings-tabs.js?v=20261004-pay-periods"></script>
   <script src="office-workspace.js?v=20261005-office-recovery"></script>
   <script src="reporting-controls.js?v=20261014-review3"></script>
-  <script src="project-notes-ui.js?v=20261101-project-overrun-return"></script>
-  <script src="project-schedule-ui.js?v=20261014-uifix-20261019-schedule1"></script>
+  <script src="project-notes-ui.js?v=20261101-project-early-warning"></script>
+  <script src="project-schedule-ui.js?v=20261101-project-early-warning"></script>
   <script src="project-assistant-voice.js?v=20261007-voice-prototype"></script>
   <script src="project-assistant-conversation.js?v=20261007-natural-names"></script>
   <script src="project-assistant-names.js?v=20261007-natural-names"></script>

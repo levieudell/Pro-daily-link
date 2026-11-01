@@ -577,3 +577,11 @@ dialog#personal-clock-modal{padding:0;width:min(480px,calc(100vw - 24px));max-he
 }
 :root[data-theme="dark"] #project-cards .project-health-reason {background:var(--pdl-black,#000000)!important;color:var(--pdl-white,#FFFFFF)!important;}
 #project-cards .project-health-reason span {font-size:12px;}
+
+#project-detail-modal .project-health-banner.risk {background:var(--pdl-offwhite,#F7F5F0)!important;border-color:var(--pdl-orange,#FF6600)!important;color:var(--pdl-black,#000000)!important;}
+#project-detail-modal .project-health-banner.risk :is(strong,p) {color:inherit!important;}
+:root[data-theme="dark"] #project-detail-modal .project-health-banner.risk {background:var(--pdl-black,#000000)!important;color:var(--pdl-white,#FFFFFF)!important;}
+.project-health-links {display:flex;flex-wrap:wrap;gap:8px;margin-top:12px;}
+#project-detail-modal .project-health-links button {min-height:48px;border:1px solid var(--pdl-gray,#6E6E6E);background:var(--pdl-black,#000000);color:var(--pdl-white,#FFFFFF);}
+
+#project-cards .project-card-actions .status.warning, #project-table .status.warning {background:var(--pdl-orange,#FF6600)!important;color:var(--pdl-black,#000000)!important;}

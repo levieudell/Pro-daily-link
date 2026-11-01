@@ -38,11 +38,32 @@ const executablePath = process.env.PDL_BROWSER_PATH || ['C:/Program Files/Google
     const card=page.locator('[data-project-card]').first();
     assert.equal(await card.locator('.project-card-actions .status').innerText(),'At risk');
     assert.match(await card.locator('.project-health-reason').innerText(),/25 LF over estimate/);
+    await page.evaluate(()=>{
+      const project=projects[0];project.estimateItems=[{id:991,name:'Wall',unit:'LF',plannedQuantity:100,budgetHours:100}];
+      reports=[];projectTasks=[];assignments=Array.from({length:4},(_,index)=>{const day=new Date(companyTodayIso()+'T12:00:00Z');day.setUTCDate(day.getUTCDate()+index+1);return{projectId:project.id,date:day.toISOString().slice(0,10)};});
+      productionData.projects=[{projectId:project.id,items:[{estimateItemId:991,plannedQuantity:100,actualQuantity:60,budgetHours:100,actualLaborHours:85}]}];
+      renderProjectCards();
+    });
+    assert.match(await card.locator('.project-health-reason').innerText(),/85%.*approved.*4 scheduled workdays/);
+    await card.locator('[data-open-health]').click();
+    await page.locator('#project-detail-modal').waitFor({state:'visible'});
+    await page.locator('[data-health-tab="schedule"]').click();
+    await page.locator('[data-project-detail-pane="schedule"].active').waitFor({state:'visible'});
+    await page.locator('[data-health-tab="estimate"]').click();
+    await page.locator('[data-project-detail-pane="estimate"].active').waitFor({state:'visible'});
+    await page.locator('#project-detail-modal .close-button').click();
+    await page.locator('#project-detail-modal').waitFor({state:'hidden'});
+    fs.mkdirSync('docs/project-health-warning',{recursive:true});
     // Simulate mobile Safari: a formerly focused control is off-screen when a card is tapped.
     for(const viewport of [{width:390,height:844},{width:1280,height:800}]){
     await page.setViewportSize(viewport);
     for(const theme of ['light','dark']){
       await page.evaluate(theme=>document.documentElement.dataset.theme=theme,theme);
+      assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),'no horizontal overflow');
+      const colors=await card.locator('.status.warning').evaluate(node=>({background:getComputedStyle(node).backgroundColor,color:getComputedStyle(node).color}));
+      assert.deepEqual(colors,{background:'rgb(255, 102, 0)',color:'rgb(0, 0, 0)'});
+      await card.scrollIntoViewIfNeeded();
+      await page.screenshot({path:`docs/project-health-warning/${theme}-${viewport.width}.png`});
       const target=page.locator('[data-project-card]').last().locator('[data-open-project]');
       await page.locator('#project-search').focus();
       await target.scrollIntoViewIfNeeded();

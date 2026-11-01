@@ -74,9 +74,9 @@ else {
   let projectReturnView=null;
   function rememberProjectReturn(){
     if($('#project-detail-modal')?.open)return;
-    const opener=document.activeElement, scrolls=[];
+    const opener=document.activeElement, scrolls=[], key=['openProject','projectCard','officeProject','openHealth'].find(key=>opener?.dataset?.[key]!=null);
     for(let node=opener;node;node=node.parentElement)scrolls.push([node,node.scrollLeft,node.scrollTop]);
-    projectReturnView={opener,scrolls,x:window.scrollX,y:window.scrollY,hash:location.hash,page:$('.page.active')};
+    projectReturnView={opener,key,value:key?opener.dataset[key]:null,scrolls,x:window.scrollX,y:window.scrollY,hash:location.hash,page:$('.page.active')};
   }
   document.addEventListener('click',event=>{
     const target=event.target.closest('[data-open-project],[data-project-card],[data-office-project],[data-open-health]');
@@ -101,7 +101,8 @@ else {
       if(projectDialog.open)return;
       const saved=projectReturnView;projectReturnView=null;
       if(!saved||saved.hash!==location.hash||saved.page!==$('.page.active')||document.querySelector('dialog[open]'))return;
-      if(saved.opener?.isConnected)saved.opener.focus({preventScroll:true});
+      const opener=saved.opener?.isConnected?saved.opener:saved.key?[...document.querySelectorAll('[data-open-project],[data-project-card],[data-office-project],[data-open-health]')].find(node=>node.dataset[saved.key]===saved.value):null;
+      opener?.focus({preventScroll:true});
       for(const [node,x,y] of saved.scrolls)if(node.isConnected)node.scrollTo({left:x,top:y,behavior:'instant'});
       window.scrollTo({left:saved.x,top:saved.y,behavior:'instant'});
     });
