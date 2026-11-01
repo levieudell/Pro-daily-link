@@ -46,7 +46,7 @@ function applySafetyEvidence(db, report, actor = null) {
     submittedBy: { id: actor?.id ?? null, name: submitterName || 'System record', role: actor?.role || 'system' },
     checks: day.checks, hazards: day.hazards, talks: day.talks || [],
     carriedHazards: (db.safetyDays || []).filter(row => row.companyId === db.company.id && Number(row.projectId) === Number(project.id) && row.date < report.dateIso)
-      .flatMap(row => (row.hazards || []).filter(item => item.status !== 'verified').map(item => ({ ...item, date: row.date }))),
+      .flatMap(row => (row.hazards || []).filter(item => !['verified', 'voided'].includes(item.status)).map(item => ({ ...item, date: row.date }))),
     summary: gate,
     capturedAt: new Date().toISOString()
   });

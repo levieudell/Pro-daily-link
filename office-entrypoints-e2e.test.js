@@ -73,7 +73,7 @@ async function checkOfficeBrandMatrix(page){
   assert.equal(await page.$eval('#office-page-name',el=>el.textContent),'Projects','header follows existing navigation');
   assert.equal(await page.$eval('#report-modal-title',el=>el.textContent),'New daily');
   await page.$eval('#report-date',el=>{el.value='2026-10-28';el.dispatchEvent(new Event('change',{bubbles:true}))});
-  assert.match(await page.$eval('#report-context-selection',el=>el.textContent),/^Oct 28, 2026 · /,'job card uses the app date format');
+  assert.match(await page.$eval('#report-context-selection',el=>el.textContent),/^10\/28\/2026 · /,'job card uses the app date format');
   assert.equal(await page.$eval('#report-date',el=>el.value),'2026-10-28','date field keeps its ISO value');
   for(const [width,height] of sizes){
    await page.setViewport({width,height,isMobile:true,hasTouch:true});

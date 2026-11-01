@@ -554,3 +554,17 @@ dialog#personal-clock-modal{padding:0;width:min(480px,calc(100vw - 24px));max-he
 #report-modal #report-submit-status:focus-visible { outline:2px solid var(--pdl-orange)!important; outline-offset:2px; }
 
 #report-modal .field-choice-feedback{padding:12px 16px;border-left:4px solid var(--pdl-orange);background:var(--surface-canvas);color:var(--text-primary);font:700 16px/1.4 Inter,sans-serif;}
+
+/* Expandable production evidence and explicit job work types. */
+.report-work-detail { border:1px solid var(--pdl-gray,#6E6E6E); border-radius:8px; margin-top:12px; padding:12px; }
+.report-work-detail summary { min-height:48px; cursor:pointer; }
+.report-work-detail summary span { display:block; margin-top:6px; }
+.report-work-detail dl { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:8px; }
+.report-work-detail dd { margin:0; overflow-wrap:anywhere; }
+.report-quantity-over { border-left:4px solid var(--pdl-orange,#FF6600); padding-left:8px; font-weight:700; color:inherit; }
+.project-work-types { border:1px solid var(--pdl-gray,#6E6E6E); padding:12px; }
+.project-work-types > div { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px; }
+#project-form .project-work-types label { display:flex; align-items:center; gap:8px; min-height:48px; }
+#project-form .project-work-types input { width:20px; height:20px; accent-color:var(--pdl-orange,#FF6600); }
+
+#report-detail .data-box:has(.report-work-detail[open]) { grid-column:1 / -1; }

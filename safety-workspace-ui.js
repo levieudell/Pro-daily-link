@@ -23,7 +23,7 @@
     return (templates || []).filter(template => ids.includes(String(template.id)) && FORM_CATEGORIES.has(template.category));
   };
   const uniqueOpenHazards = data => {
-    const rows = [...(data?.openHazards || []), ...(data?.day?.hazards || []).filter(hazard => hazard.status !== 'verified')], seen = new Set();
+    const rows = [...(data?.openHazards || []), ...(data?.day?.hazards || []).filter(hazard => !['verified', 'voided'].includes(hazard.status))], seen = new Set();
     return rows.filter(hazard => { const key = String(hazard.id || `${hazard.observation}|${hazard.date || data?.date}`); if (seen.has(key)) return false; seen.add(key); return true; });
   };
   const statusModel = data => {
@@ -62,7 +62,7 @@
         detail: [state, `${(talk.attendees || []).length} ${spanish ? 'presentes reportados' : 'reported present'}`, talk.language || 'en'].filter(Boolean).join(' · '),
         actor: voided ? talk.voidedBy || talk.presenter || '' : corrected ? talk.amendedBy || talk.presenter || '' : talk.presenter || talk.createdBy || '', voided, corrected });
     }
-    for (const hazard of day.hazards || []) rows.push({ id: `hazard:${hazard.id}`, type: 'hazards', when: hazard.createdAt || data?.date || day.date, title: hazard.observation || (spanish ? 'Peligro registrado' : 'Recorded hazard'), detail: hazard.status === 'verified' ? (spanish ? 'Cerrado y verificado' : 'Verified closed') : hazard.status === 'corrected' ? (spanish ? 'Corregido · verificar' : 'Corrected · verify') : (spanish ? 'Seguimiento abierto' : 'Follow-up open'), actor: hazard.createdBy || '' });
+    for (const hazard of day.hazards || []) rows.push({ id: `hazard:${hazard.id}`, type: 'hazards', when: hazard.createdAt || data?.date || day.date, title: hazard.observation || (spanish ? 'Peligro registrado' : 'Recorded hazard'), detail: hazard.status === 'voided' ? `${spanish ? 'Registrado por error' : 'Recorded in error'}: ${hazard.voidReason || ''}` : hazard.status === 'verified' ? (spanish ? 'Cerrado y verificado' : 'Verified closed') : hazard.status === 'corrected' ? (spanish ? 'Corregido · verificar' : 'Corrected · verify') : (spanish ? 'Seguimiento abierto' : 'Follow-up open'), actor: hazard.createdBy || '' });
     for (const report of projectReports(reports, projectId, projects)) {
       if (!submittedSafetyEvidence(report)) continue;
       const when = reportDateValue(report) || report.updatedAt || report.createdAt || '';
@@ -160,8 +160,8 @@
   const reportsForProject = () => projectReports(reportList(), state.projectId, allProjects()).sort((a, b) => String(reportDateValue(b) || b.updatedAt || '').localeCompare(String(reportDateValue(a) || a.updatedAt || '')));
   const formsForProject = () => assignedFormTemplates(activeProject(), templateList());
   const canManageForms = () => ['owner', 'admin'].includes(typeof currentUser === 'undefined' ? '' : currentUser?.role);
-  const formatDate = value => { if (!dateValue(value)) return value || ''; const date = new Date(`${value}T12:00:00`); return date.toLocaleDateString(isSpanish() ? 'es-MX' : 'en-US', { month: 'short', day: 'numeric', year: 'numeric' }); };
-  const formatDateTime = value => { const date = new Date(value); return Number.isFinite(date.valueOf()) ? date.toLocaleString(isSpanish() ? 'es-MX' : 'en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' }) : ''; };
+  const formatDate = value => { if (!dateValue(value)) return value || ''; const date = new Date(`${value}T12:00:00`); return date.toLocaleDateString('en-US', { month: '2-digit', day: '2-digit', year: 'numeric' }); };
+  const formatDateTime = value => { const date = new Date(value); return Number.isFinite(date.valueOf()) ? date.toLocaleString('en-US', { month: '2-digit', day: '2-digit', year: 'numeric', hour: 'numeric', minute: '2-digit' }) : ''; };
   const formComplete = template => reportsForProject().some(report => String(report.templateId) === String(template.id) && reportDateValue(report) === state.date && report.status !== 'Draft');
 
   function ensureContext() {

@@ -86,7 +86,7 @@ function createSafetyProgramHandler({readDb,writeDb,readPlatform,body,json,authe
         const allowedIds=new Set(projects.map(row=>Number(row.id)));
         const days=own(db,db.safetyDays).filter(row=>allowedIds.has(row.projectId)&&canAccessDate(db,user,row.projectId,row.date));
         const hazardVersions=new Map();for(const day of [...days].sort((a,b)=>a.date.localeCompare(b.date)))for(const row of day.hazards||[])hazardVersions.set(`${day.projectId}|${row.id}`,{...row,projectId:day.projectId,date:day.date,source:'project'});
-        const hazards=[...hazardVersions.values()].filter(row=>row.status!=='verified');
+        const hazards=[...hazardVersions.values()].filter(row=>!['verified','voided'].includes(row.status));
         const actions=meetings.flatMap(row=>(row.actions||[]).filter(action=>action.status!=='verified').map(action=>({...action,meetingId:row.id,projectId:row.projectId,source:'meeting'})));
         const visiblePeople=manager(user)?roster:(db.team||[]).filter(row=>active(row)&&meetings.some(meeting=>meeting.invited.some(person=>person.memberId===Number(row.id))));
         return reply(200,{today:today(db),companyName:db.company.name,canManage:manager(user),canVerify:verify(user),canCommittee:office(user),rule: RULE,
