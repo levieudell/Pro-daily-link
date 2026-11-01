@@ -283,7 +283,15 @@ var fieldScopeFlags=[];
   }
   function applyScopeLines(review){
     const locks=lockedLaborMap();
-    const lines=review?.lines||[];
+    const grouped=new Map();
+    for(const line of review?.lines||[]){
+      const key=String(line.estimateItemId||'');
+      if(!key){grouped.set(Symbol(),{...line});continue;}
+      const prior=grouped.get(key);
+      if(!prior){grouped.set(key,{...line});continue;}
+      if(line.quantity!=null&&line.quantity!=='')prior.quantity=(Number(prior.quantity)||0)+Number(line.quantity);
+    }
+    const lines=[...grouped.values()];
     const byId=new Map();
     for(const row of [...$$('.production-entry')]){
       const id=lineEstimateId(row);
@@ -498,6 +506,13 @@ var fieldScopeFlags=[];
     if(extraChoiceOpen()){send.disabled=true;send.dataset.extraGate='1';return}
     if(send.dataset.extraGate==='1'){send.disabled=false;delete send.dataset.extraGate}
   }
+  function announceScopeChoice(message){
+    let feedback=$('#field-choice-feedback');
+    if(!feedback){feedback=document.createElement('p');feedback.id='field-choice-feedback';feedback.className='field-choice-feedback';feedback.setAttribute('role','status');feedback.setAttribute('aria-live','polite');$('#field-scope-flags')?.before(feedback);}
+    feedback.textContent=message;
+    feedback.scrollIntoView({block:'nearest'});
+    if(typeof updateReportGaps==='function')updateReportGaps();
+  }
   function renderFlags(){
     absorbMaterialFlags();
     restoreHeldChoices();
@@ -530,14 +545,23 @@ var fieldScopeFlags=[];
       if(now-(flagChoiceStamp.get(stampKey)||0)<400)return;
       flagChoiceStamp.set(stampKey,now);
       const choice=button.dataset.flagChoice;
-      if(flag.kind==='pick'&&choice==='extra'){
-        const next=FieldDailyScope.decideFlag(flag,'extra');
+      if(flag.reason==='no_match'&&choice==='estimate'&&!flag.estimateItemId){
+        fieldScopeFlags[at>=0?at:Number(button.dataset.flagIndex)]={...flag,kind:'pick',decision:null};
+        renderFlags();renderFieldReview();
+        const picker=host.querySelector(`[data-pick-line][data-flag-id="${CSS.escape(String(flag.id))}"]`);
+        picker?.scrollIntoView({block:'center'});picker?.focus();
+        announceScopeChoice('Choose the estimate line for this work.');
+        return;
+      }
+      if((flag.kind==='pick'||flag.reason==='no_match')&&choice==='extra'){
+        const next=FieldDailyScope.decideFlag({...flag,kind:'pick'},'extra');
         fieldScopeFlags[at>=0?at:Number(button.dataset.flagIndex)]={...next,id:flag.id};
         holdFlagChoice(fieldScopeFlags[at>=0?at:Number(button.dataset.flagIndex)]);
         markLineExtra(flag);
         const send=$('#save-report');if(send)send.disabled=false;
         renderFlags();
         renderFieldReview();
+        announceScopeChoice(`Marked as extra work${flag.quantity!=null?` · ${flag.quantity} ${flag.unit||''}`:''}.`);
         persistResolvedChoice();
         return;
       }
@@ -551,6 +575,7 @@ var fieldScopeFlags=[];
       const send=$('#save-report');if(send&&next.decision)send.disabled=false;
       renderFlags();
       renderFieldReview();
+      announceScopeChoice(next.decision?(next.decision==='extra'?'Marked as extra work.':next.decision==='estimate'?'Marked as part of estimate.':'Choice recorded.'):'Choice cleared.');
       persistResolvedChoice();
     });
     host.querySelectorAll('[data-flag-asker]').forEach(input=>input.oninput=()=>{const at=fieldScopeFlags.findIndex(row=>String(row.id)===String(input.dataset.flagAsker));if(at>=0)fieldScopeFlags[at]={...fieldScopeFlags[at],who_asked:input.value}});
@@ -569,7 +594,8 @@ var fieldScopeFlags=[];
       renderFieldReview();
       const picked=[...$$('.production-entry')].find(entry=>String(entry.dataset.estimateItemId||entry.querySelector('.production-item')?.value||'')===String(item.id));
       $$('.production-entry').forEach(entry=>entry.classList.remove('is-editing'));
-      if(picked){picked.classList.add('is-editing');focusQuantity(picked)}
+      if(picked){picked.classList.add('is-editing');if(!(Number(picked.querySelector('.production-quantity')?.value)>0))focusQuantity(picked)}
+      announceScopeChoice(`Linked to ${item.name}${picked?.querySelector('.production-quantity')?.value?` · ${picked.querySelector('.production-quantity').value} ${item.unit||''}`:''}.`);
       persistResolvedChoice();
     });
   }
@@ -601,6 +627,10 @@ var fieldScopeFlags=[];
     applyLaborAllocation();
     const cards=[];
     const sourceNotes=$('#field-notes')?.value||'';
+    const summaryField=$('#report-summary');
+    if(sourceNotes.trim()&&summaryField&&(!summaryField.value.trim()||/^No production or labor recorded[.!]?$/i.test(summaryField.value.trim()))){
+      summaryField.value=`Reported work: ${sourceNotes.trim()}`;
+    }
     const noteText=sourceNotes.trim();
     const noteLines=noteText.split(/\n+/).map(line=>line.trim()).filter(Boolean);
     const covered=new Set(fieldScopeFlags.map(flag=>String(flag?.description||'').trim()).filter(Boolean));
@@ -871,7 +901,7 @@ var fieldScopeFlags=[];
   }
   if(typeof openReport==='function'){
     const openBefore=openReport;
-    openReport=function(report=null,context={}){reviewGeneration++;fieldScopeFlags=[];fieldHoursReview=null;reviewedNotesKey='';if(!sameOpenDaily(report,context))clearReportPhotoFiles();const result=openBefore(report,context);if(fieldCompact()&&Array.isArray(report?.officeReview?.reportedLabor)){for(const row of report.officeReview.reportedLabor){const input=$('[data-labor-member="'+Number(row.memberId)+'"]');if(!input)continue;const typed=row.hours!=null&&row.hours!==''&&Number.isFinite(Number(row.hours));if(typed){input.value=String(row.hours);input.dataset.manualHours='true';delete input.dataset.timecardDerived}else{delete input.dataset.manualHours;input.value=''}}}if($('#report-next-step'))$('#report-next-step').disabled=false;if(dailyCompact()){const loadedSummary=String($('#report-summary')?.value||'').trim(),loadedNotes=String($('#field-notes')?.value||'').trim(),hasProduction=(report?.productionEntries||[]).some(row=>row&&row.extra_work!==true&&String(row.description||'').trim()),hasResolution=(report?.scopeFlags||[]).some(flag=>flag&&flag.decision)||(report?.extraWork||[]).some(item=>item&&item.extra_work===true);if(loadedNotes&&(hasProduction||hasResolution))reviewedNotesKey=loadedNotes;if(officeCompact()&&report?.productionEntries?.length&&typeof addProductionRow==='function'){$('#production-rows').innerHTML='';report.productionEntries.forEach(entry=>addProductionRow({...entry,laborManual:entry.laborManual===true||Number(entry.laborHours)>0,laborMinutes:entry.laborMinutes??Math.round((Number(entry.laborHours)||0)*60)}))}const saved=(report?.productionEntries||[]).some(row=>row&&((row.estimateItemId!=null&&String(row.estimateItemId)!=='')||Number(row.quantity)>0));if(report?.workSuggestions?.length&&!saved&&$('#production-rows'))$('#production-rows').innerHTML='';const draft=typeof readOfflineDraft==='function'&&typeof offlineReportDraftKey==='function'?readOfflineDraft(offlineReportDraftKey()):null;if(Array.isArray(report?.scopeFlags)&&report.scopeFlags.length)fieldScopeFlags=stampFlags(report.scopeFlags);else if(Array.isArray(draft?.scopeFlags)&&String(draft.notes||'').trim()&&String(draft.notes||'').trim()===String($('#field-notes')?.value||'').trim())fieldScopeFlags=stampFlags(draft.scopeFlags)}restoreResolvedExtras(report);dropEmptyLines();dropRawProductionRows();bindLaborAllocation();polishFieldDaily();renderReportPhotoPreview();renderFlags();if(report?.id&&!(typeof restoringActiveReport!=='undefined'&&restoringActiveReport)&&typeof clearRestoreBanner==='function')clearRestoreBanner();if(dailyCompact()&&$('#report-form')?.getAttribute('data-current-step')==='2')renderFieldReview();return result};
+    openReport=function(report=null,context={}){$('#field-choice-feedback')?.remove();reviewGeneration++;fieldScopeFlags=[];fieldHoursReview=null;reviewedNotesKey='';if(!sameOpenDaily(report,context))clearReportPhotoFiles();const result=openBefore(report,context);if(fieldCompact()&&Array.isArray(report?.officeReview?.reportedLabor)){for(const row of report.officeReview.reportedLabor){const input=$('[data-labor-member="'+Number(row.memberId)+'"]');if(!input)continue;const typed=row.hours!=null&&row.hours!==''&&Number.isFinite(Number(row.hours));if(typed){input.value=String(row.hours);input.dataset.manualHours='true';delete input.dataset.timecardDerived}else{delete input.dataset.manualHours;input.value=''}}}if($('#report-next-step'))$('#report-next-step').disabled=false;if(dailyCompact()){const loadedSummary=String($('#report-summary')?.value||'').trim(),loadedNotes=String($('#field-notes')?.value||'').trim(),hasProduction=(report?.productionEntries||[]).some(row=>row&&row.extra_work!==true&&String(row.description||'').trim()),hasResolution=(report?.scopeFlags||[]).some(flag=>flag&&flag.decision)||(report?.extraWork||[]).some(item=>item&&item.extra_work===true);if(loadedNotes&&(hasProduction||hasResolution)&&!/^No production or labor recorded[.!]?$/i.test(loadedSummary))reviewedNotesKey=loadedNotes;if(officeCompact()&&report?.productionEntries?.length&&typeof addProductionRow==='function'){$('#production-rows').innerHTML='';report.productionEntries.forEach(entry=>addProductionRow({...entry,laborManual:entry.laborManual===true||Number(entry.laborHours)>0,laborMinutes:entry.laborMinutes??Math.round((Number(entry.laborHours)||0)*60)}))}const saved=(report?.productionEntries||[]).some(row=>row&&((row.estimateItemId!=null&&String(row.estimateItemId)!=='')||Number(row.quantity)>0));if(report?.workSuggestions?.length&&!saved&&$('#production-rows'))$('#production-rows').innerHTML='';const draft=typeof readOfflineDraft==='function'&&typeof offlineReportDraftKey==='function'?readOfflineDraft(offlineReportDraftKey()):null;if(Array.isArray(report?.scopeFlags)&&report.scopeFlags.length)fieldScopeFlags=stampFlags(report.scopeFlags);else if(Array.isArray(draft?.scopeFlags)&&String(draft.notes||'').trim()&&String(draft.notes||'').trim()===String($('#field-notes')?.value||'').trim())fieldScopeFlags=stampFlags(draft.scopeFlags)}restoreResolvedExtras(report);dropEmptyLines();dropRawProductionRows();bindLaborAllocation();polishFieldDaily();renderReportPhotoPreview();renderFlags();if(report?.id&&!(typeof restoringActiveReport!=='undefined'&&restoringActiveReport)&&typeof clearRestoreBanner==='function')clearRestoreBanner();if(dailyCompact()&&$('#report-form')?.getAttribute('data-current-step')==='2')renderFieldReview();return result};
   }
   if(typeof showReportStep==='function'){
     const stepBefore=showReportStep;
@@ -1070,7 +1100,21 @@ var fieldScopeFlags=[];
   }
   if(typeof updateReportGaps==='function'){
     const beforeGaps=updateReportGaps;
-    updateReportGaps=function(){beforeGaps();if(pendingDailyHours()){const target=$('#report-gaps');if(target){target.className='report-gaps attention';target.innerHTML='<strong>Review hours by day</strong><span>Enter the hours worked on this report date. The notes cover multiple days.</span>';}}};
+    updateReportGaps=function(){
+      beforeGaps();
+      if(!dailyCompact())return;
+      const target=$('#report-gaps');if(!target)return;
+      const lines=[...$$('.production-entry')].map(row=>({quantity:row.querySelector('.production-quantity')?.value,extra:row.dataset.extraWork==='true',needsQuantity:estimateLineNeedsQuantity(row)}));
+      const blockers=FieldDailyScope.sendGate({flags:fieldScopeFlags,lines}).block;
+      if(pendingDailyHours())blockers.push('Enter the hours worked on this report date. The notes cover multiple days.');
+      if(blockers.length){
+        if(target.classList.contains('complete'))target.innerHTML='<strong>Still needs your input</strong>';
+        target.className='report-gaps attention';
+        for(const message of blockers){if(target.textContent.includes(message))continue;const line=document.createElement('span');line.textContent=message;target.append(line);}
+      }else if(target.classList.contains('complete')){
+        const heading=target.querySelector('strong');if(heading)heading.textContent='Production and hours checked';
+      }
+    };
   }
   if(typeof saveDailyReport==='function'){const saveBefore=saveDailyReport;saveDailyReport=async function(status,saveOptions){if(status!=='Draft'&&pendingDailyHours()){const message=$('#report-submit-status');if(message){message.textContent='Enter the hours worked on this report date. The notes cover multiple days.';message.classList.add('visible');message.scrollIntoView({block:'nearest'});}return false;}const review=$('#field-review-next'),field=$('#report-next');if(review&&field&&typeof FieldDailyScope!=='undefined'&&FieldDailyScope.mergedNext)field.value=FieldDailyScope.mergedNext(field.value,review.value);harvestFlagAnswers();syncEstimateBindings();dropEmptyLines();if(dailyCompact()){applyLaborAllocation();stampExtraMinutes()}const reportId=Number(typeof editingReportId==='undefined'?0:editingReportId);const saved=await saveBefore(status,saveOptions);const stored=saved&&saved.id?saved:(typeof reports==='undefined'?null:reports.find(row=>Number(row.id)===reportId));if(stored&&String(stored.status||'')!=='Draft'&&typeof timeCards!=='undefined'){let changed=false;for(const card of timeCards){if(!card||!card.outAt||Number(card.reportId)!==Number(stored.id))continue;const cardStatus=String(card.status||'').trim().toLowerCase();if(cardStatus!=='draft'&&cardStatus!=='rejected')continue;card.status='submitted';if(card.fieldAccess)card.fieldAccess={...card.fieldAccess,canEdit:false,canSubmit:false,reason:'This time is awaiting review. Ask your office time administrator to return it to Draft if a correction is needed.'};changed=true}if(changed&&typeof renderFieldClock==='function')renderFieldClock();else if(changed&&typeof renderFieldClockHours==='function')renderFieldClockHours()}return saved}}
   if(typeof confirmReportDiscard==='function'){const officeConfirm=confirmReportDiscard;confirmReportDiscard=function(){if(typeof currentRole!=='undefined'&&currentRole==='field')return true;return officeConfirm()}}
