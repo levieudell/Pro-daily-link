@@ -10,9 +10,9 @@ permissions:
 jobs:
   test:
     runs-on: ubuntu-latest
-    # Full npm test already includes the payroll browser run. Ten minutes cancels
-    # a passing suite when the other browser tests run slow.
-    timeout-minutes: 12
+    # Includes release-safety plus the full browser/application suite. Leave
+    # headroom for hosted-runner variance and cleanup without skipping checks.
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4

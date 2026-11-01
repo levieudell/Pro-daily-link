@@ -231,7 +231,22 @@
     return null;
   }
 
+  function equipmentFacts(notes){
+    return sentencesOf(notes).flatMap(sentence=>sentence.split(/,\s*|\band\s+(?=(?:(?:I|we)\s+)?(?:ran|operated|used|worked|installed|poured|placed)\b)/i)).filter(clause=>/\b(?:ran|operated|used)\s+(?:the\s+|an?\s+)?(?:excavator|dozer|loader|skid steer|backhoe|roller|crane|pump|compactor)\b/i.test(clause)).map(tidyFact);
+  }
   function statedCrew(notes){
+    const equipment=equipmentFacts(notes);
+    let labor=String(notes||'');
+    for(const clause of equipment)labor=labor.replace(clause,'');
+    const result=statedCrewBase(labor);
+    const solo=/\b(?:by myself|on my own|working alone|worked alone|solo)\b/i.test(labor);
+    if(solo&&result.total>0){result.headcount=1;result.perPerson=result.total;}
+    const multiDay=/\b(?:last|past|over|across)\s+(?:the\s+)?(?:two|three|four|five|\d+)\s+days\b/i.test(labor)||(solo&&result.total>24);
+    if(multiDay&&result.total>0){result.multiDay=true;result.ask=true;}
+    return result;
+  }
+
+  function statedCrewBase(notes){
     const source=String(notes||'');
     const hour='(?:hours?|hrs?)',head='(?:guys?|people|persons?|workers?|men|man)';
     const headcount=source.match(new RegExp(`(\\d+(?:\\.\\d+)?)\\s*${head}\\b`,'i'));
@@ -699,5 +714,5 @@
     return {potential_change:'Billable · potential change',tm:'Billable · T&M',mapped:'Mapped to estimate',non_billable:'Not billable'}[decision]||'';
   }
 
-  return {narrativeWarnings,normalizeUnit,matchEstimateLine,reviewScope,reviewNotes,uniqueMaterials,isMaterialPhrase,tidyNext,mergedNext,appendClockNotes,clockOutSummary,attachClockOut,decideFlag,confirmedExtraChanges,fieldExtraItems,whoAsked,approvedQuantityMap,hoursFromClock,statedCrew,sendGate,clockOutMessage,submissionStatus,namedCrewGaps,crewGapReason,noPunchLabel,punchLengthLabel,formatMinutes,formatHours,formatClock,formatPunchTotal,formatWorkTime,hoursFromMinutes,displayHoursForMinutes,minutesFromHours,elapsedMinutes,laborTotal,dedupeLaborEntries,rawNoteLine,emptyProductionLine,dedupeProductionLines,keepProductionLines,flagIdentity,normalizeLaborGaps,mergeScopeFlags,splitLargestRemainder,allocateLaborHours,sameDayDaily,clientProjectIndex,singleLineLaborHours,extraDecisionLabel,QUANTITY_TOLERANCE,PRODUCTIVITY_LIMIT};
+  return {equipmentFacts,narrativeWarnings,normalizeUnit,matchEstimateLine,reviewScope,reviewNotes,uniqueMaterials,isMaterialPhrase,tidyNext,mergedNext,appendClockNotes,clockOutSummary,attachClockOut,decideFlag,confirmedExtraChanges,fieldExtraItems,whoAsked,approvedQuantityMap,hoursFromClock,statedCrew,sendGate,clockOutMessage,submissionStatus,namedCrewGaps,crewGapReason,noPunchLabel,punchLengthLabel,formatMinutes,formatHours,formatClock,formatPunchTotal,formatWorkTime,hoursFromMinutes,displayHoursForMinutes,minutesFromHours,elapsedMinutes,laborTotal,dedupeLaborEntries,rawNoteLine,emptyProductionLine,dedupeProductionLines,keepProductionLines,flagIdentity,normalizeLaborGaps,mergeScopeFlags,splitLargestRemainder,allocateLaborHours,sameDayDaily,clientProjectIndex,singleLineLaborHours,extraDecisionLabel,QUANTITY_TOLERANCE,PRODUCTIVITY_LIMIT};
 });

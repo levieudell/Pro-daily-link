@@ -492,3 +492,28 @@ dialog#personal-clock-modal{padding:0;width:min(480px,calc(100vw - 24px));max-he
 .clock-time-modes button{flex:1}.clock-time-modes button[aria-pressed="true"]{background:#FF6600!important;color:#000000!important;border-color:#000000!important}
 .clock-crew-details summary{min-height:48px;display:flex;align-items:center;cursor:pointer;font-weight:700}.clock-crew-details[hidden]{display:none}
 #start-day-modal[data-clock-mode="company"] .labor-fieldset{display:none}
+
+/* Shared brand treatment for office-authored daily reviews. */
+#report-modal.report-office-compact { --surface-canvas:var(--pdl-offwhite); --surface-panel:var(--pdl-white); --text-primary:var(--pdl-black); --field-muted:var(--pdl-black); --border-strong:var(--pdl-gray); --field-placeholder:var(--pdl-gray); }
+:root[data-theme="dark"] #report-modal.report-office-compact { --surface-canvas:var(--pdl-black); --surface-panel:var(--pdl-black); --text-primary:var(--pdl-white); --field-muted:var(--pdl-white); --field-placeholder:var(--pdl-white); }
+#report-modal.report-office-compact #report-review-summary {position:static;background:var(--surface-canvas)}
+#report-modal.report-office-compact :is(.field-review-card,.field-flag,.field-hours-card,.field-next-line,.field-review-source,.report-review-summary>div,.report-gaps,.report-submit-status,.verify-banner,#report-more,.production-entry,.hour-split-note){background:var(--surface-canvas)!important;color:var(--text-primary)!important;border-color:var(--pdl-gray)!important;box-shadow:none}
+#report-modal.report-office-compact :is(.field-review-card strong,.field-review-card em,.field-review-card small,.field-hours-card p,#report-more summary,#report-more label){color:var(--text-primary)!important}
+#report-modal.report-office-compact :is(.production-scope-toggle,#field-edit-hours,#field-add-line,.touch-stepper button,.production-remove,#add-custom-production){background:var(--surface-panel)!important;color:var(--text-primary)!important;border:2px solid var(--pdl-gray)!important;min-height:48px;font:700 16px Inter,sans-serif;box-shadow:none;outline:none}
+#report-modal.report-office-compact :is(input,textarea,select,button):focus-visible{outline:2px solid var(--pdl-orange)!important;outline-offset:2px;box-shadow:none!important}
+#report-modal.report-office-compact :is(input,textarea){font-family:Inter,sans-serif;font-size:16px;scroll-margin-block:72px}
+#report-modal.report-office-compact :is(input,textarea)::placeholder{font-weight:400;color:var(--field-placeholder);opacity:1}
+#report-modal.report-office-compact .report-step-scroll{scroll-padding-block:72px}
+#report-modal.report-office-compact [data-report-step="2"] .report-step-scroll{padding-bottom:80px}
+#report-modal.report-office-compact .report-submit-status:not(:empty){border-left:3px solid var(--pdl-orange)!important}
+#project-modal .project-form-library{background:var(--pdl-offwhite);border:1px solid var(--pdl-gray);color:var(--pdl-black);min-width:0}
+#project-modal .project-template-options{grid-template-columns:minmax(0,1fr)}
+#project-modal .project-template-option{min-width:0;border-color:var(--pdl-gray)}
+#project-modal .project-template-option input{accent-color:var(--pdl-orange);flex:none}
+#project-modal .project-template-option span{min-width:0;overflow-wrap:anywhere}
+:root[data-theme="dark"] #project-modal .project-form-library{background:var(--pdl-black);color:var(--pdl-white)}
+
+#report-modal.report-office-compact #report-open-safety{background:var(--surface-canvas)!important;color:var(--text-primary)!important;border-color:var(--pdl-gray)!important}
+#report-modal.report-office-compact :is(.input-help,.labor-line small,.report-more-help){color:var(--text-primary)}
+
+#report-modal.report-office-compact :is(#field-edit-hours,#field-add-line){border-radius:8px;width:100%}
