@@ -23,7 +23,7 @@ const node=id=>{
 };
 let allowDiscard=false,apiFailure=false,photoFailure=false,confirmations=0;
 const $=id=>{if(id==='[data-approve-report]'){const match=node('#report-detail').innerHTML.match(/data-approve-report="(\d+)"/);if(!match)return null;const approve=node(id);approve.dataset.approveReport=match[1];return approve}return node(id)};
-const c={$,$$:selector=>selector==='dialog'?[node('#report-modal')]:[],document:{getElementById:id=>node('#'+id),addEventListener:(kind,handler,capture)=>node('#document').addEventListener(kind,handler,capture)},window:{confirm(){confirmations++;return allowDiscard}},
+const c={ReportWorkDetails:require('./report-work-details'),$,$$:selector=>selector==='dialog'?[node('#report-modal')]:[],document:{getElementById:id=>node('#'+id),addEventListener:(kind,handler,capture)=>node('#document').addEventListener(kind,handler,capture)},window:{confirm(){confirmations++;return allowDiscard}},
  projects:[{id:101,name:'Synthetic job',code:'SYN'}],reports:[],photos:[],team:[],preferredLanguage:'en',
  currentUser:{id:1,name:'Synthetic author'},company:{id:'synthetic'},signedInCompanyId:()=> 'synthetic',
  editingReportId:null,editingReportUpdatedAt:'',reportSourceAssignmentId:null,reportAnalyzeSequence:0,extractedDraft:null,activeNoteLaborEvidence:null,reportSavedNotes:'',suppressReportOpenUntil:0,
@@ -44,7 +44,7 @@ vm.createContext(c);
 const approvalStart=source.indexOf('const renderReportsWithRefreshBase='),approvalEnd=source.indexOf('function notify(',approvalStart);
 vm.runInContext([
  one("$$('dialog').forEach(dialog=>"),one("document.addEventListener('pointerup',event=>{const button="),
- declaration('escapeHtml'),declaration('openReport'),
+ declaration('escapeHtml'),declaration('reportProductionDetails'),declaration('openReport'),
  'const openReportBeforeDraftProtection=openReport;',one('openReport=function(report=null,context={}){reportSavedNotes='),
  one('reportHasUnsavedInput=function(){const modal='),declaration('confirmReportDiscard'),
  one("$('#report-modal').addEventListener('click',event=>{const cancel="),
