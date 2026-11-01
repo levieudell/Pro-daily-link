@@ -41,6 +41,7 @@ const executablePath = process.env.PDL_BROWSER_PATH || ['C:/Program Files/Google
     assert.match(await page.locator('#report-detail').innerText(),/11\/01\/2026/);
     for(const viewport of [{width:390,height:844},{width:390,height:500},{width:1280,height:800}]){
     await page.setViewportSize(viewport);
+    if(viewport.width===1280)assert.ok((await page.locator('.report-work-detail').boundingBox()).width>400,'expanded details use the full report width');
     for(const theme of ['light','dark']){
       await page.evaluate(theme=>document.documentElement.dataset.theme=theme,theme);
       await page.locator('.report-work-detail').evaluate(el=>el.scrollIntoView({block:'center'}));
