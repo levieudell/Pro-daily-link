@@ -1,0 +1,24 @@
+'use strict';
+const assert=require('node:assert/strict');
+const {rows}=require('./report-work-details');
+const project={id:10,estimateItems:[{id:1,name:'Lock+Load Wall',plannedQuantity:275,unit:'LF'}]};
+const report={id:2,project:0,status:'Submitted',productionEntries:[{estimateItemId:1,description:'Wall',quantity:300,unit:'LF',extra_work:false}]};
+assert.equal(rows(report,project)[0].over,25);
+assert.equal(rows({...report,scopeFlags:[{decision:'estimate'}]},project)[0].over,25,'estimate choice cannot remove overrun');
+assert.equal(rows({...report,productionEntries:[{...report.productionEntries[0],quantity:276}]},project)[0].over,1);
+assert.equal(rows(report,project,[{...report,status:'Approved'}])[0].approved,0,'do not double-count current approved report');
+assert.equal(rows(report,project,[{...report,id:3,status:'Approved',productionEntries:[{estimateItemId:1,quantity:10,unit:'LF'}]}])[0].over,35);
+assert.equal(rows(report,project,[{...report,id:3,project:1,status:'Approved'}])[0].over,25,'other projects excluded');
+assert.equal(rows({...report,productionEntries:[{...report.productionEntries[0],unit:'CY'}]},project)[0].planned,null,'incompatible units not compared');
+assert.equal(rows({...report,productionEntries:[{...report.productionEntries[0],quantity:100},{...report.productionEntries[0],quantity:200}]},project)[0].over,25,'same-estimate rows aggregate');
+console.log('Report line detail and persistent quantity overrun tests passed');
+
+const {reportSafetyEvidenceMarkup}=require('./safety-pm-ui');
+const markup=reportSafetyEvidenceMarkup({dateIso:'2026-11-01',safetyEvidence:{date:'2026-11-01',dayRevision:1,hazards:[{date:'2026-10-27',dueDate:'2026-10-28',observation:'Original record',createdBy:'Original recorder',status:'voided',voidReason:'Wrong work type',voidedBy:'Reviewer'}]}},10);
+assert.match(markup,/11\/01\/2026/);
+assert.match(markup,/10\/27\/2026/);
+assert.match(markup,/10\/28\/2026/);
+assert.match(markup,/Recorded in error/);
+assert.match(markup,/Wrong work type/);
+assert.match(markup,/Original recorder/);
+assert.match(markup,/Reviewer/);

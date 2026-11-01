@@ -50,6 +50,10 @@ function storedProfileFor(project) {
   const stored = project.safetyProfile;
   return stored ? clone(stored) : { revision: 0, enabled: false, state: inferredState(project), employer: '', activities: [] };
 }
+function initialWorkProfile(project, company, activities) {
+  if (!Array.isArray(activities) || activities.length > CATALOG.length || activities.some(id => !CATALOG.some(row => row.id === id))) throw fail('Choose supported work activities');
+  return { revision: 1, enabled: false, state: inferredState(project), employer: String(company?.name || '').trim(), activities: [...new Set(activities)].sort(), activitySelection: 'explicit' };
+}
 function profileFor(project, company) {
   const profile = storedProfileFor(project), detected = inferredState(project), employer = String(company?.name || '').trim();
   profile.state = detected;
@@ -73,7 +77,7 @@ function scheduleContext(db, projectId, date) {
 function dayContext(db, project, date) {
   const profile = profileFor(project, db.company), schedule = scheduleContext(db, project.id, date), activities = new Set(profile.activities);
   const words = schedule.map(row => `${row.task} ${row.instructions}`).join(' ');
-  for (const [activity, pattern] of Object.entries({ roofing: /\broof(?:ing|er|ers)?\b/i, excavation: /\b(?:excavat\w*|trench\w*|digging)\b/i, framing: /\bfram(?:e|ing|ers?)\b/i, demolition: /\b(?:demolition|demo|demolish\w*)\b/i })) if (pattern.test(words)) activities.add(activity);
+  for (const [activity, pattern] of Object.entries({ roofing: /\broof(?:ing|er|ers)?\b/i, excavation: /\b(?:excavat\w*|trench\w*|digging)\b/i, framing: /\bfram(?:e|ing|ers?)\b/i, demolition: /\b(?:demolition|demo|demolish\w*)\b/i })) if (profile.activitySelection !== 'explicit' && pattern.test(words)) activities.add(activity);
   return { profile, schedule, activities: [...activities].sort(), fingerprint: hash({ profile, schedule, ruleVersion: VERSION, address: String(project.site || project.address || '') }) };
 }
 function check(id, title, activity, description, source, extra = {}) {
@@ -107,7 +111,7 @@ function checkComplete(row) {
 function scheduledMemberIds(db, projectId, date) {
   return new Set(scheduleContext(db, projectId, date).flatMap(row => row.memberIds || []).map(Number).filter(Number.isSafeInteger));
 }
-function unresolvedHazards(db, projectId, date) { return ownDays(db, projectId).filter(day => day.date <= date).flatMap(day => (day.hazards || []).filter(row => row.status !== 'verified').map(row => ({ ...clone(row), date: day.date, dayRevision: day.revision }))); }
+function unresolvedHazards(db, projectId, date) { return ownDays(db, projectId).filter(day => day.date <= date).flatMap(day => (day.hazards || []).filter(row => !['verified', 'voided'].includes(row.status)).map(row => ({ ...clone(row), date: day.date, dayRevision: day.revision }))); }
 function summarize(db, project, date, day) {
   const context = dayContext(db, project, date), stale = !day || day.fingerprint !== context.fingerprint;
   const pending = day ? day.checks.filter(row => !checkComplete(row)).length : checksFor(context.activities).length;
@@ -147,8 +151,8 @@ function revision(input, current) {
 }
 function createSafetyHandler({ readDb, writeDb, body, json, authenticatedUser, canAccessProject, canAccessDate = () => true }) {
   return async function handleSafety(req, res, url) {
-    const route = url.pathname.match(/^\/api\/projects\/(\d+)\/safety(?:\/(profile|days)(?:\/([^/]+))?(?:\/(checks|hazards|talks)(?:\/([^/]+))?)?)?$/);
-    if (!route) return false;
+    const route = url.pathname.match(/^\/api\/projects\/(\d+)\/safety(?:\/(profile|days)(?:\/([^/]+))?(?:\/(checks|hazards|talks)(?:\/([^/]+))?(?:\/(void))?)?)?$/);
+    if (!route || route[6] && route[4] !== 'hazards') return false;
     const reply = (status, data) => { json(res, status, data); return true; };
     try {
       const db = clone(readDb()), user = authenticatedUser(req, db);
@@ -177,7 +181,7 @@ function createSafetyHandler({ readDb, writeDb, body, json, authenticatedUser, c
         const employer = text(db.company?.name, 'company account name', 200);
         if (input.enabled && !employer) throw fail('Add the company name in Company settings before enabling safety.');
         if (input.enabled && !detected) throw fail('Add a recognizable state to the project address before enabling safety.');
-        const next = { revision: profile.revision + 1, enabled: input.enabled, state: detected, employer, activities: [...new Set(input.activities)].sort() };
+        const next = { revision: profile.revision + 1, enabled: input.enabled, state: detected, employer, activities: [...new Set(input.activities)].sort(), activitySelection: 'explicit' };
         const stored = storedProfileFor(project);
         if (JSON.stringify({ ...next, revision: 0 }) === JSON.stringify({ ...stored, revision: 0 })) return reply(200, { profile });
         project.safetyProfile = next;
@@ -220,6 +224,11 @@ function createSafetyHandler({ readDb, writeDb, body, json, authenticatedUser, c
         if (next.status === 'pass' && !next.notes) next.notes = 'Checked; no issue observed at the time of this check.';
         if (next.dueDate) exactDate(next.dueDate);
         next.workStopped = input.workStopped === true;
+        // Hidden follow-up fields are not evidence for a non-hazard response.
+        if (!['fail', 'deferred'].includes(next.status)) {
+          next.action = ''; next.owner = ''; next.dueDate = ''; next.workStopped = false;
+        }
+        if (next.status === 'not_applicable') next.competentPerson = '';
         if (next.status !== 'pending' && !checkComplete(next)) throw fail('Record the inspector and findings for every response. Failed/deferred checks need a reason, corrective action, owner, due date and stopped work; inspection checks need a competent person.');
         audit(day, user, 'Check response recorded', row, next); day.checks[day.checks.indexOf(row)] = { ...next, updatedAt: next.recordedAt, updatedBy: user.name, updatedByUserId: user.id };
         if (['fail', 'deferred'].includes(next.status)) {
@@ -227,6 +236,7 @@ function createSafetyHandler({ readDb, writeDb, body, json, authenticatedUser, c
           const followup = { ...(linked || {}), id: linked?.id || `check-${hash([date, row.id]).slice(0, 24)}`, sourceCheckId: row.id, sourceDate: date,
             observation: `${row.title}: ${next.notes}`, location: String(project.site || project.address || 'See check evidence'), status: 'open', owner: next.owner, dueDate: next.dueDate,
             action: next.action, workStopped: true, photoId: linked?.photoId || null, verification: '', createdAt: linked?.createdAt || new Date().toISOString(), createdBy: linked?.createdBy || user.name, createdByUserId: linked?.createdByUserId || user.id };
+          delete followup.voidReason; delete followup.voidedAt; delete followup.voidedBy; delete followup.voidedByUserId;
           delete followup.verifiedAt; delete followup.verifiedBy; delete followup.verifiedByUserId;
           if (linked) day.hazards[day.hazards.indexOf(linked)] = followup; else day.hazards.push(followup);
           audit(day, user, 'Failed or deferred check requires verified follow-up', before, followup);
@@ -241,9 +251,21 @@ function createSafetyHandler({ readDb, writeDb, body, json, authenticatedUser, c
         const row = { id: crypto.randomUUID(), observation, location, status: 'open', owner: text(input.owner, 'responsible person', 200), dueDate: text(input.dueDate, 'due date', 10), action: text(input.action, 'immediate action'), workStopped: input.workStopped === true, photoId: input.photoId ?? null, verification: '', createdAt: new Date().toISOString(), createdBy: user.name, createdByUserId: user.id };
         if (row.dueDate) exactDate(row.dueDate);
         day.hazards.push(row); audit(day, user, 'Hazard recorded — follow-up required', null, row); day.revision++;
-      } else if (req.method === 'PATCH' && route[4] === 'hazards' && route[5]) {
+      } else if (req.method === 'PATCH' && route[4] === 'hazards' && route[5] && route[6] === 'void' && !route[7]) {
+        if (!canVerify) return reply(403, { error: 'Safety verification permission required' });
+        inputKeys(input, ['revision', 'reason']);
+        const row = day.hazards.find(item => item.id === route[5]);
+        if (!row) return reply(404, { error: 'Hazard not found' });
+        const reason = text(input.reason, 'correction reason', 1500);
+        if (!reason) throw fail('Explain why this hazard was recorded in error.');
+        if (row.status === 'voided') return reply(409, { error: 'This record is already marked as recorded in error.' });
+        const next = { ...row, status: 'voided', voidReason: reason, voidedAt: new Date().toISOString(), voidedBy: user.name, voidedByUserId: user.id };
+        audit(day, user, 'Hazard recorded in error — original preserved', row, next);
+        day.hazards[day.hazards.indexOf(row)] = next; day.revision++;
+      } else if (req.method === 'PATCH' && route[4] === 'hazards' && route[5] && !route[6]) {
         inputKeys(input, ['revision', 'status', 'verification', 'action', 'owner', 'dueDate', 'workStopped']);
         const row = day.hazards.find(item => item.id === route[5]); if (!row) return reply(404, { error: 'Hazard not found' });
+        if (row.status === 'voided') return reply(409, { error: 'This record was recorded in error. Record a new hazard if one is observed.' });
         if (!['open', 'corrected', 'verified'].includes(input.status)) throw fail('Choose a valid hazard status');
         if (input.status === 'verified' && !canVerify) return reply(403, { error: 'Safety verification permission required' });
         const next = { ...row, status: input.status };
@@ -315,4 +337,4 @@ function createSafetyHandler({ readDb, writeDb, body, json, authenticatedUser, c
   };
 }
 
-module.exports = { VERSION, CATALOG, COVERAGE_NOTICE, inferredState, profileFor, dayContext, checksFor, safetyGate, createSafetyHandler };
+module.exports = { initialWorkProfile, VERSION, CATALOG, COVERAGE_NOTICE, inferredState, profileFor, dayContext, checksFor, safetyGate, createSafetyHandler };

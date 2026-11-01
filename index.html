@@ -21,7 +21,7 @@
   <link rel="stylesheet" href="project-assistant-ui.css?v=20261031-clock-launcher" />
   <link rel="stylesheet" href="design-system.css?v=20261021-field-clock-button1" />
   <link rel="stylesheet" href="payroll-export.css?v=20261031-page-visibility" />
-  <link rel="stylesheet" href="office-dashboard.css?v=20261101-daily-review-handoff" />
+  <link rel="stylesheet" href="office-dashboard.css?v=20261101-daily-safety-scope" />
   <link rel="manifest" href="manifest.webmanifest" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="default" />
@@ -406,6 +406,12 @@
       <label>Customer <small class="input-help">optional</small><div class="select-action"><select id="project-customer"></select><button type="button" id="project-new-customer">＋ New customer</button></div></label>
       <label>Project name<input id="project-name" required placeholder="Project name" /></label>
       <label>Project type<select id="project-type"><option value="estimated">Estimated project</option><option value="tm">Time & material</option><option value="hybrid">Hybrid · estimate plus T&M / changes</option></select></label>
+      <fieldset class="project-work-types"><legend>Work on this job</legend><p>Choose the work so safety checks fit the job. Review additional site hazards with your safety lead.</p><div>
+        <label><input type="checkbox" name="project-work-activity" value="excavation"> Excavation</label>
+        <label><input type="checkbox" name="project-work-activity" value="roofing"> Roofing</label>
+        <label><input type="checkbox" name="project-work-activity" value="framing"> Framing</label>
+        <label><input type="checkbox" name="project-work-activity" value="demolition"> Demolition</label>
+      </div><small>Other work or changing conditions? Add a site-specific hazard in Safety.</small></fieldset>
       <div id="tm-project-fields" class="tm-project-fields">
         <div class="two-col"><label>Default labor billing rate<input id="tm-labor-rate" type="number" min="0" step="0.01" placeholder="$ per labor hour" /></label><label>Material markup<input id="tm-material-markup" type="number" min="0" step="0.1" placeholder="Percent" /></label></div>
         <label>Equipment markup<input id="tm-equipment-markup" type="number" min="0" step="0.1" placeholder="Percent" /></label>
@@ -594,9 +600,10 @@
   <script src="report-labor-review.js?v=20261009-labor-exclusions"></script>
   <script src="company-timezone.js?v=20261014-review3"></script>
   <script src="schedule-approved-labor.js?v=20261008-approved-evidence"></script>
-  <script src="app.js?v=20261101-daily-safety-return"></script>
+  <script src="report-work-details.js?v=20261101-daily-safety-scope"></script>
+  <script src="app.js?v=20261101-daily-safety-scope"></script>
   <script src="field-daily-scope.js?v=20261101-daily-notes"></script>
-  <script src="field-instant-daily.js?v=20261101-daily-review-handoff"></script>
+  <script src="field-instant-daily.js?v=20261101-daily-safety-scope"></script>
   <script src="estimate-mobile.js"></script>
   <script src="time-approval-controls.js?v=20261007-pay-presets-payroll3-20261029-p1b-r3"></script>
   <script src="payroll-access.js?v=20261030-payroll-r3"></script>
@@ -616,9 +623,9 @@
   <script src="project-assistant-access.js?v=20261031-assistant-paused"></script>
   <script src="project-assistant-ui.js?v=20261031-simple-clock"></script>
   <script src="personal-clock-ui.js?v=20261031-clock-launcher"></script>
-  <script src="safety-pm-ui.js?v=20261101-daily-safety-return"></script>
-  <script src="safety-workspace-ui.js?v=20261031-safety-dashboard"></script>
-  <script src="safety-dashboard-ui.js?v=20261031-safety-dashboard"></script>
+  <script src="safety-pm-ui.js?v=20261101-daily-safety-scope"></script>
+  <script src="safety-workspace-ui.js?v=20261101-daily-safety-scope"></script>
+  <script src="safety-dashboard-ui.js?v=20261101-daily-safety-scope"></script>
   <script src="project-site-visits-ui.js?v=20261026-pm-visit3"></script>
   <script src="office-dashboard.js?v=20261028-field1-20261029-field6"></script>
   <script src="team-members-ui.js?v=20261031-clean-cards"></script>
