@@ -517,3 +517,8 @@ dialog#personal-clock-modal{padding:0;width:min(480px,calc(100vw - 24px));max-he
 #report-modal.report-office-compact :is(.input-help,.labor-line small,.report-more-help){color:var(--text-primary)}
 
 #report-modal.report-office-compact :is(#field-edit-hours,#field-add-line){border-radius:8px;width:100%}
+
+/* Report-only removal; keep the member's identity separate from the hour stepper. */
+#report-modal .report-remove-member{display:block;margin-top:6px;min-height:44px;padding:6px 12px;border:1px solid var(--pdl-gray)!important;border-radius:8px;background:var(--pdl-white)!important;color:var(--pdl-black)!important;font:700 14px Inter,sans-serif}
+:root[data-theme="dark"] #report-modal .report-remove-member{background:var(--pdl-black)!important;color:var(--pdl-white)!important}
+#report-modal .report-remove-member:focus-visible{outline:2px solid var(--pdl-orange)!important;outline-offset:2px;box-shadow:none!important}
