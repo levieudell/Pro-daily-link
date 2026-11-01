@@ -12,7 +12,7 @@ const { isPublicFile } = require('./public-file-policy');
 
 // Script loads after app.js (it patches openProject) and carries a version.
 assert.ok(index.indexOf('app.js?') < index.indexOf('project-schedule-ui.js?'), 'module loads after app.js so openProject exists');
-assert.match(index, /project-schedule-ui\.js\?v=20261014-uifix/);
+assert.match(index, /project-schedule-ui\.js\?v=20261101-project-early-warning-2/);
 assert.match(index, /styles\.css\?v=20261014-review3/);
 
 // Static serving + server wiring.
@@ -322,3 +322,5 @@ for (const selector of ['.project-schedule-progress', '.project-schedule-progres
   assert.ok(styles.includes(selector), `${selector} styled`);
 
 console.log('project-schedule UI contracts: ok');
+
+assert.match(ui,/!document\.getElementById\('project-detail-modal'\)\?\.open/, 'closed project ignores late schedule response');

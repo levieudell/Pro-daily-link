@@ -135,6 +135,14 @@ let scheduleView = 'table';
   }
 
 function renderSchedulePane(pane, project, tasks, editingId){
+    // Keep health warnings in step with saved task dates/status, not only the next login.
+    if (typeof projectTasks !== 'undefined') projectTasks = projectTasks.filter(row => row && String(row.projectId) !== String(project.id)).concat(tasks || []);
+    if (typeof currentRole !== 'undefined' && currentRole === 'office' && typeof projectHealthDetails === 'function' && pane.isConnected && document.querySelector('#project-detail-modal')?.open) {
+      const health = projectHealthDetails(project), banner = document.querySelector('#project-detail-modal .project-health-banner');
+      if (banner) { banner.querySelector('strong').textContent = health.status; banner.querySelector('p').textContent = health.reason; banner.classList.toggle('risk',health.status==='At risk'); banner.classList.toggle('ahead',health.status==='Ahead'); }
+      if (typeof renderProjectCards === 'function') renderProjectCards(document.querySelector('#project-search')?.value || '');
+    }
+
     const editable = canEditTasks();
     const hasStart = Boolean(project.startDate && /^\d{4}-\d{2}-\d{2}$/.test(String(project.startDate)));
     const sorted = (tasks || []).slice().sort((a, b) => String(a.startDate).localeCompare(String(b.startDate)) || Number(a.id) - Number(b.id));
@@ -300,10 +308,10 @@ function renderSchedulePane(pane, project, tasks, editingId){
     const sequence = ++scheduleTabSequence;
     try {
       const taskList = await api(`/api/projects/${project.id}/tasks`);
-      if (sequence !== scheduleTabSequence || !pane.isConnected) return;
+      if (sequence !== scheduleTabSequence || !pane.isConnected || !document.getElementById('project-detail-modal')?.open) return;
       renderSchedulePane(pane, project, Array.isArray(taskList) ? taskList : [], null);
     } catch (error) {
-      if (sequence !== scheduleTabSequence || !pane.isConnected) return;
+      if (sequence !== scheduleTabSequence || !pane.isConnected || !document.getElementById('project-detail-modal')?.open) return;
       pane.innerHTML = `<div class="project-tab-empty"><strong>Schedule could not be loaded</strong><p>${escapeHtml(error.message)}</p></div>`;
     }
   }
