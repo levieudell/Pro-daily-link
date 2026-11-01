@@ -158,12 +158,37 @@
   const value = (form, name) => String(new FormData(form).get(name) || '').trim();
 
   function close() {
+    const reportReturn = active?.reportReturn;
     sequence++;
     active?.controller?.abort();
     active = null;
     if (dialog?.open) dialog.close();
     if (dialog) dialog.querySelector('[data-safety-body]').replaceChildren();
     if (returnFocus?.isConnected) returnFocus.focus();
+    if (reportReturn) void refreshDailySafety(reportReturn);
+  }
+
+  function dailyContext() {
+    const modal = document.getElementById('report-modal');
+    if (!modal?.open) return null;
+    return { identity: identity(), projectId: projects[Number(document.getElementById('report-project')?.value)]?.id,
+      date: document.getElementById('report-date')?.value, sequence: reportAnalyzeSequence };
+  }
+
+  async function refreshDailySafety(context) {
+    const matches = () => JSON.stringify(dailyContext()) === JSON.stringify(context);
+    if (!matches()) return;
+    try {
+      const data = await api(`${base(context)}?date=${encodeURIComponent(context.date)}`);
+      if (!matches()) return;
+      const ready = data.profile?.enabled === false || data.day?.summary?.canSubmit === true;
+      showReportMessage(ready
+        ? (language() === 'es' ? 'Seguridad revisada. Puede intentar enviar el parte.' : 'Safety reviewed. You can try sending the daily now.')
+        : (data.day?.summary?.error || 'Review the remaining safety checks before sending this daily.'),
+        ready ? 'success' : 'error', ready ? '' : 'SAFETY_CHECKS_REQUIRED');
+    } catch (error) {
+      if (matches()) showReportMessage('Safety status could not be checked. Review safety checks before sending.', 'error', 'SAFETY_CHECKS_REQUIRED');
+    }
   }
 
   function notice(state, text, error = false) {
@@ -434,7 +459,7 @@
     dialog.id = 'safety-pm-dialog';
     dialog.className = 'safety-pm-dialog';
     dialog.setAttribute('aria-labelledby', 'safety-pm-title');
-    dialog.innerHTML = `<div class="safety-shell"><header class="safety-header"><div><p class="safety-eyebrow">PRO DAILY LINK · SAFETY</p><h2 id="safety-pm-title">${esc(tr('Safety today'))}</h2><p data-safety-subtitle>${esc(tr('Check the work. Fix what matters. Keep the record.'))}</p></div><button type="button" class="safety-close" data-safety-close aria-label="Close safety">×</button></header><details class="safety-context" data-safety-context><summary>${esc(tr('Change project or date'))}</summary><div><label>${esc(tr('Project'))}<select data-safety-project></select></label><label>${esc(tr('Work date'))}<input type="date" data-safety-date required></label><button type="button" class="secondary" data-safety-reload>${esc(tr('Reload'))}</button></div></details><p data-safety-notice role="status" aria-live="polite" class="safety-notice" hidden></p><main data-safety-body></main><footer class="safety-footer"><strong>${esc(language() === 'es' ? 'Revisiones iniciales de Oregón' : 'Oregon starter checks')}</strong><span>${esc(language() === 'es' ? 'Apoya su programa de seguridad; no certifica cumplimiento ni reemplaza el criterio de una persona competente.' : 'Supports your safety program; does not certify compliance or replace competent-person judgment.')}</span></footer></div>`;
+    dialog.innerHTML = `<div class="safety-shell"><header class="safety-header"><div><p class="safety-eyebrow">PRO DAILY LINK · SAFETY</p><h2 id="safety-pm-title">${esc(tr('Safety today'))}</h2><p data-safety-subtitle>${esc(tr('Check the work. Fix what matters. Keep the record.'))}</p></div><button type="button" class="safety-close" data-safety-close aria-label="Close safety">×</button></header><details class="safety-context" data-safety-context><summary>${esc(tr('Change project or date'))}</summary><div><label>${esc(tr('Project'))}<select data-safety-project></select></label><label>${esc(tr('Work date'))}<input type="date" data-safety-date required></label><button type="button" class="secondary" data-safety-reload>${esc(tr('Reload'))}</button></div></details><p data-safety-notice role="status" aria-live="polite" class="safety-notice" hidden></p><main data-safety-body></main><footer class="safety-footer"><button type="button" class="secondary" data-safety-close data-return-daily hidden>Return to daily</button><strong>${esc(language() === 'es' ? 'Revisiones iniciales de Oregón' : 'Oregon starter checks')}</strong><span>${esc(language() === 'es' ? 'Apoya su programa de seguridad; no certifica cumplimiento ni reemplaza el criterio de una persona competente.' : 'Supports your safety program; does not certify compliance or replace competent-person judgment.')}</span></footer></div>`;
     document.body.append(dialog);
     dialog.addEventListener('cancel', event => { if (active?.dirty && !confirm(language() === 'es' ? '¿Cerrar Seguridad? Se perderán los datos no guardados.' : 'Close Safety? Unsaved input will be lost.')) event.preventDefault(); else close(); });
     dialog.addEventListener('close', () => { if (!dialog.open && active) close(); });
@@ -535,7 +560,11 @@
     sequence++;
     const projectId = Number(options.projectId) || available[0]?.id;
     const state = { sequence, identity: identity(), projectId, date: /^\d{4}-\d{2}-\d{2}$/.test(String(options.date)) ? options.date : today(), mode: ['checks', 'hazard', 'talk', 'followup', 'setup'].includes(options.mode) ? options.mode : 'checks', checkIndex: null, controller: new AbortController(), load: 0, data: {}, dirty: false, busy: false };
+    state.reportReturn = options.opener?.closest('#report-modal') ? (active?.reportReturn || dailyContext()) : null;
     active = state;
+    const back = dialog.querySelector('[data-return-daily]');
+    back.hidden = !state.reportReturn;
+    back.textContent = language() === 'es' ? 'Volver al parte' : 'Return to daily';
     returnFocus = options.opener || returnFocus || document.activeElement;
     dialog.querySelector('[data-safety-project]').innerHTML = available.map(project => `<option value="${esc(project.id)}">${esc(project.name)}</option>`).join('');
     dialog.querySelector('[data-safety-project]').value = String(projectId);

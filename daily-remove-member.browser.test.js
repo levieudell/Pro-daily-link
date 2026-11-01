@@ -111,6 +111,34 @@ fs.mkdirSync(path.join(__dirname, 'output'), { recursive: true });
     assert.equal(await page.locator(`[data-labor-member="${fixture.other}"]`).count(),0,'removed added member stays absent after save/reopen');
     assert.equal(await page.evaluate(()=>JSON.stringify(team)),fixture.team);
     assert.equal(await page.evaluate(()=>JSON.stringify(timeCards)),fixture.cards);
+    // Safety opens above the existing daily, then rechecks without rebuilding it.
+    const beforeSafety=await page.evaluate(()=>({notes:document.querySelector('#field-notes').value,hours:[...document.querySelectorAll('[data-labor-member]')].map(el=>[el.dataset.laborMember,el.value]),projectId:projects[+document.querySelector('#report-project').value].id,date:document.querySelector('#report-date').value}));
+    await page.evaluate(()=>showReportMessage('Review required safety checks.', 'error', 'SAFETY_CHECKS_REQUIRED'));
+    await page.locator('.report-review-safety').click();
+    await page.waitForFunction(()=>document.querySelector('#safety-pm-dialog [data-safety-body]').getAttribute('aria-busy')==='false');
+    assert.equal(await page.locator('[data-safety-project]').inputValue(),String(beforeSafety.projectId));
+    assert.equal(await page.locator('[data-safety-date]').inputValue(),beforeSafety.date);
+    await page.locator('[data-return-daily]').click();
+    await page.waitForFunction(()=>document.querySelector('#report-submit-status').textContent.includes('before finalizing'));
+    assert.equal(await page.locator('.report-review-safety').count(),1,'incomplete checks keep the actionable blocker');
+    const afterSafety=await page.evaluate(()=>({notes:document.querySelector('#field-notes').value,hours:[...document.querySelectorAll('[data-labor-member]')].map(el=>[el.dataset.laborMember,el.value]),projectId:projects[+document.querySelector('#report-project').value].id,date:document.querySelector('#report-date').value}));
+    assert.deepEqual(afterSafety,beforeSafety,'safety round trip preserves the daily');
+    for(const theme of ['light','dark']){
+      await page.setViewportSize({width:390,height:667});
+      await page.evaluate(theme=>document.documentElement.dataset.theme=theme,theme);
+      await page.locator('.report-review-safety').evaluate(el=>el.scrollIntoView({block:'center'}));
+      await page.screenshot({path:`docs/daily-remove-member/safety-return-${theme}-390.png`});
+    }
+    // Mock only the read-back to cover readiness; actual gate stays server-owned.
+    await page.locator('.report-review-safety').click();
+    await page.waitForFunction(()=>document.querySelector('#safety-pm-dialog [data-safety-body]').getAttribute('aria-busy')==='false');
+    await page.route('**/api/projects/*/safety?date=*',async route=>{const response=await route.fetch();const data=await response.json();data.day.summary.canSubmit=true;await route.fulfill({json:data});});
+    await page.locator('[data-return-daily]').click();
+    await page.waitForFunction(()=>document.querySelector('#report-submit-status').textContent.includes('Safety reviewed'));
+    assert.equal(await page.locator('.report-review-safety').count(),0);
+    assert(await page.locator('#report-modal').evaluate(el=>el.open),'return never submits or closes the daily');
+    await page.unroute('**/api/projects/*/safety?date=*');
     assert.deepEqual(errors,[]);console.log('Daily member removal passed: add/remove/re-add, unchanged hours and metadata, real save/reopen, no team or clock mutations, responsive themes.');
   }finally{await browser?.close();if(child?.exitCode==null)child.kill();}
 })().catch(error=>{console.error(error);process.exitCode=1;});
+

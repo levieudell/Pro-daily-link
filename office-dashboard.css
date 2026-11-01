@@ -522,3 +522,6 @@ dialog#personal-clock-modal{padding:0;width:min(480px,calc(100vw - 24px));max-he
 #report-modal .report-remove-member{display:block;margin-top:6px;min-height:44px;padding:6px 12px;border:1px solid var(--pdl-gray)!important;border-radius:8px;background:var(--pdl-white)!important;color:var(--pdl-black)!important;font:700 14px Inter,sans-serif}
 :root[data-theme="dark"] #report-modal .report-remove-member{background:var(--pdl-black)!important;color:var(--pdl-white)!important}
 #report-modal .report-remove-member:focus-visible{outline:2px solid var(--pdl-orange)!important;outline-offset:2px;box-shadow:none!important}
+
+#report-modal .report-review-safety { display: inline-flex; align-items: center; justify-content: center; min-height: 48px; margin-top: 12px; padding: 8px 16px; background: #FF6600; color: #000000; border: 2px solid #000000; font-family: Inter, sans-serif; font-weight: 700; }
+#report-modal .report-review-safety:focus-visible { outline: 2px solid #FF6600; outline-offset: 2px; }
