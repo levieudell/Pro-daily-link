@@ -67,14 +67,15 @@ const executablePath = process.env.PDL_BROWSER_PATH || ['C:/Program Files/Google
       assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),'no horizontal overflow');
       const colors=await card.locator('.status.warning').evaluate(node=>({background:getComputedStyle(node).backgroundColor,color:getComputedStyle(node).color}));
       assert.deepEqual(colors,{background:'rgb(255, 102, 0)',color:'rgb(0, 0, 0)'});
-      await card.scrollIntoViewIfNeeded();
+      await card.evaluate(node=>node.scrollIntoView({block:'center',behavior:'instant'}));
       await page.screenshot({path:`docs/project-health-warning/${theme}-${viewport.width}.png`});
       const target=page.locator('[data-project-card]').last().locator('[data-open-project]');
       await page.locator('#project-search').focus();
-      await target.scrollIntoViewIfNeeded();
+      await target.evaluate(node=>node.scrollIntoView({block:'center',behavior:'instant'}));
       const before=await page.evaluate(()=>({y:scrollY,hash:location.hash}));
       await target.dispatchEvent('click');
       await page.locator('#project-detail-modal').waitFor({state:'visible'});
+      await page.waitForFunction(()=>!document.querySelector('[data-project-detail-pane="schedule"]')?.textContent.includes('Loading schedule'));
       await page.locator('#project-detail-modal .close-button').click();
       await page.locator('#project-detail-modal').waitFor({state:'hidden'});
       await page.waitForTimeout(100);
