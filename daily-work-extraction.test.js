@@ -16,3 +16,5 @@ console.log('Daily work extraction: five performed scopes, explicit written coun
 assert.equal(propose('Instalamos 20 LF de tubería.')[0].quantity,20);assert.equal(propose('No instalamos 20 LF de tubería.').length,0);const duplicates=normalize([{description:'Tile A',evidence:'Added three tiles bathroom'},{description:'Tile B',evidence:'Added three tiles bathroom'}],'Added three tiles bathroom.');assert(duplicates.every(row=>row.quantity===null));
 
 assert.equal(propose('Measured 20 feet trim.').every(row=>row.quantity===null),true);
+
+assert.equal(require('./daily-work-extraction').propose('I got 300 linear feet of wall installed.')[0].quantity,300);

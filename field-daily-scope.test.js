@@ -138,3 +138,18 @@ assert.equal(policy.isPublicFile(__dirname, __dirname+'/field-daily-scope.js'), 
 assert.equal(policy.isPublicFile(__dirname, __dirname+'/field-instant-daily.js'), true);
 
 console.log('Field daily scope checks passed.');
+
+// Notes from the reported empty-daily regression: quantities survive, equipment is not crew time.
+{
+ const note='Worked on the lock and load wall for 30 hours by myself. Forgot to clock in last two days. I got 300 linear feet of wall installed, and ran the excavator for 12 hours.';
+ const review=scope.reviewScope({notes:note,estimateItems:[{id:991,name:'Lock+Load Wall',unit:'LF',plannedQuantity:500}]});
+ assert.equal(review.lines[0].quantity,300);assert.equal(review.lines[0].unit,'LF');
+ assert.equal(review.hours.total,30);assert.equal(review.hours.headcount,1);assert.equal(review.hours.multiDay,true);assert.equal(review.hours.ask,true);
+ assert.match(scope.equipmentFacts(note).join('; '),/excavator for 12 hours/);
+ assert.equal(scope.statedCrew('Ran the excavator for 12 hours. Worked 8 hours by myself.').total,8);
+ assert.equal(scope.statedCrew('Ran the excavator for 12 hours.').total,null);
+ assert.equal(scope.statedCrew('Worked 8 hours by myself.').perPerson,8);
+ const unmatched=scope.reviewScope({notes:note,estimateItems:[]});assert.equal(unmatched.flags.find(f=>f.quantity===300)?.kind,'pick');
+}
+
+assert.equal(scope.statedCrew('Ran the excavator for 12 hours and worked 8 hours by myself.').total,8);

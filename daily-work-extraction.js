@@ -3,8 +3,8 @@
   const verbs='started|starting|installed|installing|added|adding|tiled|tiling|painted|painting|repaired|repairing|replaced|replacing|patched|patching|finished|finishing|removed|removing|poured|pouring|placed|placing|set|framed|framing|excavated|completed|stripped|cleaned|cleaning|swept|sweeper|sweeping|measured|measuring|worked on|working on|carpet off|instalamos|instalado|colocamos|vaciamos|agregamos|limpiamos|barrimos|medimos|empezamos|terminamos|quitamos';
   const work=new RegExp('\\b(?:'+verbs+')\\b','i');
   const words={zero:0,one:1,two:2,three:3,four:4,five:5,six:6,seven:7,eight:8,nine:9,ten:10,eleven:11,twelve:12,thirteen:13,fourteen:14,fifteen:15,sixteen:16,seventeen:17,eighteen:18,nineteen:19,twenty:20};
-  const quantities=new RegExp('\\b(\\d{1,3}(?:,\\d{3})+(?:\\.\\d+)?|\\d+(?:\\.\\d+)?|'+Object.keys(words).join('|')+')\\s+(?:more\\s+)?(square\\s+feet|sq\\.?\\s*ft|yards?|yds?|cy|panels?|tiles?|feet|ft|tons?|units?|squares?|sf|lf|ea|pies|yardas|baldosas)\\b','gi');
-  function unit(raw){return /^(square\s+feet|sq\.?\s*ft|squares?|sf)$/.test(raw)?'SF':/^(yards?|yds?|cy|yardas)$/.test(raw)?'CY':/^(feet|ft|lf|pies)$/.test(raw)?'LF':/^(units?|panels?|tiles?|ea|baldosas)$/.test(raw)?'EA':/^tons?$/.test(raw)?'TON':''}
+  const quantities=new RegExp('\\b(\\d{1,3}(?:,\\d{3})+(?:\\.\\d+)?|\\d+(?:\\.\\d+)?|'+Object.keys(words).join('|')+')\\s+(?:more\\s+)?(linear\\s+feet|lineal\\s+feet|square\\s+feet|sq\\.?\\s*ft|yards?|yds?|cy|panels?|tiles?|feet|ft|tons?|units?|squares?|sf|lf|ea|pies|yardas|baldosas)\\b','gi');
+  function unit(raw){return /^(square\s+feet|sq\.?\s*ft|squares?|sf)$/.test(raw)?'SF':/^(yards?|yds?|cy|yardas)$/.test(raw)?'CY':/^(linear\s+feet|lineal\s+feet|feet|ft|lf|pies)$/.test(raw)?'LF':/^(units?|panels?|tiles?|ea|baldosas)$/.test(raw)?'EA':/^tons?$/.test(raw)?'TON':''}
   function propose(notes){
     const split=new RegExp(';\\s*|,\\s+(?=(?:we\\s+)?(?:'+verbs+')\\b)|\\band\\s+(?=(?:we\\s+)?(?:'+verbs+')\\b)','i');
     const clauses=String(notes||'').replace(/^field work recorded:\s*/i,'').split(/(?<=[.!?])\s+|\n+/).flatMap(text=>text.split(split));

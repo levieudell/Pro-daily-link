@@ -2245,9 +2245,13 @@ function holdupBackstop(parsed,notes){
 }
 function finishAiExtract(parsed,notes){
   const result={...parsed,productions:dailyWork.normalize(parsed?.productions,notes)};
-  const laborEvidence=crewHourFact(notes);
+  const equipmentFacts=fieldScope.equipmentFacts(notes);
+  let laborNotes=String(notes||'');
+  for(const fact of equipmentFacts)laborNotes=laborNotes.replace(fact,'');
+  const laborEvidence=crewHourFact(laborNotes);
+  if(equipmentFacts.length)result.equipment=equipmentFacts.join("; ");
   result.originalLanguage=normalizeLanguageCode(result.originalLanguage);
-  applyCrewHours(result,notes);
+  applyCrewHours(result,laborNotes);
   result.laborEvidence=laborEvidence&&laborEvidence.total>0?laborEvidence:null;
   applyNextBackstop(result,notes);
   holdupBackstop(result,notes);

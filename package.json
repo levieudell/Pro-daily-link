@@ -62,7 +62,7 @@
     "monitor:verify": "node scripts/verify-monitoring.js",
     "assistant:ledger:check": "node database/assistant-budget-readiness.js",
     "assistant:ledger:initialize": "node database/assistant-budget-readiness.js --apply",
-    "test:safety": "node --test safety-program.test.js && node safety-dashboard.browser.test.js && node team-members.browser.test.js && node crew-workspace.test.js && node crew-details.browser.test.js && node messages-inbox.browser.test.js && node safety-engine.test.js && node safety-api.test.js && node safety-workspace-ui.test.js",
+    "test:safety": "node --test safety-program.test.js && node safety-dashboard.browser.test.js && node team-members.browser.test.js && node crew-workspace.test.js && node crew-details.browser.test.js && node messages-inbox.browser.test.js && node daily-notes-repair.browser.test.js && node safety-engine.test.js && node safety-api.test.js && node safety-workspace-ui.test.js",
     "test:safety:browser": "node safety-pm.browser.test.js && node safety-app.browser.test.js",
     "test:site-visits:browser": "node project-site-visits-browser.test.js",
     "demo:safety": "node scripts/safety-demo.cjs"
