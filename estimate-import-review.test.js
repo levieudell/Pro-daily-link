@@ -43,7 +43,7 @@ const doc={querySelectorAll:()=>rows,querySelector:()=>null,createElement:()=>({
 assert.match(rows[0].summary,/3 labor hrs · budget not set/);assert.match(rows[1].summary,/3 of 0 labor hrs/);assert.match(rows[2].summary,/3 of 18 labor hrs/);
 const healthStart=source.findIndex(line=>line.startsWith('function projectHealthDetails(')),healthEnd=source.findIndex((line,index)=>index>healthStart&&line.startsWith('function projectHealth('));
 const metrics={projects:[{projectId:1,items:[{plannedQuantity:100,actualQuantity:10,budgetHours:null,actualLaborHours:30},{plannedQuantity:100,actualQuantity:10,budgetHours:18,actualLaborHours:3}]}]};
-const health=new Function('productionData',source.slice(healthStart,healthEnd).join('\n')+';return projectHealthDetails;')(metrics);
+const health=new Function('productionData','ReportWorkDetails','reports','projects',source.slice(healthStart,healthEnd).join('\n')+';return projectHealthDetails;')(metrics,require('./report-work-details'),[],[]);
 assert.match(health({id:1,status:'On track'}).reason,/Add both planned/,'Unknown budget prevents a misleading aggregate labor risk comparison');
 
 const dashboardHelpers=['function accumulateApprovedProduction','function summarizeProductionGroups','function dashboardPeriodWindow'].map(prefix=>source.find(line=>line.startsWith(prefix)));

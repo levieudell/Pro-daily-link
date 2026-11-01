@@ -568,3 +568,12 @@ dialog#personal-clock-modal{padding:0;width:min(480px,calc(100vw - 24px));max-he
 #project-form .project-work-types input { width:20px; height:20px; accent-color:var(--pdl-orange,#FF6600); }
 
 #report-detail .data-box:has(.report-work-detail[open]) { grid-column:1 / -1; }
+
+/* Quantity warnings remain readable in both themes. */
+#project-cards .project-health-reason,
+:root[data-theme="dark"] #project-cards .project-health-reason {
+  background:var(--pdl-offwhite,#F7F5F0)!important;color:var(--pdl-black,#000000)!important;
+  border:1px solid var(--pdl-orange,#FF6600)!important;border-left-width:4px!important;
+}
+:root[data-theme="dark"] #project-cards .project-health-reason {background:var(--pdl-black,#000000)!important;color:var(--pdl-white,#FFFFFF)!important;}
+#project-cards .project-health-reason span {font-size:12px;}

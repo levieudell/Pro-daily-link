@@ -22,5 +22,16 @@
       return { ...line, quantity, estimateName: estimate?.name || '', planned, approved, total: approved + current, over };
     });
   }
-  return { rows };
+  // Project health includes sent work awaiting approval, without changing approved metrics.
+  function projectOverruns(project, reports, projectIndex) {
+    const sent = reports.filter(report => ['Approved','Submitted','Needs review','Missing data','Updated'].includes(report.status) &&
+      (report.projectId != null ? String(report.projectId) === String(project.id) : report.project === projectIndex));
+    const combined = {productionEntries: sent.flatMap(report => report.productionEntries || [])};
+    const seen = new Set();
+    return rows(combined, project).filter(row => {
+      if (!row.over || seen.has(String(row.estimateItemId))) return false;
+      seen.add(String(row.estimateItemId)); return true;
+    });
+  }
+  return { rows, projectOverruns };
 });

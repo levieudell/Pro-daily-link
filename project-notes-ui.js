@@ -69,8 +69,22 @@ else {
     pane.addEventListener('keydown',event=>{if(event.target.matches('[data-notes-text]')&&event.key==='Enter'&&(event.ctrlKey||event.metaKey)){event.preventDefault();void save(state)}});
     wireTabs();void refresh(state);
   }
+  // Safari does not focus tapped buttons. Without an explicit return point,
+  // closing a native dialog can scroll back to an unrelated previously focused control.
+  let projectReturnView=null;
+  function rememberProjectReturn(){
+    if($('#project-detail-modal')?.open)return;
+    const opener=document.activeElement, scrolls=[];
+    for(let node=opener;node;node=node.parentElement)scrolls.push([node,node.scrollLeft,node.scrollTop]);
+    projectReturnView={opener,scrolls,x:window.scrollX,y:window.scrollY,hash:location.hash,page:$('.page.active')};
+  }
+  document.addEventListener('click',event=>{
+    const target=event.target.closest('[data-open-project],[data-project-card],[data-office-project],[data-open-health]');
+    if(target&&!event.target.closest('dialog')&&(!target.hasAttribute('data-project-card')||!event.target.closest('button,summary,details,a,input,select,textarea')))target.focus({preventScroll:true});
+  },{capture:true});
   const previousOpenProject=openProject;
   openProject=async function(id){
+    rememberProjectReturn();
     clear();identity=context();const state={sequence,identity,projectId:Number(id),items:[],editor:null,load:0,loaded:false,busy:false,controller:new AbortController()};active=state;
     const view={current:()=>active===state&&state.sequence===sequence&&state.identity===context()};
     const result=await previousOpenProject(id,view);if(!view.current()||!$('#project-detail-modal')?.open)return result;mount(state);return result;
@@ -83,6 +97,14 @@ else {
   showPage=function(...args){if(active)leaveProject();return previousShowPage(...args)};
   const projectDialog=$('#project-detail-modal');
   if(projectDialog){
+    projectDialog.addEventListener('close',()=>{
+      if(projectDialog.open)return;
+      const saved=projectReturnView;projectReturnView=null;
+      if(!saved||saved.hash!==location.hash||saved.page!==$('.page.active')||document.querySelector('dialog[open]'))return;
+      if(saved.opener?.isConnected)saved.opener.focus({preventScroll:true});
+      for(const [node,x,y] of saved.scrolls)if(node.isConnected)node.scrollTo({left:x,top:y,behavior:'instant'});
+      window.scrollTo({left:saved.x,top:saved.y,behavior:'instant'});
+    });
     // Native close events are queued. Invalidate at initiation so an old close
     // event cannot abort a project opened before that queued event arrives.
     const nativeClose=projectDialog.close;

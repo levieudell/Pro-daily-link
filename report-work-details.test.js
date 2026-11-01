@@ -22,3 +22,13 @@ assert.match(markup,/Recorded in error/);
 assert.match(markup,/Wrong work type/);
 assert.match(markup,/Original recorder/);
 assert.match(markup,/Reviewer/);
+
+const {projectOverruns}=require('./report-work-details');
+assert.equal(projectOverruns(project,[report],0)[0].over,25);
+assert.equal(projectOverruns(project,[{...report,status:'Approved'}],0)[0].over,25);
+assert.equal(projectOverruns(project,[{...report,status:'Draft'}],0).length,0);
+assert.equal(projectOverruns(project,[{...report,status:'Rejected'}],0).length,0);
+assert.equal(projectOverruns(project,[{...report,project:1}],0).length,0);
+const partial=(id,quantity,status)=>({...report,id,status,productionEntries:[{...report.productionEntries[0],quantity}]});
+assert.equal(projectOverruns(project,[partial(3,150,'Approved'),partial(4,150,'Needs review')],0)[0].over,25,'cumulative approved and pending work');
+assert.equal(projectOverruns(project,[partial(3,275,'Approved')],0).length,0);
