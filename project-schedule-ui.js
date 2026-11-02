@@ -139,36 +139,37 @@ let scheduleView = 'table';
     const dates = sorted.map(t => t.startDate).concat(sorted.map(t => t.endDate)).filter(Boolean).sort();
     if (!dates.length) return '';
     const DAY = 86400000;
-    const start = Date.parse(dates[0] + 'T12:00:00') - 2 * DAY;
-    let end = Date.parse(dates[dates.length - 1] + 'T12:00:00') + 2 * DAY;
-    if ((end - start) / DAY > 62) end = start + 62 * DAY;
+    const start = Date.parse(dates[0] + 'T12:00:00Z') - 2 * DAY;
+    let end = Date.parse(dates[dates.length - 1] + 'T12:00:00Z') + 2 * DAY;
+    // Keep the full schedule; horizontal scrolling reveals later tasks.
     const span = end - start + DAY;
     const days = [];
     for (let t = start; t <= end; t += DAY) days.push(new Date(t));
-    const isoOf = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    const isoOf = d => `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(d.getUTCDate()).padStart(2, '0')}`;
     const locale = projectScheduleLocale();
-    const dayCells = days.map(d => `<i class="gantt-day${(d.getDay() === 0 || d.getDay() === 6) ? ' gantt-weekend' : ''}"><small>${escapeHtml(d.toLocaleDateString(locale, { weekday: 'narrow' }).toUpperCase())}</small><b>${d.getDate()}</b></i>`).join('');
+    const dayCells = days.map(d => `<i class="gantt-day${(d.getUTCDay() === 0 || d.getUTCDay() === 6) ? ' gantt-weekend' : ''}"><small>${escapeHtml(d.toLocaleDateString(locale, { weekday: 'short', timeZone: 'UTC' }).toUpperCase())}</small><b>${d.getUTCDate()}</b></i>`).join('');
+    const gridCells = days.map(() => `<i class="gantt-grid-cell" aria-hidden="true"></i>`).join('');
     const months = [];
     for (const d of days) {
-      const key = `${d.getFullYear()}-${d.getMonth()}`;
+      const key = `${d.getUTCFullYear()}-${d.getUTCMonth()}`;
       if (months.length && months[months.length - 1].key === key) months[months.length - 1].count++;
-      else months.push({ key, label: d.toLocaleDateString(locale, { month: 'short' }), count: 1 });
+      else months.push({ key, label: d.toLocaleDateString(locale, { month: 'short', year: 'numeric', timeZone: 'UTC' }), count: 1 });
     }
     const monthRow = months.map(m => `<span class="gantt-month" style="flex-grow:${m.count}">${escapeHtml(m.label)}</span>`).join('');
     const todayIso = typeof companyTodayIso === 'function' ? companyTodayIso() : (typeof localDateIso === 'function' ? localDateIso() : '');
-    const todayLeft = todayIso && todayIso >= isoOf(days[0]) && todayIso <= isoOf(days[days.length - 1]) ? (Date.parse(todayIso + 'T12:00:00') - start) / span * 100 : null;
+    const todayLeft = todayIso && todayIso >= isoOf(days[0]) && todayIso <= isoOf(days[days.length - 1]) ? (Date.parse(todayIso + 'T12:00:00Z') - start) / span * 100 : null;
     const rows = sorted.map(task => {
       const statusClass = task.status === 'done' ? ' is-done' : task.status === 'in-progress' ? ' is-progress' : ' is-todo';
       const deps = (task.predecessorIds || []).map(id => taskById(sorted, id)).filter(Boolean).map(d => d.name).join(', ');
-      const left = Math.max(0, (Date.parse(task.startDate + 'T12:00:00') - start) / span * 100);
-      const right = Math.min(100, (Date.parse(task.endDate + 'T12:00:00') + DAY - start) / span * 100);
+      const left = Math.max(0, (Date.parse(task.startDate + 'T12:00:00Z') - start) / span * 100);
+      const right = Math.min(100, (Date.parse(task.endDate + 'T12:00:00Z') + DAY - start) / span * 100);
       const progress = estimateProgress(project, task.estimateItemId);
       return `<div class="gantt-row">
-        <div class="gantt-row-label"><strong>${escapeHtml(task.name)}</strong><small>${escapeHtml(assigneeLabel(task))}${deps ? ` · waits for ${escapeHtml(deps)}` : ''}${progressText(progress) ? ` · ${escapeHtml(progressText(progress))}` : ''}</small></div>
-        <div class="gantt-row-track">${dayCells}<i class="gantt-bar${statusClass}" style="left:${left.toFixed(2)}%;width:${Math.max(0.8, right - left).toFixed(2)}%" title="${escapeHtml(task.name)} · ${escapeHtml(formatDate(task.startDate))} – ${escapeHtml(formatDate(task.endDate))}">${task.status === 'done' ? '✓' : ''}</i>${todayLeft == null ? '' : `<i class="gantt-today" style="left:${todayLeft.toFixed(2)}%" title="Today"></i>`}</div>
+        <div class="gantt-row-label"><strong>${escapeHtml(task.name)}</strong><small>${escapeHtml(assigneeLabel(task))}${deps ? ` · waits for ${escapeHtml(deps)}` : ''}${progressText(progress) ? ` · ${escapeHtml(progressText(progress))}` : ''}</small><small class="gantt-task-dates">${escapeHtml(formatDate(task.startDate))} – ${escapeHtml(formatDate(task.endDate))}</small></div>
+        <div class="gantt-row-track">${gridCells}<i class="gantt-bar${statusClass}" style="left:${left.toFixed(2)}%;width:${Math.max(0, right - left).toFixed(2)}%" title="${escapeHtml(task.name)} · ${escapeHtml(formatDate(task.startDate))} – ${escapeHtml(formatDate(task.endDate))}"><span>${task.status === 'done' ? '✓ ' : ''}${Math.round((Date.parse(task.endDate + 'T12:00:00Z') - Date.parse(task.startDate + 'T12:00:00Z')) / DAY) + 1}d</span></i>${todayLeft == null ? '' : `<i class="gantt-today" style="left:${todayLeft.toFixed(2)}%" title="Today"></i>`}</div>
       </div>`;
     }).join('');
-    return `<div class="project-schedule-gantt" data-schedule-gantt><div class="project-schedule-gantt-inner">
+    return `<div class="job-timeline-toolbar"><div><strong>THE PLAN</strong><span>Scroll across to see more dates.</span></div><div class="job-timeline-controls"><button type="button" data-timeline-scroll="-1" aria-label="Earlier dates">←</button><button type="button" data-timeline-scroll="1" aria-label="Later dates">→</button><button type="button" data-timeline-zoom="out" aria-label="Zoom out timeline">−</button><button type="button" data-timeline-zoom="in" aria-label="Zoom in timeline">+</button></div></div><div class="project-schedule-gantt" data-schedule-gantt tabindex="0" role="region" aria-label="Project timeline. Scroll horizontally for dates and vertically for tasks." style="--timeline-days:${days.length};--timeline-day-width:64px"><div class="project-schedule-gantt-inner">
       <div class="gantt-head"><div class="gantt-corner">TASK</div><div><div class="gantt-months">${monthRow}</div><div class="gantt-days">${dayCells}</div></div></div>
       ${rows}
     </div></div>`;
@@ -256,6 +257,16 @@ function renderSchedulePane(pane, project, tasks, editingId){
   function selectedValues(select){ return [...select.options].filter(o => o.selected && o.value !== '').map(o => Number(o.value)); }
 
   function wireSchedulePane(pane, project, tasks){
+    const chart = pane.querySelector('[data-schedule-gantt]');
+    pane.querySelectorAll('[data-timeline-scroll]').forEach(button => button.onclick = () => chart.scrollBy({left: Number(button.dataset.timelineScroll) * Math.max(128, chart.clientWidth - 180), behavior: 'smooth'}));
+    pane.querySelectorAll('[data-timeline-zoom]').forEach(button => button.onclick = () => {
+      const previous = Number.parseFloat(chart.style.getPropertyValue('--timeline-day-width')) || 64;
+      const next = Math.max(32, Math.min(128, previous + (button.dataset.timelineZoom === 'in' ? 16 : -16)));
+      chart.style.setProperty('--timeline-day-width', next + 'px');
+      chart.scrollLeft *= next / previous;
+      pane.querySelector('[data-timeline-zoom="out"]').disabled = next === 32;
+      pane.querySelector('[data-timeline-zoom="in"]').disabled = next === 128;
+    });
     const editable = canEditTasks();
     const viewTabs = [...pane.querySelectorAll('[data-schedule-view]')];
     const activateView = (button, moveFocus) => {
