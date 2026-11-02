@@ -64,7 +64,12 @@ const executablePath = process.env.PDL_BROWSER_PATH || ['C:/Program Files/Google
     }
     await page.setViewportSize({width:1280,height:800});
     await page.evaluate(()=>window.scrollTo(0,0));await page.waitForTimeout(300);
-    assert.equal(await chip.locator('[data-task-assign-target]').isVisible(),true,'desktop controls remain visible');
+    assert.equal(await chip.locator('[data-task-assign-target]').isVisible(),false,'desktop cards stay compact');
+    await chip.locator('.schedule-task-chip-main').click();assert.equal(await chip.locator('[data-task-assign-target]').isVisible(),true,'one tap opens assignment');
+    await chip.locator('[data-mode=member]').click();assert.ok((await chip.locator('select option').allTextContents()).some(text=>text.includes('Choose a team member')));
+    await page.evaluate(()=>renderSchedule());assert.equal(await chip.locator('[data-mode=member]').getAttribute('aria-pressed'),'true','refresh preserves assignment mode');
+    await chip.locator('.schedule-task-expand').click();
+    await page.evaluate(()=>window.scrollTo(0,0));await page.waitForTimeout(500);
     const crew=page.locator('[data-schedule-crew-drop]').first();
     assert.equal(await crew.evaluate(el=>typeof el.ondragover),'function','new crew rows have drop handlers');
     const assigned=page.waitForResponse(r=>r.url().includes(`/project-tasks/${taskId}/assign`)&&r.request().method()==='POST');
@@ -81,6 +86,13 @@ const executablePath = process.env.PDL_BROWSER_PATH || ['C:/Program Files/Google
     const moved=page.waitForResponse(r=>r.url().endsWith(`/api/assignments/${id}`)&&r.request().method()==='PATCH');
     await source.dragTo(target);assert.ok((await moved).ok(),'moving assignment persists');
     await page.waitForFunction(({date,member})=>assignments.some(a=>a.date===date&&a.memberIds.includes(Number(member))&&a.activity==='Drag test excavation'),{date:newDate,member});
+    await page.locator('#schedule-move-feedback button').filter({hasText:'Undo'}).click();
+    await page.waitForFunction(({date,member})=>assignments.some(a=>a.date===date&&a.memberIds.includes(Number(member))&&a.activity==='Drag test excavation'),{date:oldDate,member});
+    assert.match(await page.locator('#schedule-move-feedback').textContent(),/Move undone/);
+    const staleStatus=await page.evaluate(async(id)=>{const response=await fetch(`/api/assignments/${id}`,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({expectedUpdatedAt:'stale'})});return response.status;},id);
+    assert.equal(staleStatus,409,'stale undo cannot overwrite a later edit');
+    await page.locator('#schedule-today').click();assert.equal(await page.evaluate(()=>scheduleAnchorDate),await page.evaluate(()=>companyTodayIso()));
+    const empty=page.locator('.schedule-grid .schedule-drop-zone').filter({has:page.locator('.schedule-empty')}).first();const emptyDate=await empty.getAttribute('data-schedule-date');await empty.click();assert.equal(await page.locator('#assignment-date').inputValue(),emptyDate);await page.locator('#assignment-modal .close-button').click();
     fs.mkdirSync('docs/schedule-board-brand',{recursive:true});
     for(const theme of ['light','dark']){
       await page.evaluate(theme=>document.documentElement.dataset.theme=theme,theme);
@@ -102,4 +114,3 @@ const executablePath = process.env.PDL_BROWSER_PATH || ['C:/Program Files/Google
     assert.deepEqual(errors,[]);console.log('Schedule desktop drag and brand: passed');
   }finally{if(browser)await browser.close();if(child)child.kill();}
 })().catch(error=>{console.error(error);process.exitCode=1;});
-

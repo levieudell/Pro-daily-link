@@ -477,7 +477,11 @@ function renderSchedulePane(pane, project, tasks, editingId){
     } catch (error) { /* a stale lane beats an empty one */ }
   }
 
-  function removeLane(){ document.querySelectorAll('.schedule-unassigned').forEach(element => {unassignedOpen=element.open;element.remove();});document.querySelector('.schedule-workspace')?.classList.remove('has-unassigned','unassigned-open'); }
+  const laneDrafts = new Map();
+  function rememberLane(){
+    document.querySelectorAll('.schedule-task-chip').forEach(chip=>laneDrafts.set(Number(chip.dataset.scheduleTask),{open:chip.querySelector('.schedule-task-expand')?.getAttribute('aria-expanded')==='true',value:chip.querySelector('select')?.value,date:chip.querySelector('input')?.value,mode:chip.dataset.assignMode||'crew'}));
+  }
+  function removeLane(){rememberLane(); document.querySelectorAll('.schedule-unassigned').forEach(element => {unassignedOpen=element.open;element.remove();});document.querySelector('.schedule-workspace')?.classList.remove('has-unassigned','unassigned-open'); }
 
   function wireLaneChips(section){
     if (canAssignTasks() && !laneDropWired) {
@@ -510,7 +514,17 @@ function renderSchedulePane(pane, project, tasks, editingId){
         document.querySelectorAll('.drag-over').forEach(element => element.classList.remove('drag-over'));
       };
     });
-    section.querySelectorAll('.schedule-task-expand').forEach(button=>button.onclick=()=>{const open=button.getAttribute('aria-expanded')!=='true';button.setAttribute('aria-expanded',String(open));button.textContent=open?'Close assignment options':'Assign task';});
+    section.querySelectorAll('.schedule-task-chip').forEach(chip=>{
+      const button=chip.querySelector('.schedule-task-expand'),panel=chip.querySelector('.schedule-task-assign');if(!button||!panel)return;
+      const select=panel.querySelector('select'),date=panel.querySelector('input'),saved=laneDrafts.get(Number(chip.dataset.scheduleTask));
+      const options=[...select.options].map(option=>({value:option.value,text:option.textContent}));
+      const modes=document.createElement('div');modes.className='schedule-assign-modes';modes.setAttribute('role','group');modes.setAttribute('aria-label','Assign by');modes.innerHTML='<button type="button" data-mode="crew">Crew</button><button type="button" data-mode="member">Individual</button>';panel.prepend(modes);
+      function mode(value,selected=''){chip.dataset.assignMode=value;select.replaceChildren(...options.filter(option=>!option.value||option.value.startsWith(value+':')).map(option=>new Option(option.value?option.text:(value==='crew'?'Choose a crew':'Choose a team member'),option.value)));select.value=selected;modes.querySelectorAll('button').forEach(el=>el.setAttribute('aria-pressed',String(el.dataset.mode===value)));}
+      modes.querySelectorAll('button').forEach(el=>el.onclick=()=>mode(el.dataset.mode));mode(saved?.mode||(options.some(o=>o.value.startsWith('crew:'))?'crew':'member'),saved?.value||'');if(saved?.date)date.value=saved.date;
+      function expand(open){button.setAttribute('aria-expanded',String(open));button.textContent=open?'Close assignment options':'Assign task';}
+      expand(Boolean(saved?.open));button.onclick=()=>expand(button.getAttribute('aria-expanded')!=='true');
+      const main=chip.querySelector('.schedule-task-chip-main');main.setAttribute('role','button');main.tabIndex=0;main.setAttribute('aria-label','Assign '+main.textContent.trim());main.onclick=()=>{expand(true);select.focus({preventScroll:true});};main.onkeydown=event=>{if(event.key==='Enter'||event.key===' '){event.preventDefault();main.click();}};
+    });
     section.querySelectorAll('[data-task-assign-go]').forEach(button => button.onclick = () => {
       const select = section.querySelector(`[data-task-assign-target="${button.dataset.taskAssignGo}"]`);
       const dateInput = section.querySelector(`[data-task-assign-date="${button.dataset.taskAssignGo}"]`);
@@ -521,11 +535,14 @@ function renderSchedulePane(pane, project, tasks, editingId){
         dateInput.focus();
         return notify(`Choose a start date between ${formatDate(dateInput.min)} and ${formatDate(dateInput.max)}`);
       }
-      assignTaskTo(Number(button.dataset.taskAssignGo), target, dateInput.value);
+      button.disabled=true;button.textContent="Assigning…";
+      assignTaskTo(Number(button.dataset.taskAssignGo), target, dateInput.value).finally(()=>{button.disabled=false;button.textContent="Assign";});
     });
   }
 
   function paintUnassignedLane(){
+    const laneScroll=document.querySelector('.schedule-unassigned-body')?.scrollTop||0;
+    const pageScroll=window.scrollY;
     removeLane();
     if (typeof currentRole !== 'undefined' && currentRole !== 'office') return;
     const board = document.getElementById('schedule-board'), days = laneVisibleDays();
@@ -554,13 +571,17 @@ function renderSchedulePane(pane, project, tasks, editingId){
     const sidebar=workspace.querySelector('.schedule-unassigned');
     sidebar.addEventListener('toggle',()=>{if(!sidebar.isConnected)return;unassignedOpen=sidebar.open;workspace.classList.toggle('unassigned-open',unassignedOpen);});
     wireLaneChips(sidebar);
+    sidebar.querySelector('.schedule-unassigned-body').scrollTop=laneScroll;
+    window.scrollTo({top:pageScroll,behavior:'instant'});
   }
 
   function wrapRenderSchedule(){
     if (renderScheduleWithLane || typeof renderSchedule !== 'function') return;
     renderScheduleWithLane = renderSchedule;
     renderSchedule = function(){
+      const board=document.getElementById('schedule-board'),left=board?.scrollLeft||0,top=board?.scrollTop||0;
       const result = renderScheduleWithLane.apply(this, arguments);
+      if(board){board.scrollLeft=left;board.scrollTop=top;}
       const sequence = ++laneSequence;
       refreshLaneTasks(false).then(() => { if (sequence === laneSequence) paintUnassignedLane(); });
       paintUnassignedLane();
@@ -587,7 +608,7 @@ function renderSchedulePane(pane, project, tasks, editingId){
       if (payload.merged) notes.push(`${payload.merged} joined an existing shift`);
       if (payload.skipped) notes.push(`${payload.skipped} skipped (time off or another job)`);
       const who = target.crew ? `Crew ${payload.crew} (${payload.members} ${Number(payload.members) === 1 ? 'person' : 'people'})` : payload.memberName;
-      notify(`${who} is on “${task ? task.name : 'the task'}” — ${notes.join(', ')}`);
+      showScheduleConfirmation(`Assigned to ${who} · ${formatDate(fromDate)} — ${notes.join(', ')}`);
       try {
         const state = await api('/api/state');
         if (typeof assignments !== 'undefined') assignments = state.assignments || assignments;
