@@ -143,6 +143,7 @@ function renderSchedulePane(pane, project, tasks, editingId){
       if (typeof renderProjectCards === 'function') renderProjectCards(document.querySelector('#project-search')?.value || '');
     }
 
+    window.PDLSiteVisits?.repaintOverview(project.id);
     const editable = canEditTasks();
     const hasStart = Boolean(project.startDate && /^\d{4}-\d{2}-\d{2}$/.test(String(project.startDate)));
     const sorted = (tasks || []).slice().sort((a, b) => String(a.startDate).localeCompare(String(b.startDate)) || Number(a.id) - Number(b.id));
