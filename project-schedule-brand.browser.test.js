@@ -31,7 +31,7 @@ const executablePath = process.env.PDL_BROWSER_PATH || ['C:/Program Files/Google
     await page.waitForFunction(()=>window.pdlWorkspaceStateReady&&projects.length>1);
 
     const pid=await page.evaluate(()=>projects[0].id);
-    await page.evaluate(async pid=>{await api(`/api/projects/${pid}/tasks`,{method:'POST',body:JSON.stringify({name:'Excavate footing',durationDays:3,predecessorIds:[],memberIds:[]})});showPage('projects');await openProject(pid);},pid);
+    await page.evaluate(async pid=>{await api(`/api/projects/${pid}/tasks`,{method:'POST',body:JSON.stringify({name:'Excavate footing',durationDays:80,predecessorIds:[],memberIds:[]})});showPage('projects');await openProject(pid);},pid);
     fs.mkdirSync('docs/project-schedule-brand',{recursive:true});
     for(const size of [{width:1280,height:800},{width:390,height:844},{width:390,height:500}]){
       await page.setViewportSize(size);
@@ -73,6 +73,17 @@ const executablePath = process.env.PDL_BROWSER_PATH || ['C:/Program Files/Google
         assert.deepEqual(style,{bg:'rgb(255, 102, 0)',color:'rgb(0, 0, 0)'});
         const layout=await pane.evaluate(el=>{const body=document.querySelector('#project-detail-content'),r=el.querySelector('#project-schedule-view-panel').getBoundingClientRect();return{overflow:body.scrollWidth>body.clientWidth+1,top:r.top,bottom:body.getBoundingClientRect().bottom};});
         assert.equal(layout.overflow,false);assert.ok(layout.top<layout.bottom-30,'schedule view is visible: '+JSON.stringify(layout));
+        assert.ok(await pane.locator('.gantt-days .gantt-day').count()>62,'full schedule is shown');
+        assert.equal(await pane.locator('.gantt-row-track .gantt-day').count(),0,'dates appear only in the header');
+        const chart=pane.locator('[data-schedule-gantt]');
+        const before=await chart.evaluate(el=>({label:el.querySelector('.gantt-row-label').getBoundingClientRect().left,width:el.scrollWidth}));
+        await pane.locator('[data-timeline-zoom="in"]').click();
+        assert.ok(await chart.evaluate(el=>el.scrollWidth)>before.width,'zoom increases day width');
+        await pane.locator('[data-timeline-scroll="1"]').click();
+        await page.waitForFunction(()=>document.querySelector('[data-schedule-gantt]').scrollLeft>0);
+        const after=await chart.evaluate(el=>({label:el.querySelector('.gantt-row-label').getBoundingClientRect().left,scroll:el.scrollLeft}));
+        assert.ok(Math.abs(after.label-before.label)<2,'task labels remain pinned');
+        await chart.evaluate(el=>el.scrollLeft=0);
         await page.screenshot({path:`docs/project-schedule-brand/timeline-${theme}-${size.width}x${size.height}.png`});
         await tools.nth(1).locator('summary').click();assert.equal(await page.locator('[data-new-task-name]').inputValue(),'Keep this draft');
         await tools.nth(1).locator('summary').click();
@@ -95,3 +106,4 @@ const executablePath = process.env.PDL_BROWSER_PATH || ['C:/Program Files/Google
     console.log('Schedule brand browser passed: immediate table/timeline, preserved drafts, real task save, brand toggle, contained scrolling, phone/desktop themes.');
   }finally{if(browser)await browser.close();if(child)child.kill();}
 })().catch(error=>{console.error(error);process.exitCode=1;});
+
