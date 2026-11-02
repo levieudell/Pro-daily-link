@@ -401,7 +401,7 @@ function renderSchedulePane(pane, project, tasks, editingId){
   // on touch screens) and the server writes daily assignments for the rest of
   // the task. Chips intentionally carry no data-assignment attribute so the
   // board's assignment wiring never confuses a task with an assignment row.
-  let laneTasksCache = null, laneTasksFetchedAt = 0, laneSequence = 0, draggedTaskId = null, laneDropWired = false, laneTouchAttached = false, renderScheduleWithLane = null, laneVisibleFirstDay = '', unassignedOpen = true;
+  let laneTasksCache = null, laneTasksFetchedAt = 0, laneSequence = 0, draggedTaskId = null, laneDropWired = false, laneTouchAttached = false, renderScheduleWithLane = null, laneVisibleFirstDay = '', unassignedOpen = false;
 
   function canAssignTasks(){ return typeof canManageSchedule === 'function' && canManageSchedule(); }
 

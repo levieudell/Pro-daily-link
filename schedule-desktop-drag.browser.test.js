@@ -36,8 +36,11 @@ const executablePath = process.env.PDL_BROWSER_PATH || ['C:/Program Files/Google
     const taskId=await page.evaluate(async()=>{const project=projects[0];const date=companyTodayIso();await api(`/api/projects/${project.id}`,{method:'PATCH',body:JSON.stringify({startDate:date})});const task=await api(`/api/projects/${project.id}/tasks`,{method:'POST',body:JSON.stringify({name:'Drag test excavation',durationDays:3,predecessorIds:[],memberIds:[]})});scheduleAnchorDate=date;showPage('schedule');return task.tasks.find(t=>t.name==='Drag test excavation').id;});
     await page.waitForTimeout(1000);await page.reload();await page.waitForFunction(()=>window.pdlWorkspaceStateReady);await page.evaluate(()=>{scheduleView='week';scheduleAnchorDate=companyTodayIso();showPage('schedule');});
     const chip=page.locator(`[data-schedule-task="${taskId}"]`);
-    await chip.waitFor();
+    await chip.waitFor({state:"attached"});
     const sidebar=page.locator('.schedule-unassigned');
+    assert.equal(await sidebar.getAttribute('open'),null,'unassigned starts collapsed');
+    assert.match(await sidebar.locator('summary').innerText(),/Unassigned\s+\d+/);
+    await sidebar.locator(':scope > summary').click();
     const placement=await sidebar.evaluate(el=>({left:el.getBoundingClientRect().left,boardRight:document.querySelector('#schedule-board').getBoundingClientRect().right}));
     assert.ok(placement.left>=placement.boardRight,'unassigned work sits to the right');
     await sidebar.locator(':scope > summary').click();
