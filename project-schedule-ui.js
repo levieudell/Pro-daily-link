@@ -176,7 +176,7 @@ function renderSchedulePane(pane, project, tasks, editingId){
         <td class="project-schedule-actions">${editable ? `<select data-task-status="${Number(task.id)}" aria-label="Status for ${escapeHtml(task.name)}"><option value="not-started" ${task.status === 'not-started' ? 'selected' : ''}>Not started</option><option value="in-progress" ${task.status === 'in-progress' ? 'selected' : ''}>In progress</option><option value="done" ${task.status === 'done' ? 'selected' : ''}>Done</option></select><button type="button" class="secondary small" data-edit-task="${Number(task.id)}">Edit</button><button type="button" class="danger small" data-delete-task="${Number(task.id)}" aria-label="Delete ${escapeHtml(task.name)}">Delete</button>` : `<span class="status">${taskStatusLabel(task.status)}</span>`}</td>
       </tr>`)).join('');
     pane.innerHTML = `
-      <div class="project-schedule-head"><div><h3>Project schedule</h3><p>Linked tasks auto-schedule: a task starts the next working day after everything it waits for is done. Change one and the rest follow.</p></div><div class="project-schedule-view-toggle" role="tablist" aria-label="Schedule view"><button type="button" role="tab" id="project-schedule-table-tab" aria-controls="project-schedule-view-panel" aria-selected="${scheduleView === 'table'}" tabindex="${scheduleView === 'table' ? '0' : '-1'}" data-schedule-view="table" class="${scheduleView === 'table' ? 'active' : ''}">Table</button><button type="button" role="tab" id="project-schedule-timeline-tab" aria-controls="project-schedule-view-panel" aria-selected="${scheduleView === 'timeline'}" tabindex="${scheduleView === 'timeline' ? '0' : '-1'}" data-schedule-view="timeline" class="${scheduleView === 'timeline' ? 'active' : ''}">Timeline</button></div></div>
+      <div class="project-schedule-head"><div><h3>Project schedule</h3><p>See the plan. Update a task and linked dates follow.</p></div><div class="project-schedule-view-toggle" role="tablist" aria-label="Schedule view"><button type="button" role="tab" id="project-schedule-table-tab" aria-controls="project-schedule-view-panel" aria-selected="${scheduleView === 'table'}" tabindex="${scheduleView === 'table' ? '0' : '-1'}" data-schedule-view="table" class="${scheduleView === 'table' ? 'active' : ''}">Table</button><button type="button" role="tab" id="project-schedule-timeline-tab" aria-controls="project-schedule-view-panel" aria-selected="${scheduleView === 'timeline'}" tabindex="${scheduleView === 'timeline' ? '0' : '-1'}" data-schedule-view="timeline" class="${scheduleView === 'timeline' ? 'active' : ''}">Timeline</button></div></div>
       ${forecastBanner(project, sorted)}
       ${editable ? `${!hasStart ? `<div class="project-schedule-needs-start" data-schedule-needs-start><strong>No start date on this project yet.</strong><span>Set one below and every task will schedule itself from that day.</span></div>` : ''}
       <div class="project-schedule-add" data-project-dates-form>
@@ -196,8 +196,19 @@ function renderSchedulePane(pane, project, tasks, editingId){
         </div>
         <div class="schedule-add-actions"><button type="button" class="primary" data-add-task>＋ Add task</button><span class="schedule-add-hint">Dates set themselves from the links — no calendar needed.</span></div>
       </div>` : ''}
-      <div id="project-schedule-view-panel" role="tabpanel" aria-labelledby="project-schedule-${scheduleView}-tab">${sorted.length ? (scheduleView === 'timeline' ? ganttChart(project, sorted) : `<div class="project-schedule-table-wrap"><table class="project-schedule-table"><thead><tr><th>Task</th><th>Waits for</th><th>Length</th><th>Dates</th><th>Assigned</th><th>${editable ? 'Status / actions' : 'Status'}</th></tr></thead><tbody>${rows}</tbody></table></div>`) : `<div class="project-tab-empty"><strong>No scheduled tasks yet</strong><p>${editable ? 'Add the project’s phases or milestones above and link them so the dates keep themselves honest.' : 'Your office will add the project schedule here.'}</p></div>`}</div>`;
+      <div id="project-schedule-view-panel" role="tabpanel" aria-labelledby="project-schedule-${scheduleView}-tab">${sorted.length ? (scheduleView === 'timeline' ? ganttChart(project, sorted) : `<div class="project-schedule-table-wrap"><table class="project-schedule-table"><thead><tr><th>Task</th><th>Waits for</th><th>Length</th><th>Dates</th><th>Assigned</th><th>${editable ? 'Status / actions' : 'Status'}</th></tr></thead><tbody>${rows}</tbody></table></div>`) : `<div class="project-tab-empty"><strong>No scheduled tasks yet</strong><p>${editable ? 'Choose Add task to build this job’s schedule.' : 'Your office will add the project schedule here.'}</p></div>`}</div>`;
     if (Number(editingId)) { const select = pane.querySelector(`[data-schedule-edit-row="${Number(editingId)}"] [data-edit-task-deps]`); if (select) { const editing = taskById(tasks, editingId); [...select.options].forEach(option => { option.selected = (editing?.predecessorIds || []).map(Number).includes(Number(option.value)); }); } }
+    const tools = document.createElement('div'); tools.className = 'job-schedule-tools';
+    for (const [selector,label] of [['[data-project-dates-form]','Edit dates'],['[data-schedule-add-form]','＋ Add task']]) {
+      const form = pane.querySelector(selector); if (!form) continue;
+      const disclosure=document.createElement('details');disclosure.className='job-schedule-editor';
+      const summary=document.createElement('summary');summary.textContent=label;
+      disclosure.append(summary,form);tools.append(disclosure);
+      if(!hasStart && selector==='[data-project-dates-form]')disclosure.open=true;
+    }
+    pane.querySelector('#project-schedule-view-panel').before(tools);
+    const panel=pane.querySelector('#project-schedule-view-panel');
+    panel.setAttribute('aria-live','polite');
     wireSchedulePane(pane, project, tasks, editingId);
   }
 
@@ -209,8 +220,14 @@ function renderSchedulePane(pane, project, tasks, editingId){
     const activateView = (button, moveFocus) => {
       if (!button || scheduleView === button.dataset.scheduleView) return;
       scheduleView = button.dataset.scheduleView;
+      const held=[...pane.querySelectorAll('.job-schedule-editor')];
       renderSchedulePane(pane, project, tasks, null);
-      if (moveFocus) pane.querySelector(`[data-schedule-view="${scheduleView}"]`)?.focus();
+      // Keep unfinished edits and their existing handlers while switching views.
+      pane.querySelectorAll('.job-schedule-editor').forEach((node,index)=>{if(held[index]){held[index].open=false;node.replaceWith(held[index]);}});
+      pane.scrollIntoView({block:'start'});
+      if (moveFocus) pane.querySelector(`[data-schedule-view="${scheduleView}"]`)?.focus({preventScroll:true});
+      const body=pane.closest('#project-detail-content'), panel=pane.querySelector('#project-schedule-view-panel');
+      if(body && panel){const gap=panel.getBoundingClientRect().top-(body.getBoundingClientRect().bottom-120);if(gap>0)body.scrollTop+=gap;}
     };
     viewTabs.forEach((button, index) => {
       button.onclick = () => activateView(button, true);
