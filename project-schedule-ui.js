@@ -110,9 +110,10 @@ let scheduleView = 'table';
       const memberField=members.closest('.schedule-field'),crewField=crew?.closest('.schedule-field');
       const root=document.createElement('div');root.className='job-assignment-picker schedule-span-6';memberField.before(root);
       const modes=document.createElement('div');modes.className='job-assignment-modes';modes.setAttribute('role','group');modes.setAttribute('aria-label','Assign by');
-      modes.innerHTML='<button type="button" data-assignment-mode="crew">Crew</button><button type="button" data-assignment-mode="individual">Individual</button>';root.append(modes);if(crewField)root.append(crewField);root.append(memberField);
+      modes.innerHTML='<button type="button" data-assignment-mode="crew">Crew</button><button type="button" data-assignment-mode="individual">Individual</button>';root.append(modes);if(crewField)root.append(crewField);root.append(memberField);memberField.classList.add('job-member-list');
       const search=document.createElement('input');search.type='search';search.placeholder='Find a team member';search.setAttribute('aria-label','Find a team member');memberField.querySelector('.schedule-chip-pick')?.before(search);
-      search.oninput=()=>memberField.querySelectorAll('.schedule-chip').forEach(button=>button.hidden=!button.textContent.toLowerCase().includes(search.value.toLowerCase()));
+      const empty=document.createElement('p');empty.className='job-member-empty';empty.textContent='No team members found.';empty.hidden=true;memberField.append(empty);
+      search.oninput=()=>{let count=0;memberField.querySelectorAll('.schedule-chip').forEach(button=>{button.hidden=!button.textContent.toLowerCase().includes(search.value.toLowerCase());if(!button.hidden)count++;});empty.hidden=count>0;};
       const status=document.createElement('p');status.className='job-assignment-status';status.setAttribute('aria-live','polite');root.append(status);
       let mode=crew?.value?'crew':'individual';
       function paint(){memberField.hidden=mode!=='individual';if(crewField)crewField.hidden=mode!=='crew';modes.querySelectorAll('button').forEach(button=>button.setAttribute('aria-pressed',String(button.dataset.assignmentMode===mode)));const names=[...members.selectedOptions].filter(option=>option.value).map(option=>option.textContent);status.textContent=mode==='crew'?(crew?.value?`Crew: ${crew.value}`:'Choose a crew.'):names.length?`${names.length} selected: ${names.join(', ')}`:'No one selected yet.';if(mode==='crew'&&!crewField)status.textContent='No crews set up yet. Choose Individual to assign people.';}
@@ -169,7 +170,7 @@ let scheduleView = 'table';
         <div class="gantt-row-track">${gridCells}<i class="gantt-bar${statusClass}" style="left:${left.toFixed(2)}%;width:${Math.max(0, right - left).toFixed(2)}%" title="${escapeHtml(task.name)} · ${escapeHtml(formatDate(task.startDate))} – ${escapeHtml(formatDate(task.endDate))}"><span>${task.status === 'done' ? '✓ ' : ''}${Math.round((Date.parse(task.endDate + 'T12:00:00Z') - Date.parse(task.startDate + 'T12:00:00Z')) / DAY) + 1}d</span></i>${todayLeft == null ? '' : `<i class="gantt-today" style="left:${todayLeft.toFixed(2)}%" title="Today"></i>`}</div>
       </div>`;
     }).join('');
-    return `<div class="job-timeline-toolbar"><div><strong>THE PLAN</strong><span>Scroll across to see more dates.</span></div><div class="job-timeline-controls"><button type="button" data-timeline-scroll="-1" aria-label="Earlier dates">←</button><button type="button" data-timeline-scroll="1" aria-label="Later dates">→</button><button type="button" data-timeline-zoom="out" aria-label="Zoom out timeline">−</button><button type="button" data-timeline-zoom="in" aria-label="Zoom in timeline">+</button></div></div><div class="project-schedule-gantt" data-schedule-gantt tabindex="0" role="region" aria-label="Project timeline. Scroll horizontally for dates and vertically for tasks." style="--timeline-days:${days.length};--timeline-day-width:64px"><div class="project-schedule-gantt-inner">
+    return `<div class="job-timeline-toolbar"><div><strong>THE PLAN</strong><span>Scroll across to see more dates.</span></div><div class="job-timeline-controls"><button type="button" data-timeline-scroll="-1" aria-label="Earlier dates">←</button><button type="button" data-timeline-scroll="1" aria-label="Later dates">→</button><button type="button" data-timeline-zoom="out" aria-label="Zoom out timeline">−</button><button type="button" data-timeline-zoom="in" aria-label="Zoom in timeline">+</button></div></div><div class="project-schedule-gantt" data-schedule-gantt tabindex="0" role="region" aria-label="Project timeline. Scroll horizontally for dates and vertically for tasks." style="--timeline-days:${days.length};--timeline-track-width:${days.length * 64}px;--timeline-day-width:64px"><div class="project-schedule-gantt-inner">
       <div class="gantt-head"><div class="gantt-corner">TASK</div><div><div class="gantt-months">${monthRow}</div><div class="gantt-days">${dayCells}</div></div></div>
       ${rows}
     </div></div>`;
@@ -250,6 +251,8 @@ function renderSchedulePane(pane, project, tasks, editingId){
     pane.querySelector('#project-schedule-view-panel').before(tools);
     const panel=pane.querySelector('#project-schedule-view-panel');
     panel.setAttribute('aria-live','polite');
+    const headings=[...pane.querySelectorAll('.project-schedule-table th')].map(cell=>cell.textContent);
+    pane.querySelectorAll('[data-schedule-task-row]').forEach(row=>[...row.children].forEach((cell,index)=>cell.dataset.label=headings[index]||''));
     wireSchedulePane(pane, project, tasks, editingId);
     wireSchedulePickers(pane);
   }
@@ -263,6 +266,7 @@ function renderSchedulePane(pane, project, tasks, editingId){
       const previous = Number.parseFloat(chart.style.getPropertyValue('--timeline-day-width')) || 64;
       const next = Math.max(32, Math.min(128, previous + (button.dataset.timelineZoom === 'in' ? 16 : -16)));
       chart.style.setProperty('--timeline-day-width', next + 'px');
+      chart.style.setProperty('--timeline-track-width', Number(chart.style.getPropertyValue('--timeline-days')) * next + 'px');
       chart.scrollLeft *= next / previous;
       pane.querySelector('[data-timeline-zoom="out"]').disabled = next === 32;
       pane.querySelector('[data-timeline-zoom="in"]').disabled = next === 128;
