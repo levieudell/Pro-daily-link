@@ -22,8 +22,19 @@
     return rows;
   }
   function currentEntry() { return entries().find(row => row.key === selectedKey); }
+  function matchingLogins(member) {
+    const email = String(member?.email || '').trim().toLowerCase();
+    return email ? users.filter(user => String(user.email || '').trim().toLowerCase() === email) : [];
+  }
+  function unlinkedAccess(row) {
+    const matches = matchingLogins(row.member);
+    if (!matches.length) return `<p>No login yet.</p>${owner() ? '<button type="button" data-member-login>Create login</button>' : '<p>The account owner can add a login.</p>'}`;
+    const unique = matches.length === 1 && team.filter(member => String(member.email || '').trim().toLowerCase() === String(row.member.email).trim().toLowerCase()).length === 1;
+    const account = matches[0], available = unique && !account.memberId;
+    return `<div class="team-link-notice"><strong>Existing login found</strong><p>${esc(row.member.email)} already has a login. Link it to show one team member.</p>${owner() && available ? `<details><summary>Link existing login</summary><p>Link ${esc(account.name)} (${esc(account.email)}) to ${esc(row.name)}? Their role and permissions stay the same. Work history stays with its existing records.</p><button type="button" class="primary" data-link-member="${account.id}">Confirm link</button><p role="alert" class="team-link-error" hidden></p></details>` : `<p>${!available ? 'The records need review before linking. Check for another profile or an existing link.' : 'Ask the account owner to link these records.'}</p>`}</div>`;
+  }
   function accessMarkup(row) {
-    return `<h3>App access</h3>${row.accounts.length ? row.accounts.map(user => `<div class="account-row" data-member-account="${user.id}"><div class="account-identity"><strong>${esc(user.name)}</strong><small><span class="exact-email">${esc(user.email || '')}</span> · <span class="account-role">${esc(String(user.role || '').replaceAll('_', ' '))}</span></small>${user.role === 'owner' ? '<span class="payroll-access-always">Payroll access: Always on</span><b class="payroll-account-owner">Account owner</b>' : ''}<p>${esc(user.status || 'Active')}</p></div>${owner() ? `<div class="team-account-actions">${user.role !== 'owner' ? `<button type="button" data-user-edit="${user.id}">Edit access</button><button type="button" data-user-toggle="${user.id}">${user.status === 'Active' ? 'Deactivate' : 'Reactivate'}</button>${['field', 'foreman'].includes(user.role) ? '' : `<button type="button" class="payroll-grant" data-payroll-grant="${user.id}" aria-pressed="${user.permissionGrants?.includes('payroll') === true}">Payroll access: ${user.permissionGrants?.includes('payroll') ? 'On' : 'Off'}</button>`}` : ''}${user.status === 'Active' ? `<button type="button" data-user-reset="${user.id}">${user.mustSetPassword ? 'Replace temporary password' : 'Reset password'}</button>` : ''}</div>` : ''}</div>`).join('') : `<p>No login yet.</p>${owner() ? '<button type="button" data-member-login>Create login</button>' : '<p>The account owner can add a login.</p>'}`}`;
+    return `<h3>App access</h3>${row.accounts.length ? row.accounts.map(user => `<div class="account-row" data-member-account="${user.id}"><div class="account-identity"><strong>${esc(user.name)}</strong><small><span class="exact-email">${esc(user.email || '')}</span> · <span class="account-role">${esc(String(user.role || '').replaceAll('_', ' '))}</span></small>${user.role === 'owner' ? '<span class="payroll-access-always">Payroll access: Always on</span><b class="payroll-account-owner">Account owner</b>' : ''}<p>${esc(user.status || 'Active')}</p></div>${owner() ? `<div class="team-account-actions">${user.role !== 'owner' ? `<button type="button" data-user-edit="${user.id}">Edit access</button><button type="button" data-user-toggle="${user.id}">${user.status === 'Active' ? 'Deactivate' : 'Reactivate'}</button>${['field', 'foreman'].includes(user.role) ? '' : `<button type="button" class="payroll-grant" data-payroll-grant="${user.id}" aria-pressed="${user.permissionGrants?.includes('payroll') === true}">Payroll access: ${user.permissionGrants?.includes('payroll') ? 'On' : 'Off'}</button>`}` : ''}${user.status === 'Active' ? `<button type="button" data-user-reset="${user.id}">${user.mustSetPassword ? 'Replace temporary password' : 'Reset password'}</button>` : ''}</div>` : ''}</div>`).join('') : unlinkedAccess(row)}`;
   }
   function renderAccess() {
     const row = currentEntry();
@@ -33,6 +44,18 @@
     target.querySelectorAll('[data-user-edit]').forEach(button => button.onclick = () => { dialog.close(); openUserModal(users.find(user => Number(user.id) === Number(button.dataset.userEdit))); });
     target.querySelectorAll('[data-user-toggle]').forEach(button => button.onclick = () => updateUserStatus(Number(button.dataset.userToggle)));
     target.querySelectorAll('[data-user-reset]').forEach(button => button.onclick = () => { dialog.close(); openPasswordReset(Number(button.dataset.userReset)); });
+    const link = target.querySelector('[data-link-member]');
+    if (link) link.onclick = async () => {
+      const message = target.querySelector('.team-link-error');
+      link.disabled = true; message.hidden = true;
+      try {
+        const saved = await api(`/api/users/${link.dataset.linkMember}/link-member`, { method: 'POST', body: JSON.stringify({ memberId: row.member.id }) });
+        const account = users.find(user => Number(user.id) === Number(saved.id));
+        if (account) Object.assign(account, saved);
+        if (Number(currentUser?.id) === Number(saved.id)) Object.assign(currentUser, saved);
+        renderTeamDirectory(); notify('Login linked. Access stayed the same.');
+      } catch (error) { message.textContent = error.message; message.hidden = false; link.disabled = false; }
+    };
     const create = target.querySelector('[data-member-login]');
     if (create) create.onclick = () => {
       dialog.close(); openUserModal();

@@ -663,3 +663,48 @@ dialog#personal-clock-modal{padding:0;width:min(480px,calc(100vw - 24px));max-he
 :root[data-theme] body #schedule-page #schedule-today {border:2px solid #FF6600!important;min-height:48px;}
 :root[data-theme] body #schedule-page .schedule-task-chip-main :is(strong,small) {color:#000000!important;}
 :root[data-theme="dark"] body #schedule-page .schedule-task-chip-main :is(strong,small) {color:#FFFFFF!important;}
+/* Office review: evidence first, brand colors in both themes. */
+:root[data-theme] body #report-detail :is(.office-review-warning,.report-labor-review,.report-gaps,.alert,.ai-banner,.resolved-exception,.translation-panel) {
+  background:var(--surface-canvas)!important;color:var(--text-primary)!important;
+  border:1px solid var(--pdl-gray)!important;border-radius:10px;padding:16px;margin:12px 0;box-shadow:none;
+  font-family:Inter,sans-serif;font-size:14px;line-height:1.5;
+}
+:root[data-theme] body #report-detail :is(.office-review-warning,.report-labor-review,.report-gaps.attention,.alert) {border-left:4px solid var(--pdl-orange)!important;}
+:root[data-theme] body #report-detail :is(.office-review-warning,.report-labor-review,.report-gaps,.alert,.ai-banner,.resolved-exception,.translation-panel) :is(p,small,strong,span,li,dt,dd) {color:var(--text-primary)!important;}
+#report-detail .office-review-warning h3 {font-family:Anton,sans-serif;text-transform:uppercase;font-size:22px;margin:0 0 8px;}
+#report-detail .office-review-warning ul {padding-left:20px;margin:8px 0 12px;}
+#report-detail .office-review-warning li+li {margin-top:8px;}
+#report-detail .office-review-warning details {margin-top:12px;}
+#report-detail .office-review-warning summary {min-height:48px;display:flex;align-items:center;cursor:pointer;font-weight:700;}
+#report-detail .office-review-warning summary::before {content:'＋';margin-right:8px;}
+#report-detail .office-review-warning details[open] summary::before {content:'−';}
+#report-detail .office-review-warning dl>div {padding:8px 0;border-top:1px solid var(--pdl-gray);}
+#report-detail .office-review-warning dd {margin:0;font-weight:700;}
+:root[data-theme] body #report-detail :is([data-review-daily],.labor-resolve-button,.labor-remove-button) {min-height:48px;white-space:normal;background:var(--pdl-black)!important;color:var(--pdl-white)!important;border:1px solid var(--pdl-gray)!important;}
+#team-details-modal .team-link-notice {border-left:4px solid var(--pdl-orange);padding:12px;overflow-wrap:anywhere;}
+#team-details-modal .team-link-notice summary {min-height:48px;padding:12px 0;font-weight:700;cursor:pointer;}
+#team-details-modal .team-link-error {border-left:4px solid var(--pdl-pink);padding:12px;}
+:root[data-theme] body #team-details-modal [data-link-member] {background:var(--pdl-orange)!important;color:var(--pdl-black)!important;min-height:48px;}
+#timecards-page .time-pay-management>summary {min-height:48px;cursor:pointer;font-weight:700;align-content:center;}
+#timecards-page .time-pay-management>div {padding-top:12px;}
+:root[data-theme] body #timecards-page :is(#pay-period-panel,.time-person-summary,.time-compact-filters) {background:var(--surface-canvas)!important;border-color:var(--pdl-gray)!important;color:var(--text-primary)!important;}
+:root[data-theme] body #timecards-page :is(.time-person-summary small,.input-help,.time-pay-management) {color:var(--text-primary)!important;}
+:root[data-theme] body :is(#team-details-modal,#timecards-page,#report-detail) :is(button,input,summary):focus-visible {outline:2px solid var(--pdl-orange)!important;outline-offset:2px;box-shadow:none!important;}
+@media(max-width:760px) {
+  #timecards-page.active {display:flex;flex-direction:column;}
+  #timecards-page #pay-period-panel {order:2;padding:0 12px;margin:12px 0;}
+  #timecards-page .time-approval-help {order:3;}
+  #timecards-page .page-heading {margin-bottom:8px;}
+  #timecards-page .page-heading p:not(.eyebrow) {margin:4px 0;}
+  #timecards-page .time-compact-filters {padding:10px;margin:8px 0;}
+  #timecards-page .time-date-filters {gap:8px;}
+  #timecards-page :is(input,select,button) {min-height:48px;}
+  #timecards-page #time-more-filters>summary {min-height:44px;align-content:center;}
+}
+:root[data-theme] body #timecards-page :is(input,select) {background:var(--surface-canvas)!important;color:var(--text-primary)!important;border-color:var(--pdl-gray)!important;}
+:root[data-theme] body #reports-page .report-status-review {background:var(--pdl-orange)!important;color:var(--pdl-black)!important;border:1px solid var(--pdl-orange)!important;}
+#report-detail .office-review-warning {scroll-margin-top:72px;}
+:root[data-theme] body #report-detail .alert>span {background:var(--pdl-orange)!important;color:var(--pdl-black)!important;}
+:root[data-theme] body #timecards-page .page-heading p {color:var(--text-primary)!important;}
+:root[data-theme] body #timecards-page input::placeholder {color:var(--pdl-gray);opacity:1;font-weight:400;}
+:root[data-theme="dark"] body #timecards-page input::placeholder {color:var(--pdl-white);font-style:italic;}
