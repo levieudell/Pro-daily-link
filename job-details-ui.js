@@ -41,6 +41,13 @@
       const label = document.createElement('summary'); label.textContent = spanish ? 'Formularios y seguridad' : 'Forms & safety setup';
       disclosure.append(label, forms); menu.append(disclosure);
     }
+    // Billing belongs to Estimate, not the shared area below every pane.
+    const estimatePane = content.querySelector('[data-project-detail-pane="estimate"]');
+    if (estimatePane) {
+      content.querySelectorAll(':scope > .tm-summary').forEach(node=>estimatePane.append(node));
+      const rates = content.querySelector('[data-pdl-default-rate]')?.closest('section');
+      if(rates) estimatePane.append(rates);
+    }
     let moreOpen = false;
     function sync() {
       const selected = [...tabs.querySelectorAll('[data-project-detail-tab]')].find(button => button.classList.contains('active'));

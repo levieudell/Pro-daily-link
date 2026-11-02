@@ -30,7 +30,7 @@ const executablePath = process.env.PDL_BROWSER_PATH || ['C:/Program Files/Google
     await page.locator('#login button[type=submit]').click();await page.waitForURL('**/app?**');
     await page.waitForFunction(()=>window.pdlWorkspaceStateReady&&projects.length>1);
 
-    await page.evaluate(async()=>{showPage('projects');await openProject(projects[0].id);});
+    await page.evaluate(async()=>{showPage('projects');projects[0].contractType='tm';await openProject(projects[0].id);});
     const dialog=page.locator('#project-detail-modal');
     await page.waitForFunction(()=>!document.querySelector('#project-detail-modal').classList.contains('job-details-loading'));
     fs.mkdirSync('docs/job-details',{recursive:true});
@@ -47,6 +47,31 @@ const executablePath = process.env.PDL_BROWSER_PATH || ['C:/Program Files/Google
         await page.locator('[data-job-more]').click();
 
         assert.equal(await dialog.locator('.job-overview-summary').isVisible(),true);
+        assert.equal(await dialog.locator('.tm-summary').isVisible(),false,'billing summary is not below Overview');
+        assert.equal(await dialog.locator('[data-pdl-default-rate]').isVisible(),false,'rates are not below Overview');
+        await page.locator('[data-overview-card="crew"]').click();
+        assert.equal(await page.locator('#job-card-details').isVisible(),true);
+        await page.locator('[data-overview-add-crew]').click();
+        assert.equal(await page.locator('#assignment-project').inputValue(),String(await page.evaluate(()=>projects[0].id)));
+        assert.equal(await page.locator('#assignment-date').inputValue(),await page.evaluate(()=>companyTodayIso()));
+        await page.locator('#assignment-modal').evaluate(el=>el.close());
+        await page.locator('[data-overview-card="attention"]').click();
+        assert.ok((await page.locator('#job-card-details').innerText()).includes(await page.evaluate(()=>projectHealthDetails(projects[0]).reason)));
+        await page.locator('#job-card-details [data-overview-tab="estimate"]').click();
+        assert.equal(await page.locator('[data-project-detail-pane="estimate"]').isVisible(),true);
+        assert.equal(await dialog.locator('[data-pdl-default-rate]').isVisible(),true);
+        const expectedSummary=await page.evaluate(()=>api(`/api/projects/${projects[0].id}/tm-summary`));
+        const totals=await dialog.locator('.tm-summary-grid strong').allTextContents();
+        assert.deepEqual(totals,[String(expectedSummary.approvedDailies),expectedSummary.laborHours.toLocaleString('en-US'),expectedSummary.laborAmount==null?'Incomplete':'$'+expectedSummary.laborAmount.toLocaleString('en-US'),`${expectedSummary.materialEntries} / ${expectedSummary.equipmentEntries}`]);
+        await page.locator('[data-project-detail-tab="overview"]').click();
+        await page.locator('[data-overview-card="update"]').click();
+        await page.locator('#job-card-details [data-overview-tab="dailies"]').click();
+        assert.equal(await page.locator('[data-office-new-daily]').isVisible(),true);
+        await page.locator('[data-project-detail-tab="overview"]').click();
+        await page.locator('[data-overview-card="milestone"]').click();
+        assert.equal(await page.locator('[data-project-detail-pane="schedule"]').isVisible(),true);
+        await page.locator('[data-project-detail-tab="overview"]').click();
+
         const layout=await dialog.evaluate(el=>{const header=el.querySelector('.modal-header'),close=el.querySelector('.close-button'),body=el.querySelector('#project-detail-content');return{overflow:el.scrollWidth>el.clientWidth+1||body.scrollWidth>body.clientWidth+1,bottom:el.getBoundingClientRect().bottom,height:innerHeight,headerLeft:header.getBoundingClientRect().left-el.getBoundingClientRect().left,headerBorder:getComputedStyle(header).borderBottomColor,headerBg:getComputedStyle(header).backgroundColor,headerColor:getComputedStyle(header).color,closeWidth:close.getBoundingClientRect().width,closeHeight:close.getBoundingClientRect().height};});
         assert.equal(layout.overflow,false);assert.ok(layout.bottom<=layout.height);assert.ok(layout.headerLeft<=2,JSON.stringify(layout));assert.equal(layout.headerBorder,'rgb(255, 102, 0)');assert.equal(layout.headerBg,'rgb(0, 0, 0)');assert.equal(layout.headerColor,'rgb(255, 255, 255)');assert.ok(layout.closeWidth>=48&&layout.closeHeight>=48);
         await dialog.locator('#project-detail-content').evaluate(el=>el.scrollTop=0);
@@ -54,6 +79,8 @@ const executablePath = process.env.PDL_BROWSER_PATH || ['C:/Program Files/Google
         await page.locator('[data-project-detail-tab="dailies"]').click();
         assert.equal(await page.locator('[data-project-detail-pane="dailies"]').isVisible(),true);
         assert.equal(await page.locator('.job-overview-summary').isVisible(),false);
+        assert.equal(await dialog.locator('.tm-summary').isVisible(),false);
+        assert.equal(await dialog.locator('[data-pdl-default-rate]').isVisible(),false);
         await page.locator('[data-project-detail-tab="estimate"]').click();
         assert.equal(await page.locator('[data-project-detail-pane="estimate"]').isVisible(),true);
         await page.screenshot({path:`docs/job-details/estimate-${theme}-${size.width}x${size.height}.png`});
@@ -61,6 +88,8 @@ const executablePath = process.env.PDL_BROWSER_PATH || ['C:/Program Files/Google
           await page.locator('[data-job-more]').click();
           await page.locator(`[data-project-detail-tab="${key}"]`).click();
           assert.equal(await page.locator(`[data-project-detail-pane="${key}"]`).isVisible(),true,key);
+          assert.equal(await dialog.locator('.tm-summary').isVisible(),false,key+' does not show billing');
+          assert.equal(await dialog.locator('[data-pdl-default-rate]').isVisible(),false,key+' does not show rates');
           assert.equal(await page.locator('[data-job-more]').getAttribute('aria-expanded'),'false');
         }
         await page.locator('[data-job-more]').click();
