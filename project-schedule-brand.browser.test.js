@@ -51,6 +51,18 @@ const executablePath = process.env.PDL_BROWSER_PATH || ['C:/Program Files/Google
         await tools.nth(0).locator('.job-date-trigger').first().click();
         const calendar=tools.nth(0).locator('.job-date-calendar').first();
         await page.screenshot({path:`docs/project-schedule-brand/calendar-${theme}-${size.width}x${size.height}.png`});
+        const originalMonth=await calendar.locator('[data-calendar-date]').first().getAttribute('data-calendar-date');
+        await calendar.locator('[data-calendar-month="1"]').click();
+        const nextMonth=await calendar.locator('[data-calendar-date]').first().getAttribute('data-calendar-date');
+        assert.ok(nextMonth>originalMonth,'Next month advances the calendar');
+        await calendar.locator('[data-calendar-month="-1"]').click();
+        assert.equal(await calendar.locator('[data-calendar-date]').first().getAttribute('data-calendar-date'),originalMonth);
+        const lastDay=await calendar.locator('[data-calendar-date]').last().getAttribute('data-calendar-date');
+        await calendar.locator('[data-calendar-date]').last().focus();
+        await page.keyboard.press('ArrowDown');
+        const expectedWeek=new Date(lastDay+'T12:00:00Z');expectedWeek.setUTCDate(expectedWeek.getUTCDate()+7);
+        assert.equal(await page.evaluate(()=>document.activeElement.dataset.calendarDate),expectedWeek.toISOString().slice(0,10),'next week crosses the month boundary');
+        await calendar.locator('[data-calendar-month="-1"]').click();
         await calendar.locator('[data-calendar-date]').nth(10).click();
         const chosen=await page.locator('[data-project-start-date]').inputValue();
         assert.match(chosen,/^\d{4}-\d{2}-11$/);
