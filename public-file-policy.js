@@ -4,7 +4,7 @@ const PUBLIC_FILES=new Set([
   'job-details-ui.js','job-details.css',
   'messages-inbox.js','messages-inbox.css',
   'payroll-export-ui.js','payroll-export.css','payroll-ranges.js','payroll-access.js','pay-schedule.js','pay-schedule-ui.js',
-  'office-dashboard.js','office-dashboard.css',
+  'office-review.js','office-dashboard.js','office-dashboard.css',
   'crew-workspace.js','crew-details-ui.js','crew-details.css','team-members-ui.js','team-members.css','safety-dashboard-ui.js','safety-dashboard-ui.css','platform-safety-ui.js', 'safety-pm-ui.js','safety-pm-ui.css','safety-workspace-ui.js','safety-workspace-ui.css',
   'company-timezone.js','report-work-details.js',
   'schedule-approved-labor.js',

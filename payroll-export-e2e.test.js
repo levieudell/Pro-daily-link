@@ -1,4 +1,12 @@
 'use strict';
+
+// Time approval now keeps pay-period management collapsed on phones.
+async function openTimePayroll(page) {
+  const management=page.locator('#pay-period-panel .time-pay-management');
+  await management.waitFor();
+  if (!(await management.evaluate(el=>el.open))) await management.locator(':scope > summary').click();
+  await page.locator('#pay-period-panel [data-payroll-export-open]').click();
+}
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
@@ -413,7 +421,7 @@ async function main() {
     await assertStickyFooter(page, root);
     await root.locator('[data-payroll-bar-review]').click();assert.equal(await page.locator('#timecard-status').inputValue(),'unapproved');
     const unapproved=await page.evaluate(()=>filteredTimeCards().map(c=>c.status).sort());assert.deepEqual(unapproved,['draft','submitted']);
-    await page.locator('#pay-period-panel [data-payroll-export-open]').click();
+    await openTimePayroll(page);
     const modal=page.locator('#payroll-dialog-content');assert.equal(await modal.locator('[data-payroll-range]').count(),6);
     await checkComponent(page,modal);
     assert.equal(await page.locator('#payroll-export-dialog').evaluate(el=>getComputedStyle(el).borderTopColor),'rgb(110, 110, 110)');
@@ -428,7 +436,7 @@ async function main() {
       await page.locator('#payroll-landing [data-payroll-download="csv"]').waitFor({state:'visible'});
       await assertCustomUnapprovedNotice(page, page.locator('#payroll-landing'));
       await page.evaluate(() => showPage('timecards'));
-      await page.locator('#pay-period-panel [data-payroll-export-open]').click();
+      await openTimePayroll(page);
       await assertCustomUnapprovedNotice(page, page.locator('#payroll-dialog-content'));
       await page.locator('[data-payroll-close]').click();
     }
@@ -454,7 +462,7 @@ async function main() {
         assert.equal(await page.locator('#timecard-from').inputValue(), '2026-10-21');
         assert.equal(await page.locator('#timecard-to').inputValue(), '2026-10-23');
       } else await page.evaluate(() => showPage('timecards'));
-      await page.locator('#pay-period-panel [data-payroll-export-open]').click();
+      await openTimePayroll(page);
       const dialog = page.locator('#payroll-dialog-content');
       await assertChipsHit(page, dialog);
       await dialog.locator('[data-payroll-range="last"]').click();

@@ -72,6 +72,11 @@ const executablePath = process.env.PDL_BROWSER_PATH || ['C:/Program Files/Google
       await PDLSafetyPM.open({projectId:project.id,date,mode:'followup'});
       return {date,id:withHazard.hazards[0].id};
     },result.project);
+    await page.locator('#safety-pm-dialog').getByText('Record source',{exact:true}).click();
+    const source=page.locator('#safety-pm-dialog .safety-v3-followup details').filter({has:page.getByText('Record source',{exact:true})});
+    assert.match(await source.innerText(),/Recorded by/);
+    assert.match(await source.innerText(),/Direct hazard entry/);
+    assert.match(await source.innerText(),/Original action/);
     await page.locator('#safety-pm-dialog').getByText('Recorded in error',{exact:true}).click();
     await page.locator('[data-safety-hazard-void] [name=reason]').fill('Wrong work type. No roof work was reported.');
     await page.locator('[data-safety-hazard-void] button[type=submit]').click();
@@ -81,6 +86,13 @@ const executablePath = process.env.PDL_BROWSER_PATH || ['C:/Program Files/Google
     assert.equal(evidence.day.hazards[0].observation,'Synthetic wrong roof record');
     assert.match(evidence.day.hazards[0].voidReason,/Wrong work type/);
     assert.equal(evidence.openHazards.length,0);
+    await page.locator('#safety-pm-dialog').getByText('Recorded-in-error history',{exact:true}).click();
+    const history=page.locator('#safety-pm-dialog .safety-hazard');
+    assert.match(await history.innerText(),/Original retained for audit/);
+    assert.match(await history.innerText(),/Wrong work type/);
+    assert.equal(await history.locator('[data-safety-hazard-update]').count(),0);
+    assert.equal(await history.locator('.safety-work-stopped').count(),0);
+
     assert.deepEqual(errors,[]);
     console.log('Daily details browser checks passed: expandable line, persistent 25 LF overrun, numeric date, explicit work selection.');
   } finally {if(browser)await browser.close();if(child)child.kill();}

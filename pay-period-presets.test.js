@@ -23,7 +23,7 @@ for(const cutoff of ['',0,28,32,1.5,'abc'])assert.equal(payPresetRange('semimont
 assert.equal(payPresetRange('semimonthly',{month:'2026-02',half:'unknown'}),null);
 assert.equal(payPresetRange('custom',{start:'2026-01-01'}),null);
 assert.equal(payCalendarDate('2028-02-29'),true);assert.equal(payCalendarDate('2026-02-29'),false);
-assert.equal(payRangePreview('2026-03-06','2026-03-12','America/Los_Angeles'),'2026-03-06 through 2026-03-12 (7 days, inclusive) · America/Los_Angeles');
+assert.equal(payRangePreview('2026-03-06','2026-03-12','America/Los_Angeles'),'03/06/2026 through 03/12/2026 (7 days, inclusive) · America/Los_Angeles');
 assert.match(payRangePreview('2026-02-28','2026-02-28','Pacific/Kiritimati'),/1 day, inclusive/);
 assert.match(payRangePreview('2026-02-29','2026-03-01','UTC'),/Choose valid/);
 assert.match(payRangePreview('2026-10-10','2026-10-09','UTC'),/End date/);
