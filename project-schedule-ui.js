@@ -81,6 +81,46 @@ let scheduleView = 'table';
     return chipPick(field, people.map(member => ({ value: Number(member.id), label: member.name })), selected);
   }
 
+  function wireSchedulePickers(pane) {
+    const iso=d=>`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+    pane.querySelectorAll('[data-project-start-date],[data-project-end-date]').forEach(input=>{
+      input.type='hidden';
+      const root=document.createElement('div');root.className='job-date-picker';input.after(root);
+      const trigger=document.createElement('button');trigger.type='button';trigger.className='job-date-trigger';trigger.setAttribute('aria-expanded','false');
+      const calendar=document.createElement('div');calendar.className='job-date-calendar';calendar.hidden=true;root.append(trigger,calendar);
+      const label=input.hasAttribute('data-project-start-date')?'Start date':'Target end';
+      const update=()=>{trigger.textContent=input.value?formatDate(input.value):'Choose date';trigger.setAttribute('aria-label',`${label}: ${trigger.textContent}`);};update();
+      let month;
+      function paint(focusDay){
+        const first=new Date(month.getFullYear(),month.getMonth(),1),last=new Date(month.getFullYear(),month.getMonth()+1,0),offset=(first.getDay()+6)%7;
+        const title=month.toLocaleDateString(projectScheduleLocale(),{month:'long',year:'numeric'});
+        calendar.innerHTML=`<div class="job-calendar-head"><button type="button" data-calendar-month="-1" aria-label="Previous month">‹</button><strong>${escapeHtml(title)}</strong><button type="button" data-calendar-month="1" aria-label="Next month">›</button></div><div class="job-calendar-grid">${['M','T','W','T','F','S','S'].map(day=>`<span aria-hidden="true">${day}</span>`).join('')}${'<span></span>'.repeat(offset)}${Array.from({length:last.getDate()},(_,i)=>{const value=iso(new Date(month.getFullYear(),month.getMonth(),i+1));return `<button type="button" data-calendar-date="${value}" aria-label="${formatDate(value)}" aria-pressed="${input.value===value}">${i+1}</button>`;}).join('')}</div><div class="job-calendar-foot">${input.hasAttribute('data-project-end-date')?'<button type="button" data-calendar-clear>Clear date</button>':''}<button type="button" data-calendar-close>Close</button></div>`;
+        calendar.querySelectorAll('[data-calendar-month]').forEach(button=>button.onclick=()=>{month=new Date(month.getFullYear(),month.getMonth()+Number(button.dataset.calendarMonth),1);paint();calendar.querySelector(`[data-calendar-month="${button.dataset.calendarMonth}"]`).focus();});
+        const close=()=>{calendar.hidden=true;trigger.setAttribute('aria-expanded','false');trigger.focus();};
+        calendar.querySelectorAll('[data-calendar-date]').forEach(button=>button.onclick=()=>{input.value=button.dataset.calendarDate;input.dispatchEvent(new Event('change',{bubbles:true}));update();close();});
+        calendar.querySelector('[data-calendar-close]').onclick=close;
+        const clear=calendar.querySelector('[data-calendar-clear]');if(clear)clear.onclick=()=>{input.value='';update();close();};
+        calendar.onkeydown=event=>{if(event.key==='Escape'){event.preventDefault();event.stopPropagation();close();return;}const value=event.target.dataset.calendarDate;if(!value)return;const delta={ArrowLeft:-1,ArrowRight:1,ArrowUp:-7,ArrowDown:7}[event.key];if(!delta)return;event.preventDefault();const d=new Date(value+'T12:00:00');d.setDate(d.getDate()+delta);month=new Date(d.getFullYear(),d.getMonth(),1);paint(iso(d));};
+        if(focusDay)calendar.querySelector(`[data-calendar-date="${focusDay}"]`)?.focus();
+      }
+      trigger.onclick=()=>{calendar.hidden=!calendar.hidden;trigger.setAttribute('aria-expanded',String(!calendar.hidden));if(!calendar.hidden){month=new Date((input.value || (typeof companyTodayIso==='function'?companyTodayIso():iso(new Date())))+'T12:00:00');month.setDate(1);paint();calendar.scrollIntoView({block:'nearest'});}};
+    });
+    for(const prefix of ['new','edit']){
+      const members=pane.querySelector(`[data-${prefix}-task-members]`),crew=pane.querySelector(`[data-${prefix}-task-crew]`);if(!members)continue;
+      const memberField=members.closest('.schedule-field'),crewField=crew?.closest('.schedule-field');
+      const root=document.createElement('div');root.className='job-assignment-picker schedule-span-6';memberField.before(root);
+      const modes=document.createElement('div');modes.className='job-assignment-modes';modes.setAttribute('role','group');modes.setAttribute('aria-label','Assign by');
+      modes.innerHTML='<button type="button" data-assignment-mode="crew">Crew</button><button type="button" data-assignment-mode="individual">Individual</button>';root.append(modes);if(crewField)root.append(crewField);root.append(memberField);
+      const search=document.createElement('input');search.type='search';search.placeholder='Find a team member';search.setAttribute('aria-label','Find a team member');memberField.querySelector('.schedule-chip-pick')?.before(search);
+      search.oninput=()=>memberField.querySelectorAll('.schedule-chip').forEach(button=>button.hidden=!button.textContent.toLowerCase().includes(search.value.toLowerCase()));
+      const status=document.createElement('p');status.className='job-assignment-status';status.setAttribute('aria-live','polite');root.append(status);
+      let mode=crew?.value?'crew':'individual';
+      function paint(){memberField.hidden=mode!=='individual';if(crewField)crewField.hidden=mode!=='crew';modes.querySelectorAll('button').forEach(button=>button.setAttribute('aria-pressed',String(button.dataset.assignmentMode===mode)));const names=[...members.selectedOptions].filter(option=>option.value).map(option=>option.textContent);status.textContent=mode==='crew'?(crew?.value?`Crew: ${crew.value}`:'Choose a crew.'):names.length?`${names.length} selected: ${names.join(', ')}`:'No one selected yet.';if(mode==='crew'&&!crewField)status.textContent='No crews set up yet. Choose Individual to assign people.';}
+      modes.querySelectorAll('button').forEach(button=>button.onclick=()=>{if(mode===button.dataset.assignmentMode)return;mode=button.dataset.assignmentMode;if(mode==='individual'&&crew)crew.value='';if(mode==='crew'){[...members.options].forEach(option=>option.selected=false);memberField.querySelectorAll('.schedule-chip').forEach(chip=>{chip.classList.remove('is-on');chip.setAttribute('aria-pressed','false');});}paint();});
+      root.addEventListener('change',paint);root.addEventListener('click',event=>{if(event.target.closest('.schedule-chip'))queueMicrotask(paint);});paint();
+    }
+  }
+
   function forecastBanner(project, sorted){
     if (!sorted.length) return '';
     const ends = sorted.map(t => t.endDate).filter(Boolean).sort();
@@ -210,6 +250,7 @@ function renderSchedulePane(pane, project, tasks, editingId){
     const panel=pane.querySelector('#project-schedule-view-panel');
     panel.setAttribute('aria-live','polite');
     wireSchedulePane(pane, project, tasks, editingId);
+    wireSchedulePickers(pane);
   }
 
   function selectedValues(select){ return [...select.options].filter(o => o.selected && o.value !== '').map(o => Number(o.value)); }

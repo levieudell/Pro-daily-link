@@ -126,3 +126,33 @@
  #project-detail-modal.job-details .project-schedule-forecast {margin:6px 0;padding:8px;font-size:12px;}
  #project-detail-modal.job-details .job-schedule-tools {margin:6px 0;}
 }
+
+#project-detail-modal.job-details .job-date-trigger {width:100%;text-align:left;padding:12px;font-size:16px;font-weight:700;background:var(--job-paper);color:var(--job-text);border:1px solid #6E6E6E;border-radius:8px;}
+#project-detail-modal.job-details .job-date-calendar {margin-top:8px;padding:8px;border:1px solid #6E6E6E;border-radius:8px;background:var(--job-paper);}
+#project-detail-modal.job-details .job-calendar-head {display:flex;align-items:center;justify-content:space-between;gap:4px;}
+#project-detail-modal.job-details .job-calendar-head button {width:48px;}
+#project-detail-modal.job-details .job-calendar-grid {display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:0;text-align:center;}
+#project-detail-modal.job-details .job-calendar-grid button {padding:0;min-width:0;min-height:48px;border:0;background:transparent;color:var(--job-text);font-weight:700;}
+#project-detail-modal.job-details .job-calendar-grid button[aria-pressed="true"] {background:#FF6600!important;color:#000000!important;border-radius:6px;}
+#project-detail-modal.job-details .job-calendar-foot {display:flex;justify-content:space-between;gap:8px;}
+#project-detail-modal.job-details .job-assignment-picker {grid-column:1/-1;min-width:0;border-top:1px solid #6E6E6E;padding-top:12px;}
+#project-detail-modal.job-details .job-assignment-modes {display:flex;gap:4px;margin-bottom:12px;}
+#project-detail-modal.job-details .job-assignment-modes button {flex:1;padding:10px;border:1px solid #6E6E6E;background:var(--job-paper);color:var(--job-text);}
+#project-detail-modal.job-details .job-assignment-modes button[aria-pressed="true"] {background:#FF6600!important;color:#000000!important;}
+#project-detail-modal.job-details .job-assignment-picker .schedule-chip-row {max-height:192px;overflow-y:auto;margin-top:8px;}
+#project-detail-modal.job-details .job-assignment-status {font-size:13px;line-height:1.4;color:var(--job-text);}
+@media(max-width:600px){#project-detail-modal.job-details [data-project-dates-form] {padding:8px;}#project-detail-modal.job-details .job-date-calendar {padding:0;border:0;}}
+
+#project-detail-modal.job-details .job-calendar-head button,
+#project-detail-modal.job-details .job-calendar-foot button {background:var(--job-paper)!important;color:var(--job-text)!important;border:1px solid #6E6E6E!important;border-radius:8px;font-weight:700;}
+#project-detail-modal.job-details .job-calendar-foot {margin-top:8px;}
+#project-detail-modal.job-details .job-calendar-foot button {flex:1;}
+#project-detail-modal.job-details .job-assignment-picker input[type="search"] {width:100%;min-height:48px;padding:12px;border:1px solid #6E6E6E!important;border-radius:8px;}
+:root[data-theme] #project-detail-modal.job-details .job-assignment-picker button.schedule-chip.is-on {background:#FF6600!important;background-image:none!important;color:#000000!important;border:1px solid #FF6600!important;}
+#project-detail-modal.job-details .job-assignment-modes button {border-radius:8px;font-weight:700;}
+@media(max-width:600px){
+ #project-detail-modal.job-details .job-date-calendar {margin-inline:-10px;}
+ #project-detail-modal.job-details .schedule-add-actions {display:flex;flex-direction:column;align-items:stretch;gap:8px;}
+ #project-detail-modal.job-details .schedule-add-actions button {width:100%;white-space:nowrap;}
+}
+#project-detail-modal.job-details .job-assignment-picker .schedule-chip {transition:none!important;}
