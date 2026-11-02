@@ -629,3 +629,15 @@ dialog#personal-clock-modal{padding:0;width:min(480px,calc(100vw - 24px));max-he
  #schedule-page .schedule-unassigned-body {max-height:320px;}
 }
 #schedule-page .schedule-unassigned .schedule-task-assign :is(select,input,label,button) {width:100%;max-width:none;min-width:0;}
+#schedule-page .schedule-task-expand {display:none;}
+@media(max-width:900px){
+ #schedule-page .schedule-unassigned-head {display:none;}
+ #schedule-page .schedule-unassigned-body {padding:8px;max-height:320px;}
+ #schedule-page .schedule-unassigned-list {gap:8px;}
+ #schedule-page .schedule-unassigned .schedule-task-chip {padding:10px;}
+ #schedule-page .schedule-unassigned .schedule-task-chip-main {gap:4px;}
+ #schedule-page .schedule-unassigned .schedule-task-chip-main strong {font-size:15px;line-height:1.3;}
+ #schedule-page .schedule-unassigned .schedule-task-chip-main small {font-size:12px;line-height:1.4;}
+ #schedule-page .schedule-task-expand {display:block;margin-top:8px;min-height:48px;border:1px solid #6E6E6E;border-radius:6px;font-weight:700;}
+ #schedule-page .schedule-task-expand[aria-expanded="false"]+.schedule-task-assign {display:none;}
+}

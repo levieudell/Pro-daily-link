@@ -510,6 +510,7 @@ function renderSchedulePane(pane, project, tasks, editingId){
         document.querySelectorAll('.drag-over').forEach(element => element.classList.remove('drag-over'));
       };
     });
+    section.querySelectorAll('.schedule-task-expand').forEach(button=>button.onclick=()=>{const open=button.getAttribute('aria-expanded')!=='true';button.setAttribute('aria-expanded',String(open));button.textContent=open?'Close assignment options':'Assign task';});
     section.querySelectorAll('[data-task-assign-go]').forEach(button => button.onclick = () => {
       const select = section.querySelector(`[data-task-assign-target="${button.dataset.taskAssignGo}"]`);
       const dateInput = section.querySelector(`[data-task-assign-date="${button.dataset.taskAssignGo}"]`);
@@ -540,7 +541,7 @@ function renderSchedulePane(pane, project, tasks, editingId){
       const targetOptions = `${targets.crews.length ? `<optgroup label="Crews">${targets.crews.map(option => `<option value="${escapeHtml(option.value)}">${escapeHtml(option.label)}</option>`).join('')}</optgroup>` : ''}${targets.people.length ? `<optgroup label="People">${targets.people.map(option => `<option value="${escapeHtml(option.value)}">${escapeHtml(option.label)}</option>`).join('')}</optgroup>` : ''}`;
       return `<div class="schedule-task-chip" draggable="${editable}" data-schedule-task="${Number(task.id)}" title="${escapeHtml(label)}">
         <div class="schedule-task-chip-main"><b>${escapeHtml(project && project.code ? project.code : 'JOB')}</b> <strong>${escapeHtml(task.name)}</strong><small>${escapeHtml(project ? project.name : '')} · ${escapeHtml(formatDate(task.startDate))} – ${escapeHtml(formatDate(task.endDate))} · ${Number(task.durationDays)}d</small></div>
-        ${editable && (targets.crews.length || targets.people.length) ? `<div class="schedule-task-assign"><select data-task-assign-target="${Number(task.id)}" aria-label="Assign ${escapeHtml(task.name)} to"><option value="">Choose a crew or person</option>${targetOptions}</select><label class="schedule-task-assign-date"><span>Start date</span><input type="date" data-task-assign-date="${Number(task.id)}" value="${escapeHtml(assignDate)}" min="${escapeHtml(task.startDate)}" max="${escapeHtml(task.endDate)}" aria-label="Start date"></label><button type="button" class="secondary small" data-task-assign-go="${Number(task.id)}">Assign</button></div>` : ''}
+        ${editable && (targets.crews.length || targets.people.length) ? `<button type="button" class="schedule-task-expand" aria-expanded="false" aria-controls="task-assign-${Number(task.id)}">Assign task</button><div class="schedule-task-assign" id="task-assign-${Number(task.id)}"><select data-task-assign-target="${Number(task.id)}" aria-label="Assign ${escapeHtml(task.name)} to"><option value="">Choose a crew or person</option>${targetOptions}</select><label class="schedule-task-assign-date"><span>Start date</span><input type="date" data-task-assign-date="${Number(task.id)}" value="${escapeHtml(assignDate)}" min="${escapeHtml(task.startDate)}" max="${escapeHtml(task.endDate)}" aria-label="Start date"></label><button type="button" class="secondary small" data-task-assign-go="${Number(task.id)}">Assign</button></div>` : ''}
       </div>`;
     };
     let workspace=board.closest('.schedule-workspace');
