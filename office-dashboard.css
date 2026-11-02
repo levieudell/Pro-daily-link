@@ -585,3 +585,47 @@ dialog#personal-clock-modal{padding:0;width:min(480px,calc(100vw - 24px));max-he
 #project-detail-modal .project-health-links button {min-height:48px;border:1px solid var(--pdl-gray,#6E6E6E);background:var(--pdl-black,#000000);color:var(--pdl-white,#FFFFFF);}
 
 #project-cards .project-card-actions .status.warning, #project-table .status.warning {background:var(--pdl-orange,#FF6600)!important;color:var(--pdl-black,#000000)!important;}
+/* Office Schedule brand: scoped so other workspaces retain their own styling. */
+:root[data-theme] body #schedule-page {--schedule-paper:#FFFFFF;--schedule-ink:#000000;--line:#6E6E6E;--muted:#6E6E6E;color:var(--schedule-ink);background:#F7F5F0;font-family:Inter,sans-serif;}
+:root[data-theme="dark"] body #schedule-page {--schedule-paper:#000000;--schedule-ink:#FFFFFF;--muted:#FFFFFF;background:#000000;}
+:root[data-theme] body #schedule-page :is(h1,h2,h3) {font-family:Anton,sans-serif;font-weight:400;}
+:root[data-theme] body #schedule-page :is(.schedule-command-bar,.schedule-filters,.schedule-summary article,.schedule-board,.schedule-cell,.schedule-crew-row,.schedule-month-day,.schedule-month-head,.schedule-unassigned,.schedule-task-chip,.assignment,.schedule-agenda-assignment,.month-assignment,.schedule-event,.schedule-leave,.schedule-unavailable-summary) {background:var(--schedule-paper)!important;color:var(--schedule-ink)!important;border-color:#6E6E6E!important;box-shadow:none;}
+:root[data-theme] body #schedule-page :is(button,select,input,summary) {font-family:Inter,sans-serif;min-height:48px;}
+:root[data-theme] body #schedule-page :is(button,select,input,.schedule-more>summary) {background:var(--schedule-paper);color:var(--schedule-ink);border-color:#6E6E6E!important;box-shadow:none;}
+:root[data-theme] body #schedule-page :is(small,.assignment-hours,.assignment-activity,.assignment-ack,.schedule-empty,.schedule-task-chip small,.schedule-crew-row span,.schedule-summary span,.avatar,.schedule-event) {color:var(--schedule-ink)!important;}
+:root[data-theme] body #schedule-page :is(.avatar,.assignment-ack,.schedule-view-switcher,.schedule-task-chip-tag) {background:var(--schedule-paper)!important;border-color:#6E6E6E!important;color:var(--schedule-ink)!important;}
+:root[data-theme] body #schedule-page :is(button.primary,.schedule-view-switcher button.active,.schedule-filter-toggle.active) {background:#FF6600!important;color:#000000!important;border-color:#FF6600!important;}
+:root[data-theme] body #schedule-page :is(.assignment,.schedule-task-chip,.month-assignment) {border-left:3px solid #FF6600!important;cursor:grab;}
+:root[data-theme] body #schedule-page .drag-over {outline:3px solid #FF6600!important;outline-offset:-3px;background:var(--schedule-paper)!important;}
+:root[data-theme] body #schedule-page .dragging {opacity:.5;cursor:grabbing;}
+:root[data-theme] body #schedule-page .schedule-cell.today {box-shadow:inset 0 3px #FF6600;}
+:root[data-theme] body #schedule-page :is(button,input,select,summary,[tabindex]):focus-visible {outline:2px solid #FF6600!important;outline-offset:2px!important;box-shadow:none!important;}
+
+:root[data-theme] body #schedule-page :is(h1,h2,h3,.schedule-crew-row strong,.schedule-unassigned-empty,.schedule-unassigned-head p) {color:var(--schedule-ink)!important;}
+:root[data-theme] body #schedule-page .schedule-task-chip-main b {background:#000000!important;color:#FFFFFF!important;}
+:root[data-theme] body #schedule-page :is(button.secondary,.schedule-more>summary) {background:var(--schedule-paper)!important;color:var(--schedule-ink)!important;border:1px solid #6E6E6E!important;}
+:root[data-theme] body #schedule-page :is(.schedule-cell,.schedule-crew-row,.assignment,.schedule-command-bar,button,summary) {transition:none;}
+/* Keep unassigned work beside the board instead of below the last crew. */
+#schedule-page .schedule-workspace {display:grid;grid-template-columns:minmax(0,1fr);gap:16px;align-items:start;min-width:0;}
+#schedule-page .schedule-workspace.has-unassigned {grid-template-columns:minmax(0,1fr) 156px;}
+#schedule-page .schedule-workspace.unassigned-open {grid-template-columns:minmax(0,1fr) 300px;}
+#schedule-page .schedule-workspace>#schedule-board {min-width:0;margin:0;overflow-x:auto;}
+#schedule-page .schedule-workspace>.schedule-unassigned {position:sticky;top:72px;min-width:0;margin:0;padding:0;border:1px solid #6E6E6E;border-radius:8px;overflow:hidden;}
+#schedule-page .schedule-unassigned>summary {min-height:48px;padding:14px 12px;box-sizing:border-box;cursor:pointer;font-weight:700;white-space:nowrap;}
+#schedule-page .schedule-unassigned>summary span {display:inline-block;margin-left:4px;}
+#schedule-page .schedule-unassigned-body {max-height:calc(100dvh - 150px);overflow-y:auto;padding:12px;border-top:1px solid #6E6E6E;}
+#schedule-page .schedule-unassigned-head {display:block;}
+#schedule-page .schedule-unassigned-head h3 {font:400 20px/1.2 Anton,sans-serif;}
+#schedule-page .schedule-unassigned-head p {font-size:13px;line-height:1.4;margin-top:8px;}
+#schedule-page .schedule-unassigned-list {display:grid;grid-template-columns:minmax(0,1fr);gap:12px;}
+#schedule-page .schedule-unassigned .schedule-task-chip {min-width:0;width:100%;box-sizing:border-box;padding:12px;display:block;}
+#schedule-page .schedule-unassigned .schedule-task-chip-main {display:grid;gap:6px;}
+#schedule-page .schedule-unassigned .schedule-task-chip-main b {justify-self:start;}
+#schedule-page .schedule-unassigned .schedule-task-assign {display:grid;grid-template-columns:minmax(0,1fr);gap:8px;margin-top:12px;}
+#schedule-page .schedule-unassigned :is(select,input,button) {width:100%;min-width:0;box-sizing:border-box;}
+@media(max-width:900px){
+ #schedule-page .schedule-workspace.has-unassigned {grid-template-columns:minmax(0,1fr);}
+ #schedule-page .schedule-workspace>.schedule-unassigned {position:static;grid-row:1;}
+ #schedule-page .schedule-unassigned-body {max-height:320px;}
+}
+#schedule-page .schedule-unassigned .schedule-task-assign :is(select,input,label,button) {width:100%;max-width:none;min-width:0;}
