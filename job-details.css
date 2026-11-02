@@ -214,3 +214,7 @@
  #project-detail-modal.job-details .project-schedule-actions button {flex:1;min-height:48px;background:var(--job-paper)!important;color:var(--job-text)!important;border:1px solid #6E6E6E!important;}
 }
 #project-detail-modal.job-details .project-schedule-table small {color:var(--job-text)!important;}
+#project-detail-modal.job-details .job-member-picker {margin:8px 0;border:1px solid #6E6E6E;border-radius:8px;background:var(--job-paper);color:var(--job-text);}
+#project-detail-modal.job-details .job-member-picker>summary {min-height:48px;box-sizing:border-box;padding:14px 12px;cursor:pointer;font:700 15px/1.4 Inter,sans-serif;}
+#project-detail-modal.job-details .job-member-picker[open]>.job-member-list {padding:0 12px 12px;}
+#project-detail-modal.job-details .job-member-done {width:100%;min-height:48px;margin-top:12px;background:#FF6600!important;color:#000000!important;border:1px solid #000000!important;border-radius:6px;font-weight:700;}

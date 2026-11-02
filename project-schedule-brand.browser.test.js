@@ -46,7 +46,7 @@ const executablePath = process.env.PDL_BROWSER_PATH || ['C:/Program Files/Google
         assert.equal(await page.locator('[data-new-task-name]').isVisible(),false);
         assert.equal(await page.locator('[data-project-start-date]').isVisible(),false);
         const tools=pane.locator('.job-schedule-editor');
-        await tools.nth(0).locator('summary').click();
+        await tools.nth(0).locator(':scope > summary').click();
         assert.equal(await page.locator('[data-project-start-date]').getAttribute('type'),'hidden');
         await tools.nth(0).locator('.job-date-trigger').first().click();
         const calendar=tools.nth(0).locator('.job-date-calendar').first();
@@ -54,16 +54,16 @@ const executablePath = process.env.PDL_BROWSER_PATH || ['C:/Program Files/Google
         await calendar.locator('[data-calendar-date]').nth(10).click();
         const chosen=await page.locator('[data-project-start-date]').inputValue();
         assert.match(chosen,/^\d{4}-\d{2}-11$/);
-        await tools.nth(0).locator('summary').click();
+        await tools.nth(0).locator(':scope > summary').click();
 
-        await tools.nth(1).locator('summary').click();await page.locator('[data-new-task-name]').fill('Keep this draft');
+        await tools.nth(1).locator(':scope > summary').click();await page.locator('[data-new-task-name]').fill('Keep this draft');
         const picker=tools.nth(1).locator('.job-assignment-picker');
         await picker.locator('[data-assignment-mode="crew"]').click();
         assert.equal(await picker.locator('[data-new-task-members]').isVisible(),false);
         await picker.locator('[data-assignment-mode="individual"]').click();
         assert.equal(await picker.locator('input[type="search"]').isVisible(),true);
         await picker.locator('.schedule-chip').first().click();
-        assert.match(await picker.locator('.job-assignment-status').innerText(),/1 selected/);
+        assert.match(await picker.locator('.job-member-picker summary').innerText(),/1 team member selected/);
         const listRow=picker.locator('.schedule-chip').first();
         const listWidth=await listRow.evaluate(el=>({row:el.getBoundingClientRect().width,list:el.parentElement.clientWidth,height:el.getBoundingClientRect().height}));
         assert.ok(Math.abs(listWidth.row-listWidth.list)<3&&listWidth.height>=48,'members use full-width tappable rows');
@@ -72,6 +72,10 @@ const executablePath = process.env.PDL_BROWSER_PATH || ['C:/Program Files/Google
         await picker.locator('input[type="search"]').fill('');
         assert.equal(await listRow.getAttribute('aria-pressed'),'true','search retains selection');
         const selected=await picker.locator('.schedule-chip.is-on').first().evaluate(el=>({bg:getComputedStyle(el).backgroundColor,color:getComputedStyle(el).color}));assert.deepEqual(selected,{bg:'rgb(255, 102, 0)',color:'rgb(0, 0, 0)'});
+        await picker.locator('.job-member-done').click();
+        assert.equal(await picker.locator('.schedule-chip').first().isVisible(),false,'names stay hidden after Done');
+        await picker.locator('.job-member-picker summary').click();
+        assert.equal(await picker.locator('.schedule-chip').first().getAttribute('aria-pressed'),'true','reopening preserves picks');
         await page.screenshot({path:`docs/project-schedule-brand/people-${theme}-${size.width}x${size.height}.png`});
 
         await page.locator('[data-schedule-view="timeline"]').click();
@@ -90,13 +94,13 @@ const executablePath = process.env.PDL_BROWSER_PATH || ['C:/Program Files/Google
         await pane.locator('[data-timeline-zoom="in"]').click();
         assert.equal(await chart.evaluate(el=>el.style.getPropertyValue('--timeline-day-width')),'80px','zoom increases day width');
         await pane.locator('[data-timeline-scroll="1"]').click();
-        if(await chart.evaluate(el=>el.scrollWidth>el.clientWidth))await page.waitForFunction(()=>document.querySelector('[data-schedule-gantt]').scrollLeft>0);
+        if(await chart.evaluate(el=>el.scrollWidth>el.clientWidth))await page.waitForFunction(()=>{const el=document.querySelector('[data-schedule-gantt]');return Math.abs(el.scrollLeft-Math.min(560,el.scrollWidth-el.clientWidth))<2;});
         const after=await chart.evaluate(el=>({label:el.querySelector('.gantt-row-label').getBoundingClientRect().left,scroll:el.scrollLeft}));
         assert.ok(Math.abs(after.label-before.label)<2,'task labels remain pinned');
         await chart.evaluate(el=>el.scrollLeft=0);
         await page.screenshot({path:`docs/project-schedule-brand/timeline-${theme}-${size.width}x${size.height}.png`});
-        await tools.nth(1).locator('summary').click();assert.equal(await page.locator('[data-new-task-name]').inputValue(),'Keep this draft');
-        await tools.nth(1).locator('summary').click();
+        await tools.nth(1).locator(':scope > summary').click();assert.equal(await page.locator('[data-new-task-name]').inputValue(),'Keep this draft');
+        await tools.nth(1).locator(':scope > summary').click();
         await page.locator('[data-schedule-view="table"]').click();assert.equal(await page.locator('.project-schedule-table').isVisible(),true);
         if(size.width===390){const card=await pane.locator('[data-schedule-task-row]').first().evaluate(el=>({display:getComputedStyle(el).display,width:el.getBoundingClientRect().width,cell:el.children[3].getBoundingClientRect().width}));assert.equal(card.display,'block');assert.ok(card.cell>250,'date text has a readable card width');}
 
@@ -104,12 +108,12 @@ const executablePath = process.env.PDL_BROWSER_PATH || ['C:/Program Files/Google
       }
     }
     await page.setViewportSize({width:390,height:844});
-    await page.locator('.job-schedule-editor').nth(0).locator('summary').click();
+    await page.locator('.job-schedule-editor').nth(0).locator(':scope > summary').click();
     const chosenDate=await page.locator('[data-project-start-date]').inputValue();
     const dateSaved=page.waitForResponse(r=>r.url().endsWith(`/api/projects/${pid}`)&&r.request().method()==='PATCH');
     await page.locator('[data-save-project-dates]').click();assert.equal((await dateSaved).ok(),true);
     await page.waitForFunction(value=>projects[0].startDate===value,chosenDate);
-    await page.locator('.job-schedule-editor').nth(1).locator('summary').click();
+    await page.locator('.job-schedule-editor').nth(1).locator(':scope > summary').click();
     await page.locator('[data-new-task-name]').fill('Backfill');
     const saved=page.waitForResponse(r=>r.url().endsWith('/tasks')&&r.request().method()==='POST');
     await page.locator('[data-add-task]').click();assert.equal((await saved).ok(),true);
@@ -118,4 +122,5 @@ const executablePath = process.env.PDL_BROWSER_PATH || ['C:/Program Files/Google
     console.log('Schedule brand browser passed: immediate table/timeline, preserved drafts, real task save, brand toggle, contained scrolling, phone/desktop themes.');
   }finally{if(browser)await browser.close();if(child)child.kill();}
 })().catch(error=>{console.error(error);process.exitCode=1;});
+
 
