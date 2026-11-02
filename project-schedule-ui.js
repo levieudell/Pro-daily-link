@@ -401,7 +401,7 @@ function renderSchedulePane(pane, project, tasks, editingId){
   // on touch screens) and the server writes daily assignments for the rest of
   // the task. Chips intentionally carry no data-assignment attribute so the
   // board's assignment wiring never confuses a task with an assignment row.
-  let laneTasksCache = null, laneTasksFetchedAt = 0, laneSequence = 0, draggedTaskId = null, laneDropWired = false, laneTouchAttached = false, renderScheduleWithLane = null, laneVisibleFirstDay = '';
+  let laneTasksCache = null, laneTasksFetchedAt = 0, laneSequence = 0, draggedTaskId = null, laneDropWired = false, laneTouchAttached = false, renderScheduleWithLane = null, laneVisibleFirstDay = '', unassignedOpen = true;
 
   function canAssignTasks(){ return typeof canManageSchedule === 'function' && canManageSchedule(); }
 
@@ -477,7 +477,7 @@ function renderSchedulePane(pane, project, tasks, editingId){
     } catch (error) { /* a stale lane beats an empty one */ }
   }
 
-  function removeLane(){ document.querySelectorAll('.schedule-unassigned').forEach(element => element.remove()); }
+  function removeLane(){ document.querySelectorAll('.schedule-unassigned').forEach(element => {unassignedOpen=element.open;element.remove();});document.querySelector('.schedule-workspace')?.classList.remove('has-unassigned','unassigned-open'); }
 
   function wireLaneChips(section){
     if (canAssignTasks() && !laneDropWired) {
@@ -543,11 +543,16 @@ function renderSchedulePane(pane, project, tasks, editingId){
         ${editable && (targets.crews.length || targets.people.length) ? `<div class="schedule-task-assign"><select data-task-assign-target="${Number(task.id)}" aria-label="Assign ${escapeHtml(task.name)} to"><option value="">Choose a crew or person</option>${targetOptions}</select><label class="schedule-task-assign-date"><span>Start date</span><input type="date" data-task-assign-date="${Number(task.id)}" value="${escapeHtml(assignDate)}" min="${escapeHtml(task.startDate)}" max="${escapeHtml(task.endDate)}" aria-label="Start date"></label><button type="button" class="secondary small" data-task-assign-go="${Number(task.id)}">Assign</button></div>` : ''}
       </div>`;
     };
-    board.insertAdjacentHTML('afterend', `<section class="schedule-unassigned" aria-label="Unassigned project work">
+    let workspace=board.closest('.schedule-workspace');
+    if(!workspace){workspace=document.createElement('div');workspace.className='schedule-workspace';board.before(workspace);workspace.append(board);}
+    workspace.classList.add('has-unassigned');workspace.classList.toggle('unassigned-open',unassignedOpen);
+    board.insertAdjacentHTML('afterend', `<details class="schedule-unassigned" ${unassignedOpen?'open':''} aria-label="Unassigned project work"><summary>Unassigned <span>${tasks.length}</span></summary><div class="schedule-unassigned-body">
       <div class="schedule-unassigned-head"><h3>Unassigned project work</h3><p>${tasks.length ? (editable ? 'Drag a task onto someone’s day — or choose a crew or person here.' : 'Waiting for the office to assign a crew.') : 'Every scheduled task has someone on it.'}</p></div>
       <div class="schedule-unassigned-list">${tasks.length ? tasks.map(chip).join('') : '<p class="schedule-unassigned-empty">Nothing waiting for a crew.</p>'}</div>
-    </section>`);
-    wireLaneChips(document.querySelector('.schedule-unassigned'));
+    </div></details>`);
+    const sidebar=workspace.querySelector('.schedule-unassigned');
+    sidebar.addEventListener('toggle',()=>{if(!sidebar.isConnected)return;unassignedOpen=sidebar.open;workspace.classList.toggle('unassigned-open',unassignedOpen);});
+    wireLaneChips(sidebar);
   }
 
   function wrapRenderSchedule(){

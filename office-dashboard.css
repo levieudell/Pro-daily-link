@@ -605,3 +605,27 @@ dialog#personal-clock-modal{padding:0;width:min(480px,calc(100vw - 24px));max-he
 :root[data-theme] body #schedule-page .schedule-task-chip-main b {background:#000000!important;color:#FFFFFF!important;}
 :root[data-theme] body #schedule-page :is(button.secondary,.schedule-more>summary) {background:var(--schedule-paper)!important;color:var(--schedule-ink)!important;border:1px solid #6E6E6E!important;}
 :root[data-theme] body #schedule-page :is(.schedule-cell,.schedule-crew-row,.assignment,.schedule-command-bar,button,summary) {transition:none;}
+/* Keep unassigned work beside the board instead of below the last crew. */
+#schedule-page .schedule-workspace {display:grid;grid-template-columns:minmax(0,1fr);gap:16px;align-items:start;min-width:0;}
+#schedule-page .schedule-workspace.has-unassigned {grid-template-columns:minmax(0,1fr) 156px;}
+#schedule-page .schedule-workspace.unassigned-open {grid-template-columns:minmax(0,1fr) 300px;}
+#schedule-page .schedule-workspace>#schedule-board {min-width:0;margin:0;overflow-x:auto;}
+#schedule-page .schedule-workspace>.schedule-unassigned {position:sticky;top:72px;min-width:0;margin:0;padding:0;border:1px solid #6E6E6E;border-radius:8px;overflow:hidden;}
+#schedule-page .schedule-unassigned>summary {min-height:48px;padding:14px 12px;box-sizing:border-box;cursor:pointer;font-weight:700;white-space:nowrap;}
+#schedule-page .schedule-unassigned>summary span {display:inline-block;margin-left:4px;}
+#schedule-page .schedule-unassigned-body {max-height:calc(100dvh - 150px);overflow-y:auto;padding:12px;border-top:1px solid #6E6E6E;}
+#schedule-page .schedule-unassigned-head {display:block;}
+#schedule-page .schedule-unassigned-head h3 {font:400 20px/1.2 Anton,sans-serif;}
+#schedule-page .schedule-unassigned-head p {font-size:13px;line-height:1.4;margin-top:8px;}
+#schedule-page .schedule-unassigned-list {display:grid;grid-template-columns:minmax(0,1fr);gap:12px;}
+#schedule-page .schedule-unassigned .schedule-task-chip {min-width:0;width:100%;box-sizing:border-box;padding:12px;display:block;}
+#schedule-page .schedule-unassigned .schedule-task-chip-main {display:grid;gap:6px;}
+#schedule-page .schedule-unassigned .schedule-task-chip-main b {justify-self:start;}
+#schedule-page .schedule-unassigned .schedule-task-assign {display:grid;grid-template-columns:minmax(0,1fr);gap:8px;margin-top:12px;}
+#schedule-page .schedule-unassigned :is(select,input,button) {width:100%;min-width:0;box-sizing:border-box;}
+@media(max-width:900px){
+ #schedule-page .schedule-workspace.has-unassigned {grid-template-columns:minmax(0,1fr);}
+ #schedule-page .schedule-workspace>.schedule-unassigned {position:static;grid-row:1;}
+ #schedule-page .schedule-unassigned-body {max-height:320px;}
+}
+#schedule-page .schedule-unassigned .schedule-task-assign :is(select,input,label,button) {width:100%;max-width:none;min-width:0;}
