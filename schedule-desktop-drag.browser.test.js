@@ -48,6 +48,23 @@ const executablePath = process.env.PDL_BROWSER_PATH || ['C:/Program Files/Google
     await chip.waitFor();
     fs.mkdirSync('docs/schedule-sidebar',{recursive:true});
     for(const theme of ['light','dark']){await page.evaluate(theme=>document.documentElement.dataset.theme=theme,theme);await page.screenshot({path:`docs/schedule-sidebar/${theme}-1280.png`});}
+    await page.setViewportSize({width:390,height:844});
+    await page.evaluate(()=>setNavigationOpen(false));await page.waitForTimeout(300);
+    fs.mkdirSync('docs/compact-unassigned',{recursive:true});
+    for(const theme of ['light','dark']){
+      await page.evaluate(theme=>document.documentElement.dataset.theme=theme,theme);
+      const toggle=chip.locator('.schedule-task-expand'),select=chip.locator('[data-task-assign-target]');
+      assert.equal(await select.isVisible(),false,'phone controls start tucked away');
+      assert.ok(await chip.evaluate(el=>el.getBoundingClientRect().height)<=210,'phone task card is compact');
+      await chip.scrollIntoViewIfNeeded();await page.screenshot({path:`docs/compact-unassigned/${theme}-390.png`});
+      await toggle.click();assert.equal(await select.isVisible(),true);
+      const value=await select.locator('option').nth(1).getAttribute('value');await select.selectOption(value);
+      await toggle.click();assert.equal(await select.isVisible(),false);await toggle.click();assert.equal(await select.inputValue(),value,'collapse preserves selected person or crew');
+      await select.selectOption('');await toggle.click();
+    }
+    await page.setViewportSize({width:1280,height:800});
+    await page.evaluate(()=>window.scrollTo(0,0));await page.waitForTimeout(300);
+    assert.equal(await chip.locator('[data-task-assign-target]').isVisible(),true,'desktop controls remain visible');
     const crew=page.locator('[data-schedule-crew-drop]').first();
     assert.equal(await crew.evaluate(el=>typeof el.ondragover),'function','new crew rows have drop handlers');
     const assigned=page.waitForResponse(r=>r.url().includes(`/project-tasks/${taskId}/assign`)&&r.request().method()==='POST');
@@ -85,3 +102,4 @@ const executablePath = process.env.PDL_BROWSER_PATH || ['C:/Program Files/Google
     assert.deepEqual(errors,[]);console.log('Schedule desktop drag and brand: passed');
   }finally{if(browser)await browser.close();if(child)child.kill();}
 })().catch(error=>{console.error(error);process.exitCode=1;});
+
