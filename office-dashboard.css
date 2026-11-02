@@ -708,3 +708,22 @@ dialog#personal-clock-modal{padding:0;width:min(480px,calc(100vw - 24px));max-he
 :root[data-theme] body #timecards-page .page-heading p {color:var(--text-primary)!important;}
 :root[data-theme] body #timecards-page input::placeholder {color:var(--pdl-gray);opacity:1;font-weight:400;}
 :root[data-theme="dark"] body #timecards-page input::placeholder {color:var(--pdl-white);font-style:italic;}
+
+/* One shared daily detail popup, independent of the page underneath. */
+#daily-details-modal {width:min(900px,calc(100vw - 24px));max-height:calc(100dvh - 32px);padding:0;overflow:hidden;background:var(--pdl-offwhite);color:var(--text-primary);border:1px solid var(--pdl-gray);}
+#daily-details-modal[open] {display:flex;flex-direction:column;}
+#daily-details-modal .modal-header {flex:none;margin:0;padding:12px 16px;background:var(--pdl-black);color:var(--pdl-white);border-bottom:3px solid var(--pdl-orange);}
+#daily-details-modal h2 {font-family:Anton,sans-serif;}
+#daily-details-modal .close-button {width:48px;height:48px;color:var(--pdl-white);background:var(--pdl-black);border:1px solid var(--pdl-gray);}
+#daily-details-modal .daily-details-body {min-height:0;overflow-y:auto;overscroll-behavior:contain;padding:16px;}
+#daily-details-modal #report-detail {display:block;margin:0;border:0;padding:0;}
+#reports-page .report-list-item.active::after {content:none;}
+
+:root[data-theme="dark"] #daily-details-modal {background:var(--pdl-black);}
+
+:root[data-theme] body #daily-details-modal {background:var(--surface-canvas)!important;border-color:var(--pdl-gray)!important;}
+:root[data-theme] body #daily-details-modal .modal-header {background:var(--pdl-black)!important;color:var(--pdl-white)!important;border-bottom:3px solid var(--pdl-orange)!important;}
+:root[data-theme] body #daily-details-modal .close-button {background:var(--pdl-black)!important;color:var(--pdl-white)!important;border:1px solid var(--pdl-gray)!important;}
+:root[data-theme] body #daily-details-modal .report-status-review {background:var(--pdl-orange)!important;color:var(--pdl-black)!important;border:1px solid var(--pdl-orange)!important;}
+:root[data-theme] body #daily-details-modal .data-box {background:var(--surface-panel)!important;border-color:var(--pdl-gray)!important;}
+:root[data-theme="dark"] body #daily-details-modal :is(p,small,.report-work-date,.data-box strong) {color:var(--pdl-white)!important;}

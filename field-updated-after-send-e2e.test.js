@@ -278,12 +278,11 @@ async function startJordan(page) {
     assert.match(openLog, /Labor 0\.03h → 0\.07h; Curb 1→3 min, by DEMO Jordan Reed's clock-out/);
     assert.equal(/Corrected/i.test(openLog), false, openLog);
     await owner.click('[data-report].active');
-    await waitUntil(owner, () => document.querySelector('#report-detail')?.classList.contains('is-collapsed') === true, 'report collapsed');
-    view = await badgeView();
-    assert.match(view.list, /Updated after send/, JSON.stringify(view));
-    assert.equal(view.header, '', JSON.stringify(view));
-    assert.equal(view.collapsed, true, JSON.stringify(view));
-    assert.equal(await flagStillSet(), true, 'collapse cleared the flag');
+    await waitUntil(owner, () => document.querySelector('#daily-details-modal')?.open, 'report popup opened');
+    assert.equal(await flagStillSet(), true, 'opening the popup cleared the flag');
+    await owner.click('#close-daily-details');
+    await waitUntil(owner, () => !document.querySelector('#daily-details-modal')?.open, 'report popup closed');
+    assert.equal(await flagStillSet(), true, 'closing the popup cleared the flag');
     await owner.click('[data-report]');
     await waitUntil(owner, () => {
       const header = document.querySelector('[data-updated-after-send-header]');

@@ -101,7 +101,7 @@ fs.mkdirSync(path.join(__dirname, 'output'), { recursive: true });
     await page.locator('#project-detail-modal').waitFor();assert.equal(await page.locator('#project-detail-modal').getAttribute('data-project-id'),'3');
     await page.locator('#project-detail-modal').evaluate(el=>el.close());
     await card.click();await dialog.locator('[data-crew-report="9902"]').click();
-    await page.locator('#reports-page.active').waitFor();assert.equal(await page.locator('#report-list .active').getAttribute('data-report'),'9902');
+    await page.locator('#daily-details-modal').waitFor();assert.equal(await page.locator('#report-list .active').getAttribute('data-report'),'9902');await page.locator('#close-daily-details').click();await page.locator('#project-detail-modal').evaluate(el=>el.close());
     await page.evaluate(()=>{showPage('team');teamTab='crews';renderTeamDirectory();});
     await card.click();await dialog.locator('[data-crew-member="1"]').click();
     await page.locator('#team-details-modal').waitFor();assert.match(await page.locator('#team-details-title').innerText(),/Jordan/i);await page.locator('#team-details-modal').evaluate(el=>el.close());

@@ -44,6 +44,7 @@ async function waitForBoot(page){await page.waitForFunction(()=>typeof currentUs
     await page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));
     assert.equal(await page.$eval('#report-list .active .status',el=>el.textContent),statuses[i]);
     assert.equal(await page.$eval('#report-detail>.status',el=>el.textContent),statuses[i]);
+    await page.click('#close-daily-details');
    }
    for(const status of ['Draft','Needs review','Missing data','Approved','all']){await page.select('#report-status-filter',status);assert.equal(await page.$$eval('#report-list .status',els=>els.length),status==='all'?6:1)}
    await page.evaluate(()=>renderReports(9001));await page.screenshot({path:`qa-tmp/daily-status-${width}-${theme}.png`,fullPage:true});
