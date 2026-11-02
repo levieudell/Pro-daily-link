@@ -641,3 +641,25 @@ dialog#personal-clock-modal{padding:0;width:min(480px,calc(100vw - 24px));max-he
  #schedule-page .schedule-task-expand {display:block;margin-top:8px;min-height:48px;border:1px solid #6E6E6E;border-radius:6px;font-weight:700;}
  #schedule-page .schedule-task-expand[aria-expanded="false"]+.schedule-task-assign {display:none;}
 }
+
+/* Compact assignment cards share the same interaction on phone and desktop. */
+#schedule-page .schedule-task-expand {display:block;min-height:48px;margin-top:8px;}
+#schedule-page .schedule-task-expand[aria-expanded="false"]+.schedule-task-assign {display:none;}
+#schedule-page .schedule-task-chip-main {cursor:pointer;}
+#schedule-page .schedule-assign-modes {display:grid;grid-template-columns:1fr 1fr;gap:8px;}
+:root[data-theme] body #schedule-page :is(.schedule-assign-modes [aria-pressed="true"],[data-task-assign-go]) {background:#FF6600!important;color:#000000!important;border-color:#000000!important;min-height:48px;}
+#schedule-move-feedback {display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:12px;margin-bottom:12px;border:1px solid #6E6E6E;border-left:4px solid #FF6600;}
+#schedule-move-feedback span {flex:1;min-width:160px;}
+#schedule-move-feedback button {min-height:48px;min-width:48px;}
+:root[data-theme] body #schedule-page :is(button,[role="button"]):focus-visible {outline:2px solid #FF6600!important;outline-offset:2px;box-shadow:none!important;}
+:root[data-theme] body #schedule-page .schedule-cell.header.today {background:#FF6600!important;color:#000000!important;}
+#schedule-page .schedule-task-chip {padding:12px;}
+#schedule-page .schedule-task-chip-main small {font-size:12px;line-height:1.4;}
+
+#schedule-page .assignment {padding:10px;gap:4px;}
+#schedule-page .assignment :is(.assignment-ack,.assignment-hours) {display:none;}
+#schedule-page .assignment b {font-size:13px;line-height:1.3;}
+#schedule-page .assignment .assignment-activity {font-size:12px;line-height:1.4;}
+:root[data-theme] body #schedule-page #schedule-today {border:2px solid #FF6600!important;min-height:48px;}
+:root[data-theme] body #schedule-page .schedule-task-chip-main :is(strong,small) {color:#000000!important;}
+:root[data-theme="dark"] body #schedule-page .schedule-task-chip-main :is(strong,small) {color:#FFFFFF!important;}

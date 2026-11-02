@@ -3649,6 +3649,7 @@ async function api(req,res,url){
   if(req.method==='PATCH'&&assignmentMove){
     const input=await body(req),db=readDb(),source=db.assignments.find(row=>row.id===Number(assignmentMove[1]));
     if(!source)return json(res,404,{error:'Scheduled assignment not found'});
+    if(Object.hasOwn(input,'expectedUpdatedAt')&&input.expectedUpdatedAt!==source.updatedAt)return json(res,409,{error:'This assignment changed after your move. Reopen it before making another change.'});
     if(input.edit===true){
       const memberIds=assignmentRecipientIds(input.memberIds),project=db.projects.find(row=>row.id===Number(input.projectId)),date=String(input.date||''),start=String(input.start||''),end=String(input.end||''),activity=String(input.activity||'Scheduled work').trim().slice(0,120)||'Scheduled work';
       if(!project||!memberIds.length||memberIds.some(id=>!db.team.some(member=>member.id===id))||!scheduleAvailability.validDate(date)||!scheduleAvailability.validTime(start)||!scheduleAvailability.validTime(end))return json(res,400,{error:'Project, people, date, and shift times are required'});
