@@ -1,7 +1,7 @@
 'use strict';
 (function () {
-  const TRIAL = 'Start free trial';
-  const SHORT = 'Free trial';
+  const TRIAL = 'Start your plan';
+  const SHORT = 'Get started';
 
   function shown(el) {
     if (!el || el.hidden || el.closest('[hidden]')) return false;

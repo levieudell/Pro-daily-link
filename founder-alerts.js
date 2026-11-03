@@ -86,8 +86,8 @@ function trialSignupAlert({ platform, company, persist, env, fetchImpl }) {
     env,
     fetchImpl,
     badge: company.founder ? 'FOUNDER COHORT' : null,
-    subject: `[Pro Daily Link] New trial — ${company.name} (${company.plan})`,
-    title: `${company.name} started a trial`,
+    subject: `[Pro Daily Link] New signup — ${company.name} (${company.plan})`,
+    title: `${company.name} created an account · payment pending`,
     lines: [
       ['Plan', `${company.plan} · ${company.billingCycle}`],
       ['Owner', `${company.ownerName} <${company.email}>`],

@@ -7,6 +7,7 @@ const path = require('node:path');
 
 const root = __dirname;
 const V = '20261027-public3';
+const signupVersion = '20261103-paid-signup';
 const pages = [
   'landing.html',
   'about.html',
@@ -26,11 +27,11 @@ for (const file of pages) {
     const sheet = /rel="stylesheet"/.test(tag);
     const script = /^<script\b/.test(tag) && /\bsrc=/.test(tag);
     if (!sheet && !script) continue;
-    assert.match(tag, new RegExp(`\\?v=${V}["']`), `${file} pins ${tag}`);
+    assert.match(tag, new RegExp(`\\?v=${file === 'signup.html' || tag.includes('public-header.js') ? signupVersion : V}["']`), `${file} pins ${tag}`);
   }
   if (headerPages.includes(file)) {
     assert.match(html, new RegExp(`href="(?:\\.\\./)?landing\\.css\\?v=${V}"`), `${file} pins the header stylesheet`);
-    assert.match(html, new RegExp(`src="/public-header\\.js\\?v=${V}" defer`), `${file} loads the header fitter from head`);
+    assert.match(html, new RegExp(`src="/public-header\\.js\\?v=${signupVersion}" defer`), `${file} loads the header fitter from head`);
   }
 }
 assert.match(fs.readFileSync(path.join(root, 'landing.html'), 'utf8'), new RegExp(`href="landing-demo\\.css\\?v=${V}"`));

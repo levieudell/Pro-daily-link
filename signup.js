@@ -7,6 +7,7 @@ const signupAttribution={
   referrer:String(document.referrer||'').slice(0,2048),
   landingPage:`${location.pathname}${location.search}`.slice(0,2048)
 };
+let createdCompanyId=null,founderOffer=null;
 let currentStep=1,planWasRequested=['starter','growth','pro'].includes(requestedPlan);
 
 function showStep(step){
@@ -43,13 +44,14 @@ function recommend(){
   const people=+$('#employees').value;
   const projects=+$('#projects').value;
   if(!people&&!projects){
-    $('#recommendation').textContent=planWasRequested?`Selected from pricing: ${requestedPlan[0].toUpperCase()+requestedPlan.slice(1)}.`:'Choose the plan that fits now. You can change it before the trial ends.';
+    $('#recommendation').textContent=planWasRequested?`Selected from pricing: ${requestedPlan[0].toUpperCase()+requestedPlan.slice(1)}.`:'Choose the plan that fits now. You can change it before checkout.';
     return;
   }
   const plan=people<=10&&projects<=5?'starter':people<=30&&projects<=25?'growth':'pro';
   $('#recommendation').textContent=`Recommended: ${plan[0].toUpperCase()+plan.slice(1)} based on your team and active projects.`;
   document.querySelector(`[value="${plan}"]`).checked=true;
   planWasRequested=false;
+  updateFounderOffer();
 }
 
 $('#trade').onchange=()=>$('#trade').setCustomValidity('');
@@ -79,8 +81,9 @@ $('#signup').onsubmit=async event=>{
     return;
   }
   button.disabled=true;
-  $('#result').textContent='Creating your secure workspace…';
+  $('#result').textContent=createdCompanyId?'Opening secure checkout…':'Creating your account…';
   try{
+    if(createdCompanyId){await continueToPayment();return;}
     const response=await fetch('/api/signup',{
       method:'POST',
       credentials:'include',
@@ -100,7 +103,7 @@ $('#signup').onsubmit=async event=>{
         founderTermsAccepted:$('#founder-terms').checked,
         assistedSetup:$('#assisted-setup').checked,
         legalAccepted:$('#legal-acceptance').checked,
-        legalVersion:'2026-09-17',
+        legalVersion:'2026-11-03',
         timezone:Intl.DateTimeFormat().resolvedOptions().timeZone,
         ...signupAttribution
       })
@@ -109,17 +112,17 @@ $('#signup').onsubmit=async event=>{
     if(!response.ok)throw new Error(data.error);
     if(typeof fbq==='function')fbq('track','Signup');
     localStorage.setItem('pdl-company-id',data.company.id);
-    if(data.company.founder){
-      try{
-        const checkout=await fetch('/api/billing/checkout',{method:'POST',credentials:'include',headers:{'Content-Type':'application/json','x-pdl-company':data.company.id},body:JSON.stringify({plan:document.querySelector('[name="plan"]:checked').value,billingCycle:document.querySelector('[name="billingCycle"]:checked').value})});
-        const payment=await checkout.json();if(!checkout.ok)throw new Error(payment.error);
-        location.replace(payment.url);return;
-      }catch{location.replace('/app?tenant='+encodeURIComponent(data.company.id));return;}
-    }
-    location.replace(`${data.next||`/app?tenant=${encodeURIComponent(data.company.id)}`}#dashboard`);
+    createdCompanyId=data.company.id;
+    $('#password').value='';
+    $('#signup').noValidate=true;
+    $('#checkout-resume').href='/app?tenant='+encodeURIComponent(createdCompanyId);
+    $('#checkout-resume').hidden=false;
+    document.querySelectorAll('.signup-progress button,[data-back],#signup input,#signup select').forEach(control=>control.disabled=true);
+    await continueToPayment();
   }catch(error){
     $('#result').textContent=error.message;
     button.disabled=false;
+    if(createdCompanyId)button.textContent='Try checkout again';
   }
 };
 
@@ -128,18 +131,18 @@ document.querySelector(`[name="billingCycle"][value="${requestedCycle}"]`).check
 recommend();
 showStep(1);
 
-let founderOffer=null;
+
 function updateFounderOffer(){
   const active=Boolean(founderOffer?.enabled && $('#founder-code').value.trim());
   $('#founder-options').hidden=!active;
   $('#founder-terms').required=active;
   $('#assisted-setup').disabled=!active||!founderOffer?.setupAvailable;
   if(!active){$('#assisted-setup').checked=false;$('#founder-terms').checked=false;}
-  $('#signup-offer-heading').textContent=active?'Founder membership · payment required · no free trial':'Start your 14-day trial · no credit card';
-  $('#plan-offer-help').textContent=active?'Pay monthly or annually. Your selected founder price is protected for 24 months from first payment.':'Nothing is charged today. Choose monthly, or pay annually and receive two months free.';
-  $('#monthly-cycle-label').textContent=active?'Monthly — pay today':'Monthly after trial';
-  $('#annual-cycle-label').textContent=active?'Annual — pay today · two months free':'Annual after trial · two months free';
-  $('#create-company').textContent=active?'Create company & continue to payment':'Create company';
+  $('#signup-offer-heading').textContent=active?'Founder membership · payment required · no free trial':'Choose your plan. Pay securely. Get to work.';
+  $('#plan-offer-help').textContent=active?'Pay monthly or annually. Your selected founder price is protected for 24 months from first payment.':'Your subscription starts after payment. Pay monthly, or annually with two months free.';
+  $('#monthly-cycle-label').textContent='Monthly — pay today';
+  $('#annual-cycle-label').textContent='Annual — pay today · two months free';
+  $('#create-company').textContent='Continue to secure payment';
   const standard={starter:[99,990,'10 users · 5 active projects'],growth:[199,1990,'30 users · 25 active projects'],pro:[399,3990,'75 users · unlimited projects']};
   for(const [id,values] of Object.entries(standard)){
     const card=document.querySelector('[name="plan"][value="'+id+'"]').closest('label');
@@ -147,8 +150,11 @@ function updateFounderOffer(){
     card.querySelector('small').textContent='$'+(active?founderOffer.prices[id].annual:values[1]).toLocaleString()+'/year · '+values[2];
   }
   const plan=document.querySelector('[name="plan"]:checked').value,annual=document.querySelector('[name="billingCycle"]:checked').value==='annual';
+  const amount=annual?(active?founderOffer.prices[plan].annual:standard[plan][1]):(active?founderOffer.prices[plan].monthly:standard[plan][0]);
+  $('#payment-summary').textContent=`${plan[0].toUpperCase()+plan.slice(1)} · $${amount.toLocaleString()} per ${annual?'year':'month'}. Charged today at checkout${active&&$('#assisted-setup').checked?' + $499 one-time setup':''}. Taxes, if applicable, are shown before you pay.`;
   $('#founder-renewal').textContent='Before the 24-month founder period ends, we will contact you to review renewal options. Your price will not automatically jump to the regular rate. Optional setup is charged only once. Taxes, if applicable, are shown at checkout.';
 }
+$('#assisted-setup').addEventListener('change',updateFounderOffer);
 $('#founder-code').addEventListener('input',updateFounderOffer);
 document.querySelectorAll('[name="plan"],[name="billingCycle"]').forEach(el=>el.addEventListener('change',updateFounderOffer));
 fetch('/api/founder-offer').then(response=>response.json()).then(offer=>{founderOffer=offer;$('#founder-invitation').hidden=!offer.enabled;updateFounderOffer()}).catch(()=>{});
@@ -163,3 +169,11 @@ document.querySelectorAll('[data-show-password]').forEach(button=>{
     button.setAttribute('aria-label',show?'Hide password':'Show password');
   };
 });
+
+async function continueToPayment(){
+  const response=await fetch('/api/billing/checkout',{method:'POST',credentials:'include',headers:{'Content-Type':'application/json','x-pdl-company':createdCompanyId},body:JSON.stringify({plan:document.querySelector('[name="plan"]:checked').value,billingCycle:document.querySelector('[name="billingCycle"]:checked').value})});
+  const payment=await response.json();if(!response.ok)throw new Error(payment.error||'Checkout could not be opened. Try again.');
+  const url=new URL(payment.url);if(url.protocol!=='https:'||url.hostname!=='checkout.stripe.com')throw new Error('Checkout could not be verified. Try again.');
+  location.replace(url.href);
+}
+updateFounderOffer();

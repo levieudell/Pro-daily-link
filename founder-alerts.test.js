@@ -104,7 +104,7 @@ async function captureFetch(status = 200) {
     const { calls, fetchImpl } = await captureFetch();
     await trialSignupAlert({ platform: { users: [{ role: 'platform_owner', status: 'Active', email: 'levie@example.com' }] }, company: { name: 'Acme', plan: 'growth', billingCycle: 'annual', ownerName: 'Sam', email: 'sam@acme.com', employeeCount: 12, projectCount: 4, founder: true }, env, fetchImpl, persist: async () => {} });
     const payload = JSON.parse(calls[0][1].body);
-    assert.match(payload.subject, /New trial — Acme \(growth\)/);
+    assert.match(payload.subject, /New signup — Acme \(growth\)/);
     assert.ok(payload.html.includes('FOUNDER COHORT'));
   }
 

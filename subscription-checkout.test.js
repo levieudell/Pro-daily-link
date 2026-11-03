@@ -25,6 +25,7 @@ for (const [plan, amount] of Object.entries({ starter: 99, growth: 199, pro: 399
 }
 fs.copyFileSync(path.join(__dirname, 'data/db.json'), process.env.PDL_DB_FILE);
 fs.copyFileSync(path.join(__dirname, 'data/platform.json'), process.env.PDL_PLATFORM_FILE);
+const invoices = new Map();
 const subscriptions = new Map(), sessions = new Map(), attempts = new Map(), portalConfigurations = new Map(), calls = [];
 let failAfterCreate = false, providerOutage = false, corruptSubscription = false, historyMore = false, created = 0;
 const realFetch = global.fetch;
@@ -37,6 +38,7 @@ global.fetch = async (url, options = {}) => {
   calls.push({ pathname, method: options.method, params, query: Object.fromEntries(target.searchParams), key: options.headers?.['Idempotency-Key'] });
   const reply = (value, status = 200) => new Response(JSON.stringify(value), { status });
   if (providerOutage) return reply({ error: { message: 'Synthetic outage' } }, 503);
+  if (pathname.startsWith('/invoices/')) return reply(invoices.get(pathname.split('/').pop()));
   if (pathname.startsWith('/prices/')) return reply(prices[pathname.split('/').pop()]);
   if (pathname.startsWith('/billing_portal/configurations/')) return reply(portalConfigurations.get(pathname.split('/').pop()) || { error: { message: 'Missing portal configuration' } }, portalConfigurations.has(pathname.split('/').pop()) ? 200 : 404);
   if (pathname === '/billing_portal/sessions') return reply({ id: 'bps_test', url: 'https://billing.example.invalid/session' });
@@ -84,10 +86,11 @@ function customerClient() {
   return { request, get id() { return companyId; }, read: () => JSON.parse(fs.readFileSync(file)),
     mutate: fn => { const db = JSON.parse(fs.readFileSync(file)); fn(db); fs.writeFileSync(file, JSON.stringify(db)); } };
 }
-async function signup(plan = 'starter') {
+async function signup(plan = 'starter', existingTrial = true) {
   const client = customerClient();
   assert.equal((await client.request('/api/signup', 'POST', { companyName: 'Synthetic billing ' + (++index), ownerName: 'Synthetic Owner',
-    email: `billing-${index}@example.invalid`, password: 'SyntheticPassword!42', legalAccepted: true, plan })).status, 201);
+    email: `billing-${index}@example.invalid`, password: 'SyntheticPassword!42', legalAccepted: true, plan, paymentRequired:false,subscriptionStatus:'Active',trialEndsAt:'2099-01-01T00:00:00Z' })).status, 201);
+  if(existingTrial)client.mutate(db=>{delete db.company.paymentRequired;delete db.company.subscriptionStatus;db.company.trialEndsAt=new Date(Date.now()+14*86400000).toISOString();});
   return client;
 }
 function providerSubscription(client, status, id = 'sub_mock_' + client.id, price = 'price_starter_monthly') {
@@ -107,6 +110,44 @@ async function webhook(subscription, suffix) {
   try {
     assert.equal(policy.remainingAnchoredTrial({subscriptionStatus:'Active'}),false,'legacy active accounts without a provider marker remain compatible');
     assert.equal(policy.remainingAnchoredTrial({subscriptionStatus:'Active',stripeSubscriptionId:'sub_legacy'}),false);
+    // New accounts pay first; legacy trial fixtures below retain their deadline.
+    for(const plan of ['starter','growth','pro'])for(const billingCycle of ['monthly','annual']){
+      const paid=await signup(plan,false);
+      assert.equal(paid.read().company.trialEndsAt,null);
+      assert.equal((await paid.request('/api/state')).status,402);
+      delete process.env.PDL_REQUIRE_AUTH;assert.equal((await paid.request('/api/state?billing=success')).status,402,'no environment flag or success query bypass');process.env.PDL_REQUIRE_AUTH='1';
+      assert.equal((await paid.request('/api/account-access')).data.locked,true);
+      assert.equal((await paid.request('/api/billing/checkout','POST',{plan,billingCycle})).status,200);
+      const pending=paid.read().company.pendingCheckout;
+      assert.equal(pending.params['line_items[0][price]'],`price_${plan}_${billingCycle}`);
+      assert.ok(!Object.keys(pending.params).some(key=>/trial|billing_cycle_anchor|proration/.test(key)));
+      assert.equal((await paid.request('/api/billing/checkout','POST',{plan,billingCycle})).status,200);
+      assert.equal(paid.read().company.pendingCheckout.id,pending.id,'cancel/retry reuses the open checkout');
+      const sub=providerSubscription(paid,'active',undefined,`price_${plan}_${billingCycle}`);
+      sub.latest_invoice='in_'+paid.id;
+      const invoice={id:sub.latest_invoice,subscription:sub.id,customer:sub.customer,livemode:false,status:'open',amount_paid:0};
+      invoices.set(invoice.id,invoice);
+      const session=sessions.get(pending.id);Object.assign(session,{status:'complete',customer:sub.customer,subscription:sub.id,payment_status:'unpaid'});
+      assert.equal((await paid.request('/api/billing/confirm?session_id='+session.id)).data.locked,true,'active subscription alone is not payment');
+      assert.equal((await paid.request('/api/state')).status,402);
+      assert.equal((await webhook(sub,'pending-'+paid.id)).status,200);
+      assert.equal((await paid.request('/api/account-access')).data.locked,true,'unpaid signed webhook stays locked');
+      const other=await signup('starter',false);
+      assert.equal((await other.request('/api/billing/confirm?session_id='+session.id)).status,404);
+      invoice.status='paid';
+      assert.equal((await paid.request('/api/billing/confirm?session_id='+session.id)).data.locked,true,'zero-dollar invoice does not count as first payment');
+      invoice.amount_paid=prices[`price_${plan}_${billingCycle}`].unit_amount;
+      invoice.customer='cus_wrong';
+      assert.equal((await paid.request('/api/billing/confirm?session_id='+session.id)).status,503);
+      assert.equal((await paid.request('/api/account-access')).data.locked,true);
+      invoice.customer=sub.customer;
+      if(billingCycle==='annual')assert.equal((await paid.request('/api/billing/confirm?session_id='+session.id)).data.locked,false,'verified checkout return can activate before webhook delivery');
+      assert.equal((await webhook(sub,'paid-'+paid.id)).status,200);
+      assert.ok(paid.read().company.initialPaymentConfirmedAt);
+      assert.equal((await paid.request('/api/state')).status,200);
+      assert.equal((await webhook(sub,'paid-'+paid.id)).status,200,'signed webhook replay is safe');
+      assert.equal((await paid.request('/api/billing/confirm?session_id='+session.id)).data.locked,false);
+    }
     // Every standard price and period preserves the same absolute deadline.
     for (const plan of ['starter', 'growth', 'pro']) for (const billingCycle of ['monthly', 'annual']) {
       const c = await signup(plan), end = c.read().company.trialEndsAt;
