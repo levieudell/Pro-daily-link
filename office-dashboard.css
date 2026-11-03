@@ -727,3 +727,8 @@ dialog#personal-clock-modal{padding:0;width:min(480px,calc(100vw - 24px));max-he
 :root[data-theme] body #daily-details-modal .report-status-review {background:var(--pdl-orange)!important;color:var(--pdl-black)!important;border:1px solid var(--pdl-orange)!important;}
 :root[data-theme] body #daily-details-modal .data-box {background:var(--surface-panel)!important;border-color:var(--pdl-gray)!important;}
 :root[data-theme="dark"] body #daily-details-modal :is(p,small,.report-work-date,.data-box strong) {color:var(--pdl-white)!important;}
+
+:root[data-theme] body :is(.report-action-feedback,.daily-action-notice) {background:var(--surface-canvas)!important;color:var(--text-primary)!important;border:1px solid var(--pdl-gray)!important;border-left:4px solid var(--pdl-orange)!important;padding:16px;margin:0 0 16px;font:600 16px/1.5 Inter,sans-serif;}
+:root[data-theme] body .report-action-feedback.is-error {border-left-color:var(--pdl-pink)!important;}
+.daily-action-notice {flex:none;position:sticky;bottom:0;z-index:1;}
+:root[data-theme] body .daily-action-notice {margin:8px;}
