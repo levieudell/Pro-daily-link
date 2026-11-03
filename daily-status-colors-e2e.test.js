@@ -52,7 +52,7 @@ async function waitForBoot(page){await page.waitForFunction(()=>typeof currentUs
   }
   await page.evaluate(()=>document.querySelector('#report-list button').focus());
   await page.keyboard.press('Tab');await page.keyboard.down('Shift');await page.keyboard.press('Tab');await page.keyboard.up('Shift');
-  assert.equal(await page.$eval('#report-list button',el=>getComputedStyle(el).outlineWidth),'3px','keyboard focus visible');
+  assert.equal(await page.$eval('#report-list button',el=>getComputedStyle(el).outlineWidth),'2px','brand keyboard focus visible');
   await page.keyboard.press('Enter');assert.equal(await page.$eval('#report-list .active',el=>el.dataset.report),'9005','keyboard selection');
   assert.deepEqual(errors,[]);assert.equal(JSON.parse(fs.readFileSync(file)).reports.length,reportCount,'no report writes');
  }finally{await browser?.close();child.kill();await new Promise(resolve=>child.exitCode!=null?resolve():child.once('exit',resolve));fs.rmSync(root,{recursive:true,force:true})}

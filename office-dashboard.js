@@ -233,11 +233,7 @@ if (typeof module !== 'undefined' && module.exports) {
         if (!report) { notify(text('This report is no longer available.', 'Este reporte ya no está disponible.')); return; }
         $('#report-status-filter').value = 'all';
         showPage('reports');
-        renderReports(report.id);
-        const detail = $('#report-detail');
-        detail.setAttribute('tabindex', '-1');
-        detail.focus({ preventScroll: true });
-        detail.scrollIntoView({ behavior: 'instant', block: 'start' });
+        openDailyReportDetails(report.id);
       } else if (destination.page === 'team') {
         teamTab = 'subcontractors';
         showPage('team');

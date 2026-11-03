@@ -33,7 +33,7 @@ const executablePath = process.env.PDL_BROWSER_PATH || ['C:/Program Files/Google
     await page.evaluate(()=>{
       projects[0].estimateItems=[{id:991,name:'Lock+Load Wall',unit:'LF',plannedQuantity:275}];
       const report={id:99001,project:0,dateIso:'2026-11-01',status:'Submitted',foreman:'Test worker',summary:'Installed 300 LF of wall.',productionEntries:[{estimateItemId:991,description:'Lock+Load Wall',quantity:300,unit:'LF',laborHours:8,extra_work:false}],laborEntries:[],scopeFlags:[{decision:'estimate'}]};
-      reports.push(report);showPage('reports');renderReports(report.id);
+      reports.push(report);showPage('reports');openDailyReportDetails(report.id);
     });
     await page.locator('.report-work-detail summary').click();
     assert.match(await page.locator('.report-work-detail').innerText(),/25 LF over estimate/);

@@ -53,6 +53,7 @@ async function login(page, email = FIELD_EMAIL, password = FIELD_PASSWORD) {
 }
 
 async function openNav(page, name) {
+  await page.evaluate(()=>document.querySelector('#daily-details-modal')?.close());
   await page.evaluate(target => {
     const sidebar = document.querySelector('#sidebar');
     if (sidebar && !sidebar.classList.contains('open')) document.querySelector('#menu-button')?.click();
@@ -372,6 +373,8 @@ async function clockSurfaces(page) {
     await owner.evaluateOnNewDocument(() => localStorage.setItem('pdl-analytics-consent', 'declined'));
     await login(owner, OWNER_EMAIL, OWNER_PASSWORD);
     await openNav(owner, 'reports');
+    await owner.waitForSelector('#report-list [data-report]');
+    await owner.click('#report-list [data-report]');
     await owner.waitForFunction(() => {
       const box = [...document.querySelectorAll('#report-detail .data-box')].find(row => /PRODUCTION/i.test(row.querySelector('small')?.textContent || ''));
       return /Curb/.test(box?.innerText || '') && /40/.test(box?.innerText || '');

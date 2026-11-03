@@ -97,7 +97,7 @@ fs.mkdirSync(path.join(__dirname, 'output'), { recursive: true });
     fs.mkdirSync(path.join(__dirname,'docs','office-review'),{recursive:true});
     for(const width of [390,1280])for(const theme of ['light','dark']){
       await page.setViewportSize({width,height:width===390?844:800});
-      await page.evaluate(theme=>{document.documentElement.dataset.theme=theme;setNavigationOpen(false);showPage('reports');renderReports(reports[0].id);},theme);
+      await page.evaluate(theme=>{document.documentElement.dataset.theme=theme;setNavigationOpen(false);showPage('reports');openDailyReportDetails(reports[0].id);},theme);
       const warning=page.locator('#report-detail .office-review-warning');await warning.evaluate(el=>el.scrollIntoView({block:'start'}));
       assert.equal(await warning.locator('details').getAttribute('open'),null);
       await warning.locator('summary').click();assert.match(await warning.innerText(),/24 min 35 sec/);
@@ -116,6 +116,7 @@ fs.mkdirSync(path.join(__dirname, 'output'), { recursive: true });
       await page.evaluate(()=>document.fonts.ready);
       await page.screenshot({path:`docs/office-review/daily-${theme}-${width}.png`,animations:'disabled'});
       await warning.locator('[data-review-daily]').click();await page.locator('#report-modal').waitFor();await page.locator('#report-modal').evaluate(el=>el.close());
+      await page.locator('#close-daily-details').click();
       await page.evaluate(()=>{
         showPage('timecards');
         timeCards=[{id:8001,memberId:team[0].id,projectId:projects[0].id,inAt:'2026-11-02T15:00:00Z',outAt:'2026-11-02T23:00:00Z',date:'2026-11-02',hours:8,status:'submitted'}];

@@ -176,6 +176,7 @@ async function login(page, email, password) {
 }
 
 async function openNav(page, name) {
+  await page.evaluate(()=>document.querySelector('#daily-details-modal')?.close());
   await page.evaluate(target => {
     const sidebar = document.querySelector('#sidebar');
     if (sidebar && !sidebar.classList.contains('open')) document.querySelector('#menu-button')?.click();
@@ -777,6 +778,8 @@ async function openNav(page, name) {
     await owner.evaluateOnNewDocument(() => localStorage.setItem('pdl-analytics-consent', 'declined'));
     await login(owner, OWNER_EMAIL, OWNER_PASSWORD);
     await openNav(owner, 'reports');
+    await owner.waitForSelector('#report-list [data-report]');
+    await owner.click('#report-list [data-report]');
     await owner.waitForFunction(() => {
       const text = document.querySelector('#report-detail')?.innerText || '';
       return /Curb/.test(text) && /Gutter/.test(text) && /40/.test(text) && /20/.test(text) && /site owner/.test(text) && /hours not entered/i.test(text) && /\d+ min · \d+\.\d{2} h/.test(text) && /6 yards of concrete/.test(text);

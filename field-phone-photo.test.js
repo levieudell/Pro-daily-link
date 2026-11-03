@@ -434,6 +434,7 @@ function assertReachable(box, label) {
     }
     assert.equal(shown.endOpen, false);
     assert.equal(shown.painted, false);
+    await page.click('#report-list [data-report]');
     await page.evaluate(() => document.querySelector('#report-detail img.report-photo')?.scrollIntoView({ block: 'center' }));
     await shot(page, 'c1-report-photo-390.png');
     console.log('Phone daily photo and extra-work flag passed at 390px.');

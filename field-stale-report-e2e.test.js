@@ -55,6 +55,7 @@ async function login(page, email = FIELD_EMAIL, password = FIELD_PASSWORD) {
 }
 
 async function openNav(page, name) {
+  await page.evaluate(()=>document.querySelector('#daily-details-modal')?.close());
   await page.evaluate(target => {
     const sidebar = document.querySelector('#sidebar');
     if (sidebar && !sidebar.classList.contains('open')) document.querySelector('#menu-button')?.click();
@@ -171,6 +172,8 @@ async function serverDaily(page) {
     await page.click('#report-modal .close-button');
     await page.waitForFunction(() => !document.querySelector('#report-modal')?.open, { timeout: 5000 });
     await openNav(page, 'reports');
+    await page.waitForSelector('#report-list [data-report]');
+    await page.click('#report-list [data-report]');
     await page.waitForFunction(() => /backfill curb/i.test(document.querySelector('#report-detail')?.innerText || ''), { timeout: 10000 });
     const firstPaint = await detailFacts(page);
     assert.match(firstPaint.next, /backfill curb/);
@@ -193,6 +196,8 @@ async function serverDaily(page) {
     assert.match(merged.summary, /Set forms/);
     assert.ok(merged.minutes > 2, JSON.stringify(merged));
     await openNav(page, 'reports');
+    await page.waitForSelector('#report-list [data-report]');
+    await page.click('#report-list [data-report]');
     let painted;
     try {
       await page.waitForFunction(minutes => {
@@ -418,6 +423,8 @@ async function serverDaily(page) {
     await owner.evaluateOnNewDocument(() => localStorage.setItem('pdl-analytics-consent', 'declined'));
     await login(owner, OWNER_EMAIL, OWNER_PASSWORD);
     await openNav(owner, 'reports');
+    await owner.waitForSelector('#report-list [data-report]');
+    await owner.click('#report-list [data-report]');
     await owner.waitForFunction(() => {
       const text = document.querySelector('#report-detail')?.innerText || '';
       return /Set forms/i.test(text) && /Curb/i.test(text) && /40/.test(text);
