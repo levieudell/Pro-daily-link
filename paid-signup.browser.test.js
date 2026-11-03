@@ -16,6 +16,7 @@ for (const dependency of [
 if (!chromium) throw new Error('Configure PDL_PLAYWRIGHT_MODULE with an available Playwright runtime.');
 
 const root=__dirname;
+const executablePath=process.env.PDL_BROWSER_PATH||['C:/Program Files/Google/Chrome/Application/chrome.exe','/usr/bin/google-chrome','/usr/bin/chromium'].find(fs.existsSync);
 const server=http.createServer((req,res)=>{
   const file=path.resolve(root,'.'+new URL(req.url,'http://localhost').pathname);
   if(!file.startsWith(root+path.sep)||!fs.existsSync(file)||!fs.statSync(file).isFile()){res.writeHead(404);return res.end();}
@@ -26,7 +27,7 @@ const server=http.createServer((req,res)=>{
   await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
   const base='http://127.0.0.1:'+server.address().port;
   try{
-    browser=await chromium.launch({headless:true,...(process.env.PDL_BROWSER_PATH?{executablePath:process.env.PDL_BROWSER_PATH}:{})});
+    browser=await chromium.launch({headless:true,...(executablePath?{executablePath}:{})});
     for(const width of [390,1280]){
       const page=await browser.newPage({viewport:{width,height:844}}),errors=[];
       let signups=0,checkouts=0;
