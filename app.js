@@ -606,7 +606,17 @@ renderReports=function(selected){
     }catch(error){notify(error.message)}
   };
 };
-function notify(msg){const t=$('#toast');t.textContent=msg;t.classList.add('visible');setTimeout(()=>t.classList.remove('visible'),2600)}
+function notify(msg){
+  const t=$('#toast'),dialog=$('#daily-details-modal');
+  if(dialog?.open){
+    t.classList.remove('visible');
+    const host=document.activeElement?.closest('dialog[open]')||dialog;
+    let notice=host.querySelector('.daily-action-notice');
+    if(!notice){notice=document.createElement('div');notice.className='daily-action-notice';notice.setAttribute('role','status');host.append(notice)}
+    notice.textContent=msg;clearTimeout(notice.dismissTimer);notice.dismissTimer=setTimeout(()=>notice.remove(),6000);return;
+  }
+  t.textContent=msg;t.classList.add('visible');setTimeout(()=>t.classList.remove('visible'),2600);
+}
 function stepper(input,amount){input.value=Math.max(0,Math.round((Number(input.value||0)+amount)*2)/2);input.dispatchEvent(new Event('input'))}
 function wireSteppers(root=document){root.querySelectorAll('[data-step-down]').forEach(button=>button.onclick=()=>stepper(button.parentElement.querySelector('input'),-Number(button.dataset.stepDown)));root.querySelectorAll('[data-step-up]').forEach(button=>button.onclick=()=>stepper(button.parentElement.querySelector('input'),Number(button.dataset.stepUp)))}
 function populateReportLabor(entries=[]){const crew=$('#report-crew').value,savedIds=new Set(entries.map(entry=>Number(entry.memberId))),members=team.filter(m=>m.crew===crew||savedIds.has(Number(m.id)));$('#report-labor-list').innerHTML=members.map(m=>{const saved=entries.find(x=>Number(x.memberId)===Number(m.id));return `<div class="labor-line"><span><strong>${escapeHtml(m.name)}</strong><small>${escapeHtml(m.role)}</small><button type="button" class="report-remove-member" data-remove-report-member="${m.id}" aria-label="Remove ${escapeHtml(m.name)} from this daily">Remove</button></span><label><small>HOURS IN THIS REPORT</small><div class="touch-stepper"><button type="button" data-step-down="0.5" aria-label="Subtract 30 minutes for ${escapeHtml(m.name)}">−</button><input type="number" min="0" max="24" step="0.5" value="${Number(saved?.hours)>0?saved.hours:''}" data-labor-member="${m.id}" placeholder="Hours" aria-label="Hours in this report for ${escapeHtml(m.name)}" inputmode="decimal" /><button type="button" data-step-up="0.5" aria-label="Add 30 minutes for ${escapeHtml(m.name)}">＋</button></div></label></div>`}).join('')||'<span class="schedule-empty">No people assigned to this crew.</span>';wireSteppers($('#report-labor-list'));const addSelect=$('#report-add-labor-member');if(addSelect){const shown=new Set(members.map(member=>Number(member.id)));addSelect.innerHTML='<option value="">Add another team member…</option>'+team.filter(member=>!shown.has(Number(member.id))).map(member=>`<option value="${member.id}">${escapeHtml(member.name)} · ${escapeHtml(member.crew||'Unassigned')}</option>`).join('');const addButton=$('#add-report-labor-member');if(addButton)addButton.disabled=addSelect.options.length===1;const addRow=addSelect.closest('.labor-add-row');if(addRow)addRow.hidden=addSelect.options.length<=1}}
@@ -1844,7 +1854,7 @@ function updateReportReviewDateBanner(){const date=$('#report-date')?.value,head
 const updateReportGapsBeforeLaborReview=updateReportGaps;
 updateReportGaps=function(){const result=updateReportGapsBeforeLaborReview(),date=$('#report-date')?.value,header=$('#report-work-date');if(header)header.textContent=date?'Report date: '+reportReviewDate(date):'Choose the report date';const target=$('#report-gaps');if(!target)return result;const report={id:editingReportId,project:Number($('#report-project')?.value),dateIso:date,laborEntries:[...$$('[data-labor-member]')].map(input=>({memberId:input.dataset.laborMember,hours:Number(input.value)||0})),workdayId:reports.find(row=>Number(row.id)===Number(editingReportId))?.workdayId},warnings=reportLaborReviewWarnings(report);if(warnings.length){if(target.classList.contains('complete'))target.innerHTML='<strong>Review labor before submitting</strong><span>The work-line hours balance. Compare the other report before counting this person again.</span>';target.className='report-gaps attention';target.insertAdjacentHTML('beforeend',reportLaborReviewMarkup(warnings,{form:true,labelFor:other=>{const source=reports.find(row=>Number(row.id)===Number(other.id))||(typeof laborReviewReports!=='undefined'?laborReviewReports:[]).find(row=>Number(row.id)===Number(other.id));return source?source.foreman+"'s daily #"+other.id:'report #'+other.id}}));if(!target.dataset.laborRemoveWired){target.dataset.laborRemoveWired='1';target.addEventListener('click',event=>{const button=event.target.closest('.labor-remove-button');if(!button)return;const input=$(`[data-labor-member="${Number(button.dataset.removeMember)}"]`);if(!input)return;input.value=0;input.dispatchEvent(new Event('input',{bubbles:true}));updateReportGaps()})}}return result};
 const renderReportsBeforeLaborReview=renderReports;
-renderReports=function(selected){const result=renderReportsBeforeLaborReview(selected),detail=$('#report-detail'),edit=detail?.querySelector('[data-edit-report]'),report=reports.find(row=>Number(row.id)===Number(edit?.dataset.editReport));if(!report)return result;const title=detail.querySelector('h2');if(title){const date=document.createElement('p');date.className='report-work-date';date.textContent='Report date: '+reportReviewDate(report.dateIso);title.insertAdjacentElement('afterend',date)}const warnings=reportLaborReviewWarnings(report);if(warnings.length){title?.insertAdjacentHTML('beforebegin',reportLaborReviewMarkup(warnings,{resolvable:true,labelFor:other=>{const source=reports.find(row=>Number(row.id)===Number(other.id))||(typeof laborReviewReports!=='undefined'?laborReviewReports:[]).find(row=>Number(row.id)===Number(other.id));return source?source.foreman+"'s daily #"+other.id:'report #'+other.id}}));if(detail&&!detail.dataset.laborResolveWired){detail.dataset.laborResolveWired='1';detail.addEventListener('click',async event=>{const button=event.target.closest('.labor-resolve-button');if(!button)return;button.disabled=true;const current=reports.find(row=>Number(row.id)===Number(detail.querySelector('[data-edit-report]')?.dataset.editReport));if(!current){button.disabled=false;return}const memberId=Number(button.dataset.resolveMember),next=[...(current.laborExclusions||[]).filter(ex=>Number(ex.memberId)!==memberId),{memberId,hours:Number(button.dataset.resolveHours)||0,sourceReportId:Number(button.dataset.resolveSource)||null,by:currentUser?.name||'Office user',at:new Date().toISOString()}];try{await api('/api/reports/'+current.id,{method:'PATCH',body:JSON.stringify({laborExclusions:next})});current.laborExclusions=next;current.history=current.history||[];current.history.push({action:'Labor marked as counted on another daily',by:currentUser?.name||'Office user',at:new Date().toISOString()});renderReports(current.id)}catch(error){button.disabled=false;notify(error.message)}})}const approve=detail.querySelector('[data-approve-report]'),approveBeforeReview=approve?.onclick;if(approve&&approveBeforeReview)approve.onclick=event=>{const detail=warnings.map(row=>row.memberName+': '+row.hours+' hours here, plus '+row.otherHours+' hours in '+row.otherReports.map(other=>'report #'+other.id).join(', ')).join('\n');if(confirm(detail+'\n\nApprove only if these are additional hours or separate shifts. If the same shift is counted twice, cancel and use Edit / correct.'))return approveBeforeReview.call(approve,event)}}return result};
+renderReports=function(selected){const result=renderReportsBeforeLaborReview(selected),detail=$('#report-detail'),edit=detail?.querySelector('[data-edit-report]'),report=reports.find(row=>Number(row.id)===Number(edit?.dataset.editReport));if(!report)return result;const title=detail.querySelector('h2');if(title){const date=document.createElement('p');date.className='report-work-date';date.textContent='Report date: '+reportReviewDate(report.dateIso);title.insertAdjacentElement('afterend',date)}const warnings=reportLaborReviewWarnings(report);if(warnings.length){title?.insertAdjacentHTML('beforebegin',reportLaborReviewMarkup(warnings,{resolvable:true,labelFor:other=>{const source=reports.find(row=>Number(row.id)===Number(other.id))||(typeof laborReviewReports!=='undefined'?laborReviewReports:[]).find(row=>Number(row.id)===Number(other.id));return source?source.foreman+"'s daily #"+other.id:'report #'+other.id}}));if(detail&&!detail.dataset.laborResolveWired){detail.dataset.laborResolveWired='1';detail.addEventListener('click',resolveReportLaborClick)}const approve=detail.querySelector('[data-approve-report]'),approveBeforeReview=approve?.onclick;if(approve&&approveBeforeReview)approve.onclick=event=>{const detail=warnings.map(row=>row.memberName+': '+row.hours+' hours here, plus '+row.otherHours+' hours in '+row.otherReports.map(other=>'report #'+other.id).join(', ')).join('\n');if(confirm(detail+'\n\nApprove only if these are additional hours or separate shifts. If the same shift is counted twice, cancel and use Edit / correct.'))return approveBeforeReview.call(approve,event)}}return result};
 const reportDateChangeBeforeLaborReview=$('#report-date').onchange;
 $('#report-date').onchange=event=>{reportDateChangeBeforeLaborReview?.call($('#report-date'),event);updateReportGaps()};
 
@@ -1912,7 +1922,36 @@ function openDailyReportDetails(reportId){
 }
 $('#close-daily-details').onclick=()=>$('#daily-details-modal').close();
 $('#daily-details-modal').addEventListener('close',()=>{
+  if($('#daily-details-modal').open)return; // Ignore a queued close after the popup reopened.
+  $('#daily-details-modal .daily-action-notice')?.remove();
   $('#reports-page .report-layout').append($('#report-detail'));
   const opener=dailyDetailsOpener?.isConnected?dailyDetailsOpener:$(`[data-report="${Number($('#daily-details-modal').dataset.reportId)}"]`);
   opener?.focus({preventScroll:true});dailyDetailsOpener=null;
 });
+
+function showReportActionFeedback(message,error=false){
+  const detail=$('#report-detail');if(!detail)return;
+  let notice=detail.querySelector('.report-action-feedback');
+  if(!notice){notice=document.createElement('div');notice.className='report-action-feedback';notice.tabIndex=-1;detail.prepend(notice)}
+  notice.classList.toggle('is-error',error);notice.setAttribute('role',error?'alert':'status');notice.textContent=message;
+  notice.scrollIntoView({block:'nearest'});notice.focus({preventScroll:true});
+}
+async function resolveReportLaborClick(event){
+  const button=event.target.closest('.labor-resolve-button');if(!button||button.disabled)return;
+  const detail=$('#report-detail'),current=reports.find(row=>Number(row.id)===Number(detail.querySelector('[data-edit-report]')?.dataset.editReport));
+  if(!current){showReportActionFeedback('This report is no longer available. Close it and reopen it.',true);return}
+  const original=button.textContent,memberId=Number(button.dataset.resolveMember),hours=Number(button.dataset.resolveHours)||0,sourceReportId=Number(button.dataset.resolveSource)||null;
+  const name=team.find(member=>Number(member.id)===memberId)?.name||'This team member';
+  const next=[...(current.laborExclusions||[]).filter(ex=>Number(ex.memberId)!==memberId),{memberId,hours,sourceReportId,by:currentUser?.name||'Office user',at:new Date().toISOString()}];
+  button.disabled=true;button.textContent='Saving…';button.setAttribute('aria-busy','true');
+  try{
+    const updated=await api('/api/reports/'+current.id,{method:'PATCH',body:JSON.stringify({laborExclusions:next})});
+    Object.assign(current,updated);
+    if(Number(detail.querySelector('[data-edit-report]')?.dataset.editReport)!==Number(current.id))return;
+    renderReports(current.id);
+    showReportActionFeedback(`${name}'s ${hours} hours now count on report #${sourceReportId}. They're excluded from this report's counted total. Original hours and clock punches stay unchanged.`);
+  }catch(error){
+    button.disabled=false;button.textContent=original;button.removeAttribute('aria-busy');
+    if(Number(detail.querySelector('[data-edit-report]')?.dataset.editReport)===Number(current.id))showReportActionFeedback(error.message||'Could not save. Try again.',true);
+  }
+}
