@@ -404,8 +404,7 @@
       const filter = element('report-status-filter');
       if (filter && filter.value !== 'all' && filter.value !== report.status) filter.value = 'all';
       if (typeof showPage === 'function') showPage('reports');
-      if (typeof renderReports === 'function') renderReports(reportId);
-      requestAnimationFrame(() => { const detail = element('report-detail'); if (detail) { detail.tabIndex = -1; detail.focus({ preventScroll: true }); detail.scrollIntoView({ behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth', block: 'start' }); } });
+      if (typeof openDailyReportDetails === 'function') openDailyReportDetails(reportId);
     }
   }
 

@@ -21,7 +21,7 @@
   <link rel="stylesheet" href="project-assistant-ui.css?v=20261031-clock-launcher" />
   <link rel="stylesheet" href="design-system.css?v=20261021-field-clock-button1" />
   <link rel="stylesheet" href="payroll-export.css?v=20261031-page-visibility" />
-  <link rel="stylesheet" href="office-dashboard.css?v=20261102-daily-feedback" />
+  <link rel="stylesheet" href="office-dashboard.css?v=20261102-daily-list" />
   <link rel="manifest" href="manifest.webmanifest" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="default" />
@@ -237,9 +237,9 @@
       <section class="page" id="catalog-page"><div class="page-heading"><div><p class="eyebrow">REUSABLE WORK</p><h1>Production catalog</h1><p>Save common scope items once, reuse them in estimates, and build verified production history.</p></div><button class="primary" id="new-catalog-item">＋ Catalog item</button></div><div class="filter-row"><div class="search-box">⌕ <input id="catalog-search" placeholder="Search work items or categories"></div></div><div class="catalog-grid" id="catalog-grid"></div></section>
 
       <section class="page" id="reports-page">
-        <div class="page-heading"><div><p class="eyebrow">FIELD TO OFFICE</p><h1>Daily reports</h1><p>Review field notes transformed into structured production data.</p></div><div class="report-page-actions"><button type="button" class="secondary" id="close-report-view" hidden>← Back to project</button><button class="primary field-only" data-open-report>＋ New daily report</button></div></div>
+        <div class="page-heading"><div><p class="eyebrow">FIELD TO OFFICE</p><h1>Daily reports</h1><p>Review the work. Close the day clean.</p></div><div class="report-page-actions"><button type="button" class="secondary" id="close-report-view" hidden>← Back to project</button><button class="primary field-only" data-open-report>＋ New daily report</button></div></div>
         <div class="report-list-tools" aria-label="Filter and sort daily reports"><label>Show<select id="report-status-filter"><option value="all">All reports</option><option value="Draft">Drafts</option><option value="Needs review">Needs review</option><option value="Missing data">Missing data</option><option value="Approved">Approved</option></select></label><label>Sort<select id="report-sort"><option value="newest">Newest first</option><option value="oldest">Oldest first</option><option value="project">Project name</option><option value="status">Status</option></select></label></div>
-        <div class="report-layout"><div class="report-list" id="report-list"></div><article class="panel report-detail" id="report-detail"></article></div>
+        <div class="report-list-columns" aria-hidden="true"><span>Project</span><span>Report date / job</span><span>Submitted by</span><span>Status</span><span></span></div><div class="report-layout"><div class="report-list" id="report-list"></div><article class="panel report-detail" id="report-detail"></article></div>
       </section>
 
       <section class="page safety-workspace-page" id="safety-page">
@@ -607,7 +607,7 @@
   <script src="schedule-approved-labor.js?v=20261008-approved-evidence"></script>
   <script src="report-work-details.js?v=20261101-project-early-warning"></script>
   <script src="office-review.js?v=20261102-office-review"></script>
-  <script src="app.js?v=20261102-daily-feedback-r2"></script>
+  <script src="app.js?v=20261102-daily-list"></script>
   <script src="field-daily-scope.js?v=20261101-daily-notes"></script>
   <script src="field-instant-daily.js?v=20261101-daily-safety-scope"></script>
   <script src="estimate-mobile.js"></script>
@@ -630,10 +630,10 @@
   <script src="project-assistant-ui.js?v=20261031-simple-clock"></script>
   <script src="personal-clock-ui.js?v=20261031-clock-launcher"></script>
   <script src="safety-pm-ui.js?v=20261102-office-review"></script>
-  <script src="safety-workspace-ui.js?v=20261101-daily-safety-scope"></script>
+  <script src="safety-workspace-ui.js?v=20261102-daily-list"></script>
   <script src="safety-dashboard-ui.js?v=20261101-daily-safety-scope"></script>
   <script src="project-site-visits-ui.js?v=20261101-job-overview-actions"></script>
-  <script src="office-dashboard.js?v=20261028-field1-20261029-field6"></script>
+  <script src="office-dashboard.js?v=20261102-daily-list"></script>
   <script src="team-members-ui.js?v=20261102-office-review"></script>
   <script src="crew-workspace.js?v=20261031-crew-details"></script>
   <script src="crew-details-ui.js?v=20261031-crew-details"></script>

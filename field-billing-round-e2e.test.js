@@ -56,6 +56,7 @@ async function login(page, email, password) {
 }
 
 async function openNav(page, name) {
+  await page.evaluate(()=>document.querySelector('#daily-details-modal')?.close());
   await page.evaluate(target => {
     const sidebar = document.querySelector('#sidebar');
     if (sidebar && !sidebar.classList.contains('open')) document.querySelector('#menu-button')?.click();
@@ -190,6 +191,8 @@ async function gateReport(page) {
     });
     await login(owner, OWNER_EMAIL, OWNER_PASSWORD);
     await openNav(owner, 'reports');
+    await owner.waitForSelector('#report-list [data-report]');
+    await owner.click('#report-list [data-report]');
     await owner.waitForFunction(() => /2 min · 0\.03 h/.test(document.querySelector('#report-detail')?.innerText || ''), { timeout: 20000 });
     const draftCard = await owner.evaluate(() => {
       const labor = [...document.querySelectorAll('#report-detail .data-box')].find(box => /LABOR/i.test(box.querySelector('small')?.textContent || ''));
@@ -204,6 +207,8 @@ async function gateReport(page) {
     await owner.reload({ waitUntil: 'domcontentloaded' });
     await owner.waitForSelector('#menu-button', { timeout: 20000 });
     await openNav(owner, 'reports');
+    await owner.waitForSelector('#report-list [data-report]');
+    await owner.click('#report-list [data-report]');
     await owner.waitForSelector('#office-decision', { timeout: 20000 });
     await owner.select('#office-decision', 'tm');
     await waitUntil(owner, () => {
@@ -220,6 +225,8 @@ async function gateReport(page) {
     await owner.reload({ waitUntil: 'domcontentloaded' });
     await owner.waitForSelector('#menu-button', { timeout: 20000 });
     await openNav(owner, 'reports');
+    await owner.waitForSelector('#report-list [data-report]');
+    await owner.click('#report-list [data-report]');
     await owner.waitForSelector('.extra-work-office', { timeout: 20000 });
     const approvedUi = await owner.evaluate(() => ({
       status: document.querySelector('#report-detail .status')?.textContent || '',
