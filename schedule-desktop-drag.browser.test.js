@@ -84,7 +84,8 @@ const executablePath = process.env.PDL_BROWSER_PATH || ['C:/Program Files/Google
     const source=page.locator('.schedule-grid [data-assignment]').filter({hasText:'Drag test excavation'}).first();
     const id=await source.getAttribute('data-assignment'),member=await source.getAttribute('data-member');
     const oldDate=await source.evaluate(el=>el.closest('[data-schedule-date]').dataset.scheduleDate);
-    const target=page.locator(`.schedule-grid [data-schedule-member="${member}"]:not([data-schedule-date="${oldDate}"])`).nth(2);
+    // The three-day task can occupy a different weekday on each run. Move to a free day.
+    const target=page.locator(`.schedule-grid [data-schedule-member="${member}"]:not([data-schedule-date="${oldDate}"]):not(:has([data-assignment]))`).first();
     const newDate=await target.getAttribute('data-schedule-date');
     const moved=page.waitForResponse(r=>r.url().endsWith(`/api/assignments/${id}`)&&r.request().method()==='PATCH');
     await source.dragTo(target);assert.ok((await moved).ok(),'moving assignment persists');

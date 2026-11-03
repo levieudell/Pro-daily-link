@@ -15,12 +15,15 @@ function client(){const jar=new Map();return async(route,method='GET',input)=>{
   for(const cookie of response.headers.getSetCookie()){const pair=cookie.split(';')[0],index=pair.indexOf('=');jar.set(pair.slice(0,index),pair.slice(index+1))}
   return{status:response.status,data:await response.json()};
 }}
+
+// These journeys test post-payment onboarding; payment activation is covered by subscription-checkout.test.js.
+function seedPaid(id){const file=path.join(temp,'tenants',id+'.json'),db=JSON.parse(fs.readFileSync(file));db.company.subscriptionStatus='Active';db.company.initialPaymentConfirmedAt=new Date().toISOString();fs.writeFileSync(file,JSON.stringify(db));}
 (async()=>{
   await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));base='http://127.0.0.1:'+server.address().port;
   const owner=client(),other=client(),email='synthetic-owner@example.invalid',password='SyntheticPassword!42';
   try{
     const signup=await owner('/api/signup','POST',{companyName:'Synthetic PDL journey',ownerName:'QA Owner',email,password,legalAccepted:true,onboardingPreference:'self'});assert.equal(signup.status,201);
-    assert.ok(signup.data.company.trialEndsAt);assert.equal(signup.data.company.founder,false);
+    assert.equal(signup.data.company.trialEndsAt,null);assert.equal((await owner('/api/state')).status,402);seedPaid(signup.data.company.id);assert.equal(signup.data.company.founder,false);
     const me=await owner('/api/auth/me');assert.equal(me.status,200);assert.equal(me.data.companyId,signup.data.company.id);
     const verification=await owner('/api/auth/email-verification/resend','POST',{});assert.equal(verification.status,200);assert.ok(verification.data.previewToken);
     assert.equal((await owner('/api/auth/email-verification/confirm','POST',{token:verification.data.previewToken})).status,200);
@@ -37,7 +40,7 @@ function client(){const jar=new Map();return async(route,method='GET',input)=>{
     await new Promise(resolve=>server.close(resolve));await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));base='http://127.0.0.1:'+server.address().port;
     const restored=await owner('/api/state');assert.equal(restored.status,200);assert.equal(restored.data.reports.length,1);assert.equal(restored.data.reports[0].status,'Approved');
     assert.deepEqual((await owner('/api/reporting-exports/'+captured.data.id)).data,captured.data,'capture survives server restart');
-    const foreign=await other('/api/signup','POST',{companyName:'Other synthetic tenant',ownerName:'Other Owner',email:'other-owner@example.invalid',password,legalAccepted:true,onboardingPreference:'self'});assert.equal(foreign.status,201);
+    const foreign=await other('/api/signup','POST',{companyName:'Other synthetic tenant',ownerName:'Other Owner',email:'other-owner@example.invalid',password,legalAccepted:true,onboardingPreference:'self'});assert.equal(foreign.status,201);seedPaid(foreign.data.company.id);
     assert.equal((await other('/api/state')).data.projects.length,0);assert.equal((await other('/api/reporting-exports/'+captured.data.id)).status,404);
     const reset=await owner('/api/auth/forgot','POST',{email});assert.equal(reset.status,200);assert.ok(reset.data.previewToken);
     const replacement='SyntheticReplacement!42';assert.equal((await owner('/api/auth/reset','POST',{email,token:reset.data.previewToken,password:replacement})).status,200);

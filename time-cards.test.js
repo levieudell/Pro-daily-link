@@ -160,6 +160,8 @@ server.listen(4201, async () => {
     const signup = await request('/api/signup', {method: 'POST', body: JSON.stringify({companyName: 'Other Builders', ownerName: 'Bea Owner', email: 'bea-timecards@example.test', password: 'TenantPassword!42', trade: 'Concrete', employeeCount: 4, projectCount: 1, plan: 'starter', legalAccepted: true, legalVersion: '2026-09-17'})});
     assert.equal(signup.response.status, 201);
     const otherId = signup.data.company.id;
+    // Paid fixture for the unrelated time-card journey.
+    const otherFile=path.join(tempDir,'tenants',otherId+'.json'),otherDb=JSON.parse(fs.readFileSync(otherFile));otherDb.company.subscriptionStatus='Active';otherDb.company.initialPaymentConfirmedAt=new Date().toISOString();fs.writeFileSync(otherFile,JSON.stringify(otherDb));
     const otherLogin = await request('/api/auth/login', {method: 'POST', headers: {'X-PDL-Company': otherId}, body: JSON.stringify({email: 'bea-timecards@example.test', password: 'TenantPassword!42'})});
     assert.equal(otherLogin.response.status, 200);
     const otherAuth = {Authorization: `Bearer ${otherLogin.data.token}`, 'X-PDL-Company': otherId};

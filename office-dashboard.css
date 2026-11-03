@@ -772,3 +772,14 @@ dialog#personal-clock-modal{padding:0;width:min(480px,calc(100vw - 24px));max-he
 :root[data-theme] body #reports-page .report-status-correction {background:var(--pdl-white)!important;color:var(--pdl-black)!important;border:1px solid var(--pdl-pink);}
 :root[data-theme] body #reports-page .report-status-submitted {background:var(--pdl-gray)!important;color:var(--pdl-white)!important;}
 #reports-page {padding-bottom:100px;}
+
+/* Billing resume keeps the unpaid workspace outside the app. */
+:root[data-theme] body .subscription-lock{background:var(--pdl-black)!important;color:var(--pdl-white)!important;min-height:100dvh;}
+:root[data-theme] body .subscription-lock-card{background:var(--pdl-black)!important;color:var(--pdl-white)!important;border:1px solid var(--pdl-gray)!important;border-top:3px solid var(--pdl-orange)!important;box-shadow:none!important;}
+:root[data-theme] body .subscription-lock-card :is(p,small,h1){color:var(--pdl-white)!important;}
+.subscription-lock-card h1{font:400 30px/1.2 Anton,sans-serif;text-transform:uppercase;}
+:root[data-theme] body .subscription-lock-card img{background:transparent!important;border-radius:0;padding:0;}
+:root[data-theme] body .subscription-lock-card .primary{background:var(--pdl-orange)!important;color:var(--pdl-black)!important;}
+:root[data-theme] body .subscription-lock-card .secondary{background:var(--pdl-black)!important;color:var(--pdl-white)!important;border:1px solid var(--pdl-gray)!important;}
+.subscription-lock-card button:focus-visible{outline:2px solid var(--pdl-orange);outline-offset:2px;box-shadow:none;}
+@media(max-width:480px){.subscription-lock{padding:16px}.subscription-lock-card{padding:24px 18px}}
