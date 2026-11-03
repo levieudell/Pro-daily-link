@@ -1922,6 +1922,7 @@ function openDailyReportDetails(reportId){
 }
 $('#close-daily-details').onclick=()=>$('#daily-details-modal').close();
 $('#daily-details-modal').addEventListener('close',()=>{
+  if($('#daily-details-modal').open)return; // Ignore a queued close after the popup reopened.
   $('#daily-details-modal .daily-action-notice')?.remove();
   $('#reports-page .report-layout').append($('#report-detail'));
   const opener=dailyDetailsOpener?.isConnected?dailyDetailsOpener:$(`[data-report="${Number($('#daily-details-modal').dataset.reportId)}"]`);
