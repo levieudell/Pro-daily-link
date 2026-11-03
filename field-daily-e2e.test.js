@@ -608,6 +608,8 @@ async function openNav(page, name) {
     assert.equal(/No potential changes were confirmed/.test(sent), false, sent);
     await shot(page, 'field-send-success.png');
     await page.click('#report-sent-modal button.primary');
+    await page.waitForSelector('#report-list [data-report]');
+    await page.click('#report-list [data-report]');
     await page.waitForSelector('[data-edit-report]');
     await page.evaluate(() => {
       const status = document.querySelector('#autosave-status');
@@ -653,6 +655,8 @@ async function openNav(page, name) {
     await shot(page, 'field-reopen-stable.png');
     await page.evaluate(() => document.querySelector('#report-modal .close-button')?.click());
     await page.waitForFunction(() => !document.querySelector('#report-modal')?.open);
+    await page.waitForFunction(() => Date.now() >= suppressReportOpenUntil);
+    await page.click('#close-daily-details');
     await page.waitForFunction(() => Date.now() >= suppressReportOpenUntil);
     const reopenTarget = await page.evaluate(() => {
       const button = document.querySelector('.top-actions [data-open-report]');
