@@ -28,6 +28,14 @@ const server=http.createServer((req,res)=>{
   const base='http://127.0.0.1:'+server.address().port;
   try{
     browser=await chromium.launch({headless:true,...(executablePath?{executablePath}:{})});
+    for(const cycle of ['annual','monthly']){
+      const page=await browser.newPage();
+      await page.route('**/api/founder-offer',route=>route.fulfill({json:{enabled:false}}));
+      await page.goto(base+'/signup.html?cycle='+cycle);
+      assert.ok(await page.locator('[name=billingCycle][value='+cycle+']').isChecked(),'explicit URL cycle is preserved');
+      assert.equal(await page.locator('[name=plan][value=starter]').evaluate(el=>el.closest('label').querySelector('strong').textContent),cycle==='annual'?'$990/year':'$99/mo');
+      await page.close();
+    }
     for(const [width,cycle,founder] of [[390,'annual',false],[390,'monthly',false],[390,'annual',true],[390,'monthly',true],[1280,'annual',false]]){
       const page=await browser.newPage({viewport:{width,height:844}}),errors=[];
       let signups=0,checkouts=0;
@@ -86,7 +94,7 @@ const server=http.createServer((req,res)=>{
         if(url.pathname==='/api/config')return route.fulfill({json:{authRequired:true}});
         if(url.pathname==='/api/auth/me')return route.fulfill({json:{id:1,companyId:'unpaid-test',role:'owner',name:'Owner',emailVerifiedAt:'2026-11-03'}});
         if(url.pathname==='/api/account-access')return route.fulfill({json:{status:'Incomplete',locked:true,reason:'Complete payment to open your workspace.'}});
-        if(url.pathname==='/api/billing')return route.fulfill({json:{status:'Incomplete',locked:true,plan:'growth',planName:'Growth',billingCycle:'annual',hasSubscription:false,configured:true,usage:{users:1,activeProjects:0},limits:{users:30,activeProjects:25},plans:[{id:'growth',name:'Growth',price:199,annualPrice:1990,available:true,annualAvailable:true,maxUsers:30,maxProjects:25}]}});
+        if(url.pathname==='/api/billing')return route.fulfill({json:{status:'Incomplete',locked:true,plan:'growth',planName:'Growth',hasSubscription:false,configured:true,usage:{users:1,activeProjects:0},limits:{users:30,activeProjects:25},plans:[{id:'growth',name:'Growth',price:199,annualPrice:1990,available:true,annualAvailable:true,maxUsers:30,maxProjects:25}]}});
         if(url.pathname==='/api/state'){stateReads++;return route.fulfill({status:402,json:{error:'Payment required'}});}
         if(url.pathname.startsWith('/api/'))return route.fulfill({json:{}});
         return route.continue();
