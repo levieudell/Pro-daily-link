@@ -7,7 +7,7 @@ const path = require('node:path');
 
 const root = __dirname;
 const V = '20261027-public3';
-const signupVersion = '20261104-annual-first';
+const signupVersion = '20261104-card-trial';
 const pages = [
   'landing.html',
   'about.html',

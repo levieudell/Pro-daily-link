@@ -136,12 +136,13 @@ async function validatePrice(stripeRequest, id, amount, cycle, env = process.env
 async function prepareSubscription(db, subscription, plans, stripeRequest, env = process.env) {
   const info = identify(subscription.items?.data?.[0]?.price?.id, plans, env);
   if (!info) throw fail('Unrecognized subscription price.', 503);
-  if (!info.founder || subscription.status !== 'active') return info;
+  if (!info.founder) return info;
   if (!isFounder(db.company) || String(subscription.metadata?.company_id) !== String(db.company.id) ||
       subscription.metadata?.offer !== 'founder' ||
       info.plan !== db.company.founder.plan || info.cycle !== db.company.founder.billingCycle) {
     throw fail('Founder subscription does not match the company offer.', 400);
   }
+  if (subscription.status !== 'active') return info;
   const invoiceId = typeof subscription.latest_invoice === 'string' ? subscription.latest_invoice : subscription.latest_invoice?.id;
   const invoice = invoiceId ? await stripeRequest('/invoices/' + encodeURIComponent(invoiceId), null, 'GET') : null;
   if (!invoice || invoice.status !== 'paid') throw fail('Waiting for confirmed founder payment.', 409);

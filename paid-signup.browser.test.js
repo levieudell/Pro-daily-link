@@ -56,6 +56,7 @@ const server=http.createServer((req,res)=>{
       });
       await page.goto(base+'/signup.html?plan=growth');
       await page.getByRole('button',{name:'Decline',exact:true}).click();
+      assert.ok(await page.locator('[data-step="1"] .trial-disclosure').evaluate(el=>el.getBoundingClientRect().bottom<=innerHeight),'trial disclosure visible without scrolling');
       await page.locator('#company').fill('Test Builders');await page.locator('#owner').fill('Test Owner');
       await page.locator('#email').fill('owner@example.invalid');await page.locator('#password').fill('SyntheticPassword!42');
       await page.locator('[data-next="2"]').click();await page.locator('#trade').selectOption('Excavation');
@@ -70,9 +71,9 @@ const server=http.createServer((req,res)=>{
       fs.mkdirSync(path.join(root,'docs/paid-signup'),{recursive:true});
       await page.screenshot({path:path.join(root,`docs/paid-signup/plan-${width}.png`),fullPage:true});
       await page.locator('[data-next="3"]').click();
-      assert.match(await page.locator('#payment-summary').innerText(),new RegExp('per '+(cycle==='annual'?'year':'month')+'.*Charged today'));
+      assert.match(await page.locator('#payment-summary').innerText(),new RegExp('per '+(cycle==='annual'?'year':'month')+'.*after your 7-day trial'));
       if(founder)await page.locator('#founder-terms').check();
-      assert.doesNotMatch(await page.locator('body').innerText(),/14-day|after trial|no credit card|Nothing is charged today/i);
+      assert.doesNotMatch(await page.locator('body').innerText(),/14-day|no credit card/i);
       await page.locator('#legal-acceptance').check();
       assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));
       const button=await page.locator('#create-company').evaluate(el=>({height:el.getBoundingClientRect().height,bg:getComputedStyle(el).backgroundColor,color:getComputedStyle(el).color}));
