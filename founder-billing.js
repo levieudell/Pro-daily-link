@@ -29,7 +29,7 @@ function enroll(input, env = process.env) {
   if (!String(input.founderCode || '').trim()) return null;
   if (!validCode(input.founderCode, env)) throw fail('This founder invitation code is invalid or unavailable.');
   if (input.founderTermsAccepted !== true) throw fail('Accept the founder payment and renewal terms to continue.');
-  const cycle = input.billingCycle === 'annual' ? 'annual' : 'monthly';
+  const cycle = input.billingCycle === 'monthly' ? 'monthly' : 'annual';
   if (!PRICES[input.plan]) throw fail('Choose a valid founder plan.');
   if (!env.STRIPE_SECRET_KEY || !env.STRIPE_WEBHOOK_SECRET ||
       !env[priceKey(input.plan, cycle, true)] || !env[priceKey(input.plan, cycle)]) {
@@ -42,7 +42,7 @@ function enroll(input, env = process.env) {
 }
 function isFounder(company) { return company.founder?.requested === true; }
 function checkout(company, input, env = process.env) {
-  const founder = isFounder(company), cycle = input.billingCycle === 'annual' ? 'annual' : 'monthly';
+  const founder = isFounder(company), cycle = input.billingCycle === 'monthly' ? 'monthly' : 'annual';
   if (company.stripeSubscriptionId) throw fail('Use Manage billing for an existing subscription.', 409);
   if (founder && !enabled(env)) throw fail('Founder checkout is temporarily unavailable.', 503);
   if (founder && (input.plan !== company.founder.plan || cycle !== company.founder.billingCycle)) {
@@ -136,12 +136,13 @@ async function validatePrice(stripeRequest, id, amount, cycle, env = process.env
 async function prepareSubscription(db, subscription, plans, stripeRequest, env = process.env) {
   const info = identify(subscription.items?.data?.[0]?.price?.id, plans, env);
   if (!info) throw fail('Unrecognized subscription price.', 503);
-  if (!info.founder || subscription.status !== 'active') return info;
+  if (!info.founder) return info;
   if (!isFounder(db.company) || String(subscription.metadata?.company_id) !== String(db.company.id) ||
       subscription.metadata?.offer !== 'founder' ||
       info.plan !== db.company.founder.plan || info.cycle !== db.company.founder.billingCycle) {
     throw fail('Founder subscription does not match the company offer.', 400);
   }
+  if (subscription.status !== 'active') return info;
   const invoiceId = typeof subscription.latest_invoice === 'string' ? subscription.latest_invoice : subscription.latest_invoice?.id;
   const invoice = invoiceId ? await stripeRequest('/invoices/' + encodeURIComponent(invoiceId), null, 'GET') : null;
   if (!invoice || invoice.status !== 'paid') throw fail('Waiting for confirmed founder payment.', 409);

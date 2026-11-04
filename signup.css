@@ -79,3 +79,5 @@ a{color:#FFFFFF;text-underline-offset:3px}
 .signin-link{margin-top:24px}
 
 .legal-consent a{font-size:inherit;line-height:inherit}
+
+.trial-disclosure{font-family:Inter,sans-serif;border-left:3px solid #FF6600;padding:8px 12px;line-height:1.4}
