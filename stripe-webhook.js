@@ -7,6 +7,7 @@ const EVENTS = new Set([
   'customer.subscription.created',
   'customer.subscription.updated',
   'customer.subscription.deleted',
+  'customer.subscription.trial_will_end',
   'invoice.paid',
   'invoice.payment_failed',
 ]);
@@ -80,6 +81,7 @@ async function processEvent(event, { stripeRequest, withCompany, applySubscripti
     const seen = db.company.stripeWebhookEvents || [];
     if (!seen.includes(event.id)) {
       await applySubscription(db, subscription);
+      if(event.type==='customer.subscription.trial_will_end')console.info('Stripe trial ending', {eventId:event.id,companyId,subscriptionId});
       db.company.stripeWebhookEvents = [...seen, event.id].slice(-200);
     }
     // Repeat persistence on retries in case an earlier local save succeeded but cloud save failed.

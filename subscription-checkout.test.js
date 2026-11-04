@@ -38,6 +38,8 @@ global.fetch = async (url, options = {}) => {
   calls.push({ pathname, method: options.method, params, query: Object.fromEntries(target.searchParams), key: options.headers?.['Idempotency-Key'] });
   const reply = (value, status = 200) => new Response(JSON.stringify(value), { status });
   if (providerOutage) return reply({ error: { message: 'Synthetic outage' } }, 503);
+  if (pathname.startsWith('/payment_methods/')) return reply({id:pathname.split('/').pop(),type:'card',customer:target.searchParams.get('customer')||[...subscriptions.values()].find(s=>s.default_payment_method===pathname.split('/').pop())?.customer,livemode:false});
+  if (pathname.startsWith('/customers/')) return reply({id:pathname.split('/').pop(),livemode:false,invoice_settings:{}});
   if (pathname.startsWith('/invoices/')) return reply(invoices.get(pathname.split('/').pop()));
   if (pathname.startsWith('/prices/')) return reply(prices[pathname.split('/').pop()]);
   if (pathname.startsWith('/billing_portal/configurations/')) return reply(portalConfigurations.get(pathname.split('/').pop()) || { error: { message: 'Missing portal configuration' } }, portalConfigurations.has(pathname.split('/').pop()) ? 200 : 404);
@@ -90,7 +92,7 @@ async function signup(plan = 'starter', existingTrial = true) {
   const client = customerClient();
   assert.equal((await client.request('/api/signup', 'POST', { companyName: 'Synthetic billing ' + (++index), ownerName: 'Synthetic Owner',
     email: `billing-${index}@example.invalid`, password: 'SyntheticPassword!42', legalAccepted: true, plan, paymentRequired:false,subscriptionStatus:'Active',trialEndsAt:'2099-01-01T00:00:00Z' })).status, 201);
-  if(existingTrial)client.mutate(db=>{delete db.company.paymentRequired;delete db.company.subscriptionStatus;db.company.trialEndsAt=new Date(Date.now()+14*86400000).toISOString();});
+  if(existingTrial)client.mutate(db=>{delete db.company.paymentRequired;delete db.company.cardTrialDays;delete db.company.subscriptionStatus;db.company.trialEndsAt=new Date(Date.now()+14*86400000).toISOString();});
   return client;
 }
 function providerSubscription(client, status, id = 'sub_mock_' + client.id, price = 'price_starter_monthly') {
@@ -98,8 +100,8 @@ function providerSubscription(client, status, id = 'sub_mock_' + client.id, pric
     items: { data: [{ price: { id: price }, current_period_end: Math.floor(Date.now() / 1000) + 86400 * 30 }] } };
   subscriptions.set(id, s); return s;
 }
-async function webhook(subscription, suffix) {
-  const payload = JSON.stringify({ id: 'evt_mock_' + suffix, type: 'customer.subscription.updated', created: Math.floor(Date.now() / 1000),
+async function webhook(subscription, suffix, type='customer.subscription.updated') {
+  const payload = JSON.stringify({ id: 'evt_mock_' + suffix, type, created: Math.floor(Date.now() / 1000),
     livemode: false, data: { object: subscription } });
   return realFetch(base + '/api/billing/webhook', { method: 'POST', body: payload,
     headers: { 'stripe-signature': Stripe.webhooks.generateTestHeaderString({ payload, secret: process.env.STRIPE_WEBHOOK_SECRET }) } });
@@ -124,10 +126,37 @@ async function webhook(subscription, suffix) {
       assert.equal((await paid.request('/api/billing/checkout','POST',{plan,billingCycle})).status,200);
       const pending=paid.read().company.pendingCheckout;
       assert.equal(pending.params['line_items[0][price]'],`price_${plan}_${billingCycle}`);
-      assert.ok(!Object.keys(pending.params).some(key=>/trial|billing_cycle_anchor|proration/.test(key)));
+      assert.equal(pending.params['subscription_data[trial_period_days]'],7);
+      assert.equal(pending.params.payment_method_collection,'always');
+      assert.deepEqual(pending.params.payment_method_types,['card']);
+      assert.equal(pending.params['subscription_data[trial_settings][end_behavior][missing_payment_method]'],'cancel');
       assert.equal((await paid.request('/api/billing/checkout','POST',{plan,billingCycle})).status,200);
       assert.equal(paid.read().company.pendingCheckout.id,pending.id,'cancel/retry reuses the open checkout');
       const sub=providerSubscription(paid,'active',undefined,`price_${plan}_${billingCycle}`);
+      sub.status='trialing';sub.trial_end=Math.floor(Date.now()/1000)+7*86400;
+      const trialSession=sessions.get(pending.id);Object.assign(trialSession,{status:'complete',customer:sub.customer,subscription:sub.id});
+      assert.equal((await paid.request('/api/billing/confirm?session_id='+trialSession.id)).data.locked,true,'no saved card stays locked');
+      sub.status='canceled';assert.equal((await webhook(sub,'no-card-canceled-'+paid.id)).status,200);
+      assert.equal((await paid.request('/api/state')).status,402,'trial canceled without card stays locked');
+      sub.status='trialing';
+      sub.default_payment_method='pm_'+paid.id;
+      assert.equal((await paid.request('/api/billing/confirm?session_id='+trialSession.id)).data.locked,false,'direct Stripe trial confirmation opens workspace');
+      assert.equal((await paid.request('/api/state')).status,200);
+      for(const role of ['field','foreman']){
+        paid.mutate(db=>db.users.find(u=>u.role==='owner'||u.role==='field').role=role);
+        assert.equal((await paid.request('/api/state')).status,200,role+' can enter a card-confirmed trial');
+      }
+      paid.mutate(db=>db.users.find(u=>u.role==='foreman').role='owner');
+      assert.equal((await webhook(sub,'trial-'+paid.id)).status,200);
+      assert.equal((await webhook(sub,'ending-'+paid.id,'customer.subscription.trial_will_end')).status,200);
+      assert.equal((await webhook(sub,'ending-'+paid.id,'customer.subscription.trial_will_end')).status,200);
+      const trialBefore=paid.read().company.cardTrial;
+      assert.equal((await webhook(sub,'trial-'+paid.id)).status,200);
+      assert.deepEqual(paid.read().company.cardTrial,trialBefore,'trial replay is safe');
+      sub.status='past_due';assert.equal((await webhook(sub,'trial-due-'+paid.id)).status,200);
+      assert.equal((await paid.request('/api/state')).status,402,'past due closes trial access');
+      sub.status='active';
+
       sub.latest_invoice='in_'+paid.id;
       const invoice={id:sub.latest_invoice,subscription:sub.id,customer:sub.customer,livemode:false,status:'open',amount_paid:0};
       invoices.set(invoice.id,invoice);
