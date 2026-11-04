@@ -28,7 +28,7 @@ const server=http.createServer((req,res)=>{
   const base='http://127.0.0.1:'+server.address().port;
   try{
     browser=await chromium.launch({headless:true,...(executablePath?{executablePath}:{})});
-    for(const width of [390,1280]){
+    for(const [width,cycle,founder] of [[390,'annual',false],[390,'monthly',false],[390,'annual',true],[390,'monthly',true],[1280,'annual',false]]){
       const page=await browser.newPage({viewport:{width,height:844}}),errors=[];
       let signups=0,checkouts=0;
       page.on('pageerror',e=>errors.push(e.message));
@@ -36,9 +36,9 @@ const server=http.createServer((req,res)=>{
         const url=new URL(route.request().url());
         if(url.hostname==='checkout.stripe.com')return route.fulfill({contentType:'text/html',body:'Synthetic secure checkout'});
         if(url.origin!==base)return route.abort();
-        if(url.pathname==='/api/founder-offer')return route.fulfill({json:{enabled:false}});
+        if(url.pathname==='/api/founder-offer')return route.fulfill({json:{enabled:founder,prices:{starter:{monthly:79,annual:790},growth:{monthly:159,annual:1590},pro:{monthly:319,annual:3190}}}});
         if(url.pathname==='/api/signup'){
-          signups++;const input=route.request().postDataJSON();assert.equal(input.plan,'growth');assert.equal(input.billingCycle,'annual');assert.equal(input.legalAccepted,true);
+          signups++;const input=route.request().postDataJSON();assert.equal(input.plan,'growth');assert.equal(input.billingCycle,cycle);assert.equal(input.legalAccepted,true);
           return route.fulfill({status:201,json:{company:{id:'synthetic-paid',founder:false,paymentRequired:true}}});
         }
         if(url.pathname==='/api/billing/checkout'){
@@ -46,16 +46,24 @@ const server=http.createServer((req,res)=>{
         }
         return route.continue();
       });
-      await page.goto(base+'/signup.html?plan=growth&cycle=annual');
+      await page.goto(base+'/signup.html?plan=growth');
       await page.getByRole('button',{name:'Decline',exact:true}).click();
       await page.locator('#company').fill('Test Builders');await page.locator('#owner').fill('Test Owner');
       await page.locator('#email').fill('owner@example.invalid');await page.locator('#password').fill('SyntheticPassword!42');
       await page.locator('[data-next="2"]').click();await page.locator('#trade').selectOption('Excavation');
       assert.ok(await page.locator('[name=plan][value=growth]').isChecked());
+      const price=page.locator('.plans label').filter({has:page.locator('[name=plan][value=growth]')}).locator('strong');
+      assert.equal(await price.innerText(),'$1,990/year');
+      assert.ok(await price.evaluate(el=>el.getBoundingClientRect().bottom<=innerHeight),'yearly price is visible without scrolling');
+      if(cycle==='monthly')await page.locator('[name=billingCycle][value=monthly]').check();
+      if(founder)await page.locator('#founder-code').fill('VALID-TEST');
+      assert.equal(await price.innerText(),cycle==='annual'?(founder?'$1,590/year':'$1,990/year'):(founder?'$159/mo':'$199/mo'));
+      assert.match(await price.evaluate(el=>getComputedStyle(el).fontFamily),/Anton/);
       fs.mkdirSync(path.join(root,'docs/paid-signup'),{recursive:true});
       await page.screenshot({path:path.join(root,`docs/paid-signup/plan-${width}.png`),fullPage:true});
       await page.locator('[data-next="3"]').click();
-      assert.match(await page.locator('#payment-summary').innerText(),/Growth.*\$1,990 per year.*Charged today/);
+      assert.match(await page.locator('#payment-summary').innerText(),new RegExp('per '+(cycle==='annual'?'year':'month')+'.*Charged today'));
+      if(founder)await page.locator('#founder-terms').check();
       assert.doesNotMatch(await page.locator('body').innerText(),/14-day|after trial|no credit card|Nothing is charged today/i);
       await page.locator('#legal-acceptance').check();
       assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));

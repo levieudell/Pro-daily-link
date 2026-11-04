@@ -16,7 +16,8 @@ input::placeholder{color:#ffffff;opacity:1}
 .plans label:has(input:checked){border-color:#FF6600;background:#000000}
 .plans input{width:auto;float:right;margin:0}
 .plans b,.plans strong,.plans small{display:block;margin-bottom:7px}
-.plans strong{font-size:21px}
+.plans strong{font-family:Anton,sans-serif;font-weight:400;font-size:28px}
+.plans small{font-family:Inter,sans-serif;font-weight:400}
 .plans small,#recommendation{color:#ffffff}
 .onboarding-options strong{font-size:16px}
 .legal-consent{margin-top:18px;padding:17px;border:1px solid #6E6E6E;border-radius:10px;background:#000000}
@@ -79,3 +80,5 @@ a{color:#FFFFFF;text-underline-offset:3px}
 .signin-link{margin-top:24px}
 
 .legal-consent a{font-size:inherit;line-height:inherit}
+
+@media(max-width:650px){.signup-step[data-step="2"] .plans label{padding:10px 12px}.signup-step[data-step="2"] .plans b,.signup-step[data-step="2"] .plans strong,.signup-step[data-step="2"] .plans small{margin-bottom:3px}.signup-step[data-step="2"] .plans strong{font-size:26px}}

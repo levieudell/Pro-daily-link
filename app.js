@@ -57,7 +57,7 @@ let actionCenter={items:[],counts:{urgent:0,high:0,medium:0,total:0}};
 let insightData={records:[]};
 let projectView='active';
 let company={};
-let billing=null,billingCycle='monthly';
+let billing=null,billingCycle='annual';
 let companySettingsEditing=false;
 let suppressReportOpenUntil=0;
 
@@ -151,7 +151,7 @@ function renderBilling(){
   $$('[data-plan-support]').forEach(button=>button.onclick=()=>notify(billing.planChange?.message||'Contact support to change plans.'));
   $('#billing-portal').hidden=!billing.hasBillingCustomer;
 }
-async function loadBilling(){billing=await api('/api/billing');if(!billing.hasSubscription)billingCycle=billing.founder?.billingCycle||billing.billingCycle;renderPlanCard();renderBilling();return billing}
+async function loadBilling(){billing=await api('/api/billing');if(!billing.hasSubscription)billingCycle=billing.founder?.billingCycle||billing.billingCycle||'annual';renderPlanCard();renderBilling();return billing}
 async function openBilling(){if(currentUser?.role!=='owner')return notify('Only the Account Owner can manage billing');try{await loadBilling();$('#billing-modal').showModal()}catch(error){notify(error.message)}}
 async function startCheckout(plan){const selected=billing?.plans.find(row=>row.id===plan),available=billingCycle==='annual'?selected?.annualAvailable:selected?.available;if(!billing?.configured||!available)return notify('Stripe products still need to be connected by Pro Daily Link');try{const result=await api('/api/billing/checkout',{method:'POST',body:JSON.stringify({plan,billingCycle})});location.href=result.url}catch(error){notify(error.message)}}
 $$('[data-billing-cycle]').forEach(button=>button.onclick=()=>{billingCycle=button.dataset.billingCycle;renderBilling()});
