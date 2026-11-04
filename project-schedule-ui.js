@@ -81,6 +81,52 @@ let scheduleView = 'table';
     return chipPick(field, people.map(member => ({ value: Number(member.id), label: member.name })), selected);
   }
 
+  function wireSchedulePickers(pane) {
+    const iso=d=>`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+    pane.querySelectorAll('[data-project-start-date],[data-project-end-date]').forEach(input=>{
+      input.type='hidden';
+      const root=document.createElement('div');root.className='job-date-picker';input.after(root);
+      const trigger=document.createElement('button');trigger.type='button';trigger.className='job-date-trigger';trigger.setAttribute('aria-expanded','false');
+      const calendar=document.createElement('div');calendar.className='job-date-calendar';calendar.hidden=true;root.append(trigger,calendar);
+      const label=input.hasAttribute('data-project-start-date')?'Start date':'Target end';
+      const update=()=>{trigger.textContent=input.value?formatDate(input.value):'Choose date';trigger.setAttribute('aria-label',`${label}: ${trigger.textContent}`);};update();
+      let month;
+      function paint(focusDay){
+        const first=new Date(month.getFullYear(),month.getMonth(),1),last=new Date(month.getFullYear(),month.getMonth()+1,0),offset=(first.getDay()+6)%7;
+        const title=month.toLocaleDateString(projectScheduleLocale(),{month:'long',year:'numeric'});
+        calendar.innerHTML=`<div class="job-calendar-head"><button type="button" data-calendar-month="-1" aria-label="Previous month">‹</button><strong>${escapeHtml(title)}</strong><button type="button" data-calendar-month="1" aria-label="Next month">›</button></div><div class="job-calendar-grid">${['M','T','W','T','F','S','S'].map(day=>`<span aria-hidden="true">${day}</span>`).join('')}${'<span></span>'.repeat(offset)}${Array.from({length:last.getDate()},(_,i)=>{const value=iso(new Date(month.getFullYear(),month.getMonth(),i+1));return `<button type="button" data-calendar-date="${value}" aria-label="${formatDate(value)}" aria-pressed="${input.value===value}">${i+1}</button>`;}).join('')}</div><div class="job-calendar-foot">${input.hasAttribute('data-project-end-date')?'<button type="button" data-calendar-clear>Clear date</button>':''}<button type="button" data-calendar-close>Close</button></div>`;
+        calendar.querySelectorAll('[data-calendar-month]').forEach(button=>button.onclick=event=>{event.preventDefault();event.stopPropagation();month=new Date(month.getFullYear(),month.getMonth()+Number(button.dataset.calendarMonth),1);paint();calendar.querySelector(`[data-calendar-month="${button.dataset.calendarMonth}"]`).focus();});
+        const close=()=>{calendar.hidden=true;trigger.setAttribute('aria-expanded','false');trigger.focus();};
+        calendar.querySelectorAll('[data-calendar-date]').forEach(button=>button.onclick=()=>{input.value=button.dataset.calendarDate;input.dispatchEvent(new Event('change',{bubbles:true}));update();close();});
+        calendar.querySelector('[data-calendar-close]').onclick=close;
+        const clear=calendar.querySelector('[data-calendar-clear]');if(clear)clear.onclick=()=>{input.value='';update();close();};
+        calendar.onkeydown=event=>{if(event.key==='Escape'){event.preventDefault();event.stopPropagation();close();return;}const value=event.target.dataset.calendarDate;if(!value)return;const delta={ArrowLeft:-1,ArrowRight:1,ArrowUp:-7,ArrowDown:7}[event.key];if(!delta)return;event.preventDefault();const d=new Date(value+'T12:00:00');d.setDate(d.getDate()+delta);month=new Date(d.getFullYear(),d.getMonth(),1);paint(iso(d));};
+        if(focusDay)calendar.querySelector(`[data-calendar-date="${focusDay}"]`)?.focus();
+      }
+      trigger.onclick=()=>{calendar.hidden=!calendar.hidden;trigger.setAttribute('aria-expanded',String(!calendar.hidden));if(!calendar.hidden){month=new Date((input.value || (typeof companyTodayIso==='function'?companyTodayIso():iso(new Date())))+'T12:00:00');month.setDate(1);paint();calendar.scrollIntoView({block:'nearest'});}};
+    });
+    for(const prefix of ['new','edit']){
+      const members=pane.querySelector(`[data-${prefix}-task-members]`),crew=pane.querySelector(`[data-${prefix}-task-crew]`);if(!members)continue;
+      const memberField=members.closest('.schedule-field'),crewField=crew?.closest('.schedule-field');
+      const root=document.createElement('div');root.className='job-assignment-picker schedule-span-6';memberField.before(root);
+      const modes=document.createElement('div');modes.className='job-assignment-modes';modes.setAttribute('role','group');modes.setAttribute('aria-label','Assign by');
+      modes.innerHTML='<button type="button" data-assignment-mode="crew">Crew</button><button type="button" data-assignment-mode="individual">Individual</button>';root.append(modes);if(crewField)root.append(crewField);root.append(memberField);memberField.classList.add('job-member-list');
+      const search=document.createElement('input');search.type='search';search.placeholder='Find a team member';search.setAttribute('aria-label','Find a team member');memberField.querySelector('.schedule-chip-pick')?.before(search);
+      const empty=document.createElement('p');empty.className='job-member-empty';empty.textContent='No team members found.';empty.hidden=true;memberField.append(empty);
+      search.oninput=()=>{let count=0;memberField.querySelectorAll('.schedule-chip').forEach(button=>{button.hidden=!button.textContent.toLowerCase().includes(search.value.toLowerCase());if(!button.hidden)count++;});empty.hidden=count>0;};
+      const status=document.createElement('p');status.className='job-assignment-status';status.setAttribute('aria-live','polite');root.append(status);
+      const disclosure=document.createElement('details');disclosure.className='job-member-picker';
+      const summary=document.createElement('summary');disclosure.append(summary);memberField.before(disclosure);disclosure.append(memberField);
+      const done=document.createElement('button');done.type='button';done.className='job-member-done';done.textContent='Done';memberField.append(done);
+      done.onclick=()=>{disclosure.open=false;summary.focus();};
+      disclosure.addEventListener('keydown',event=>{if(event.key==='Escape'){event.preventDefault();disclosure.open=false;summary.focus();}});
+      let mode=crew?.value?'crew':'individual';
+      function paint(){disclosure.hidden=mode!=='individual';memberField.hidden=mode!=='individual';if(crewField)crewField.hidden=mode!=='crew';modes.querySelectorAll('button').forEach(button=>button.setAttribute('aria-pressed',String(button.dataset.assignmentMode===mode)));const names=[...members.selectedOptions].filter(option=>option.value).map(option=>option.textContent);summary.textContent=names.length?`${names.length} team member${names.length===1?'':'s'} selected · Edit`:'Choose team members';status.hidden=mode==='individual';status.textContent=mode==='crew'?(crew?.value?`Crew: ${crew.value}`:'Choose a crew.'):names.length?`${names.length} selected: ${names.join(', ')}`:'No one selected yet.';if(mode==='crew'&&!crewField)status.textContent='No crews set up yet. Choose Individual to assign people.';}
+      modes.querySelectorAll('button').forEach(button=>button.onclick=()=>{if(mode===button.dataset.assignmentMode){if(mode==='individual')disclosure.open=true;return;}mode=button.dataset.assignmentMode;if(mode==='individual'){disclosure.open=true;if(crew)crew.value='';}else disclosure.open=false;if(mode==='crew'){[...members.options].forEach(option=>option.selected=false);memberField.querySelectorAll('.schedule-chip').forEach(chip=>{chip.classList.remove('is-on');chip.setAttribute('aria-pressed','false');});}paint();});
+      root.addEventListener('change',paint);root.addEventListener('click',event=>{if(event.target.closest('.schedule-chip'))queueMicrotask(paint);});paint();
+    }
+  }
+
   function forecastBanner(project, sorted){
     if (!sorted.length) return '';
     const ends = sorted.map(t => t.endDate).filter(Boolean).sort();
@@ -99,42 +145,52 @@ let scheduleView = 'table';
     const dates = sorted.map(t => t.startDate).concat(sorted.map(t => t.endDate)).filter(Boolean).sort();
     if (!dates.length) return '';
     const DAY = 86400000;
-    const start = Date.parse(dates[0] + 'T12:00:00') - 2 * DAY;
-    let end = Date.parse(dates[dates.length - 1] + 'T12:00:00') + 2 * DAY;
-    if ((end - start) / DAY > 62) end = start + 62 * DAY;
+    const start = Date.parse(dates[0] + 'T12:00:00Z') - 2 * DAY;
+    let end = Date.parse(dates[dates.length - 1] + 'T12:00:00Z') + 2 * DAY;
+    // Keep the full schedule; horizontal scrolling reveals later tasks.
     const span = end - start + DAY;
     const days = [];
     for (let t = start; t <= end; t += DAY) days.push(new Date(t));
-    const isoOf = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    const isoOf = d => `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(d.getUTCDate()).padStart(2, '0')}`;
     const locale = projectScheduleLocale();
-    const dayCells = days.map(d => `<i class="gantt-day${(d.getDay() === 0 || d.getDay() === 6) ? ' gantt-weekend' : ''}"><small>${escapeHtml(d.toLocaleDateString(locale, { weekday: 'narrow' }).toUpperCase())}</small><b>${d.getDate()}</b></i>`).join('');
+    const dayCells = days.map(d => `<i class="gantt-day${(d.getUTCDay() === 0 || d.getUTCDay() === 6) ? ' gantt-weekend' : ''}"><small>${escapeHtml(d.toLocaleDateString(locale, { weekday: 'short', timeZone: 'UTC' }).toUpperCase())}</small><b>${d.getUTCDate()}</b></i>`).join('');
+    const gridCells = days.map(() => `<i class="gantt-grid-cell" aria-hidden="true"></i>`).join('');
     const months = [];
     for (const d of days) {
-      const key = `${d.getFullYear()}-${d.getMonth()}`;
+      const key = `${d.getUTCFullYear()}-${d.getUTCMonth()}`;
       if (months.length && months[months.length - 1].key === key) months[months.length - 1].count++;
-      else months.push({ key, label: d.toLocaleDateString(locale, { month: 'short' }), count: 1 });
+      else months.push({ key, label: d.toLocaleDateString(locale, { month: 'short', year: 'numeric', timeZone: 'UTC' }), count: 1 });
     }
     const monthRow = months.map(m => `<span class="gantt-month" style="flex-grow:${m.count}">${escapeHtml(m.label)}</span>`).join('');
     const todayIso = typeof companyTodayIso === 'function' ? companyTodayIso() : (typeof localDateIso === 'function' ? localDateIso() : '');
-    const todayLeft = todayIso && todayIso >= isoOf(days[0]) && todayIso <= isoOf(days[days.length - 1]) ? (Date.parse(todayIso + 'T12:00:00') - start) / span * 100 : null;
+    const todayLeft = todayIso && todayIso >= isoOf(days[0]) && todayIso <= isoOf(days[days.length - 1]) ? (Date.parse(todayIso + 'T12:00:00Z') - start) / span * 100 : null;
     const rows = sorted.map(task => {
       const statusClass = task.status === 'done' ? ' is-done' : task.status === 'in-progress' ? ' is-progress' : ' is-todo';
       const deps = (task.predecessorIds || []).map(id => taskById(sorted, id)).filter(Boolean).map(d => d.name).join(', ');
-      const left = Math.max(0, (Date.parse(task.startDate + 'T12:00:00') - start) / span * 100);
-      const right = Math.min(100, (Date.parse(task.endDate + 'T12:00:00') + DAY - start) / span * 100);
+      const left = Math.max(0, (Date.parse(task.startDate + 'T12:00:00Z') - start) / span * 100);
+      const right = Math.min(100, (Date.parse(task.endDate + 'T12:00:00Z') + DAY - start) / span * 100);
       const progress = estimateProgress(project, task.estimateItemId);
       return `<div class="gantt-row">
-        <div class="gantt-row-label"><strong>${escapeHtml(task.name)}</strong><small>${escapeHtml(assigneeLabel(task))}${deps ? ` · waits for ${escapeHtml(deps)}` : ''}${progressText(progress) ? ` · ${escapeHtml(progressText(progress))}` : ''}</small></div>
-        <div class="gantt-row-track">${dayCells}<i class="gantt-bar${statusClass}" style="left:${left.toFixed(2)}%;width:${Math.max(0.8, right - left).toFixed(2)}%" title="${escapeHtml(task.name)} · ${escapeHtml(formatDate(task.startDate))} – ${escapeHtml(formatDate(task.endDate))}">${task.status === 'done' ? '✓' : ''}</i>${todayLeft == null ? '' : `<i class="gantt-today" style="left:${todayLeft.toFixed(2)}%" title="Today"></i>`}</div>
+        <div class="gantt-row-label"><strong>${escapeHtml(task.name)}</strong><small>${escapeHtml(assigneeLabel(task))}${deps ? ` · waits for ${escapeHtml(deps)}` : ''}${progressText(progress) ? ` · ${escapeHtml(progressText(progress))}` : ''}</small><small class="gantt-task-dates">${escapeHtml(formatDate(task.startDate))} – ${escapeHtml(formatDate(task.endDate))}</small></div>
+        <div class="gantt-row-track">${gridCells}<i class="gantt-bar${statusClass}" style="left:${left.toFixed(2)}%;width:${Math.max(0, right - left).toFixed(2)}%" title="${escapeHtml(task.name)} · ${escapeHtml(formatDate(task.startDate))} – ${escapeHtml(formatDate(task.endDate))}"><span>${task.status === 'done' ? '✓ ' : ''}${Math.round((Date.parse(task.endDate + 'T12:00:00Z') - Date.parse(task.startDate + 'T12:00:00Z')) / DAY) + 1}d</span></i>${todayLeft == null ? '' : `<i class="gantt-today" style="left:${todayLeft.toFixed(2)}%" title="Today"></i>`}</div>
       </div>`;
     }).join('');
-    return `<div class="project-schedule-gantt" data-schedule-gantt><div class="project-schedule-gantt-inner">
+    return `<div class="job-timeline-toolbar"><div><strong>THE PLAN</strong><span>Scroll across to see more dates.</span></div><div class="job-timeline-controls"><button type="button" data-timeline-scroll="-1" aria-label="Previous week">←</button><button type="button" data-timeline-scroll="1" aria-label="Next week">→</button><button type="button" data-timeline-zoom="out" aria-label="Zoom out timeline">−</button><button type="button" data-timeline-zoom="in" aria-label="Zoom in timeline">+</button></div></div><div class="project-schedule-gantt" data-schedule-gantt tabindex="0" role="region" aria-label="Project timeline. Scroll horizontally for dates and vertically for tasks." style="--timeline-days:${days.length};--timeline-track-width:${days.length * 64}px;--timeline-day-width:64px"><div class="project-schedule-gantt-inner">
       <div class="gantt-head"><div class="gantt-corner">TASK</div><div><div class="gantt-months">${monthRow}</div><div class="gantt-days">${dayCells}</div></div></div>
       ${rows}
     </div></div>`;
   }
 
 function renderSchedulePane(pane, project, tasks, editingId){
+    // Keep health warnings in step with saved task dates/status, not only the next login.
+    if (typeof projectTasks !== 'undefined') projectTasks = projectTasks.filter(row => row && String(row.projectId) !== String(project.id)).concat(tasks || []);
+    if (typeof currentRole !== 'undefined' && currentRole === 'office' && typeof projectHealthDetails === 'function' && pane.isConnected && document.querySelector('#project-detail-modal')?.open) {
+      const health = projectHealthDetails(project), banner = document.querySelector('#project-detail-modal .project-health-banner');
+      if (banner) { banner.querySelector('strong').textContent = health.status; banner.querySelector('p').textContent = health.reason; banner.classList.toggle('risk',health.status==='At risk'); banner.classList.toggle('ahead',health.status==='Ahead'); }
+      if (typeof renderProjectCards === 'function') renderProjectCards(document.querySelector('#project-search')?.value || '');
+    }
+
+    window.PDLSiteVisits?.repaintOverview(project.id);
     const editable = canEditTasks();
     const hasStart = Boolean(project.startDate && /^\d{4}-\d{2}-\d{2}$/.test(String(project.startDate)));
     const sorted = (tasks || []).slice().sort((a, b) => String(a.startDate).localeCompare(String(b.startDate)) || Number(a.id) - Number(b.id));
@@ -167,7 +223,7 @@ function renderSchedulePane(pane, project, tasks, editingId){
         <td class="project-schedule-actions">${editable ? `<select data-task-status="${Number(task.id)}" aria-label="Status for ${escapeHtml(task.name)}"><option value="not-started" ${task.status === 'not-started' ? 'selected' : ''}>Not started</option><option value="in-progress" ${task.status === 'in-progress' ? 'selected' : ''}>In progress</option><option value="done" ${task.status === 'done' ? 'selected' : ''}>Done</option></select><button type="button" class="secondary small" data-edit-task="${Number(task.id)}">Edit</button><button type="button" class="danger small" data-delete-task="${Number(task.id)}" aria-label="Delete ${escapeHtml(task.name)}">Delete</button>` : `<span class="status">${taskStatusLabel(task.status)}</span>`}</td>
       </tr>`)).join('');
     pane.innerHTML = `
-      <div class="project-schedule-head"><div><h3>Project schedule</h3><p>Linked tasks auto-schedule: a task starts the next working day after everything it waits for is done. Change one and the rest follow.</p></div><div class="project-schedule-view-toggle" role="tablist" aria-label="Schedule view"><button type="button" role="tab" id="project-schedule-table-tab" aria-controls="project-schedule-view-panel" aria-selected="${scheduleView === 'table'}" tabindex="${scheduleView === 'table' ? '0' : '-1'}" data-schedule-view="table" class="${scheduleView === 'table' ? 'active' : ''}">Table</button><button type="button" role="tab" id="project-schedule-timeline-tab" aria-controls="project-schedule-view-panel" aria-selected="${scheduleView === 'timeline'}" tabindex="${scheduleView === 'timeline' ? '0' : '-1'}" data-schedule-view="timeline" class="${scheduleView === 'timeline' ? 'active' : ''}">Timeline</button></div></div>
+      <div class="project-schedule-head"><div><h3>Project schedule</h3><p>See the plan. Update a task and linked dates follow.</p></div><div class="project-schedule-view-toggle" role="tablist" aria-label="Schedule view"><button type="button" role="tab" id="project-schedule-table-tab" aria-controls="project-schedule-view-panel" aria-selected="${scheduleView === 'table'}" tabindex="${scheduleView === 'table' ? '0' : '-1'}" data-schedule-view="table" class="${scheduleView === 'table' ? 'active' : ''}">Table</button><button type="button" role="tab" id="project-schedule-timeline-tab" aria-controls="project-schedule-view-panel" aria-selected="${scheduleView === 'timeline'}" tabindex="${scheduleView === 'timeline' ? '0' : '-1'}" data-schedule-view="timeline" class="${scheduleView === 'timeline' ? 'active' : ''}">Timeline</button></div></div>
       ${forecastBanner(project, sorted)}
       ${editable ? `${!hasStart ? `<div class="project-schedule-needs-start" data-schedule-needs-start><strong>No start date on this project yet.</strong><span>Set one below and every task will schedule itself from that day.</span></div>` : ''}
       <div class="project-schedule-add" data-project-dates-form>
@@ -187,21 +243,52 @@ function renderSchedulePane(pane, project, tasks, editingId){
         </div>
         <div class="schedule-add-actions"><button type="button" class="primary" data-add-task>＋ Add task</button><span class="schedule-add-hint">Dates set themselves from the links — no calendar needed.</span></div>
       </div>` : ''}
-      <div id="project-schedule-view-panel" role="tabpanel" aria-labelledby="project-schedule-${scheduleView}-tab">${sorted.length ? (scheduleView === 'timeline' ? ganttChart(project, sorted) : `<div class="project-schedule-table-wrap"><table class="project-schedule-table"><thead><tr><th>Task</th><th>Waits for</th><th>Length</th><th>Dates</th><th>Assigned</th><th>${editable ? 'Status / actions' : 'Status'}</th></tr></thead><tbody>${rows}</tbody></table></div>`) : `<div class="project-tab-empty"><strong>No scheduled tasks yet</strong><p>${editable ? 'Add the project’s phases or milestones above and link them so the dates keep themselves honest.' : 'Your office will add the project schedule here.'}</p></div>`}</div>`;
+      <div id="project-schedule-view-panel" role="tabpanel" aria-labelledby="project-schedule-${scheduleView}-tab">${sorted.length ? (scheduleView === 'timeline' ? ganttChart(project, sorted) : `<div class="project-schedule-table-wrap"><table class="project-schedule-table"><thead><tr><th>Task</th><th>Waits for</th><th>Length</th><th>Dates</th><th>Assigned</th><th>${editable ? 'Status / actions' : 'Status'}</th></tr></thead><tbody>${rows}</tbody></table></div>`) : `<div class="project-tab-empty"><strong>No scheduled tasks yet</strong><p>${editable ? 'Choose Add task to build this job’s schedule.' : 'Your office will add the project schedule here.'}</p></div>`}</div>`;
     if (Number(editingId)) { const select = pane.querySelector(`[data-schedule-edit-row="${Number(editingId)}"] [data-edit-task-deps]`); if (select) { const editing = taskById(tasks, editingId); [...select.options].forEach(option => { option.selected = (editing?.predecessorIds || []).map(Number).includes(Number(option.value)); }); } }
+    const tools = document.createElement('div'); tools.className = 'job-schedule-tools';
+    for (const [selector,label] of [['[data-project-dates-form]','Edit dates'],['[data-schedule-add-form]','＋ Add task']]) {
+      const form = pane.querySelector(selector); if (!form) continue;
+      const disclosure=document.createElement('details');disclosure.className='job-schedule-editor';
+      const summary=document.createElement('summary');summary.textContent=label;
+      disclosure.append(summary,form);tools.append(disclosure);
+      if(!hasStart && selector==='[data-project-dates-form]')disclosure.open=true;
+    }
+    pane.querySelector('#project-schedule-view-panel').before(tools);
+    const panel=pane.querySelector('#project-schedule-view-panel');
+    panel.setAttribute('aria-live','polite');
+    const headings=[...pane.querySelectorAll('.project-schedule-table th')].map(cell=>cell.textContent);
+    pane.querySelectorAll('[data-schedule-task-row]').forEach(row=>[...row.children].forEach((cell,index)=>cell.dataset.label=headings[index]||''));
     wireSchedulePane(pane, project, tasks, editingId);
+    wireSchedulePickers(pane);
   }
 
   function selectedValues(select){ return [...select.options].filter(o => o.selected && o.value !== '').map(o => Number(o.value)); }
 
   function wireSchedulePane(pane, project, tasks){
+    const chart = pane.querySelector('[data-schedule-gantt]');
+    pane.querySelectorAll('[data-timeline-scroll]').forEach(button => button.onclick = () => chart.scrollBy({left: Number(button.dataset.timelineScroll) * 7 * (Number.parseFloat(chart.style.getPropertyValue('--timeline-day-width')) || 64), behavior: 'smooth'}));
+    pane.querySelectorAll('[data-timeline-zoom]').forEach(button => button.onclick = () => {
+      const previous = Number.parseFloat(chart.style.getPropertyValue('--timeline-day-width')) || 64;
+      const next = Math.max(32, Math.min(128, previous + (button.dataset.timelineZoom === 'in' ? 16 : -16)));
+      chart.style.setProperty('--timeline-day-width', next + 'px');
+      chart.style.setProperty('--timeline-track-width', Number(chart.style.getPropertyValue('--timeline-days')) * next + 'px');
+      chart.scrollLeft *= next / previous;
+      pane.querySelector('[data-timeline-zoom="out"]').disabled = next === 32;
+      pane.querySelector('[data-timeline-zoom="in"]').disabled = next === 128;
+    });
     const editable = canEditTasks();
     const viewTabs = [...pane.querySelectorAll('[data-schedule-view]')];
     const activateView = (button, moveFocus) => {
       if (!button || scheduleView === button.dataset.scheduleView) return;
       scheduleView = button.dataset.scheduleView;
+      const held=[...pane.querySelectorAll('.job-schedule-editor')];
       renderSchedulePane(pane, project, tasks, null);
-      if (moveFocus) pane.querySelector(`[data-schedule-view="${scheduleView}"]`)?.focus();
+      // Keep unfinished edits and their existing handlers while switching views.
+      pane.querySelectorAll('.job-schedule-editor').forEach((node,index)=>{if(held[index]){held[index].open=false;node.replaceWith(held[index]);}});
+      pane.scrollIntoView({block:'start'});
+      if (moveFocus) pane.querySelector(`[data-schedule-view="${scheduleView}"]`)?.focus({preventScroll:true});
+      const body=pane.closest('#project-detail-content'), panel=pane.querySelector('#project-schedule-view-panel');
+      if(body && panel){const gap=panel.getBoundingClientRect().top-(body.getBoundingClientRect().bottom-120);if(gap>0)body.scrollTop+=gap;}
     };
     viewTabs.forEach((button, index) => {
       button.onclick = () => activateView(button, true);
@@ -300,10 +387,10 @@ function renderSchedulePane(pane, project, tasks, editingId){
     const sequence = ++scheduleTabSequence;
     try {
       const taskList = await api(`/api/projects/${project.id}/tasks`);
-      if (sequence !== scheduleTabSequence || !pane.isConnected) return;
+      if (sequence !== scheduleTabSequence || !pane.isConnected || !document.getElementById('project-detail-modal')?.open) return;
       renderSchedulePane(pane, project, Array.isArray(taskList) ? taskList : [], null);
     } catch (error) {
-      if (sequence !== scheduleTabSequence || !pane.isConnected) return;
+      if (sequence !== scheduleTabSequence || !pane.isConnected || !document.getElementById('project-detail-modal')?.open) return;
       pane.innerHTML = `<div class="project-tab-empty"><strong>Schedule could not be loaded</strong><p>${escapeHtml(error.message)}</p></div>`;
     }
   }
@@ -314,7 +401,7 @@ function renderSchedulePane(pane, project, tasks, editingId){
   // on touch screens) and the server writes daily assignments for the rest of
   // the task. Chips intentionally carry no data-assignment attribute so the
   // board's assignment wiring never confuses a task with an assignment row.
-  let laneTasksCache = null, laneTasksFetchedAt = 0, laneSequence = 0, draggedTaskId = null, laneDropWired = false, laneTouchAttached = false, renderScheduleWithLane = null, laneVisibleFirstDay = '';
+  let laneTasksCache = null, laneTasksFetchedAt = 0, laneSequence = 0, draggedTaskId = null, laneDropWired = false, laneTouchAttached = false, renderScheduleWithLane = null, laneVisibleFirstDay = '', unassignedOpen = false;
 
   function canAssignTasks(){ return typeof canManageSchedule === 'function' && canManageSchedule(); }
 
@@ -390,7 +477,11 @@ function renderSchedulePane(pane, project, tasks, editingId){
     } catch (error) { /* a stale lane beats an empty one */ }
   }
 
-  function removeLane(){ document.querySelectorAll('.schedule-unassigned').forEach(element => element.remove()); }
+  const laneDrafts = new Map();
+  function rememberLane(){
+    document.querySelectorAll('.schedule-task-chip').forEach(chip=>laneDrafts.set(Number(chip.dataset.scheduleTask),{open:chip.querySelector('.schedule-task-expand')?.getAttribute('aria-expanded')==='true',value:chip.querySelector('select')?.value,date:chip.querySelector('input')?.value,mode:chip.dataset.assignMode||'crew'}));
+  }
+  function removeLane(){rememberLane(); document.querySelectorAll('.schedule-unassigned').forEach(element => {unassignedOpen=element.open;element.remove();});document.querySelector('.schedule-workspace')?.classList.remove('has-unassigned','unassigned-open'); }
 
   function wireLaneChips(section){
     if (canAssignTasks() && !laneDropWired) {
@@ -423,6 +514,17 @@ function renderSchedulePane(pane, project, tasks, editingId){
         document.querySelectorAll('.drag-over').forEach(element => element.classList.remove('drag-over'));
       };
     });
+    section.querySelectorAll('.schedule-task-chip').forEach(chip=>{
+      const button=chip.querySelector('.schedule-task-expand'),panel=chip.querySelector('.schedule-task-assign');if(!button||!panel)return;
+      const select=panel.querySelector('select'),date=panel.querySelector('input'),saved=laneDrafts.get(Number(chip.dataset.scheduleTask));
+      const options=[...select.options].map(option=>({value:option.value,text:option.textContent}));
+      const modes=document.createElement('div');modes.className='schedule-assign-modes';modes.setAttribute('role','group');modes.setAttribute('aria-label','Assign by');modes.innerHTML='<button type="button" data-mode="crew">Crew</button><button type="button" data-mode="member">Individual</button>';panel.prepend(modes);
+      function mode(value,selected=''){chip.dataset.assignMode=value;select.replaceChildren(...options.filter(option=>!option.value||option.value.startsWith(value+':')).map(option=>new Option(option.value?option.text:(value==='crew'?'Choose a crew':'Choose a team member'),option.value)));select.value=selected;modes.querySelectorAll('button').forEach(el=>el.setAttribute('aria-pressed',String(el.dataset.mode===value)));}
+      modes.querySelectorAll('button').forEach(el=>el.onclick=()=>mode(el.dataset.mode));mode(saved?.mode||(options.some(o=>o.value.startsWith('crew:'))?'crew':'member'),saved?.value||'');if(saved?.date)date.value=saved.date;
+      function expand(open){button.setAttribute('aria-expanded',String(open));button.textContent=open?'Close assignment options':'Assign task';}
+      expand(Boolean(saved?.open));button.onclick=()=>expand(button.getAttribute('aria-expanded')!=='true');
+      const main=chip.querySelector('.schedule-task-chip-main');main.setAttribute('role','button');main.tabIndex=0;main.setAttribute('aria-label','Assign '+main.textContent.trim());main.onclick=()=>{expand(true);select.focus({preventScroll:true});};main.onkeydown=event=>{if(event.key==='Enter'||event.key===' '){event.preventDefault();main.click();}};
+    });
     section.querySelectorAll('[data-task-assign-go]').forEach(button => button.onclick = () => {
       const select = section.querySelector(`[data-task-assign-target="${button.dataset.taskAssignGo}"]`);
       const dateInput = section.querySelector(`[data-task-assign-date="${button.dataset.taskAssignGo}"]`);
@@ -433,11 +535,14 @@ function renderSchedulePane(pane, project, tasks, editingId){
         dateInput.focus();
         return notify(`Choose a start date between ${formatDate(dateInput.min)} and ${formatDate(dateInput.max)}`);
       }
-      assignTaskTo(Number(button.dataset.taskAssignGo), target, dateInput.value);
+      button.disabled=true;button.textContent="Assigning…";
+      assignTaskTo(Number(button.dataset.taskAssignGo), target, dateInput.value).finally(()=>{button.disabled=false;button.textContent="Assign";});
     });
   }
 
   function paintUnassignedLane(){
+    const laneScroll=document.querySelector('.schedule-unassigned-body')?.scrollTop||0;
+    const pageScroll=window.scrollY;
     removeLane();
     if (typeof currentRole !== 'undefined' && currentRole !== 'office') return;
     const board = document.getElementById('schedule-board'), days = laneVisibleDays();
@@ -453,21 +558,30 @@ function renderSchedulePane(pane, project, tasks, editingId){
       const targetOptions = `${targets.crews.length ? `<optgroup label="Crews">${targets.crews.map(option => `<option value="${escapeHtml(option.value)}">${escapeHtml(option.label)}</option>`).join('')}</optgroup>` : ''}${targets.people.length ? `<optgroup label="People">${targets.people.map(option => `<option value="${escapeHtml(option.value)}">${escapeHtml(option.label)}</option>`).join('')}</optgroup>` : ''}`;
       return `<div class="schedule-task-chip" draggable="${editable}" data-schedule-task="${Number(task.id)}" title="${escapeHtml(label)}">
         <div class="schedule-task-chip-main"><b>${escapeHtml(project && project.code ? project.code : 'JOB')}</b> <strong>${escapeHtml(task.name)}</strong><small>${escapeHtml(project ? project.name : '')} · ${escapeHtml(formatDate(task.startDate))} – ${escapeHtml(formatDate(task.endDate))} · ${Number(task.durationDays)}d</small></div>
-        ${editable && (targets.crews.length || targets.people.length) ? `<div class="schedule-task-assign"><select data-task-assign-target="${Number(task.id)}" aria-label="Assign ${escapeHtml(task.name)} to"><option value="">Choose a crew or person</option>${targetOptions}</select><label class="schedule-task-assign-date"><span>Start date</span><input type="date" data-task-assign-date="${Number(task.id)}" value="${escapeHtml(assignDate)}" min="${escapeHtml(task.startDate)}" max="${escapeHtml(task.endDate)}" aria-label="Start date"></label><button type="button" class="secondary small" data-task-assign-go="${Number(task.id)}">Assign</button></div>` : ''}
+        ${editable && (targets.crews.length || targets.people.length) ? `<button type="button" class="schedule-task-expand" aria-expanded="false" aria-controls="task-assign-${Number(task.id)}">Assign task</button><div class="schedule-task-assign" id="task-assign-${Number(task.id)}"><select data-task-assign-target="${Number(task.id)}" aria-label="Assign ${escapeHtml(task.name)} to"><option value="">Choose a crew or person</option>${targetOptions}</select><label class="schedule-task-assign-date"><span>Start date</span><input type="date" data-task-assign-date="${Number(task.id)}" value="${escapeHtml(assignDate)}" min="${escapeHtml(task.startDate)}" max="${escapeHtml(task.endDate)}" aria-label="Start date"></label><button type="button" class="secondary small" data-task-assign-go="${Number(task.id)}">Assign</button></div>` : ''}
       </div>`;
     };
-    board.insertAdjacentHTML('afterend', `<section class="schedule-unassigned" aria-label="Unassigned project work">
+    let workspace=board.closest('.schedule-workspace');
+    if(!workspace){workspace=document.createElement('div');workspace.className='schedule-workspace';board.before(workspace);workspace.append(board);}
+    workspace.classList.add('has-unassigned');workspace.classList.toggle('unassigned-open',unassignedOpen);
+    board.insertAdjacentHTML('afterend', `<details class="schedule-unassigned" ${unassignedOpen?'open':''} aria-label="Unassigned project work"><summary>Unassigned <span>${tasks.length}</span></summary><div class="schedule-unassigned-body">
       <div class="schedule-unassigned-head"><h3>Unassigned project work</h3><p>${tasks.length ? (editable ? 'Drag a task onto someone’s day — or choose a crew or person here.' : 'Waiting for the office to assign a crew.') : 'Every scheduled task has someone on it.'}</p></div>
       <div class="schedule-unassigned-list">${tasks.length ? tasks.map(chip).join('') : '<p class="schedule-unassigned-empty">Nothing waiting for a crew.</p>'}</div>
-    </section>`);
-    wireLaneChips(document.querySelector('.schedule-unassigned'));
+    </div></details>`);
+    const sidebar=workspace.querySelector('.schedule-unassigned');
+    sidebar.addEventListener('toggle',()=>{if(!sidebar.isConnected)return;unassignedOpen=sidebar.open;workspace.classList.toggle('unassigned-open',unassignedOpen);});
+    wireLaneChips(sidebar);
+    sidebar.querySelector('.schedule-unassigned-body').scrollTop=laneScroll;
+    window.scrollTo({top:pageScroll,behavior:'instant'});
   }
 
   function wrapRenderSchedule(){
     if (renderScheduleWithLane || typeof renderSchedule !== 'function') return;
     renderScheduleWithLane = renderSchedule;
     renderSchedule = function(){
+      const board=document.getElementById('schedule-board'),left=board?.scrollLeft||0,top=board?.scrollTop||0;
       const result = renderScheduleWithLane.apply(this, arguments);
+      if(board){board.scrollLeft=left;board.scrollTop=top;}
       const sequence = ++laneSequence;
       refreshLaneTasks(false).then(() => { if (sequence === laneSequence) paintUnassignedLane(); });
       paintUnassignedLane();
@@ -494,7 +608,7 @@ function renderSchedulePane(pane, project, tasks, editingId){
       if (payload.merged) notes.push(`${payload.merged} joined an existing shift`);
       if (payload.skipped) notes.push(`${payload.skipped} skipped (time off or another job)`);
       const who = target.crew ? `Crew ${payload.crew} (${payload.members} ${Number(payload.members) === 1 ? 'person' : 'people'})` : payload.memberName;
-      notify(`${who} is on “${task ? task.name : 'the task'}” — ${notes.join(', ')}`);
+      showScheduleConfirmation(`Assigned to ${who} · ${formatDate(fromDate)} — ${notes.join(', ')}`);
       try {
         const state = await api('/api/state');
         if (typeof assignments !== 'undefined') assignments = state.assignments || assignments;

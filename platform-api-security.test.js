@@ -226,6 +226,9 @@ server.listen(0, async () => {
       body: { title: 'Security test article', type: 'article', audience: 'office' }
     }, 'content publishing capability');
     await expectStatus(403, '/api/platform/ai-usage', { actor: 'content-a' }, 'content cannot read AI usage');
+    await expectStatus(201, '/api/platform/safety-topics', {method:'POST',actor:'content-a',body:{title:'Reviewed access',content:'Discuss safe access.',language:'en',status:'Published',source:''}}, 'content can publish toolbox topics');
+    await expectStatus(403, '/api/platform/safety-topics', {method:'POST',actor:'sales-a',body:{}}, 'sales cannot publish safety topics');
+    await expectStatus(200, '/api/platform/safety-topics', {actor:'content-a'}, 'content reads topic versions');
 
     await expectStatus(200, '/api/platform/ai-usage', { actor: 'engineering-a' }, 'engineering AI usage capability');
     await expectStatus(403, '/api/platform/tickets', {

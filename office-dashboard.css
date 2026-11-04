@@ -455,3 +455,331 @@ body.field-mode #start-day-modal .timestamp-preview { background:var(--surface-s
   #dashboard-page .activity-item .status { margin-left:0; }
   .production-details-link { margin-left:16px; margin-right:16px; max-width:calc(100% - 32px); }
 }
+
+/* Personal clock shortcut: the crew flow keeps its existing presentation. */
+.clock-start-body{display:contents}
+dialog#start-day-modal{padding:0;width:min(560px,calc(100vw - 24px));max-height:calc(100dvh - 24px);overflow:hidden;background:#F7F5F0;color:#000000;border:1px solid #6E6E6E!important;font-family:Inter,sans-serif}
+#start-day-modal form{display:flex;flex-direction:column;max-height:calc(100dvh - 28px);padding:0;margin:0}
+#start-day-modal .modal-header{flex:none;height:56px;min-height:56px;margin:0;padding:4px 16px;background:#000000;color:#FFFFFF;border-bottom:3px solid #FF6600!important;box-shadow:none}
+#start-day-modal .modal-header .eyebrow{display:none}
+#start-day-modal h2{font-family:Anton,sans-serif;font-size:22px;text-transform:uppercase;color:#FFFFFF;margin:0}
+#start-day-modal .close-button{position:static;width:44px;height:44px;min-height:44px;padding:0;border:0;background:#000000;color:#FFFFFF;box-shadow:none;font-size:28px}
+#start-day-modal .clock-start-body{display:block;flex:1;min-height:0;overflow-y:auto;padding:16px}
+#start-day-modal :is(input,select,textarea){font:16px Inter,sans-serif;min-height:48px;background:#FFFFFF;color:#000000;border:1px solid #6E6E6E!important}
+#start-day-modal :is(input,select,textarea,button):focus-visible{outline:2px solid #FF6600!important;outline-offset:2px;box-shadow:none!important}
+#start-day-modal :is(label,legend,.input-help,.timestamp-preview,#start-day-members){color:#000000}
+#start-day-modal .timestamp-preview{background:#F7F5F0;border:1px solid #6E6E6E!important}
+#start-day-modal .modal-actions{flex:none;display:flex;gap:12px;margin:0;padding:12px 16px;background:#F7F5F0;border-top:1px solid #6E6E6E!important}
+#start-day-modal .modal-actions button{flex:1;min-height:48px;background:#000000;color:#FFFFFF;border:1px solid #6E6E6E!important;font:700 16px Inter,sans-serif}
+#start-day-modal #confirm-start-day{background:#FF6600;color:#000000}
+:root[data-theme="dark"] #start-day-modal,:root[data-theme="dark"] #start-day-modal :is(input,select,textarea,.modal-actions,.timestamp-preview){background:#000000;color:#FFFFFF}
+:root[data-theme="dark"] #start-day-modal :is(label,legend,.input-help,#start-day-members){color:#FFFFFF}
+
+#start-day-modal[data-self-only="true"] .labor-fieldset,#start-day-modal .timestamp-preview,#start-day-modal label:has(#start-day-photo-tags),#start-day-modal .modal-actions .secondary{display:none}
+.personal-clock-options{display:flex;flex-wrap:wrap;gap:12px;margin:16px 0}
+.personal-clock-options[hidden],#start-day-modal label[hidden]{display:none!important}
+.personal-clock-options button{min-height:48px;padding:8px 16px;background:#000000;color:#FFFFFF;border:1px solid #6E6E6E!important;border-radius:8px;font:700 16px Inter,sans-serif}
+dialog#personal-clock-modal{padding:0;width:min(480px,calc(100vw - 24px));max-height:calc(100dvh - 24px);overflow:auto;background:#F7F5F0;color:#000000;border:1px solid #6E6E6E!important;font-family:Inter,sans-serif}
+.personal-clock-header{display:flex;align-items:center;justify-content:space-between;padding:8px 16px;background:#000000;color:#FFFFFF;border-bottom:3px solid #FF6600}
+.personal-clock-header h2{font:22px Anton,sans-serif;color:#FFFFFF;margin:0}
+.personal-clock-header button{width:44px;height:44px;padding:0;background:#000000;color:#FFFFFF;border:0;font-size:28px}
+.personal-clock-body{padding:20px}.personal-clock-timer{text-align:center;border:1px solid #6E6E6E;border-radius:12px;padding:20px 8px;background:#000000;color:#FFFFFF}
+.personal-clock-timer p{margin:0 0 16px;font-weight:700;color:#FFFFFF}.personal-clock-timer small{color:#FFFFFF}.personal-clock-timer strong{display:block;font:clamp(44px,12vw,64px) Anton,sans-serif;color:#FFFFFF;font-variant-numeric:tabular-nums}
+.personal-clock-footer{padding:16px;border-top:1px solid #6E6E6E}.personal-clock-footer button{width:100%;min-height:48px;background:#FF6600;color:#000000;border:1px solid #000000;font:700 16px Inter,sans-serif;border-radius:8px}
+#personal-clock-modal button:focus-visible{outline:2px solid #FF6600!important;outline-offset:2px;box-shadow:none!important}
+:root[data-theme="dark"] dialog#personal-clock-modal{background:#000000;color:#FFFFFF}
+
+.clock-time-modes button{flex:1}.clock-time-modes button[aria-pressed="true"]{background:#FF6600!important;color:#000000!important;border-color:#000000!important}
+.clock-crew-details summary{min-height:48px;display:flex;align-items:center;cursor:pointer;font-weight:700}.clock-crew-details[hidden]{display:none}
+#start-day-modal[data-clock-mode="company"] .labor-fieldset{display:none}
+
+/* Shared brand treatment for office-authored daily reviews. */
+#report-modal.report-office-compact { --surface-canvas:var(--pdl-offwhite); --surface-panel:var(--pdl-white); --text-primary:var(--pdl-black); --field-muted:var(--pdl-black); --border-strong:var(--pdl-gray); --field-placeholder:var(--pdl-gray); }
+:root[data-theme="dark"] #report-modal.report-office-compact { --surface-canvas:var(--pdl-black); --surface-panel:var(--pdl-black); --text-primary:var(--pdl-white); --field-muted:var(--pdl-white); --field-placeholder:var(--pdl-white); }
+#report-modal.report-office-compact #report-review-summary {position:static;background:var(--surface-canvas)}
+#report-modal.report-office-compact :is(.field-review-card,.field-flag,.field-hours-card,.field-next-line,.field-review-source,.report-review-summary>div,.report-gaps,.report-submit-status,.verify-banner,#report-more,.production-entry,.hour-split-note){background:var(--surface-canvas)!important;color:var(--text-primary)!important;border-color:var(--pdl-gray)!important;box-shadow:none}
+#report-modal.report-office-compact :is(.field-review-card strong,.field-review-card em,.field-review-card small,.field-hours-card p,#report-more summary,#report-more label){color:var(--text-primary)!important}
+#report-modal.report-office-compact :is(.production-scope-toggle,#field-edit-hours,#field-add-line,.touch-stepper button,.production-remove,#add-custom-production){background:var(--surface-panel)!important;color:var(--text-primary)!important;border:2px solid var(--pdl-gray)!important;min-height:48px;font:700 16px Inter,sans-serif;box-shadow:none;outline:none}
+#report-modal.report-office-compact :is(input,textarea,select,button):focus-visible{outline:2px solid var(--pdl-orange)!important;outline-offset:2px;box-shadow:none!important}
+#report-modal.report-office-compact :is(input,textarea){font-family:Inter,sans-serif;font-size:16px;scroll-margin-block:72px}
+#report-modal.report-office-compact :is(input,textarea)::placeholder{font-weight:400;color:var(--field-placeholder);opacity:1}
+#report-modal.report-office-compact .report-step-scroll{scroll-padding-block:72px}
+#report-modal.report-office-compact [data-report-step="2"] .report-step-scroll{padding-bottom:80px}
+#report-modal.report-office-compact .report-submit-status:not(:empty){border-left:3px solid var(--pdl-orange)!important}
+#project-modal .project-form-library{background:var(--pdl-offwhite);border:1px solid var(--pdl-gray);color:var(--pdl-black);min-width:0}
+#project-modal .project-template-options{grid-template-columns:minmax(0,1fr)}
+#project-modal .project-template-option{min-width:0;border-color:var(--pdl-gray)}
+#project-modal .project-template-option input{accent-color:var(--pdl-orange);flex:none}
+#project-modal .project-template-option span{min-width:0;overflow-wrap:anywhere}
+:root[data-theme="dark"] #project-modal .project-form-library{background:var(--pdl-black);color:var(--pdl-white)}
+
+#report-modal.report-office-compact #report-open-safety{background:var(--surface-canvas)!important;color:var(--text-primary)!important;border-color:var(--pdl-gray)!important}
+#report-modal.report-office-compact :is(.input-help,.labor-line small,.report-more-help){color:var(--text-primary)}
+
+#report-modal.report-office-compact :is(#field-edit-hours,#field-add-line){border-radius:8px;width:100%}
+
+/* Report-only removal; keep the member's identity separate from the hour stepper. */
+#report-modal .report-remove-member{display:block;margin-top:6px;min-height:44px;padding:6px 12px;border:1px solid var(--pdl-gray)!important;border-radius:8px;background:var(--pdl-white)!important;color:var(--pdl-black)!important;font:700 14px Inter,sans-serif}
+:root[data-theme="dark"] #report-modal .report-remove-member{background:var(--pdl-black)!important;color:var(--pdl-white)!important}
+#report-modal .report-remove-member:focus-visible{outline:2px solid var(--pdl-orange)!important;outline-offset:2px;box-shadow:none!important}
+
+#report-modal .report-review-safety { display: inline-flex; align-items: center; justify-content: center; min-height: 48px; margin-top: 12px; padding: 8px 16px; background: #FF6600; color: #000000; border: 2px solid #000000; font-family: Inter, sans-serif; font-weight: 700; }
+#report-modal .report-review-safety:focus-visible { outline: 2px solid #FF6600; outline-offset: 2px; }
+
+/* Blocking daily feedback must stand apart from neutral report cards. */
+#report-modal:is(.report-office-compact,.report-field-compact) :is(#report-gaps.attention,#report-submit-status.visible:not(.success):not(.warning)) {
+  border:2px solid var(--pdl-pink)!important;
+  border-left-width:6px!important;
+  background:var(--surface-canvas)!important;
+  color:var(--text-primary)!important;
+}
+#report-modal:is(.report-office-compact,.report-field-compact) #report-submit-status.visible.warning {
+  border:2px solid var(--pdl-orange)!important;
+  border-left-width:6px!important;
+}
+#report-modal:is(.report-office-compact,.report-field-compact) .field-flag button {
+  min-height:48px;
+  background:var(--pdl-black)!important;
+  color:var(--pdl-white)!important;
+  border:2px solid var(--pdl-gray)!important;
+  font:700 16px Inter,sans-serif;
+}
+#report-modal:is(.report-office-compact,.report-field-compact) .field-flag button.is-selected {
+  background:var(--pdl-orange)!important;
+  color:var(--pdl-black)!important;
+  border-color:var(--pdl-orange)!important;
+}
+
+#report-modal #report-submit-status:focus { outline:none!important; box-shadow:none!important; }
+#report-modal #report-submit-status:focus-visible { outline:2px solid var(--pdl-orange)!important; outline-offset:2px; }
+
+#report-modal .field-choice-feedback{padding:12px 16px;border-left:4px solid var(--pdl-orange);background:var(--surface-canvas);color:var(--text-primary);font:700 16px/1.4 Inter,sans-serif;}
+
+/* Expandable production evidence and explicit job work types. */
+.report-work-detail { border:1px solid var(--pdl-gray,#6E6E6E); border-radius:8px; margin-top:12px; padding:12px; }
+.report-work-detail summary { min-height:48px; cursor:pointer; }
+.report-work-detail summary span { display:block; margin-top:6px; }
+.report-work-detail dl { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:8px; }
+.report-work-detail dd { margin:0; overflow-wrap:anywhere; }
+.report-quantity-over { border-left:4px solid var(--pdl-orange,#FF6600); padding-left:8px; font-weight:700; color:inherit; }
+.project-work-types { border:1px solid var(--pdl-gray,#6E6E6E); padding:12px; }
+.project-work-types > div { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px; }
+#project-form .project-work-types label { display:flex; align-items:center; gap:8px; min-height:48px; }
+#project-form .project-work-types input { width:20px; height:20px; accent-color:var(--pdl-orange,#FF6600); }
+
+#report-detail .data-box:has(.report-work-detail[open]) { grid-column:1 / -1; }
+
+/* Quantity warnings remain readable in both themes. */
+#project-cards .project-health-reason,
+:root[data-theme="dark"] #project-cards .project-health-reason {
+  background:var(--pdl-offwhite,#F7F5F0)!important;color:var(--pdl-black,#000000)!important;
+  border:1px solid var(--pdl-orange,#FF6600)!important;border-left-width:4px!important;
+}
+:root[data-theme="dark"] #project-cards .project-health-reason {background:var(--pdl-black,#000000)!important;color:var(--pdl-white,#FFFFFF)!important;}
+#project-cards .project-health-reason span {font-size:12px;}
+
+#project-detail-modal .project-health-banner.risk {background:var(--pdl-offwhite,#F7F5F0)!important;border-color:var(--pdl-orange,#FF6600)!important;color:var(--pdl-black,#000000)!important;}
+#project-detail-modal .project-health-banner.risk :is(strong,p) {color:inherit!important;}
+:root[data-theme="dark"] #project-detail-modal .project-health-banner.risk {background:var(--pdl-black,#000000)!important;color:var(--pdl-white,#FFFFFF)!important;}
+.project-health-links {display:flex;flex-wrap:wrap;gap:8px;margin-top:12px;}
+#project-detail-modal .project-health-links button {min-height:48px;border:1px solid var(--pdl-gray,#6E6E6E);background:var(--pdl-black,#000000);color:var(--pdl-white,#FFFFFF);}
+
+#project-cards .project-card-actions .status.warning, #project-table .status.warning {background:var(--pdl-orange,#FF6600)!important;color:var(--pdl-black,#000000)!important;}
+/* Office Schedule brand: scoped so other workspaces retain their own styling. */
+:root[data-theme] body #schedule-page {--schedule-paper:#FFFFFF;--schedule-ink:#000000;--line:#6E6E6E;--muted:#6E6E6E;color:var(--schedule-ink);background:#F7F5F0;font-family:Inter,sans-serif;}
+:root[data-theme="dark"] body #schedule-page {--schedule-paper:#000000;--schedule-ink:#FFFFFF;--muted:#FFFFFF;background:#000000;}
+:root[data-theme] body #schedule-page :is(h1,h2,h3) {font-family:Anton,sans-serif;font-weight:400;}
+:root[data-theme] body #schedule-page :is(.schedule-command-bar,.schedule-filters,.schedule-summary article,.schedule-board,.schedule-cell,.schedule-crew-row,.schedule-month-day,.schedule-month-head,.schedule-unassigned,.schedule-task-chip,.assignment,.schedule-agenda-assignment,.month-assignment,.schedule-event,.schedule-leave,.schedule-unavailable-summary) {background:var(--schedule-paper)!important;color:var(--schedule-ink)!important;border-color:#6E6E6E!important;box-shadow:none;}
+:root[data-theme] body #schedule-page :is(button,select,input,summary) {font-family:Inter,sans-serif;min-height:48px;}
+:root[data-theme] body #schedule-page :is(button,select,input,.schedule-more>summary) {background:var(--schedule-paper);color:var(--schedule-ink);border-color:#6E6E6E!important;box-shadow:none;}
+:root[data-theme] body #schedule-page :is(small,.assignment-hours,.assignment-activity,.assignment-ack,.schedule-empty,.schedule-task-chip small,.schedule-crew-row span,.schedule-summary span,.avatar,.schedule-event) {color:var(--schedule-ink)!important;}
+:root[data-theme] body #schedule-page :is(.avatar,.assignment-ack,.schedule-view-switcher,.schedule-task-chip-tag) {background:var(--schedule-paper)!important;border-color:#6E6E6E!important;color:var(--schedule-ink)!important;}
+:root[data-theme] body #schedule-page :is(button.primary,.schedule-view-switcher button.active,.schedule-filter-toggle.active) {background:#FF6600!important;color:#000000!important;border-color:#FF6600!important;}
+:root[data-theme] body #schedule-page :is(.assignment,.schedule-task-chip,.month-assignment) {border-left:3px solid #FF6600!important;cursor:grab;}
+:root[data-theme] body #schedule-page .drag-over {outline:3px solid #FF6600!important;outline-offset:-3px;background:var(--schedule-paper)!important;}
+:root[data-theme] body #schedule-page .dragging {opacity:.5;cursor:grabbing;}
+:root[data-theme] body #schedule-page .schedule-cell.today {box-shadow:inset 0 3px #FF6600;}
+:root[data-theme] body #schedule-page :is(button,input,select,summary,[tabindex]):focus-visible {outline:2px solid #FF6600!important;outline-offset:2px!important;box-shadow:none!important;}
+
+:root[data-theme] body #schedule-page :is(h1,h2,h3,.schedule-crew-row strong,.schedule-unassigned-empty,.schedule-unassigned-head p) {color:var(--schedule-ink)!important;}
+:root[data-theme] body #schedule-page .schedule-task-chip-main b {background:#000000!important;color:#FFFFFF!important;}
+:root[data-theme] body #schedule-page :is(button.secondary,.schedule-more>summary) {background:var(--schedule-paper)!important;color:var(--schedule-ink)!important;border:1px solid #6E6E6E!important;}
+:root[data-theme] body #schedule-page :is(.schedule-cell,.schedule-crew-row,.assignment,.schedule-command-bar,button,summary) {transition:none;}
+/* Keep unassigned work beside the board instead of below the last crew. */
+#schedule-page .schedule-workspace {display:grid;grid-template-columns:minmax(0,1fr);gap:16px;align-items:start;min-width:0;}
+#schedule-page .schedule-workspace.has-unassigned {grid-template-columns:minmax(0,1fr) 156px;}
+#schedule-page .schedule-workspace.unassigned-open {grid-template-columns:minmax(0,1fr) 300px;}
+#schedule-page .schedule-workspace>#schedule-board {min-width:0;margin:0;overflow-x:auto;}
+#schedule-page .schedule-workspace>.schedule-unassigned {position:sticky;top:72px;min-width:0;margin:0;padding:0;border:1px solid #6E6E6E;border-radius:8px;overflow:hidden;}
+#schedule-page .schedule-unassigned>summary {min-height:48px;padding:14px 12px;box-sizing:border-box;cursor:pointer;font-weight:700;white-space:nowrap;}
+#schedule-page .schedule-unassigned>summary span {display:inline-block;margin-left:4px;}
+#schedule-page .schedule-unassigned-body {max-height:calc(100dvh - 150px);overflow-y:auto;padding:12px;border-top:1px solid #6E6E6E;}
+#schedule-page .schedule-unassigned-head {display:block;}
+#schedule-page .schedule-unassigned-head h3 {font:400 20px/1.2 Anton,sans-serif;}
+#schedule-page .schedule-unassigned-head p {font-size:13px;line-height:1.4;margin-top:8px;}
+#schedule-page .schedule-unassigned-list {display:grid;grid-template-columns:minmax(0,1fr);gap:12px;}
+#schedule-page .schedule-unassigned .schedule-task-chip {min-width:0;width:100%;box-sizing:border-box;padding:12px;display:block;}
+#schedule-page .schedule-unassigned .schedule-task-chip-main {display:grid;gap:6px;}
+#schedule-page .schedule-unassigned .schedule-task-chip-main b {justify-self:start;}
+#schedule-page .schedule-unassigned .schedule-task-assign {display:grid;grid-template-columns:minmax(0,1fr);gap:8px;margin-top:12px;}
+#schedule-page .schedule-unassigned :is(select,input,button) {width:100%;min-width:0;box-sizing:border-box;}
+@media(max-width:900px){
+ #schedule-page .schedule-workspace.has-unassigned {grid-template-columns:minmax(0,1fr);}
+ #schedule-page .schedule-workspace>.schedule-unassigned {position:static;grid-row:1;}
+ #schedule-page .schedule-unassigned-body {max-height:320px;}
+}
+#schedule-page .schedule-unassigned .schedule-task-assign :is(select,input,label,button) {width:100%;max-width:none;min-width:0;}
+#schedule-page .schedule-task-expand {display:none;}
+@media(max-width:900px){
+ #schedule-page .schedule-unassigned-head {display:none;}
+ #schedule-page .schedule-unassigned-body {padding:8px;max-height:320px;}
+ #schedule-page .schedule-unassigned-list {gap:8px;}
+ #schedule-page .schedule-unassigned .schedule-task-chip {padding:10px;}
+ #schedule-page .schedule-unassigned .schedule-task-chip-main {gap:4px;}
+ #schedule-page .schedule-unassigned .schedule-task-chip-main strong {font-size:15px;line-height:1.3;}
+ #schedule-page .schedule-unassigned .schedule-task-chip-main small {font-size:12px;line-height:1.4;}
+ #schedule-page .schedule-task-expand {display:block;margin-top:8px;min-height:48px;border:1px solid #6E6E6E;border-radius:6px;font-weight:700;}
+ #schedule-page .schedule-task-expand[aria-expanded="false"]+.schedule-task-assign {display:none;}
+}
+
+/* Compact assignment cards share the same interaction on phone and desktop. */
+#schedule-page .schedule-task-expand {display:block;min-height:48px;margin-top:8px;}
+#schedule-page .schedule-task-expand[aria-expanded="false"]+.schedule-task-assign {display:none;}
+#schedule-page .schedule-task-chip-main {cursor:pointer;}
+#schedule-page .schedule-assign-modes {display:grid;grid-template-columns:1fr 1fr;gap:8px;}
+:root[data-theme] body #schedule-page :is(.schedule-assign-modes [aria-pressed="true"],[data-task-assign-go]) {background:#FF6600!important;color:#000000!important;border-color:#000000!important;min-height:48px;}
+#schedule-move-feedback {display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:12px;margin-bottom:12px;border:1px solid #6E6E6E;border-left:4px solid #FF6600;}
+#schedule-move-feedback span {flex:1;min-width:160px;}
+#schedule-move-feedback button {min-height:48px;min-width:48px;}
+:root[data-theme] body #schedule-page :is(button,[role="button"]):focus-visible {outline:2px solid #FF6600!important;outline-offset:2px;box-shadow:none!important;}
+:root[data-theme] body #schedule-page .schedule-cell.header.today {background:#FF6600!important;color:#000000!important;}
+#schedule-page .schedule-task-chip {padding:12px;}
+#schedule-page .schedule-task-chip-main small {font-size:12px;line-height:1.4;}
+
+#schedule-page .assignment {padding:10px;gap:4px;}
+#schedule-page .assignment :is(.assignment-ack,.assignment-hours) {display:none;}
+#schedule-page .assignment b {font-size:13px;line-height:1.3;}
+#schedule-page .assignment .assignment-activity {font-size:12px;line-height:1.4;}
+:root[data-theme] body #schedule-page #schedule-today {border:2px solid #FF6600!important;min-height:48px;}
+:root[data-theme] body #schedule-page .schedule-task-chip-main :is(strong,small) {color:#000000!important;}
+:root[data-theme="dark"] body #schedule-page .schedule-task-chip-main :is(strong,small) {color:#FFFFFF!important;}
+/* Office review: evidence first, brand colors in both themes. */
+:root[data-theme] body #report-detail :is(.office-review-warning,.report-labor-review,.report-gaps,.alert,.ai-banner,.resolved-exception,.translation-panel) {
+  background:var(--surface-canvas)!important;color:var(--text-primary)!important;
+  border:1px solid var(--pdl-gray)!important;border-radius:10px;padding:16px;margin:12px 0;box-shadow:none;
+  font-family:Inter,sans-serif;font-size:14px;line-height:1.5;
+}
+:root[data-theme] body #report-detail :is(.office-review-warning,.report-labor-review,.report-gaps.attention,.alert) {border-left:4px solid var(--pdl-orange)!important;}
+:root[data-theme] body #report-detail :is(.office-review-warning,.report-labor-review,.report-gaps,.alert,.ai-banner,.resolved-exception,.translation-panel) :is(p,small,strong,span,li,dt,dd) {color:var(--text-primary)!important;}
+#report-detail .office-review-warning h3 {font-family:Anton,sans-serif;text-transform:uppercase;font-size:22px;margin:0 0 8px;}
+#report-detail .office-review-warning ul {padding-left:20px;margin:8px 0 12px;}
+#report-detail .office-review-warning li+li {margin-top:8px;}
+#report-detail .office-review-warning details {margin-top:12px;}
+#report-detail .office-review-warning summary {min-height:48px;display:flex;align-items:center;cursor:pointer;font-weight:700;}
+#report-detail .office-review-warning summary::before {content:'＋';margin-right:8px;}
+#report-detail .office-review-warning details[open] summary::before {content:'−';}
+#report-detail .office-review-warning dl>div {padding:8px 0;border-top:1px solid var(--pdl-gray);}
+#report-detail .office-review-warning dd {margin:0;font-weight:700;}
+:root[data-theme] body #report-detail :is([data-review-daily],.labor-resolve-button,.labor-remove-button) {min-height:48px;white-space:normal;background:var(--pdl-black)!important;color:var(--pdl-white)!important;border:1px solid var(--pdl-gray)!important;}
+#team-details-modal .team-link-notice {border-left:4px solid var(--pdl-orange);padding:12px;overflow-wrap:anywhere;}
+#team-details-modal .team-link-notice summary {min-height:48px;padding:12px 0;font-weight:700;cursor:pointer;}
+#team-details-modal .team-link-error {border-left:4px solid var(--pdl-pink);padding:12px;}
+:root[data-theme] body #team-details-modal [data-link-member] {background:var(--pdl-orange)!important;color:var(--pdl-black)!important;min-height:48px;}
+#timecards-page .time-pay-management>summary {min-height:48px;cursor:pointer;font-weight:700;align-content:center;}
+#timecards-page .time-pay-management>div {padding-top:12px;}
+:root[data-theme] body #timecards-page :is(#pay-period-panel,.time-person-summary,.time-compact-filters) {background:var(--surface-canvas)!important;border-color:var(--pdl-gray)!important;color:var(--text-primary)!important;}
+:root[data-theme] body #timecards-page :is(.time-person-summary small,.input-help,.time-pay-management) {color:var(--text-primary)!important;}
+:root[data-theme] body :is(#team-details-modal,#timecards-page,#report-detail) :is(button,input,summary):focus-visible {outline:2px solid var(--pdl-orange)!important;outline-offset:2px;box-shadow:none!important;}
+@media(max-width:760px) {
+  #timecards-page.active {display:flex;flex-direction:column;}
+  #timecards-page #pay-period-panel {order:2;padding:0 12px;margin:12px 0;}
+  #timecards-page .time-approval-help {order:3;}
+  #timecards-page .page-heading {margin-bottom:8px;}
+  #timecards-page .page-heading p:not(.eyebrow) {margin:4px 0;}
+  #timecards-page .time-compact-filters {padding:10px;margin:8px 0;}
+  #timecards-page .time-date-filters {gap:8px;}
+  #timecards-page :is(input,select,button) {min-height:48px;}
+  #timecards-page #time-more-filters>summary {min-height:44px;align-content:center;}
+}
+:root[data-theme] body #timecards-page :is(input,select) {background:var(--surface-canvas)!important;color:var(--text-primary)!important;border-color:var(--pdl-gray)!important;}
+:root[data-theme] body #reports-page .report-status-review {background:var(--pdl-orange)!important;color:var(--pdl-black)!important;border:1px solid var(--pdl-orange)!important;}
+#report-detail .office-review-warning {scroll-margin-top:72px;}
+:root[data-theme] body #report-detail .alert>span {background:var(--pdl-orange)!important;color:var(--pdl-black)!important;}
+:root[data-theme] body #timecards-page .page-heading p {color:var(--text-primary)!important;}
+:root[data-theme] body #timecards-page input::placeholder {color:var(--pdl-gray);opacity:1;font-weight:400;}
+:root[data-theme="dark"] body #timecards-page input::placeholder {color:var(--pdl-white);font-style:italic;}
+
+/* One shared daily detail popup, independent of the page underneath. */
+#daily-details-modal {width:min(900px,calc(100vw - 24px));max-height:calc(100dvh - 32px);padding:0;overflow:hidden;background:var(--pdl-offwhite);color:var(--text-primary);border:1px solid var(--pdl-gray);}
+#daily-details-modal[open] {display:flex;flex-direction:column;}
+#daily-details-modal .modal-header {flex:none;margin:0;padding:12px 16px;background:var(--pdl-black);color:var(--pdl-white);border-bottom:3px solid var(--pdl-orange);}
+#daily-details-modal h2 {font-family:Anton,sans-serif;}
+#daily-details-modal .close-button {width:48px;height:48px;color:var(--pdl-white);background:var(--pdl-black);border:1px solid var(--pdl-gray);}
+#daily-details-modal .daily-details-body {min-height:0;overflow-y:auto;overscroll-behavior:contain;padding:16px;}
+#daily-details-modal #report-detail {display:block;margin:0;border:0;padding:0;}
+#reports-page .report-list-item.active::after {content:none;}
+
+:root[data-theme="dark"] #daily-details-modal {background:var(--pdl-black);}
+
+:root[data-theme] body #daily-details-modal {background:var(--surface-canvas)!important;border-color:var(--pdl-gray)!important;}
+:root[data-theme] body #daily-details-modal .modal-header {background:var(--pdl-black)!important;color:var(--pdl-white)!important;border-bottom:3px solid var(--pdl-orange)!important;}
+:root[data-theme] body #daily-details-modal .close-button {background:var(--pdl-black)!important;color:var(--pdl-white)!important;border:1px solid var(--pdl-gray)!important;}
+:root[data-theme] body #daily-details-modal .report-status-review {background:var(--pdl-orange)!important;color:var(--pdl-black)!important;border:1px solid var(--pdl-orange)!important;}
+:root[data-theme] body #daily-details-modal .data-box {background:var(--surface-panel)!important;border-color:var(--pdl-gray)!important;}
+:root[data-theme="dark"] body #daily-details-modal :is(p,small,.report-work-date,.data-box strong) {color:var(--pdl-white)!important;}
+
+:root[data-theme] body :is(.report-action-feedback,.daily-action-notice) {background:var(--surface-canvas)!important;color:var(--text-primary)!important;border:1px solid var(--pdl-gray)!important;border-left:4px solid var(--pdl-orange)!important;padding:16px;margin:0 0 16px;font:600 16px/1.5 Inter,sans-serif;}
+:root[data-theme] body .report-action-feedback.is-error {border-left-color:var(--pdl-pink)!important;}
+.daily-action-notice {flex:none;position:sticky;bottom:0;z-index:1;}
+:root[data-theme] body .daily-action-notice {margin:8px;}
+
+/* Daily reports is an inbox; report details live exclusively in the modal. */
+#reports-page .report-layout {display:block;}
+#reports-page .report-layout>#report-detail {display:none!important;}
+#reports-page .report-list {display:grid;gap:8px;max-height:none;overflow:visible;}
+#reports-page .report-list-columns,#reports-page .report-list-item {display:grid;grid-template-columns:minmax(180px,1fr) 155px minmax(120px,.6fr) 145px 110px;gap:16px;align-items:center;}
+#reports-page .report-list-columns {padding:12px 20px;font:700 12px/1.4 Inter,sans-serif;text-transform:uppercase;letter-spacing:.06em;color:var(--text-primary);}
+:root[data-theme] body #reports-page .report-list-item {min-width:0;min-height:88px;width:100%;padding:20px;margin:0;text-align:left;background:var(--surface-panel)!important;color:var(--text-primary)!important;border:1px solid var(--pdl-gray)!important;border-radius:10px;box-shadow:none!important;transform:none;}
+#reports-page .report-list-item h3 {grid-column:1;grid-row:1;margin:0;font:22px/1.2 Anton,sans-serif;overflow-wrap:anywhere;}
+#reports-page .report-list-item>small {grid-column:2;grid-row:1;font:400 14px/1.5 Inter,sans-serif;}
+#reports-page .report-list-item>p {grid-column:3;grid-row:1;margin:0;font:400 15px/1.5 Inter,sans-serif;overflow-wrap:anywhere;}
+#reports-page .report-list-item>.status {grid-column:4;grid-row:1;position:static;justify-self:start;}
+#reports-page .report-row-open {grid-column:5;grid-row:1;font:700 14px/1.4 Inter,sans-serif;justify-self:end;}
+#reports-page .report-list-item>.unplanned-badge {grid-column:1/-1;justify-self:start;}
+:root[data-theme] body #reports-page .report-list-item :is(h3,small,p,.report-row-open) {color:var(--text-primary)!important;}
+:root[data-theme] body #reports-page .report-list-item:hover {border-color:var(--pdl-orange)!important;}
+:root[data-theme] body #reports-page .report-list-item:focus-visible {outline:2px solid var(--pdl-orange)!important;outline-offset:2px;box-shadow:none!important;}
+#reports-page .report-list-tools {justify-content:flex-start;gap:16px;margin:20px 0 8px;}
+#reports-page .report-list-tools select {min-height:48px;}
+@media(max-width:1200px){
+ #reports-page .report-list-columns {display:none;}
+ #reports-page .report-list-item {grid-template-columns:minmax(0,1fr) auto;gap:10px 12px;padding:16px;}
+ #reports-page .report-list-item h3 {grid-column:1;grid-row:1;}
+ #reports-page .report-list-item>.status {grid-column:2;grid-row:1;justify-self:end;}
+ #reports-page .report-list-item>small {grid-column:1/-1;grid-row:2;}
+ #reports-page .report-list-item>p {grid-column:1;grid-row:3;}
+ #reports-page .report-row-open {grid-column:2;grid-row:3;}
+ #reports-page .report-list-tools {display:grid;grid-template-columns:1fr 1fr;gap:12px;}
+ #reports-page .report-list-tools label {display:grid;min-width:0;gap:6px;}
+ #reports-page .report-list-tools select {width:100%;min-width:0;}
+}
+
+:root[data-theme] body #reports-page .report-list-tools select {background:var(--surface-panel)!important;color:var(--text-primary)!important;border:1px solid var(--pdl-gray)!important;font:400 14px Inter,sans-serif;}
+:root[data-theme] body #reports-page .report-list-tools select:focus-visible {outline:2px solid var(--pdl-orange)!important;outline-offset:2px;box-shadow:none!important;}
+:root[data-theme] body #reports-page .report-status-draft {background:var(--pdl-offwhite)!important;color:var(--pdl-black)!important;border:1px solid var(--pdl-gray);}
+:root[data-theme] body #reports-page .report-status-approved {background:var(--pdl-black)!important;color:var(--pdl-white)!important;border:1px solid var(--pdl-gray);}
+:root[data-theme] body #reports-page .report-status-missing {background:var(--pdl-pink)!important;color:var(--pdl-black)!important;}
+:root[data-theme] body #reports-page .report-status-correction {background:var(--pdl-white)!important;color:var(--pdl-black)!important;border:1px solid var(--pdl-pink);}
+:root[data-theme] body #reports-page .report-status-submitted {background:var(--pdl-gray)!important;color:var(--pdl-white)!important;}
+#reports-page {padding-bottom:100px;}
+
+/* Billing resume keeps the unpaid workspace outside the app. */
+:root[data-theme] body .subscription-lock{background:var(--pdl-black)!important;color:var(--pdl-white)!important;min-height:100dvh;}
+:root[data-theme] body .subscription-lock-card{background:var(--pdl-black)!important;color:var(--pdl-white)!important;border:1px solid var(--pdl-gray)!important;border-top:3px solid var(--pdl-orange)!important;box-shadow:none!important;}
+:root[data-theme] body .subscription-lock-card :is(p,small,h1){color:var(--pdl-white)!important;}
+.subscription-lock-card h1{font:400 30px/1.2 Anton,sans-serif;text-transform:uppercase;}
+:root[data-theme] body .subscription-lock-card img{background:transparent!important;border-radius:0;padding:0;}
+:root[data-theme] body .subscription-lock-card .primary{background:var(--pdl-orange)!important;color:var(--pdl-black)!important;}
+:root[data-theme] body .subscription-lock-card .secondary{background:var(--pdl-black)!important;color:var(--pdl-white)!important;border:1px solid var(--pdl-gray)!important;}
+.subscription-lock-card button:focus-visible{outline:2px solid var(--pdl-orange);outline-offset:2px;box-shadow:none;}
+@media(max-width:480px){.subscription-lock{padding:16px}.subscription-lock-card{padding:24px 18px}}

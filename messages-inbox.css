@@ -1,0 +1,40 @@
+#messages-page,.field-inbox{--msg-bg:#F7F5F0;--msg-text:#000000;color:var(--msg-text)}
+[data-theme="dark"] #messages-page,[data-theme="dark"] .field-inbox{--msg-bg:#000000;--msg-text:#FFFFFF}
+#messages-page [hidden],.field-inbox [hidden]{display:none!important}
+#messages-page .messages-layout{display:grid;grid-template-columns:minmax(240px,1fr) minmax(0,2fr);gap:16px;align-items:start}
+#messages-page .panel,.field-inbox{background:var(--msg-bg)!important;color:var(--msg-text)!important;border:1px solid #6E6E6E!important;box-shadow:none;padding:16px;border-radius:12px}
+#messages-page h1,#messages-page h2,.field-inbox h2,.field-inbox h3{font-family:Anton,sans-serif;color:var(--msg-text)!important}
+#messages-page :is(p,label,small,strong),.field-inbox :is(p,label,small,strong){color:var(--msg-text)!important;opacity:1}
+#messages-page :is(input,textarea,select,button),.field-inbox :is(input,textarea,button){font-family:Inter,sans-serif;font-size:16px;min-height:48px;border:1px solid #6E6E6E!important;background:var(--msg-bg)!important;color:var(--msg-text)!important;box-sizing:border-box;max-width:100%}
+#messages-page .primary,.field-inbox .primary{background:#FF6600!important;color:#000000!important;font-weight:700}
+#messages-page :is(input,textarea,select,button):focus-visible,.field-inbox :is(input,textarea,button):focus-visible{outline:2px solid #FF6600!important;outline-offset:2px;box-shadow:none!important}
+#messages-page .msg-thread-item,.field-inbox .msg-thread-item{padding:14px 8px;border-width:0 0 1px!important;border-radius:0;gap:12px;text-align:left;width:100%;display:flex;justify-content:space-between}
+#messages-page .msg-thread-item.active{border-left:3px solid #FF6600!important;background:var(--msg-bg)!important}
+#messages-page .msg-thread-item strong,.field-inbox .msg-thread-item strong{font-size:16px}
+#messages-page .msg-thread-item small,.field-inbox .msg-thread-item small{font-size:14px;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:block}
+#messages-page .msg-thread-item>span,.field-inbox .msg-thread-item>span{min-width:0}
+#messages-page .msg-unread,.field-inbox .msg-unread{background:#FF6600;color:#000000;font-style:normal;border-radius:20px;padding:4px 8px;align-self:center}
+#messages-page .msg-bubble,.field-inbox .msg-bubble{background:var(--msg-bg);color:var(--msg-text);border:1px solid #6E6E6E;max-width:90%;padding:12px}
+#messages-page .from-office .msg-bubble,.field-inbox .from-office .msg-bubble{border-left:3px solid #FF6600;background:var(--msg-bg);color:var(--msg-text)}
+#messages-page .msg-bubble small,.field-inbox .msg-bubble small{font-size:12px;line-height:1.4;opacity:1}
+#messages-page .msg-bubble p,.field-inbox .msg-bubble p{font-size:16px;line-height:1.5;overflow-wrap:anywhere}
+#messages-page .msg-thread-body,.field-inbox .msg-thread-body{max-height:50dvh;overflow:auto;min-height:100px;padding:8px 0}
+#messages-page .msg-reply-row,.field-inbox .msg-reply-row{display:flex;gap:8px;align-items:end;margin-top:12px}
+#messages-page .msg-reply-row input,.field-inbox .msg-reply-row label{flex:1;min-width:0}
+.field-inbox textarea{width:100%}
+#messages-page .msg-list-panel>input{width:100%;margin-bottom:8px}
+#messages-page .msg-list-panel>button[aria-pressed="true"]{border:2px solid #FF6600!important}
+#messages-page .msg-back{display:none}
+#messages-page .msg-new-panel{margin-bottom:16px}
+#messages-page .msg-new-panel textarea{width:100%}
+#messages-page .warning:empty,.field-message-error:empty{display:none}
+@media(max-width:760px){
+ #messages-page .messages-layout{grid-template-columns:minmax(0,1fr)}
+ #messages-page:not(.thread-open) .msg-convo-panel,#messages-page.thread-open .msg-list-panel{display:none}
+ #messages-page .msg-back{display:block;margin-bottom:12px}
+ #messages-page .msg-convo-panel .panel-header{display:block}
+ #messages-page .page-heading{gap:12px;flex-wrap:wrap}
+ #messages-page .msg-new-grid{grid-template-columns:minmax(0,1fr)}
+}
+
+@media(max-width:760px){#messages-page .msg-reply-row,.field-inbox .msg-reply-row{margin-right:64px}#messages-page .msg-convo-panel .panel-header{text-align:left}}

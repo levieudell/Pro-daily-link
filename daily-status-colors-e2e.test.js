@@ -44,6 +44,7 @@ async function waitForBoot(page){await page.waitForFunction(()=>typeof currentUs
     await page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));
     assert.equal(await page.$eval('#report-list .active .status',el=>el.textContent),statuses[i]);
     assert.equal(await page.$eval('#report-detail>.status',el=>el.textContent),statuses[i]);
+    await page.click('#close-daily-details');
    }
    for(const status of ['Draft','Needs review','Missing data','Approved','all']){await page.select('#report-status-filter',status);assert.equal(await page.$$eval('#report-list .status',els=>els.length),status==='all'?6:1)}
    await page.evaluate(()=>renderReports(9001));await page.screenshot({path:`qa-tmp/daily-status-${width}-${theme}.png`,fullPage:true});
@@ -51,7 +52,7 @@ async function waitForBoot(page){await page.waitForFunction(()=>typeof currentUs
   }
   await page.evaluate(()=>document.querySelector('#report-list button').focus());
   await page.keyboard.press('Tab');await page.keyboard.down('Shift');await page.keyboard.press('Tab');await page.keyboard.up('Shift');
-  assert.equal(await page.$eval('#report-list button',el=>getComputedStyle(el).outlineWidth),'3px','keyboard focus visible');
+  assert.equal(await page.$eval('#report-list button',el=>getComputedStyle(el).outlineWidth),'2px','brand keyboard focus visible');
   await page.keyboard.press('Enter');assert.equal(await page.$eval('#report-list .active',el=>el.dataset.report),'9005','keyboard selection');
   assert.deepEqual(errors,[]);assert.equal(JSON.parse(fs.readFileSync(file)).reports.length,reportCount,'no report writes');
  }finally{await browser?.close();child.kill();await new Promise(resolve=>child.exitCode!=null?resolve():child.once('exit',resolve));fs.rmSync(root,{recursive:true,force:true})}

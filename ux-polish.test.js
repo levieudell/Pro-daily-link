@@ -25,7 +25,7 @@ assert.match(login, /rel="manifest" href="manifest\.webmanifest"/);
 assert.match(app, /Create your first project/);
 assert.match(app, /Create daily report/);
 assert.match(app, /function projectHealthDetails/);
-assert.match(app, /Why at risk\?/);
+assert.match(app, /Review project health/);
 assert.match(app, /Changes & extra work/);
 assert.match(app, /Create potential change/);
 assert.match(index, /id="project-results-summary"[^>]*aria-live="polite"/);

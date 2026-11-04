@@ -7,6 +7,7 @@
   // permissionGrants is the role-ready set. The existing permissions object
   // stays the time and safety flags. 'payroll' is the only key used today.
   const FIELD_ROLES = new Set(['field', 'foreman']);
+  let exportDenied = false;
   function grants(user) {
     return Array.isArray(user?.permissionGrants) ? user.permissionGrants.filter(item => typeof item === 'string') : [];
   }
@@ -35,8 +36,15 @@
     const role = typeof currentRole === 'undefined' ? '' : currentRole;
     const user = typeof currentUser === 'undefined' ? null : currentUser;
     const record = typeof company === 'undefined' ? null : company;
-    if (role !== 'office' || record?.features?.timeCards !== true) return false;
+    if (exportDenied || role !== 'office' || record?.features?.timeCards !== true) return false;
     return can(user, 'payroll');
   }
-  return { can, grants, withPayrollGrant, migratePermissionGrants, payrollPageAllowed };
+  function refreshCurrentUser(user) {
+    if (typeof currentUser === 'undefined' || !currentUser) return;
+    const sameUser = user && String(user.id) === String(currentUser.id);
+    currentUser.permissionGrants = sameUser ? grants(user) : [];
+    exportDenied = !sameUser;
+  }
+  function denyExport() { exportDenied = true; }
+  return { can, grants, withPayrollGrant, migratePermissionGrants, payrollPageAllowed, refreshCurrentUser, denyExport };
 });

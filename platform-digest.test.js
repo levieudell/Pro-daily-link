@@ -68,8 +68,10 @@ fs.writeFileSync(platformFile, JSON.stringify({
     assert.equal(qaBackup.lastAttemptStatus, null);
 
     // Forced send delivers through the injected sender and records state.
+    // Use a due slot so this assertion also works before Monday morning.
+    const digestNow = new Date('2026-10-12T13:00:00.000Z');
     let delivered = null;
-    const first = await maybeSendWeeklyHealthDigest({force: true, sendEmailFn: async (recipients, m) => { delivered = {recipients, m}; }});
+    const first = await maybeSendWeeklyHealthDigest({now: digestNow, force: true, sendEmailFn: async (recipients, m) => { delivered = {recipients, m}; }});
     assert.equal(first.sent, true);
     assert.deepEqual(delivered.recipients, ['founder@example.test']);
     const html = renderWeeklyHealthDigestEmail(delivered.m);
@@ -86,7 +88,7 @@ fs.writeFileSync(platformFile, JSON.stringify({
     assert.ok(state.auditEvents.some(event => event.action === 'weekly_health_digest_sent'), 'digest is audited');
 
     // A second unforced send this week is skipped and never calls the sender.
-    const second = await maybeSendWeeklyHealthDigest({sendEmailFn: async () => { throw Error('must not send'); }});
+    const second = await maybeSendWeeklyHealthDigest({now: digestNow, sendEmailFn: async () => { throw Error('must not send'); }});
     assert.equal(second.sent, false);
     assert.equal(second.reason, 'already-sent');
 

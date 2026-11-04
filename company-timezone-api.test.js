@@ -36,7 +36,7 @@ try{
       saved=await call('/api/company',data);assert.equal(saved.status,200);assert.equal(saved.data.timezone,zone);assert.equal(cloud.company.timezone,zone);
       assert.equal((await call('/api/company/contract-value-tracking',{enabled:false})).data.timezone,zone,'second request from normal settings Save preserves timezone');
       if(fs.existsSync(tenantFile))fs.unlinkSync(tenantFile); // Reload through the real cloud adapter/projection.
-      const state=await call('/api/state'),context=await call('/api/projects/101/assistant/context');assert.equal(state.status,200);assert.equal(state.data.company.timezone,zone);assert.equal(context.data.timezone,zone);
+      const state=await call('/api/state'),context=await call('/api/projects/101/assistant/context');assert.equal(state.status,200);assert.equal(state.data.company.timezone,zone);assert.equal(context.status,403);assert.equal(context.data.error,'The assistant is temporarily disabled.');
       const before=JSON.stringify(cloud),count=cloudWrites;
       for(const user of [2,4])assert.equal((await call('/api/company',{name:'Unauthorized timezone edit',timezone:'America/Los_Angeles'},user)).status,403);
       assert.equal(cloudWrites,count);assert.equal(JSON.stringify(cloud),before);
@@ -48,6 +48,6 @@ try{
     }
   }
   assert.equal(JSON.parse(fs.readFileSync(dbFile)).company.timezone,'America/Los_Angeles','other tenant stays unchanged');
-  console.log('Company timezone cloud-only API tests passed: explicit normal settings Save, second Save request, real snapshot/transactional adapters, cold reload, assistant projection, no defaults on unrelated saves, legacy zones and RBAC.');
+  console.log('Company timezone cloud-only API tests passed: explicit normal settings Save, second Save request, real snapshot/transactional adapters, cold reload, disabled assistant gate, no defaults on unrelated saves, legacy zones and RBAC.');
 }finally{global.fetch=realFetch;await new Promise(resolve=>server.close(resolve));}}
 main().catch(error=>{console.error(error);process.exitCode=1;});

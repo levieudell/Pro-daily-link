@@ -137,6 +137,7 @@ const platformViews={
   subscriptions:['Subscriptions','Review configured plans and commercial account status.'],
   ai:['AI usage','Watch model spend across every account.'],
   blog:['Field Notes blog','Publish practical Field Notes for contractors.'],
+  safety:['Safety library','Publish toolbox talks for company safety programs.'],
   help:['Help Center','Manage customer-facing education.'],
   team:['Platform team','Control internal access and review activity.']
 };

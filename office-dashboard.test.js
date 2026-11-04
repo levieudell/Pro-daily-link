@@ -31,7 +31,7 @@ function harness() {
     actionCenter: { items }, $: node, $$: () => [],
     renderDashboardSummary() {}, renderActionCenter() {}, renderTable() {}, renderActivities() {},
     dashboardWatchProjects: () => [], openSetupStep: step => context.setup = step,
-    renderReports: id => context.selected = id,
+    renderReports() {}, openDailyReportDetails: id => context.selected = id,
     openProject: id => context.project = id, openReport: (id, options) => context.newDaily = options,
     showPage: page => context.page = page, notify: message => context.notice = message,
     syncReportPhotoTagsVisibility() {},
@@ -47,8 +47,8 @@ h.click('[data-office-action]', { officeAction: 'review' });
 assert.equal(h.context.page, 'reports');
 assert.equal(h.context.selected, 17, 'open the specific queued report');
 assert.equal(h.node('#report-status-filter').value, 'all', 'a previous filter cannot hide the requested report');
-assert.equal(h.node('#report-detail').focused, true);
-assert.equal(h.node('#report-detail').scrolled, true, 'phone users land on the report, below the list');
+assert.equal(h.node('#report-detail').focused, undefined);
+assert.equal(h.node('#report-detail').scrolled, undefined, 'details open in a popup without scrolling the list');
 h = harness(); h.context.reports = [];
 h.click('[data-office-action]', { officeAction: 'review' });
 assert.equal(h.context.page, undefined, 'an unavailable report must not open a different report');

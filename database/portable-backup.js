@@ -30,7 +30,7 @@ const TENANT_COLLECTIONS = new Set([
   'estimateImports', 'projectPlans', 'projectTickets', 'projectEvents',
   'projectMessages', 'projectTasks', 'reportingExports', 'auditLog',
   'payPeriods', 'payPeriodExports', 'projectNotesTodos', 'assistantConfirmations',
-  'companyActivityCodes', 'safetyDays', 'projectSiteVisits'
+  'companyActivityCodes', 'safetyDays', 'projectSiteVisits', 'safetyMeetings', 'safetyTopics'
 ]);
 const digest = bytes => crypto.createHash('sha256').update(bytes).digest('hex');
 
@@ -198,6 +198,9 @@ function validateTenantSnapshot(snapshot, { activationSafe = false } = {}) {
     if (!photo.siteVisitId) continue;
     const visit = visits.get(String(photo.siteVisitId)), photoProjectId = photo.projectId ?? (Number.isInteger(Number(photo.project)) ? snapshot.projects?.[Number(photo.project)]?.id : null);
     if (!visit || String(visit.projectId) !== String(photoProjectId)) throw new Error(`Tenant photo ${index} references a missing or different site visit.`);
+  }
+  for(const row of [...(snapshot.safetyMeetings||[]),...(snapshot.safetyTopics||[])]) {
+    if(String(row.companyId||'')!==companyId)throw new Error('Safety program record has an invalid tenant link.');
   }
   for (const [index, safetyDay] of (snapshot.safetyDays || []).entries()) {
     if (String(safetyDay.companyId || '') !== companyId || !projectIds.has(String(safetyDay.projectId))) throw new Error(`Tenant safety day ${index} has an invalid tenant or project link.`);

@@ -50,6 +50,38 @@ async function complete(h, overrides = {}, workDate = date) {
   assert.equal(inferredState({ site: 'Portland' }), '');
   assert.equal(checksFor(['roofing', 'excavation']).length, 6);
 
+  const scoped = harness();
+  await scoped.enable(['excavation']);
+  await scoped.generate();
+  assert.deepEqual(scoped.db.safetyDays[0].activities, ['excavation'], 'explicit excavation work excludes roofing schedule keywords');
+  assert.equal(scoped.db.safetyDays[0].checks.some(row => row.activity === 'roofing'), false);
+  const na = await scoped.call('PATCH', `/days/${date}/checks/excavation-inspection`, {
+    revision: scoped.db.safetyDays[0].revision, status: 'not_applicable', notes: 'No excavation today',
+    competentPerson: 'Old name', action: 'Old roof action', owner: 'Old owner', dueDate: date, workStopped: true
+  });
+  assert.equal(na.status, 200);
+  const response = scoped.db.safetyDays[0].checks.find(row => row.id === 'excavation-inspection');
+  for (const key of ['competentPerson', 'action', 'owner', 'dueDate']) assert.equal(response[key], '');
+  assert.equal(response.workStopped, false);
+  assert.equal(scoped.db.safetyDays[0].hazards.length, 0, 'not applicable must not invent a hazard');
+  assert.equal(response.recordedByUserId, owner.id, 'retain who recorded the response');
+
+  const correction = harness(); await correction.enable(['excavation']); await correction.generate();
+  const created = await correction.call('POST', `/days/${date}/hazards`, { revision: correction.db.safetyDays[0].revision, observation: 'Wrong roof record', location: 'Wrong site context', action: 'Original text', owner: 'Original assignee', dueDate: date, workStopped: true });
+  const wrong = created.data.hazards[0], frozen = structuredClone(wrong);
+  const correctionPath = `/days/${date}/hazards/${wrong.id}/void`;
+  assert.equal((await correction.call('PATCH', correctionPath, { revision: created.data.revision, reason: 'Wrong work type' }, field)).status, 403);
+  assert.equal((await correction.call('PATCH', correctionPath, { revision: created.data.revision, reason: '' })).status, 400);
+  const voidResult = await correction.call('PATCH', correctionPath, { revision: created.data.revision, reason: 'Recorded in error. This is an excavation job; no roof work was reported.' });
+  assert.equal(voidResult.status, 200);
+  assert.equal(voidResult.data.hazards[0].status, 'voided');
+  assert.equal(voidResult.data.hazards[0].observation, frozen.observation, 'original observation preserved');
+  assert.equal(voidResult.data.hazards[0].voidedByUserId, owner.id);
+  assert.equal(voidResult.data.summary.unresolved, 0);
+  assert.ok(voidResult.data.history.some(row => row.before?.observation === frozen.observation && row.after?.voidReason));
+  assert.equal((await correction.call('GET', `?date=${date}`)).data.openHazards.length, 0);
+  assert.equal((await correction.call('PATCH', correctionPath, { revision: created.data.revision, reason: 'Stale update' })).status, 409);
+
   const h = harness();
   assert.equal((await h.call('GET', `?date=${date}`, undefined, null)).status, 401);
   assert.equal((await h.call('GET', `?date=${date}`, undefined, { ...owner, companyId: 'tenant-other' })).status, 401);
@@ -129,6 +161,7 @@ async function complete(h, overrides = {}, workDate = date) {
   assert.equal(safetyGate(h.db, 101, date).canSubmit, false, 'schedule changes invalidate signoff');
   const staleRev = h.db.safetyDays[0].revision;
   assert.equal((await h.call('PATCH', `/days/${date}/checks/site-walk`, { revision: staleRev, status: 'pass', inspector: 'PM' })).status, 409);
+  await h.call('PUT', '/profile', { revision: h.db.projects[0].safetyProfile.revision, enabled: true, activities: ['roofing', 'excavation'] });
   const refreshed = await h.generate(staleRev);
   assert.equal(refreshed.data.checks.length, 6); assert.equal(refreshed.data.summary.pending, 6);
   assert.ok(refreshed.data.history.some(row => row.before?.checks?.some(item => item.status === 'deferred')), 'old answers preserved in audit');
@@ -196,11 +229,13 @@ async function complete(h, overrides = {}, workDate = date) {
   const project = isolated.db.projects[0]; project.safetyProfile.revision++;
   assert.equal(safetyGate(isolated.db, 101, date).canSubmit, false, 'profile revisions invalidate checks');
   const tasks = harness(); await tasks.enable([]);
+  delete tasks.db.projects[0].safetyProfile.activitySelection; // Legacy profiles still infer until work types are explicitly saved.
   tasks.db.projectTasks = [{ id: 9, projectId: 101, name: 'Excavation', startDate: '2026-10-25', endDate: '2026-10-27' }];
   assert.equal((await tasks.generate()).data.checks.length, 6, 'project schedule and crew assignments both add activities');
   await complete(tasks); tasks.db.projectTasks[0].name = 'Demolition';
   assert.equal(safetyGate(tasks.db, 101, date).canSubmit, false, 'project schedule changes invalidate old responses');
   const scheduledActivity = harness(); await scheduledActivity.enable([]);
+  delete scheduledActivity.db.projects[0].safetyProfile.activitySelection;
   scheduledActivity.db.assignments[0].activity = 'Excavation at the east trench';
   scheduledActivity.db.assignments[0].instructions = '';
   assert.ok((await scheduledActivity.generate()).data.checks.some(check => check.activity === 'excavation'), 'assignment activity automatically adds the relevant safety checks');

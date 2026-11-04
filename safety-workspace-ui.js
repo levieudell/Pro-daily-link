@@ -23,7 +23,7 @@
     return (templates || []).filter(template => ids.includes(String(template.id)) && FORM_CATEGORIES.has(template.category));
   };
   const uniqueOpenHazards = data => {
-    const rows = [...(data?.openHazards || []), ...(data?.day?.hazards || []).filter(hazard => hazard.status !== 'verified')], seen = new Set();
+    const rows = [...(data?.openHazards || []), ...(data?.day?.hazards || []).filter(hazard => !['verified', 'voided'].includes(hazard.status))], seen = new Set();
     return rows.filter(hazard => { const key = String(hazard.id || `${hazard.observation}|${hazard.date || data?.date}`); if (seen.has(key)) return false; seen.add(key); return true; });
   };
   const statusModel = data => {
@@ -62,7 +62,7 @@
         detail: [state, `${(talk.attendees || []).length} ${spanish ? 'presentes reportados' : 'reported present'}`, talk.language || 'en'].filter(Boolean).join(' · '),
         actor: voided ? talk.voidedBy || talk.presenter || '' : corrected ? talk.amendedBy || talk.presenter || '' : talk.presenter || talk.createdBy || '', voided, corrected });
     }
-    for (const hazard of day.hazards || []) rows.push({ id: `hazard:${hazard.id}`, type: 'hazards', when: hazard.createdAt || data?.date || day.date, title: hazard.observation || (spanish ? 'Peligro registrado' : 'Recorded hazard'), detail: hazard.status === 'verified' ? (spanish ? 'Cerrado y verificado' : 'Verified closed') : hazard.status === 'corrected' ? (spanish ? 'Corregido · verificar' : 'Corrected · verify') : (spanish ? 'Seguimiento abierto' : 'Follow-up open'), actor: hazard.createdBy || '' });
+    for (const hazard of day.hazards || []) rows.push({ id: `hazard:${hazard.id}`, type: 'hazards', when: hazard.createdAt || data?.date || day.date, title: hazard.observation || (spanish ? 'Peligro registrado' : 'Recorded hazard'), detail: hazard.status === 'voided' ? `${spanish ? 'Registrado por error' : 'Recorded in error'}: ${hazard.voidReason || ''}` : hazard.status === 'verified' ? (spanish ? 'Cerrado y verificado' : 'Verified closed') : hazard.status === 'corrected' ? (spanish ? 'Corregido · verificar' : 'Corrected · verify') : (spanish ? 'Seguimiento abierto' : 'Follow-up open'), actor: hazard.createdBy || '' });
     for (const report of projectReports(reports, projectId, projects)) {
       if (!submittedSafetyEvidence(report)) continue;
       const when = reportDateValue(report) || report.updatedAt || report.createdAt || '';
@@ -99,8 +99,8 @@
   const element = id => document.getElementById(id);
   const isSpanish = () => (typeof preferredLanguage !== 'undefined' ? preferredLanguage : document.documentElement.lang || 'en').startsWith('es');
   const words = {
-    'Safety': 'Seguridad', 'FIELD SAFETY': 'SEGURIDAD EN CAMPO',
-    'Keep safety work visible, close the loop, and keep the record.': 'Mantenga visible el trabajo de seguridad, cierre pendientes y conserve el registro.',
+    'Safety': 'Seguridad', 'COMPANY SAFETY': 'SEGURIDAD DE LA EMPRESA',
+    'Hold the talk. Fix the hazard. Keep the record.': 'Dé la charla. Corrija el peligro. Conserve el registro.',
     'Manage forms': 'Administrar formularios', 'Project': 'Proyecto', 'Work date': 'Fecha de trabajo', 'Refresh': 'Actualizar',
     'Start safety check': 'Iniciar revisión', 'Continue safety check': 'Continuar revisión', 'Review follow-up': 'Revisar seguimiento', 'View today’s record': 'Ver registro de hoy',
     'Report hazard': 'Reportar peligro', 'Toolbox talk': 'Charla de seguridad', 'Forms': 'Formularios',
@@ -160,8 +160,8 @@
   const reportsForProject = () => projectReports(reportList(), state.projectId, allProjects()).sort((a, b) => String(reportDateValue(b) || b.updatedAt || '').localeCompare(String(reportDateValue(a) || a.updatedAt || '')));
   const formsForProject = () => assignedFormTemplates(activeProject(), templateList());
   const canManageForms = () => ['owner', 'admin'].includes(typeof currentUser === 'undefined' ? '' : currentUser?.role);
-  const formatDate = value => { if (!dateValue(value)) return value || ''; const date = new Date(`${value}T12:00:00`); return date.toLocaleDateString(isSpanish() ? 'es-MX' : 'en-US', { month: 'short', day: 'numeric', year: 'numeric' }); };
-  const formatDateTime = value => { const date = new Date(value); return Number.isFinite(date.valueOf()) ? date.toLocaleString(isSpanish() ? 'es-MX' : 'en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' }) : ''; };
+  const formatDate = value => { if (!dateValue(value)) return value || ''; const date = new Date(`${value}T12:00:00`); return date.toLocaleDateString('en-US', { month: '2-digit', day: '2-digit', year: 'numeric' }); };
+  const formatDateTime = value => { const date = new Date(value); return Number.isFinite(date.valueOf()) ? date.toLocaleString('en-US', { month: '2-digit', day: '2-digit', year: 'numeric', hour: 'numeric', minute: '2-digit' }) : ''; };
   const formComplete = template => reportsForProject().some(report => String(report.templateId) === String(template.id) && reportDateValue(report) === state.date && report.status !== 'Draft');
 
   function ensureContext() {
@@ -282,7 +282,7 @@
     tabs.innerHTML = tabsMarkup();
     panels.innerHTML = TABS.map(tab => `<section role="tabpanel" id="safety-panel-${tab.id}" aria-labelledby="safety-tab-${tab.id}" tabindex="0" ${state.tab === tab.id ? '' : 'hidden'}>${state.tab === tab.id ? panelMarkup(tab.id) : ''}</section>`).join('');
     const heading = element('safety-page')?.querySelector('.safety-workspace-heading');
-    if (heading) { heading.querySelector('.eyebrow').textContent = tr('FIELD SAFETY'); heading.querySelector('h1').textContent = tr('Safety'); heading.querySelector('p:last-child').textContent = tr('Keep safety work visible, close the loop, and keep the record.'); }
+    if (heading) { heading.querySelector('.eyebrow').textContent = tr('COMPANY SAFETY'); heading.querySelector('h1').textContent = tr('Safety'); heading.querySelector('p:last-child').textContent = tr('Hold the talk. Fix the hazard. Keep the record.'); }
     const manage = element('safety-manage-forms'); if (manage) manage.textContent = tr('Manage forms');
     const projectSelect = element('safety-workspace-project'), dateInput = element('safety-workspace-date'), refresh = element('safety-workspace-refresh'), tablist = element('safety-workspace-tabs');
     if (projectSelect?.closest('label')?.firstChild) projectSelect.closest('label').firstChild.textContent = `${tr('Project')} `;
@@ -404,8 +404,7 @@
       const filter = element('report-status-filter');
       if (filter && filter.value !== 'all' && filter.value !== report.status) filter.value = 'all';
       if (typeof showPage === 'function') showPage('reports');
-      if (typeof renderReports === 'function') renderReports(reportId);
-      requestAnimationFrame(() => { const detail = element('report-detail'); if (detail) { detail.tabIndex = -1; detail.focus({ preventScroll: true }); detail.scrollIntoView({ behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth', block: 'start' }); } });
+      if (typeof openDailyReportDetails === 'function') openDailyReportDetails(reportId);
     }
   }
 

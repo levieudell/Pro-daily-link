@@ -26,7 +26,7 @@ function expectTotal(hours,count){assert.equal(node('#timecard-filter-total stro
  assert.ok(!node('#timecard-rows').innerHTML.includes('Synthetic other person'),'person rows stay scoped');
  await change('timecard-from','2026-10-07');await change('timecard-to','2026-10-07');
  assert.equal(node('#timecard-filter-total').hidden,true,'changing filters resets person selection');await choose();expectTotal(4.5,1);
- assert.ok(node('#timecard-filter-total small').textContent.includes('2026-10-07 through 2026-10-07'));
+ assert.ok(node('#timecard-filter-total small').textContent.includes('10/07/2026 through 10/07/2026'));
  await change('timecard-from','');await change('timecard-to','');c.timeCards[1].status='approved';
  await change('timecard-status','submitted');await choose();expectTotal(6.5,1);
  await change('timecard-status','approved');await choose();expectTotal(4.5,1);

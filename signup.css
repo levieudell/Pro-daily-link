@@ -4,7 +4,7 @@ main{max-width:900px;margin:auto;padding:25px}
 header{display:flex;align-items:center;justify-content:space-between}
 header img{width:84px;height:auto;background:transparent;display:block}
 header p,.section-help{color:#ffffff}
-form section{background:#000000;border:1px solid rgba(255,255,255,.32);border-radius:12px;padding:24px;margin:18px 0}
+form section{background:#000000;border:1px solid #6E6E6E;border-radius:12px;padding:24px;margin:18px 0}
 h1,h2{display:block;margin:0 0 12px;font-family:Anton,sans-serif;font-weight:400;text-transform:uppercase;letter-spacing:.02em;line-height:1.05;color:#ffffff}
 .two{display:grid;grid-template-columns:1fr 1fr;gap:12px}
 label{font-size:11px;font-weight:700}
@@ -12,26 +12,27 @@ input,select,textarea,button{font-family:Inter,sans-serif}
 input,select{display:block;width:100%;margin-top:6px;padding:13px;border:1px solid #ffffff;border-radius:8px;background:#000000;color:#ffffff;font-size:16px}
 input::placeholder{color:#ffffff;opacity:1}
 .plans{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
-.plans label{border:2px solid rgba(255,255,255,.32);border-radius:10px;padding:16px;cursor:pointer;min-height:130px;color:#ffffff}
+.plans label{border:2px solid #6E6E6E;border-radius:10px;padding:16px;cursor:pointer;min-height:130px;color:#ffffff}
 .plans label:has(input:checked){border-color:#FF6600;background:#000000}
 .plans input{width:auto;float:right;margin:0}
 .plans b,.plans strong,.plans small{display:block;margin-bottom:7px}
-.plans strong{font-size:21px}
+.plans strong{font-family:Anton,sans-serif;font-weight:400;font-size:28px}
+.plans small{font-family:Inter,sans-serif;font-weight:400}
 .plans small,#recommendation{color:#ffffff}
 .onboarding-options strong{font-size:16px}
-.legal-consent{margin-top:18px;padding:17px;border:1px solid rgba(255,255,255,.32);border-radius:10px;background:#000000}
+.legal-consent{margin-top:18px;padding:17px;border:1px solid #6E6E6E;border-radius:10px;background:#000000}
 .legal-consent label{display:flex;align-items:flex-start;gap:12px;font-size:14px;line-height:1.5}
 .legal-consent input{width:22px;height:22px;margin:0;flex:none}
 .legal-consent small{display:block;color:#ffffff;margin:10px 0 0 34px}
-.legal-consent a{color:#0066FF;font-weight:700;font-size:19px;line-height:1.3}
+.legal-consent a{color:#ffffff;font-weight:700;font-size:19px;line-height:1.3}
 button{width:100%;border:0;border-radius:9px;background:transparent;color:#ffffff;padding:15px;font-weight:700;font-size:16px;cursor:pointer}
 button:focus-visible,input:focus-visible{outline:3px solid #FF6600;outline-offset:2px}
 .signup-progress{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin:24px 0 6px}
-.signup-progress button{display:flex;align-items:center;justify-content:center;gap:8px;background:transparent;color:#ffffff;border-bottom:3px solid rgba(255,255,255,.32);border-radius:0;padding:11px;font-weight:700}
+.signup-progress button{display:flex;align-items:center;justify-content:center;gap:8px;background:transparent;color:#ffffff;border-bottom:3px solid #6E6E6E;border-radius:0;padding:11px;font-weight:700}
 .signup-progress b{display:grid;place-items:center;width:26px;height:26px;border-radius:50%;background:#000000;color:#ffffff;border:1px solid #ffffff}
 .signup-progress button[aria-current="step"]{color:#ffffff;border-color:#FF6600}
 .signup-progress button[aria-current="step"] b{background:#FF6600;color:#000000;border-color:#FF6600}
-.signup-progress button.complete{color:#ffffff;border-color:#0066FF}
+.signup-progress button.complete{color:#ffffff;border-color:#ffffff}
 .wizard-enabled .signup-step{display:none}
 .wizard-enabled .signup-step.active{display:block}
 .step-actions{display:grid;grid-template-columns:auto minmax(180px,1fr);justify-content:end;gap:10px;margin-top:22px}
@@ -43,13 +44,13 @@ button:focus-visible,input:focus-visible{outline:3px solid #FF6600;outline-offse
 @media(max-width:650px){main{padding:15px}header img{width:64px}.two,.plans{grid-template-columns:1fr}header p{display:none}.signup-progress{position:sticky;top:0;z-index:2;background:#000000;padding-top:8px}.signup-progress button{font-size:13px;padding:10px 4px}.signup-step{padding:20px 16px}.plans label{min-height:0}.step-actions,.signup-step[data-step="1"] .step-actions{grid-template-columns:1fr}.step-actions .next-step,.step-actions #create-company{grid-row:1}.step-actions .back-step{grid-row:2}h1,h2{font-size:28px}}
 .continue-button{display:block;margin-top:16px;border-radius:8px;padding:12px 16px;background:#FF6600;color:#000000;text-align:center;text-decoration:none;font-family:Inter,sans-serif;font-weight:700}
 .billing-choice{display:flex;gap:12px;flex-wrap:wrap;margin-top:14px}
-.billing-choice label{display:flex;align-items:center;gap:8px;border:1px solid rgba(255,255,255,.32);border-radius:8px;padding:10px 12px;font-size:13px}
+.billing-choice label{display:flex;align-items:center;gap:8px;border:1px solid #6E6E6E;border-radius:8px;padding:10px 12px;font-size:13px}
 .billing-choice input{width:18px;margin:0}
-.plan-context{margin:16px 0 20px;padding:14px;border-radius:10px;background:#000000;border:1px solid rgba(255,255,255,.32)}
+.plan-context{margin:16px 0 20px;padding:14px;border-radius:10px;background:#000000;border:1px solid #6E6E6E}
 .plan-context label small{color:#ffffff;font-weight:400}
 .onboarding-options{grid-template-columns:1fr}
 .onboarding-options label{min-height:0;max-width:460px}
-.hands-on-setup{display:flex;align-items:flex-start;gap:10px;margin:14px 0 2px;padding:12px 14px;border:1px solid rgba(255,255,255,.32);border-radius:10px;background:#000000;font-size:14px;font-weight:700;line-height:1.4;cursor:pointer;max-width:460px;color:#ffffff}
+.hands-on-setup{display:flex;align-items:flex-start;gap:10px;margin:14px 0 2px;padding:12px 14px;border:1px solid #6E6E6E;border-radius:10px;background:#000000;font-size:14px;font-weight:700;line-height:1.4;cursor:pointer;max-width:460px;color:#ffffff}
 .hands-on-setup input{width:18px;height:18px;margin:1px 0 0;flex:none}
 .hands-on-setup:has(input:checked){border-color:#FF6600;background:#000000}
 input:focus,select:focus{border-color:#FF6600;box-shadow:0 0 0 3px rgba(255,102,0,.28);outline:0}
@@ -57,8 +58,27 @@ button.next-step,button#create-company{background:#FF6600;color:#000000;-webkit-
 button:disabled{opacity:.62;cursor:not-allowed}
 .password-wrap{display:flex;gap:6px;align-items:stretch}
 .password-wrap input{flex:1}
-.show-password{width:auto;padding:0 14px;background:#ffffff;border:1px solid #ffffff;color:#0066FF;-webkit-text-fill-color:#0066FF;font-size:16px;font-weight:700}
+.show-password{width:auto;padding:0 14px;background:#ffffff;border:1px solid #ffffff;color:#ffffff;-webkit-text-fill-color:#ffffff;font-size:16px;font-weight:700}
 .signup-progress button{white-space:nowrap}
 input:-webkit-autofill{-webkit-text-fill-color:#ffffff;box-shadow:0 0 0 1000px #000000 inset}
 @media(max-width:520px){.signup-progress button{font-size:12px;gap:4px;padding:10px 4px}}
 @media(prefers-reduced-motion:reduce){*,*::before,*::after{animation-duration:.01ms!important;transition-duration:.01ms!important}}
+
+/* Paid signup: clear price, accessible controls, no competing accents. */
+[hidden]{display:none!important}
+label{font-size:14px}
+button,select{min-height:48px}
+.plans label,.billing-choice label{min-height:48px}
+input[type=radio],input[type=checkbox]{accent-color:#FF6600}
+:is(input,select,button,a):focus-visible,:is(input,select):focus{outline:2px solid #FF6600!important;outline-offset:2px!important;box-shadow:none!important}
+.show-password{color:#000000;-webkit-text-fill-color:#000000}
+a{color:#FFFFFF;text-underline-offset:3px}
+.payment-summary{border-left:3px solid #FF6600;padding:16px;font-size:18px;font-weight:700}
+.setup-options{border:1px solid #6E6E6E;border-radius:10px;padding:12px;margin:16px 0}
+.setup-options summary{min-height:48px;display:flex;align-items:center;cursor:pointer;font-weight:700}
+#result:not(:empty){color:#FFFFFF;border-left:3px solid #FF2E8A;padding:12px}
+.signin-link{margin-top:24px}
+
+.legal-consent a{font-size:inherit;line-height:inherit}
+
+@media(max-width:650px){.signup-step[data-step="2"] .plans label{padding:10px 12px}.signup-step[data-step="2"] .plans b,.signup-step[data-step="2"] .plans strong,.signup-step[data-step="2"] .plans small{margin-bottom:3px}.signup-step[data-step="2"] .plans strong{font-size:26px}}

@@ -61,6 +61,7 @@ async function dailyBounds(page,label){
   await page.setViewport({width:390,height:844,isMobile:true,hasTouch:true});
   await page.waitForSelector('#myday-page.active [data-start-day]');await page.waitForFunction(()=>document.documentElement.classList.contains('workspace-ready'));
   await page.click('[data-start-day]');await page.waitForSelector('#start-day-modal[open]');
+  await page.click('.clock-crew-details summary');
   for(const box of await page.$$('#start-day-members input')){const keep=await box.evaluate(el=>/Jordan Reed/.test(el.closest('label').textContent));if(await box.evaluate(el=>el.checked)!==keep)await box.click()}
   await page.click('#confirm-start-day');await page.waitForFunction(()=>/Clock out/i.test(document.querySelector('#start-day-button').textContent));
   await page.waitForSelector('#myday-page.active [data-assignment-daily]');

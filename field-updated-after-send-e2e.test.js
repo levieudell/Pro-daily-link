@@ -52,6 +52,7 @@ async function login(page, email, password) {
 }
 
 async function openNav(page, name) {
+  await page.evaluate(()=>document.querySelector('#daily-details-modal')?.close());
   await page.evaluate(target => {
     const sidebar = document.querySelector('#sidebar');
     if (sidebar && !sidebar.classList.contains('open')) document.querySelector('#menu-button')?.click();
@@ -157,6 +158,8 @@ async function startJordan(page) {
     await page.waitForSelector('#report-sent-modal[open]', { timeout: 20000 });
     await page.click('#report-sent-modal button.primary');
     await openNav(page, 'reports');
+    await page.waitForSelector('#report-list [data-report]');
+    await page.click('#report-list [data-report]');
     await page.waitForFunction(() => /Labor recalculated from punches by Time cards/.test(document.querySelector('.approval-history')?.innerText || ''), { timeout: 20000 });
     const sentLog = await page.evaluate(() => document.querySelector('.approval-history')?.innerText || '');
     const sentLines = sentLog.split('\n').map(line => line.trim()).filter(Boolean);
@@ -212,10 +215,14 @@ async function startJordan(page) {
     assert.match(fieldClear.summary, /Labor 0\.03h → 0\.07h/);
     assert.equal(fieldClear.reviewed, null, JSON.stringify(fieldClear));
     await openNav(page, 'reports');
+    await page.waitForSelector('#report-list [data-report]');
+    await page.click('#report-list [data-report]');
     await page.waitForSelector('#report-list', { timeout: 20000 });
     await page.reload({ waitUntil: 'domcontentloaded' });
     await page.waitForSelector('#menu-button', { timeout: 20000 });
     await openNav(page, 'reports');
+    await page.waitForSelector('#report-list [data-report]');
+    await page.click('#report-list [data-report]');
     const fieldStill = await gutterReport(page);
     assert.match(fieldStill?.updatedAfterSend?.summary || '', /Labor 0\.03h → 0\.07h/);
     assert.equal(fieldStill?.updatedAfterSendReviewed || null, null, JSON.stringify(fieldStill?.updatedAfterSendReviewed));
@@ -259,6 +266,8 @@ async function startJordan(page) {
     assert.deepEqual(approvalHours, [0.03, 0.04], JSON.stringify(approvalHours));
     assert.equal(Math.round(approvalHours.reduce((sum, hours) => sum + hours, 0) * 100) / 100, 0.07);
     await openNav(owner, 'reports');
+    await owner.waitForSelector('#report-list [data-report]');
+    await owner.click('#report-list [data-report]');
     await owner.waitForSelector('[data-report]', { timeout: 20000 });
     await waitUntil(owner, () => {
       const shown = el => {
@@ -277,13 +286,13 @@ async function startJordan(page) {
     const openLog = await owner.evaluate(() => document.querySelector('.approval-history')?.innerText || '');
     assert.match(openLog, /Labor 0\.03h → 0\.07h; Curb 1→3 min, by DEMO Jordan Reed's clock-out/);
     assert.equal(/Corrected/i.test(openLog), false, openLog);
+    await owner.click('#close-daily-details');
     await owner.click('[data-report].active');
-    await waitUntil(owner, () => document.querySelector('#report-detail')?.classList.contains('is-collapsed') === true, 'report collapsed');
-    view = await badgeView();
-    assert.match(view.list, /Updated after send/, JSON.stringify(view));
-    assert.equal(view.header, '', JSON.stringify(view));
-    assert.equal(view.collapsed, true, JSON.stringify(view));
-    assert.equal(await flagStillSet(), true, 'collapse cleared the flag');
+    await waitUntil(owner, () => document.querySelector('#daily-details-modal')?.open, 'report popup opened');
+    assert.equal(await flagStillSet(), true, 'opening the popup cleared the flag');
+    await owner.click('#close-daily-details');
+    await waitUntil(owner, () => !document.querySelector('#daily-details-modal')?.open, 'report popup closed');
+    assert.equal(await flagStillSet(), true, 'closing the popup cleared the flag');
     await owner.click('[data-report]');
     await waitUntil(owner, () => {
       const header = document.querySelector('[data-updated-after-send-header]');
@@ -297,6 +306,8 @@ async function startJordan(page) {
     await owner.reload({ waitUntil: 'domcontentloaded' });
     await owner.waitForSelector('#menu-button', { timeout: 20000 });
     await openNav(owner, 'reports');
+    await owner.waitForSelector('#report-list [data-report]');
+    await owner.click('#report-list [data-report]');
     await waitUntil(owner, () => /Updated after send/.test(document.querySelector('[data-report] [data-updated-after-send]')?.innerText || '') && /Updated after send/.test(document.querySelector('[data-updated-after-send-header]')?.innerText || ''), 'badge survived reload');
     assert.equal(await flagStillSet(), true, 'reload cleared the flag');
     assert.equal(reviewedPosts.length, 0, JSON.stringify(reviewedPosts));
@@ -335,6 +346,8 @@ async function startJordan(page) {
     await owner.reload({ waitUntil: 'domcontentloaded' });
     await owner.waitForSelector('#menu-button', { timeout: 20000 });
     await openNav(owner, 'reports');
+    await owner.waitForSelector('#report-list [data-report]');
+    await owner.click('#report-list [data-report]');
     await owner.waitForFunction(() => /Update reviewed by DEMO Avery Lang/.test(document.querySelector('.approval-history')?.innerText || ''), { timeout: 20000 });
     view = await badgeView();
     assert.equal(view.list, '', JSON.stringify(view));
@@ -370,6 +383,8 @@ async function startJordan(page) {
     await owner.reload({ waitUntil: 'domcontentloaded' });
     await owner.waitForSelector('#menu-button', { timeout: 20000 });
     await openNav(owner, 'reports');
+    await owner.waitForSelector('#report-list [data-report]');
+    await owner.click('#report-list [data-report]');
     await owner.waitForFunction(() => /Labor 0\.03h → 0\.07h; Curb 1→3 min, by DEMO Jordan Reed's clock-out/.test(document.querySelector('.approval-history')?.innerText || ''), { timeout: 20000 });
     const stillClear = await owner.evaluate(() => ({
       badge: document.querySelector('[data-updated-after-send]')?.textContent || '',

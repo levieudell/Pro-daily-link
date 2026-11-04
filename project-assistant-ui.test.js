@@ -21,9 +21,28 @@ class Node {
   focus() { this.focused = true; }
 }
 const workspace = () => ({ companyId: require('./fixtures/project-assistant').companyA, currentRole: 'office', user: { id: 1, role: 'project_manager', permissions: { scheduleCrews: true }, projectIds: [1], assignedCrews: ['A'] }, projects: [{ id: 1, name: '<script>project</script>', status: 'Active' }] });
-function harness(request, options = {}) { let data = workspace();const documentEvents={}; const document = { body: new Node('body'), createElement: tag => new Node(tag),hidden:false,focused:true,hasFocus(){return this.focused;},addEventListener(name,callback){(documentEvents[name]||=[]).push(callback);} }, window = { addEventListener() {} }; const api = createAssistant({ document, window, getWorkspace: () => data, request, ...options }); return { ...api,document,documentEvents,node: name => api.dialog.querySelector('[data-assistant-' + name + ']'), update: value => { data = value; } }; }
+function harness(request, options = {}) { let data = workspace();const documentEvents={}; const document = { body: new Node('body'), createElement: tag => new Node(tag),hidden:false,focused:true,hasFocus(){return this.focused;},addEventListener(name,callback){(documentEvents[name]||=[]).push(callback);} }, window = { addEventListener() {} }; const api = createAssistant({ document, window, assistantEnabled:true, getWorkspace: () => data, request, ...options }); return { ...api,document,documentEvents,node: name => api.dialog.querySelector('[data-assistant-' + name + ']'), update: value => { data = value; } }; }
 const deferred = () => { let resolve, reject; const promise = new Promise((yes, no) => { resolve = yes; reject = no; }); return { promise, resolve, reject }; };
 async function main() {
+  const paused = harness(async () => {throw Error('Disabled assistant must not make requests');}, {assistantEnabled:false, clockAction:()=>{}});
+  paused.sync();assert.equal(paused.assistantButton.hidden,true);assert.equal(paused.launcher.hidden,false);
+  paused.open();assert.equal(paused.dialog.open,false);paused.assistantButton.onclick();assert.equal(paused.dialog.open,false);
+  assert.equal(require('./project-assistant-access').enabled,false);
+
+  let clockCalls = 0;
+  const quick = harness(async () => { throw new Error('Clock shortcut must not call the assistant API'); }, {clockAction: () => clockCalls++, clockLabel: () => 'Clock in'});
+  for (const role of ['owner', 'admin', 'project_manager', 'field', 'foreman']) {
+    quick.update({...workspace(), user:{id:10, role}, currentRole: ['field','foreman'].includes(role) ? 'field' : 'office'});
+    quick.sync(); assert.equal(quick.launcher.hidden,false, role + ' has quick actions');
+    quick.launcher.onclick(); assert.equal(quick.quick.open,true); assert.equal(quick.clockButton.hidden,false);
+    assert.equal(quick.assistantButton.hidden,['field','foreman'].includes(role));
+    quick.clockButton.onclick(); assert.equal(quick.quick.open,false);
+  }
+  assert.equal(clockCalls,5);
+  quick.update({...workspace(),user:null});quick.sync();assert.equal(quick.launcher.hidden,true);
+  quick.clockButton.onclick();assert.equal(clockCalls,5,'stale clock shortcut refuses signed-out user');
+  assert.match(quick.launcher.innerHTML,/M12 5v14M5 12h14/,'plus replaces mascot');
+
   assert.equal(permitted(workspace()), true);
   for (const companyId of [undefined, null, '', 'Forged Built', '22222222-2222-4222-8222-222222222222', workspace().companyId.toUpperCase(), ' ' + workspace().companyId]) {
     for (const role of ['owner', 'admin', 'project_manager']) assert.equal(permitted({ ...workspace(), companyId, company: { name: 'Forged Built' }, user: { id: 1, role } }), false);

@@ -29,7 +29,7 @@
 .safety-metric-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin-bottom:18px}
 .safety-metric-grid article{min-width:0;padding:18px;border:1px solid var(--line);border-radius:16px;background:var(--surface-panel);box-shadow:var(--shadow-1)}
 .safety-metric-grid small{display:block;color:var(--muted);font-weight:800;text-transform:uppercase;letter-spacing:.07em;margin-bottom:7px}
-.safety-metric-grid strong{display:block;font-family:Oswald,sans-serif;font-size:2rem;color:var(--text-primary)}
+.safety-metric-grid strong{display:block;font-family:Anton,sans-serif;font-size:2rem;color:var(--text-primary)}
 .safety-metric-grid strong span{font-size:1rem;color:var(--muted)}
 .safety-metric-grid .needs-action{border-color:color-mix(in srgb,var(--safety-gold) 46%,var(--line));background:color-mix(in srgb,#fff5df 76%,var(--surface-panel))}
 .safety-overview-grid{display:grid;grid-template-columns:minmax(0,1.2fr) minmax(300px,.8fr);gap:18px;align-items:start}

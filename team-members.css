@@ -1,0 +1,61 @@
+/* Team members share the brand in both themes. */
+#team-page, #team-details-modal { --team-surface:#FFFFFF; --team-ink:#000000; }
+:root[data-theme="dark"] #team-page, :root[data-theme="dark"] #team-details-modal { --team-surface:#000000; --team-ink:#FFFFFF; }
+#team-grid { grid-template-columns:repeat(auto-fill,minmax(min(100%,320px),1fr)); gap:12px; }
+#team-page .team-member-card { display:grid; grid-template-columns:44px minmax(0,1fr) 16px; align-items:center; text-align:left; gap:14px; padding:18px; min-height:96px; border-radius:12px; box-shadow:none; color:var(--team-ink)!important; background:var(--team-surface)!important; border:1px solid #6E6E6E!important; font:400 16px/1.4 Inter,sans-serif; cursor:pointer; }
+#team-page .team-member-card .avatar { width:44px; height:44px; margin:0; background:#000000; color:#FFFFFF; border:1px solid #6E6E6E; font:700 14px Inter,sans-serif; }
+#team-page .team-member-copy { display:grid; min-width:0; gap:4px; }
+#team-page .team-member-name { font-weight:700; font-size:17px; line-height:1.3; overflow-wrap:anywhere; }
+#team-page .team-member-meta { font-size:13px; line-height:1.4; overflow-wrap:anywhere; }
+#team-page .team-member-working { font-size:12px; font-weight:700; padding-left:10px; border-left:3px solid #FF6600; margin-top:4px; overflow-wrap:anywhere; }
+#team-page .team-member-open { font-size:24px; line-height:1; font-weight:400; margin:0; padding:0; }
+#team-details-modal { width:min(640px,calc(100vw - 24px)); max-height:calc(100dvh - 24px); padding:0; border:1px solid #6E6E6E!important; background:var(--team-surface); color:var(--team-ink); }
+#team-details-modal[open] { display:flex; flex-direction:column; }
+#team-details-modal .modal-header { flex:none; display:flex; justify-content:space-between; align-items:center; background:#000000; color:#FFFFFF; border-bottom:3px solid #FF6600; padding:16px; }
+#team-details-modal .modal-header p { margin:0 0 4px; }
+#team-details-modal h2, #team-details-modal h3 { font-family:Anton,sans-serif; font-weight:400; text-transform:uppercase; margin:0 0 12px; }
+#team-details-modal h2 { margin:0; overflow-wrap:anywhere; }
+#team-details-modal .team-details-body { overflow-y:auto; min-height:0; padding:20px; }
+#team-details-modal .team-profile-fields { display:grid; grid-template-columns:1fr 1fr; gap:16px; }
+#team-details-modal label { display:grid; gap:6px; font-weight:700; }
+#team-details-modal input, #team-details-modal button { min-height:48px; max-width:100%; font:600 16px/1.4 Inter,sans-serif; color:var(--team-ink); background:var(--team-surface); border:1px solid #6E6E6E!important; }
+#team-details-modal input { width:100%; min-width:0; padding:10px; font-weight:400; }
+#team-details-modal button { padding:10px 16px; }
+#team-details-modal .modal-header button { color:#FFFFFF; background:#000000; width:48px; flex:none; margin-left:12px; font-size:24px; }
+#team-details-modal .primary, #team-details-modal .payroll-grant[aria-pressed="true"] { background:#FF6600!important; color:#000000!important; }
+#team-details-modal form>.primary { margin-top:16px; }
+#team-details-modal .team-member-access { margin-top:24px; border-top:1px solid #6E6E6E; padding-top:20px; }
+#team-details-modal .account-row { display:block; padding:16px 0; color:var(--team-ink); }
+#team-details-modal .account-identity>* { display:block; overflow-wrap:anywhere; color:var(--team-ink); }
+#team-details-modal .account-identity small { margin-top:8px; }
+#team-details-modal .team-account-actions { display:flex; flex-wrap:wrap; gap:8px; }
+#team-details-modal .payroll-access-always { width:100%; }
+#team-details-modal .team-profile-error { border-left:2px solid #FF6600; padding-left:12px; }
+#team-details-modal :is(input,button):focus-visible, #team-page .team-member-card:focus-visible { outline:2px solid #FF6600!important; outline-offset:2px!important; box-shadow:none!important; }
+@media(max-width:500px) { #team-details-modal .team-profile-fields { grid-template-columns:1fr; } #team-details-modal .team-account-actions button { width:100%; } }
+#team-details-modal .modal-header { margin:0; width:auto; min-width:0; }
+#team-details-modal .modal-header>div { min-width:0; }
+#team-page .team-tabs button { min-height:48px; color:var(--team-ink); background:var(--team-surface); border-color:#6E6E6E; }
+#team-page .team-tabs button.active { color:var(--team-ink); border-bottom:3px solid #FF6600; box-shadow:none; }
+#team-details-modal input { background:var(--team-surface)!important; color:var(--team-ink)!important; border-color:#6E6E6E!important; }
+#team-details-modal .modal-header { border-bottom:3px solid #FF6600!important; }
+#team-details-modal .team-profile-summary dl { display:grid; grid-template-columns:1fr 1fr; gap:12px; margin:0 0 16px; }
+#team-details-modal .team-profile-summary dt { font-size:12px; font-weight:700; }
+#team-details-modal .team-profile-summary dd { margin:4px 0 0; overflow-wrap:anywhere; font-size:16px; }
+#team-details-modal #team-profile-form { padding:0; gap:12px; }
+#team-details-modal [hidden] { display:none!important; }
+
+/* Access choices are compact checkbox rows, never full-width text inputs. */
+#user-modal { width:min(680px,calc(100vw - 24px)); max-width:calc(100vw - 24px); max-height:calc(100dvh - 24px); }
+#user-modal :is(#user-project-access,#user-crew-access,.permission-grid) { min-width:0; }
+#user-modal .access-group-title { font:700 16px/1.4 Inter,sans-serif; margin-bottom:8px; }
+#user-modal .member-picker { display:grid; gap:4px; width:100%; max-height:208px; padding:6px; border:1px solid #6E6E6E; background:#FFFFFF; }
+#user-modal :is(.member-picker label,.permission-grid .check-row) { display:grid; grid-template-columns:20px minmax(0,1fr); align-items:center; gap:12px; min-height:48px; margin:0; padding:10px; font:500 15px/1.4 Inter,sans-serif; overflow-wrap:anywhere; color:#000000!important; background:#FFFFFF!important; border-color:#6E6E6E!important; }
+#user-modal :is(.member-picker,.permission-grid) input[type="checkbox"] { appearance:auto; width:20px!important; height:20px!important; min-width:20px!important; min-height:20px!important; max-width:20px; max-height:20px; margin:0!important; padding:0!important; align-self:center; justify-self:start; accent-color:#FF6600; box-shadow:none!important; }
+#user-modal :is(#user-project-access,#user-crew-access)>.input-help { display:block; margin:8px 0 0; font:400 13px/1.45 Inter,sans-serif; color:#000000!important; }
+#user-modal .permission-grid { gap:8px; margin-top:16px; }
+#user-modal :is(.member-picker,.permission-grid) input:focus-visible { outline:2px solid #FF6600!important; outline-offset:2px!important; box-shadow:none!important; }
+:root[data-theme="dark"] #user-modal :is(.member-picker,.member-picker label,.permission-grid .check-row) { background:#000000!important; color:#FFFFFF!important; border-color:#6E6E6E!important; }
+:root[data-theme="dark"] #user-modal :is(#user-project-access,#user-crew-access)>.input-help { color:#FFFFFF!important; }
+@media(max-width:700px) { #user-modal .permission-grid { grid-template-columns:1fr; } }
+#user-modal :is(input,select,button):focus, #user-modal :is(input,select,button):focus-visible { outline:2px solid #FF6600!important; outline-offset:2px!important; box-shadow:none!important; }

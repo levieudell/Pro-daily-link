@@ -69,7 +69,7 @@ async function prepareCheckout(company, request, env = process.env) {
 function trialParameters(company, founder, now = Date.now()) {
   const end = Date.parse(company.trialEndsAt);
   const originalFreePeriod = company.stripeFreePeriod?.end === Math.ceil(end / 1000);
-  if (founder || company.stripeTrialUsed && !originalFreePeriod || !Number.isFinite(end) || end <= now) return {};
+  if (company.paymentRequired || founder || company.stripeTrialUsed && !originalFreePeriod || !Number.isFinite(end) || end <= now) return {};
   // Hosted Checkout supports a future billing anchor with no initial proration.
   // Keep the original deadline even in the final seconds; never reset the trial.
   const anchor = Math.ceil(end / 1000);
@@ -98,4 +98,19 @@ function projectCapacityError(db, limit) {
     ? `Your plan includes ${limit} active projects. Archive a project or manage your plan.` : null;
 }
 
-module.exports = { prepareCheckout, trialParameters, projectCapacityError, verifySubscription, anchoredFreePeriod, remainingAnchoredTrial };
+// New pay-first accounts must have a paid invoice belonging to their subscription.
+// Existing trials have no paymentRequired marker and retain their original access.
+async function confirmInitialPayment(company, subscription, request) {
+  if (!company.paymentRequired || company.initialPaymentConfirmedAt || subscription.status !== 'active') return null;
+  const invoiceId = idOf(subscription.latest_invoice);
+  if (!invoiceId) return null;
+  const invoice = await request('/invoices/' + encodeURIComponent(invoiceId), null, 'GET');
+  const invoiceSubscription = idOf(invoice.subscription || invoice.parent?.subscription_details?.subscription);
+  if (invoice.id !== invoiceId || invoiceSubscription !== subscription.id ||
+      idOf(invoice.customer) !== idOf(subscription.customer) || invoice.livemode !== subscription.livemode) {
+    throw fail('Payment ownership could not be verified. Contact support.', 503);
+  }
+  return invoice.status === 'paid' && Number(invoice.amount_paid) > 0 ? new Date().toISOString() : null;
+}
+
+module.exports = { confirmInitialPayment, prepareCheckout, trialParameters, projectCapacityError, verifySubscription, anchoredFreePeriod, remainingAnchoredTrial };
