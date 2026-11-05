@@ -6,14 +6,19 @@ const path = require('node:path');
 
 const SCRIPT_ORIGINS = Object.freeze([
   'https://esm.sh',
-  'https://connect.facebook.net'
+  'https://connect.facebook.net',
+  'https://www.googletagmanager.com'
 ]);
 const STYLE_ORIGINS = Object.freeze(['https://fonts.googleapis.com']);
 const FONT_ORIGINS = Object.freeze(['https://fonts.gstatic.com']);
 const CONNECT_ORIGINS = Object.freeze([
   'https://heycatch.ai',
   'https://*.heycatch.ai',
-  'https://www.facebook.com'
+  'https://www.facebook.com',
+  'https://www.google-analytics.com',
+  'https://*.google-analytics.com',
+  'https://*.analytics.google.com',
+  'https://www.googletagmanager.com'
 ]);
 
 function publicHtmlFiles(root) {
@@ -64,7 +69,7 @@ function contentSecurityPolicy(root) {
     `script-src ${scriptSources.join(' ')}`,
     `style-src 'self' 'unsafe-inline' ${STYLE_ORIGINS.join(' ')}`,
     `font-src 'self' data: ${FONT_ORIGINS.join(' ')}`,
-    "img-src 'self' data: blob: https://www.facebook.com",
+    "img-src 'self' data: blob: https://www.facebook.com https://www.google-analytics.com https://*.google-analytics.com",
     `connect-src 'self' ${CONNECT_ORIGINS.join(' ')}`
   ].join('; ');
 }
