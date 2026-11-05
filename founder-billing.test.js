@@ -3,6 +3,8 @@ const billing = require('./founder-billing');
 const stripePricePolicy = require('./stripe-price-policy');
 async function run(){
   const env={PDL_FOUNDER_ENABLED:'1',PDL_FOUNDER_CODE:'TEST-INVITE',STRIPE_SECRET_KEY:'sk_test_synthetic',STRIPE_WEBHOOK_SECRET:'synthetic'};
+  const trial=require('./subscription-checkout').trialParameters({cardTrialDays:7,paymentRequired:true},true);
+  assert.deepEqual(trial,{},'founders never receive a trial, even with a stale trial marker');
   const plans={starter:{price:99,annualPrice:990},growth:{price:199,annualPrice:1990},pro:{price:399,annualPrice:3990}};
   for(const plan of Object.keys(plans))for(const cycle of ['monthly','annual'])for(const founder of [true,false])env[billing.priceKey(plan,cycle,founder)]='price_'+plan+'_'+cycle+'_'+founder;
   env.STRIPE_PRICE_ASSISTED_SETUP='price_setup';

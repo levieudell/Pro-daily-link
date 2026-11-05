@@ -28,6 +28,11 @@ const server=http.createServer((req,res)=>{
   const base='http://127.0.0.1:'+server.address().port;
   try{
     browser=await chromium.launch({headless:true,...(executablePath?{executablePath}:{})});
+    const noJs=await browser.newPage({javaScriptEnabled:false,viewport:{width:390,height:844}});
+    await noJs.goto(base+'/signup.html');
+    assert.ok(await noJs.locator('[data-step="1"]').isVisible());
+    for(const step of [2,3]){assert.equal(await noJs.locator(`[data-step="${step}"]`).getAttribute('hidden'),'');assert.equal(await noJs.locator(`[data-step="${step}"]`).isVisible(),false);}
+    await noJs.close();
     for(const cycle of ['annual','monthly']){
       const page=await browser.newPage();
       await page.route('**/api/founder-offer',route=>route.fulfill({json:{enabled:false}}));
@@ -56,6 +61,7 @@ const server=http.createServer((req,res)=>{
       });
       await page.goto(base+'/signup.html?plan=growth');
       await page.getByRole('button',{name:'Decline',exact:true}).click();
+      assert.ok(await page.locator('[data-step="1"] .trial-disclosure').evaluate(el=>el.getBoundingClientRect().bottom<=innerHeight),'trial disclosure visible without scrolling');
       await page.locator('#company').fill('Test Builders');await page.locator('#owner').fill('Test Owner');
       await page.locator('#email').fill('owner@example.invalid');await page.locator('#password').fill('SyntheticPassword!42');
       await page.locator('[data-next="2"]').click();await page.locator('#trade').selectOption('Excavation');
@@ -66,13 +72,14 @@ const server=http.createServer((req,res)=>{
       if(cycle==='monthly')await page.locator('[name=billingCycle][value=monthly]').check();
       if(founder)await page.locator('#founder-code').fill('VALID-TEST');
       assert.equal(await price.innerText(),cycle==='annual'?(founder?'$1,590/year':'$1,990/year'):(founder?'$159/mo':'$199/mo'));
+      assert.equal(await price.locator('..').locator('small').innerText(),cycle==='annual'?`or $${founder?159:199}/mo billed monthly · 30 users · 25 active projects`:`$${founder?'1,590':'1,990'}/year · 30 users · 25 active projects`);
       assert.match(await price.evaluate(el=>getComputedStyle(el).fontFamily),/Anton/);
       fs.mkdirSync(path.join(root,'docs/paid-signup'),{recursive:true});
       await page.screenshot({path:path.join(root,`docs/paid-signup/plan-${width}.png`),fullPage:true});
       await page.locator('[data-next="3"]').click();
-      assert.match(await page.locator('#payment-summary').innerText(),new RegExp('per '+(cycle==='annual'?'year':'month')+'.*Charged today'));
+      assert.match(await page.locator('#payment-summary').innerText(),new RegExp('per '+(cycle==='annual'?'year':'month')+'.*'+(founder?'Charged today':'after your 7-day trial')));
       if(founder)await page.locator('#founder-terms').check();
-      assert.doesNotMatch(await page.locator('body').innerText(),/14-day|after trial|no credit card|Nothing is charged today/i);
+      assert.doesNotMatch(await page.locator('body').innerText(),/14-day|no credit card/i);
       await page.locator('#legal-acceptance').check();
       assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));
       const button=await page.locator('#create-company').evaluate(el=>({height:el.getBoundingClientRect().height,bg:getComputedStyle(el).backgroundColor,color:getComputedStyle(el).color}));
@@ -83,6 +90,30 @@ const server=http.createServer((req,res)=>{
       assert.equal(signups,1);assert.equal(await page.locator('#password').inputValue(),'');assert.ok(await page.locator('#assisted-setup').isDisabled());assert.ok(await page.locator('#checkout-resume').isVisible());
       await page.locator('#create-company').click();await page.waitForURL('https://checkout.stripe.com/**');
       assert.equal(signups,1,'retry does not create another account');assert.equal(checkouts,2);assert.deepEqual(errors,[]);
+      await page.close();
+    }
+    for(const cycle of ['monthly','annual']){
+      const page=await browser.newPage({viewport:{width:390,height:844}});
+      await page.route('**/api/founder-offer',route=>route.fulfill({json:{enabled:true,prices:{starter:{monthly:79,annual:790},growth:{monthly:159,annual:1590},pro:{monthly:319,annual:3190}}}}));
+      await page.goto(base+'/signup.html?cycle='+cycle);
+      await page.getByRole('button',{name:'Decline',exact:true}).click();
+      await page.locator('#company').fill('Founder test');await page.locator('#owner').fill('Owner');
+      await page.locator('#email').fill('founder@example.invalid');await page.locator('#password').fill('SyntheticPassword!42');
+      await page.locator('[data-next="2"]').click();await page.locator('#trade').selectOption('Excavation');
+      await page.locator('#founder-code').fill('TEST-FOUNDER');
+      assert.match(await page.locator('#plan-offer-help').innerText(),/founder price/);
+      assert.equal(await page.locator('.trial-disclosure:visible').count(),0);
+      assert.match(await page.locator('[name=plan][value=growth]').evaluate(el=>el.closest('label').innerText),/159/);
+      await page.locator('[data-next="3"]').click();
+      assert.match(await page.locator('#payment-summary').innerText(),cycle==='annual'?/\$1,590 per year.*Charged today/:/\$159 per month.*Charged today/);
+      assert.doesNotMatch(await page.locator('body').innerText(),/7-day|after trial|card is saved/);
+      assert.equal(await page.locator('#payment-heading').textContent(),'Review & pay');
+      assert.match(await page.locator('#founder-options').innerText(),/payment is due now, with no free trial/);
+      await page.locator('[data-back="2"]').click();await page.locator('#founder-code').fill('');
+      assert.match(await page.locator('#plan-offer-help').innerText(),/7-day free trial/);
+      await page.locator('[data-next="3"]').click();
+      assert.equal(await page.locator('.trial-disclosure:visible').count(),1);
+      assert.match(await page.locator('#payment-summary').innerText(),/after your 7-day trial/);
       await page.close();
     }
     for(const theme of ['light','dark']){

@@ -248,6 +248,7 @@ const TENANT_SCOPE_FIELDS = Object.freeze([
 // subscription, repeat a trial, reattach retired Stripe state, unlock an
 // archived/closing company, or roll back the pricing-visibility policy.
 const TENANT_COMPANY_FORWARD_ONLY_FIELDS = Object.freeze([
+  'paymentRequired', 'initialPaymentConfirmedAt', 'cardTrialDays', 'cardTrial',
   'plan', 'billingCycle', 'planPrice', 'billingExempt', 'accountType',
   'subscriptionStatus', 'trialEndsAt', 'nextBillingAt', 'stripeCustomerId',
   'stripeSubscriptionId', 'stripeCheckoutSessionId', 'stripeTrialUsed',

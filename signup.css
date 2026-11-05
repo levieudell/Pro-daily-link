@@ -82,3 +82,4 @@ a{color:#FFFFFF;text-underline-offset:3px}
 .legal-consent a{font-size:inherit;line-height:inherit}
 
 @media(max-width:650px){.signup-step[data-step="2"] .plans label{padding:10px 12px}.signup-step[data-step="2"] .plans b,.signup-step[data-step="2"] .plans strong,.signup-step[data-step="2"] .plans small{margin-bottom:3px}.signup-step[data-step="2"] .plans strong{font-size:26px}}
+.trial-disclosure{font-family:Inter,sans-serif;border-left:3px solid #FF6600;padding:8px 12px;line-height:1.4}

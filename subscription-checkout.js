@@ -67,6 +67,11 @@ async function prepareCheckout(company, request, env = process.env) {
 }
 
 function trialParameters(company, founder, now = Date.now()) {
+  if (founder || company.founder?.requested) return {};
+  if (company.cardTrialDays === 7 && !company.stripeTrialUsed && !company.initialPaymentConfirmedAt) return {
+    'subscription_data[trial_period_days]': 7, payment_method_collection: 'always',
+    'subscription_data[trial_settings][end_behavior][missing_payment_method]': 'cancel'
+  };
   const end = Date.parse(company.trialEndsAt);
   const originalFreePeriod = company.stripeFreePeriod?.end === Math.ceil(end / 1000);
   if (company.paymentRequired || founder || company.stripeTrialUsed && !originalFreePeriod || !Number.isFinite(end) || end <= now) return {};
@@ -113,4 +118,30 @@ async function confirmInitialPayment(company, subscription, request) {
   return invoice.status === 'paid' && Number(invoice.amount_paid) > 0 ? new Date().toISOString() : null;
 }
 
-module.exports = { confirmInitialPayment, prepareCheckout, trialParameters, projectCapacityError, verifySubscription, anchoredFreePeriod, remainingAnchoredTrial };
+// Only new signups carrying this server-owned marker qualify. Never infer eligibility
+// from an old company's status or a request body.
+function hasVerifiedCardTrial(company, now = Date.now()) {
+  return !company.founder?.requested && company.cardTrialDays === 7 && company.subscriptionStatus === 'Trial' &&
+    company.cardTrial?.subscriptionId === company.stripeSubscriptionId &&
+    Number(company.cardTrial.end) * 1000 > now;
+}
+async function confirmCardTrial(company, subscription, request, now = Date.now()) {
+  if (company.founder?.requested || company.cardTrialDays !== 7 || subscription.status !== 'trialing' ||
+      !Number.isSafeInteger(subscription.trial_end) || subscription.trial_end * 1000 <= now) return null;
+  const customerId = idOf(subscription.customer);
+  let methodId = idOf(subscription.default_payment_method);
+  if (!methodId) {
+    const customer = await request('/customers/' + encodeURIComponent(customerId), null, 'GET');
+    if (customer.id !== customerId || customer.deleted || customer.livemode !== subscription.livemode)
+      throw fail('Trial customer ownership could not be verified.', 503);
+    methodId = idOf(customer.invoice_settings?.default_payment_method);
+  }
+  if (!methodId) return null;
+  const method = await request('/payment_methods/' + encodeURIComponent(methodId), null, 'GET');
+  if (method.id !== methodId || idOf(method.customer) !== customerId || method.livemode !== subscription.livemode)
+    throw fail('Trial payment method ownership could not be verified.', 503);
+  if (method.type !== 'card') return null;
+  return { subscriptionId: subscription.id, end: subscription.trial_end };
+}
+
+module.exports = { confirmCardTrial, hasVerifiedCardTrial, confirmInitialPayment, prepareCheckout, trialParameters, projectCapacityError, verifySubscription, anchoredFreePeriod, remainingAnchoredTrial };

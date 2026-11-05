@@ -156,6 +156,7 @@ const tenantIdentityCurrent = {
     id: companyId, name: 'Current Identity Builders',
     pricingAccess: { enabled: true, officeMode: 'selected', userIds: [30] },
     plan: 'growth', billingCycle: 'monthly', planPrice: 199, billingExempt: false,
+    paymentRequired:true, initialPaymentConfirmedAt:'2026-11-01T00:00:00.000Z', cardTrialDays:7, cardTrial:{subscriptionId:'sub_live',end:2000000000},
     accountType: 'standard', subscriptionStatus: 'Cancelled', trialEndsAt: null,
     stripeCustomerId: 'cus_current', stripeSubscriptionId: 'sub_current', stripeTrialUsed: true,
     retiredStripeSubscriptionIds: ['sub_stale'], stripeWebhookEvents: ['evt_current'],
@@ -202,6 +203,7 @@ assert.equal(restoredCurrentOwner.status, 'Active');
 assert.equal(restoredCurrentOwner.passwordHash, 'current-owner-password', 'the live break-glass owner credential moves forward');
 assert.deepEqual(tenantIdentityRestored.company.pricingAccess, tenantIdentityCurrent.company.pricingAccess, 'live pricing authorization does not roll back');
 for (const key of [
+  'paymentRequired','initialPaymentConfirmedAt','cardTrialDays','cardTrial',
   'plan', 'billingCycle', 'planPrice', 'billingExempt', 'accountType', 'subscriptionStatus', 'trialEndsAt',
   'stripeCustomerId', 'stripeSubscriptionId', 'stripeTrialUsed', 'retiredStripeSubscriptionIds',
   'stripeWebhookEvents', 'pendingCheckout', 'founder', 'demo', 'emailVerificationRequiredAt',

@@ -7,7 +7,8 @@ const path = require('node:path');
 
 const root = __dirname;
 const V = '20261027-public3';
-const signupVersion = '20261104-annual-first';
+const heroVersion = '20261105-hero-trial';
+const signupVersion = '20261104-card-trial';
 const pages = [
   'landing.html',
   'about.html',
@@ -27,11 +28,11 @@ for (const file of pages) {
     const sheet = /rel="stylesheet"/.test(tag);
     const script = /^<script\b/.test(tag) && /\bsrc=/.test(tag);
     if (!sheet && !script) continue;
-    assert.match(tag, new RegExp(`\\?v=${file === 'signup.html' ? signupVersion : tag.includes('public-header.js') ? '20261103-paid-signup' : V}["']`), `${file} pins ${tag}`);
+    assert.match(tag, new RegExp(`\\?v=${file === 'signup.html' ? (tag.includes('signup.js') ? '20261105-trial-copy' : signupVersion) : file === 'landing.html' && tag.includes('landing.css') ? heroVersion : tag.includes('public-header.js') ? '20261105-trial-copy' : V}["']`), `${file} pins ${tag}`);
   }
   if (headerPages.includes(file)) {
-    assert.match(html, new RegExp(`href="(?:\\.\\./)?landing\\.css\\?v=${V}"`), `${file} pins the header stylesheet`);
-    assert.match(html, new RegExp(`src="/public-header\\.js\\?v=20261103-paid-signup" defer`), `${file} loads the header fitter from head`);
+    assert.match(html, new RegExp(`href="(?:\\.\\./)?landing\\.css\\?v=${file === 'landing.html' ? heroVersion : V}"`), `${file} pins the header stylesheet`);
+    assert.match(html, new RegExp(`src="/public-header\\.js\\?v=20261105-trial-copy" defer`), `${file} loads the header fitter from head`);
   }
 }
 assert.match(fs.readFileSync(path.join(root, 'landing.html'), 'utf8'), new RegExp(`href="landing-demo\\.css\\?v=${V}"`));
@@ -152,6 +153,22 @@ const inspect = `(() => {
         }
         assert.ok(result.scroll <= 1, `${file} @ ${width} header overflows by ${result.scroll}px`);
         if (file === 'landing.html') {
+          const hero = await page.evaluate(() => {
+            const copy = document.querySelector('#landing-hero .hero-copy');
+            const note = copy.querySelector('.trial-disclosure');
+            const style = getComputedStyle(note);
+            return { order: [...copy.children].slice(0,5).map(el=>el.className || el.tagName),
+              text: note.textContent, font: style.fontFamily, weight: style.fontWeight, size: style.fontSize,
+              gap: copy.querySelector('.eyebrow').getBoundingClientRect().top-document.querySelector('.site-header').getBoundingClientRect().bottom,
+              noteGap: note.getBoundingClientRect().top-copy.querySelector('.hero-actions').getBoundingClientRect().bottom,
+              overflow: document.documentElement.scrollWidth > innerWidth };
+          });
+          assert.deepEqual(hero.order, ['eyebrow','H1','lead','hero-actions','trial-disclosure']);
+          assert.equal(hero.text, 'Standard plans: 7 days free, card up front, cancel before day 7 and pay nothing. Founder plans pay up front.');
+          assert.match(hero.font,/Inter/); assert.equal(hero.weight,'400'); assert.equal(hero.size,'12px');
+          assert.ok(hero.noteGap >= 0 && hero.noteGap <= 10, 'note directly follows CTA');
+          if(width === 390){assert.ok(hero.gap >= 16 && hero.gap <= 32, 'no empty mobile header gap');assert.equal(hero.overflow,false);}
+          assert.ok(result.items.some(item=>['Start your 7-day trial','Start free trial'].includes(item.text)), 'trial CTA in header');
           assert.ok(result.founder, 'founder block is on the landing page');
           assert.ok(Math.abs(result.founder.copy - result.founder.cap) <= 1, `${width} founder-copy ${result.founder.copy}px, expected ${result.founder.cap}`);
           assert.ok(result.founder.copy <= 760, `${width} founder-copy exceeds 760`);
