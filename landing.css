@@ -50,3 +50,8 @@ h1,h2,h3{font-family:Anton,sans-serif;font-weight:400}
 .site-header.nav-collapsed.menu-open>nav a:focus-visible,.site-header.nav-collapsed.menu-open>nav a:active,.site-header.nav-collapsed.menu-open>nav a[aria-current="page"]{color:#FF6600;outline:2px solid #FF6600;outline-offset:2px}
 @media(max-width:1279px){.site-header.menu-open>nav .header-demo{background:transparent;color:#ffffff;border:0;border-radius:0;padding:0;min-height:44px;justify-content:flex-start;font-family:Inter,sans-serif;font-weight:700;font-size:16px}}
 .site-header.nav-collapsed.menu-open>nav .header-demo{background:transparent;color:#ffffff;border:0;border-radius:0;padding:0;min-height:44px;justify-content:flex-start;font-family:Inter,sans-serif;font-weight:700;font-size:16px}
+
+/* Landing hero only: the sticky header already occupies document space. */
+#landing-hero .hero-actions{margin-bottom:8px}
+#landing-hero .trial-disclosure{margin:0 0 22px;font:400 12px/1.5 Inter,sans-serif;color:#FFF}
+@media(max-width:600px){#landing-hero{padding-top:24px}}
