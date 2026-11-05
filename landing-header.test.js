@@ -27,7 +27,7 @@ for (const file of pages) {
     const sheet = /rel="stylesheet"/.test(tag);
     const script = /^<script\b/.test(tag) && /\bsrc=/.test(tag);
     if (!sheet && !script) continue;
-    assert.match(tag, new RegExp(`\\?v=${file === 'signup.html' ? signupVersion : tag.includes('public-header.js') ? '20261103-paid-signup' : V}["']`), `${file} pins ${tag}`);
+    assert.match(tag, new RegExp(`\\?v=${file === 'signup.html' ? (tag.includes('signup.js') ? '20261104-founder-upfront' : signupVersion) : tag.includes('public-header.js') ? '20261103-paid-signup' : V}["']`), `${file} pins ${tag}`);
   }
   if (headerPages.includes(file)) {
     assert.match(html, new RegExp(`href="(?:\\.\\./)?landing\\.css\\?v=${V}"`), `${file} pins the header stylesheet`);

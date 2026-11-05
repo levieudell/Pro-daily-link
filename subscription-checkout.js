@@ -67,6 +67,7 @@ async function prepareCheckout(company, request, env = process.env) {
 }
 
 function trialParameters(company, founder, now = Date.now()) {
+  if (founder || company.founder?.requested) return {};
   if (company.cardTrialDays === 7 && !company.stripeTrialUsed && !company.initialPaymentConfirmedAt) return {
     'subscription_data[trial_period_days]': 7, payment_method_collection: 'always',
     'subscription_data[trial_settings][end_behavior][missing_payment_method]': 'cancel'
@@ -120,12 +121,12 @@ async function confirmInitialPayment(company, subscription, request) {
 // Only new signups carrying this server-owned marker qualify. Never infer eligibility
 // from an old company's status or a request body.
 function hasVerifiedCardTrial(company, now = Date.now()) {
-  return company.cardTrialDays === 7 && company.subscriptionStatus === 'Trial' &&
+  return !company.founder?.requested && company.cardTrialDays === 7 && company.subscriptionStatus === 'Trial' &&
     company.cardTrial?.subscriptionId === company.stripeSubscriptionId &&
     Number(company.cardTrial.end) * 1000 > now;
 }
 async function confirmCardTrial(company, subscription, request, now = Date.now()) {
-  if (company.cardTrialDays !== 7 || subscription.status !== 'trialing' ||
+  if (company.founder?.requested || company.cardTrialDays !== 7 || subscription.status !== 'trialing' ||
       !Number.isSafeInteger(subscription.trial_end) || subscription.trial_end * 1000 <= now) return null;
   const customerId = idOf(subscription.customer);
   let methodId = idOf(subscription.default_payment_method);

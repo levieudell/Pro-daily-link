@@ -138,11 +138,14 @@ function updateFounderOffer(){
   $('#founder-terms').required=active;
   $('#assisted-setup').disabled=!active||!founderOffer?.setupAvailable;
   if(!active){$('#assisted-setup').checked=false;$('#founder-terms').checked=false;}
-  $('#signup-offer-heading').textContent=active?'Founder membership · 7-day free trial':'Try Pro Daily Link free for 7 days.';
+  $('#signup-offer-heading').textContent=active?'Founder membership · payment required · no free trial':'Try Pro Daily Link free for 7 days.';
   $('#plan-offer-help').textContent=active?'Pay monthly or annually. Your selected founder price is protected for 24 months from first payment.':'7-day free trial. Card required. Cancel anytime before day 7 and you won’t be charged.';
-  $('#monthly-cycle-label').textContent='Monthly — after trial';
-  $('#annual-cycle-label').textContent='Annual — after trial · two months free';
-  $('#create-company').textContent='Start your 7-day trial';
+  $('#monthly-cycle-label').textContent=active?'Monthly — pay today':'Monthly — after trial';
+  $('#annual-cycle-label').textContent=active?'Annual — pay today · two months free':'Annual — after trial · two months free';
+  $('#create-company').textContent=active?'Continue to secure payment':'Start your 7-day trial';
+  document.querySelectorAll('.trial-disclosure').forEach(el=>el.hidden=active);
+  $('#payment-heading').textContent=active?'Review & pay':'Review & start trial';
+  $('#checkout-access-help').textContent=active?'Secure checkout with Stripe. Your workspace opens after payment is confirmed.':'Secure checkout with Stripe. Your workspace opens once your card is saved.';
   const standard={starter:[99,990,'10 users · 5 active projects'],growth:[199,1990,'30 users · 25 active projects'],pro:[399,3990,'75 users · unlimited projects']};
   for(const [id,values] of Object.entries(standard)){
     const card=document.querySelector('[name="plan"][value="'+id+'"]').closest('label');
@@ -151,7 +154,7 @@ function updateFounderOffer(){
   }
   const plan=document.querySelector('[name="plan"]:checked').value,annual=document.querySelector('[name="billingCycle"]:checked').value==='annual';
   const amount=annual?(active?founderOffer.prices[plan].annual:standard[plan][1]):(active?founderOffer.prices[plan].monthly:standard[plan][0]);
-  $('#payment-summary').textContent=`${plan[0].toUpperCase()+plan.slice(1)} · $${amount.toLocaleString()} per ${annual?'year':'month'}. Automatically billed after your 7-day trial unless canceled${active&&$('#assisted-setup').checked?' + $499 one-time setup charged today':''}. Taxes, if applicable, are shown before you pay.`;
+  $('#payment-summary').textContent=`${plan[0].toUpperCase()+plan.slice(1)} · $${amount.toLocaleString()} per ${annual?'year':'month'}. ${active?'Charged today at checkout':'Automatically billed after your 7-day trial unless canceled'}${active&&$('#assisted-setup').checked?' + $499 one-time setup charged today':''}. Taxes, if applicable, are shown before you pay.`;
   $('#founder-renewal').textContent='Before the 24-month founder period ends, we will contact you to review renewal options. Your price will not automatically jump to the regular rate. Optional setup is charged only once. Taxes, if applicable, are shown at checkout.';
 }
 $('#assisted-setup').addEventListener('change',updateFounderOffer);
