@@ -43,7 +43,7 @@ server.listen(4231, async () => {
     const html = fs.readFileSync(path.join(__dirname, 'platform.js'), 'utf8');
     const serverSrc = fs.readFileSync(path.join(__dirname, 'server.js'), 'utf8');
     assert.match(html, /relativeDay=/, 'customer cards expose a relative latest-daily stamp');
-    assert.match(html, /latest daily \$\{relativeDay\(c\.lastReport\)\}/);
+    assert.match(html, /Latest \$\{safe\(relativeDay\(c\.lastReport\)\)\}/);
     assert.match(serverSrc, /Trial ended — choose a plan/);
     assert.match(serverSrc, /Subscription \$\{access\.status\.toLowerCase\(\)\}/);
     assert.match(serverSrc, /No daily report in \$\{silentDays\} days/);

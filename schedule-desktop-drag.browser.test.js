@@ -80,6 +80,11 @@ const executablePath = process.env.PDL_BROWSER_PATH || ['C:/Program Files/Google
     assert.ok((await assigned).ok(),'dropping on crew persists task assignment');
     
     await page.waitForFunction(()=>assignments.some(a=>a.activity==='Drag test excavation'));
+    // Existing demo bookings can push the first available crew day into the
+    // following week. Follow the committed assignment before asserting the
+    // desktop board interaction instead of assuming it stayed in this week.
+    const assignedDate=await page.evaluate(()=>assignments.filter(a=>a.activity==='Drag test excavation').map(a=>a.date).sort()[0]);
+    await page.evaluate(date=>{scheduleAnchorDate=date;renderSchedule();},assignedDate);
     await sidebar.locator(':scope > summary').click();
     const source=page.locator('.schedule-grid [data-assignment]').filter({hasText:'Drag test excavation'}).first();
     const id=await source.getAttribute('data-assignment'),member=await source.getAttribute('data-member');
