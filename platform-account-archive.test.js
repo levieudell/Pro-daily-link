@@ -72,7 +72,7 @@ const { server } = require('./server');
   assert.match(serverSrc, /includeArchived\|\|!snapshot\.company\.archivedDuplicate/, 'tenant resolution fails closed for archived accounts');
   assert.match(serverSrc, /archived:Boolean\(company\.archivedDuplicate\)/, 'console payload flags archived accounts');
   const html = fs.readFileSync(path.join(__dirname, 'platform.html'), 'utf8');
-  assert.match(html, /<option value="archived">Archived<\/option>/, 'scope filter exposes archived accounts');
+  assert.match(html, /data-account-scope="archived"/, 'the admin-only internal account drawer exposes archived accounts');
   const platformCss = fs.readFileSync(path.join(__dirname, 'platform.css'), 'utf8');
   assert.match(platformCss, /\.customer-card\.archived\{opacity:\.6\}/, 'archived cards render muted');
 }

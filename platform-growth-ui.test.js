@@ -51,7 +51,7 @@ assert.match(periodError('2026-10-01', '2026-10-21', '2026-10-20'), /future/);
 assert.match(periodError('2025-01-01', '2026-10-20', '2026-10-20'), /366/);
 assert.equal(hasCapability({ active: true, capabilities: ['growth:read'] }, 'growth:read'), true);
 for (const user of [null, { active: false, capabilities: ['growth:read'] }, { active: true }, { active: true, capabilities: ['growth:write'] }]) assert.equal(hasCapability(user, 'growth:read'), false);
-assert.equal(apiErrorMessage('SECRET_PROVIDER_ERROR'), 'Growth data is temporarily unavailable. Refresh to try again.');
+assert.equal(apiErrorMessage('SECRET_PROVIDER_ERROR'), 'CRM data is temporarily unavailable. Refresh to try again.');
 assert.match(apiErrorMessage('duplicate_opportunity'), /already matches/i);
 assert.equal(createIdempotencyKey({ randomUUID: () => '12345678-1234-1234-1234-123456789abc' }), 'growth:12345678-1234-1234-1234-123456789abc');
 assert.equal(createIdempotencyKey({ getRandomValues: bytes => bytes.fill(10) }), 'growth:0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a');
@@ -158,7 +158,7 @@ for (const mutate of [
   const root = new Element('main'), document = fakeDocument([root]);
   renderGrowthReport(document, root, report(), { canWrite: true });
   const text = root.textContent;
-  assert.match(text, /Growth key performance indicators|New opportunities/);
+  assert.match(text, /CRM key performance indicators|New opportunities/);
   assert.match(text, /USD 298\.00 · EUR 50\.00 · 1 not entered/);
   assert.match(text, /Reached stages; no skipped stage is inferred/);
   assert.match(text, /Unknown means the source was not captured/);
@@ -326,8 +326,8 @@ function harness({ access = { id: 'owner-1', active: true, capabilities: ['growt
   }
   { // Ready state renders, advertises freshness, and exposes actions only to growth writers.
     const h = harness(); await flush();
-    assert.equal(h.root.hidden, false); assert.equal(h.calls.length, 2); assert.match(h.root.textContent, /Growth command center/); assert.match(h.root.textContent, /USD 298\.00/);
-    assert.match(h.root.textContent, /Growth refreshed as of/); assert.equal(h.root.getAttribute('aria-busy'), 'false');
+    assert.equal(h.root.hidden, false); assert.equal(h.calls.length, 2); assert.match(h.root.textContent, /CRM pipeline/); assert.match(h.root.textContent, /USD 298\.00/);
+    assert.match(h.root.textContent, /CRM refreshed as of/); assert.equal(h.root.getAttribute('aria-busy'), 'false');
     const edit = descendants(h.root).find(item => item.dataset.growthAction === 'edit');
     await h.root.emit('click', { target: edit });
     assert.deepEqual(h.actionsSeen[0], { action: 'edit', opportunityId: 'opp-1', version: 4 });
@@ -347,7 +347,7 @@ function harness({ access = { id: 'owner-1', active: true, capabilities: ['growt
       assert.equal(h.root.hidden, false); assert.match(h.root.textContent, /access could not be verified/i);
       assert.equal(descendants(h.root).some(item => item.dataset.growthAction && !item.hidden), false);
       h.setAccessStatus(200); h.setAccessFailure(null); h.setAccessMalformed(false); await h.api.refresh();
-      assert.match(h.root.textContent, /Growth refreshed as of/);
+      assert.match(h.root.textContent, /CRM refreshed as of/);
     }
     const denied = harness({ accessStatus: 403 }); await flush();
     assert.equal(denied.root.hidden, false); assert.match(denied.root.textContent, /no longer have access/i);

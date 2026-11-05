@@ -197,7 +197,7 @@ function pageSource(moduleUrl, width) {
       });
       if (outside.length) fail('Elements extend outside the viewport: ' + outside.slice(0,5).map(function (item) { return item.tagName + '.' + item.className; }).join(', '));
 
-      var kpis = document.querySelector('section[aria-label="Growth key performance indicators"]');
+      var kpis = document.querySelector('section[aria-label="CRM key performance indicators"]');
       if (!kpis) fail('The KPI collection has no semantic accessible label');
       if (kpis.querySelectorAll('article').length !== 5) fail('Expected five semantic KPI cards');
 

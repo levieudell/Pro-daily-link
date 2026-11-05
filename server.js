@@ -2763,7 +2763,7 @@ async function api(req,res,url){
   if(req.method==='GET'&&url.pathname==='/api/platform/demo-requests'){const platform=readPlatform();return json(res,200,platform.demoRequests||[])}
   const demoRequestRoute=url.pathname.match(/^\/api\/platform\/demo-requests\/([a-f0-9-]+)$/);if(req.method==='PATCH'&&demoRequestRoute){const input=await body(req),platform=readPlatform(),row=(platform.demoRequests||[]).find(item=>item.id===demoRequestRoute[1]);if(!row)return json(res,404,{error:'Demo request not found'});if(input.status&&['New','Contacted','Scheduled','Completed','Closed'].includes(input.status))row.status=input.status;row.updatedAt=new Date().toISOString();platformAudit(platform,req,'demo_request_updated',`${row.company}: ${row.status}`);try{await writePlatform(platform)}catch{return json(res,503,{error:'We could not confirm the demo request status was saved. Refresh and try again.'})}return json(res,200,row)}
   if(req.method==='GET'&&url.pathname==='/api/platform/growth'){
-    const platform=readPlatform(),records=platform.growthOpportunities||[];
+    const platform=readPlatform(),internalCompanyIds=new Set((await platformCompanies(platform)).filter(platformInternalAccount).map(company=>String(company.id))),records=(platform.growthOpportunities||[]).filter(record=>!platformInternalAccount({name:record.companyName})&&(!record.linkedCompanyId||!internalCompanyIds.has(String(record.linkedCompanyId))));
     try{
       const period=growthPeriod(url),activeStages=growthDomain.STAGES.filter(stage=>!growthDomain.CLOSED_STAGES.includes(stage));
       const list=growthDomain.listOpportunities(records,{stages:activeStages,sort:'updated_desc',limit:200,offset:0,asOf:period.asOf});
