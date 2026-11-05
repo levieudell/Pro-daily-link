@@ -37,7 +37,7 @@ function render(){
   const metricItems=[
     ['Companies',unavailable(metrics.activeSubscriptions),'Active subscriptions','customers','data-company-status="Active" data-company-scope="customers"'],
     ['Active trials',unavailable(metrics.trials),'Accounts evaluating PDL','customers'],
-    ['At risk',unavailable(metrics.atRisk),'Accounts needing action','customers'],
+    ['At risk',unavailable(metrics.atRisk),'Customer accounts needing action','customers','data-company-health="At risk" data-company-scope="customers"'],
     ['Open tickets',unavailable(metrics.openTickets),'Unresolved support requests','support']
   ].filter(([, , ,view])=>canView(view));
   $('#metrics').innerHTML=metricItems.map(([label,value,detail,view,filters=''])=>`<button class="metric" data-view-link="${view}" ${filters||(label==='At risk'?'data-company-health="At risk"':label==='Active trials'?'data-company-status="Trial"':'')} aria-label="${safe(label)}: ${safe(value)}. ${safe(detail)}"><small>${safe(label)}</small><strong>${safe(value)}</strong><span>${safe(value==='—'?'Not available for your role':detail)}</span></button>`).join('');
