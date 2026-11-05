@@ -28,6 +28,11 @@ const server=http.createServer((req,res)=>{
   const base='http://127.0.0.1:'+server.address().port;
   try{
     browser=await chromium.launch({headless:true,...(executablePath?{executablePath}:{})});
+    const noJs=await browser.newPage({javaScriptEnabled:false,viewport:{width:390,height:844}});
+    await noJs.goto(base+'/signup.html');
+    assert.ok(await noJs.locator('[data-step="1"]').isVisible());
+    for(const step of [2,3]){assert.equal(await noJs.locator(`[data-step="${step}"]`).getAttribute('hidden'),'');assert.equal(await noJs.locator(`[data-step="${step}"]`).isVisible(),false);}
+    await noJs.close();
     for(const cycle of ['annual','monthly']){
       const page=await browser.newPage();
       await page.route('**/api/founder-offer',route=>route.fulfill({json:{enabled:false}}));
@@ -67,6 +72,7 @@ const server=http.createServer((req,res)=>{
       if(cycle==='monthly')await page.locator('[name=billingCycle][value=monthly]').check();
       if(founder)await page.locator('#founder-code').fill('VALID-TEST');
       assert.equal(await price.innerText(),cycle==='annual'?(founder?'$1,590/year':'$1,990/year'):(founder?'$159/mo':'$199/mo'));
+      assert.equal(await price.locator('..').locator('small').innerText(),cycle==='annual'?`or $${founder?159:199}/mo billed monthly · 30 users · 25 active projects`:`$${founder?'1,590':'1,990'}/year · 30 users · 25 active projects`);
       assert.match(await price.evaluate(el=>getComputedStyle(el).fontFamily),/Anton/);
       fs.mkdirSync(path.join(root,'docs/paid-signup'),{recursive:true});
       await page.screenshot({path:path.join(root,`docs/paid-signup/plan-${width}.png`),fullPage:true});

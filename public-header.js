@@ -1,7 +1,7 @@
 'use strict';
 (function () {
-  const TRIAL = 'Start your plan';
-  const SHORT = 'Get started';
+  const TRIAL = 'Start your 7-day trial';
+  const SHORT = 'Start free trial';
 
   function shown(el) {
     if (!el || el.hidden || el.closest('[hidden]')) return false;
@@ -146,17 +146,13 @@
     };
     parkDemo(header, narrow);
     apply(false, false);
-    if (overflows(header)) {
-      apply(true, false);
-      if (overflows(header)) apply(true, true);
-    }
+    if (overflows(header)) apply(false, true);
+    if (overflows(header)) apply(true, true);
     if (!narrow && overflows(header) && header.querySelector('.header-actions .header-demo')) {
       parkDemo(header, true);
       apply(false, false);
-      if (overflows(header)) {
-        apply(true, false);
-        if (overflows(header)) apply(true, true);
-      }
+      if (overflows(header)) apply(false, true);
+      if (overflows(header)) apply(true, true);
     }
     if (!menuVisible(header)) setOpen(header, false);
   }

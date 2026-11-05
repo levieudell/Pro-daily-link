@@ -13,7 +13,7 @@ let currentStep=1,planWasRequested=['starter','growth','pro'].includes(requested
 function showStep(step){
   currentStep=step;
   document.documentElement.classList.add('wizard-enabled');
-  document.querySelectorAll('.signup-step').forEach(section=>section.classList.toggle('active',Number(section.dataset.step)===step));
+  document.querySelectorAll('.signup-step').forEach(section=>{const active=Number(section.dataset.step)===step;section.hidden=!active;section.classList.toggle('active',active);});
   document.querySelectorAll('.signup-progress button').forEach(button=>{
     const number=Number(button.dataset.go);
     button.classList.toggle('complete',number<step);
@@ -152,7 +152,7 @@ function updateFounderOffer(){
     const card=document.querySelector('[name="plan"][value="'+id+'"]').closest('label');
     const monthly=active?founderOffer.prices[id].monthly:values[0],yearly=active?founderOffer.prices[id].annual:values[1];
     card.querySelector('strong').textContent='$'+(annual?yearly:monthly).toLocaleString()+(annual?'/year':'/mo');
-    card.querySelector('small').textContent='$'+(annual?monthly:yearly).toLocaleString()+(annual?'/mo':'/year')+' · '+values[2];
+    card.querySelector('small').textContent=(annual?'or $':'$')+(annual?monthly:yearly).toLocaleString()+(annual?'/mo billed monthly':'/year')+' · '+values[2];
   }
   const plan=document.querySelector('[name="plan"]:checked').value;
   const amount=annual?(active?founderOffer.prices[plan].annual:standard[plan][1]):(active?founderOffer.prices[plan].monthly:standard[plan][0]);
