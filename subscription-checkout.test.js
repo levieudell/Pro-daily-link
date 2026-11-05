@@ -108,6 +108,10 @@ async function webhook(subscription, suffix) {
 (async () => {
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve)); base = 'http://127.0.0.1:' + server.address().port;
   try {
+    const defaultAnnual=await signup('starter',false);
+    assert.equal(defaultAnnual.read().company.billingCycle,'annual');
+    assert.equal((await defaultAnnual.request('/api/billing/checkout','POST',{plan:'starter'})).status,200);
+    assert.equal(defaultAnnual.read().company.pendingCheckout.cycle,'annual');
     assert.equal(policy.remainingAnchoredTrial({subscriptionStatus:'Active'}),false,'legacy active accounts without a provider marker remain compatible');
     assert.equal(policy.remainingAnchoredTrial({subscriptionStatus:'Active',stripeSubscriptionId:'sub_legacy'}),false);
     // New accounts pay first; legacy trial fixtures below retain their deadline.
@@ -161,25 +165,25 @@ async function webhook(subscription, suffix) {
     }
     const c = await signup(), end = c.read().company.trialEndsAt;
     process.env.PDL_CHECKOUT_DISABLED = '1'; const disabledCount = created;
-    assert.equal((await c.request('/api/billing/checkout', 'POST', { plan: 'starter' })).status, 503);
+    assert.equal((await c.request('/api/billing/checkout', 'POST', { plan: 'starter', billingCycle:'monthly'})).status, 503);
     assert.equal(created, disabledCount); delete process.env.PDL_CHECKOUT_DISABLED;
     failAfterCreate = true; const before = created;
-    assert.equal((await c.request('/api/billing/checkout', 'POST', { plan: 'starter' })).status, 502);
+    assert.equal((await c.request('/api/billing/checkout', 'POST', { plan: 'starter', billingCycle:'monthly'})).status, 502);
     const attempt = c.read().company.pendingCheckout.attempt;
     prices.price_rebound = { ...prices.price_starter_monthly, id: 'price_rebound' };
     process.env.STRIPE_PRICE_STARTER = 'price_rebound';
-    assert.equal((await c.request('/api/billing/checkout', 'POST', { plan: 'starter' })).status, 409, 'changed configured price cannot replay different provider parameters');
+    assert.equal((await c.request('/api/billing/checkout', 'POST', { plan: 'starter', billingCycle:'monthly'})).status, 409, 'changed configured price cannot replay different provider parameters');
     process.env.STRIPE_PRICE_STARTER = 'price_starter_monthly';
     process.env.STRIPE_SECRET_KEY='sk_live_synthetic';
-    assert.equal((await c.request('/api/billing/checkout','POST',{plan:'starter'})).status,503,'ambiguous checkout never replays in another provider mode');
+    assert.equal((await c.request('/api/billing/checkout','POST',{plan:'starter', billingCycle:'monthly'})).status,503,'ambiguous checkout never replays in another provider mode');
     prices.price_starter_monthly.livemode=true;
     prices.price_starter_monthly.product.livemode=true;
-    assert.equal((await c.request('/api/billing/checkout','POST',{plan:'starter'})).status,409,'stored creation attempt is bound to its provider mode');
+    assert.equal((await c.request('/api/billing/checkout','POST',{plan:'starter', billingCycle:'monthly'})).status,409,'stored creation attempt is bound to its provider mode');
     prices.price_starter_monthly.product.livemode=false;
     prices.price_starter_monthly.livemode=false;
     process.env.STRIPE_SECRET_KEY='sk_test_synthetic';
-    assert.equal((await c.request('/api/billing/checkout', 'POST', { plan: 'growth' })).status, 409);
-    const recovered = await Promise.all(Array.from({ length: 4 }, () => c.request('/api/billing/checkout', 'POST', { plan: 'starter' })));
+    assert.equal((await c.request('/api/billing/checkout', 'POST', { plan: 'growth', billingCycle:'monthly'})).status, 409);
+    const recovered = await Promise.all(Array.from({ length: 4 }, () => c.request('/api/billing/checkout', 'POST', { plan: 'starter', billingCycle:'monthly'})));
     assert.ok(recovered.every(r => r.status === 200 && r.data.url === recovered[0].data.url));
     assert.equal(created, before + 1); assert.equal(c.read().company.pendingCheckout.attempt, attempt);
     assert.equal(c.read().company.trialEndsAt, end);
@@ -187,7 +191,7 @@ async function webhook(subscription, suffix) {
     assert.equal((await c.request('/api/billing/confirm?session_id=' + session.id)).status, 409);
     assert.equal(c.read().company.stripeSubscriptionId, undefined);
     session.status = 'expired';
-    assert.equal((await c.request('/api/billing/checkout', 'POST', { plan: 'growth' })).status, 200);
+    assert.equal((await c.request('/api/billing/checkout', 'POST', { plan: 'growth', billingCycle:'monthly'})).status, 200);
     const changed = c.read().company.pendingCheckout;
     assert.equal(changed.plan, 'growth'); assert.equal(changed.params['subscription_data[billing_cycle_anchor]'], Math.ceil(Date.parse(end) / 1000));
     const trialing = providerSubscription(c, 'active', 'sub_mock_trialing', 'price_growth_monthly');
@@ -244,7 +248,7 @@ async function webhook(subscription, suffix) {
     for (const remaining of [48*3600000,36*3600000,1000]) {
       const near=await signup(); near.mutate(db=>{db.company.trialEndsAt=new Date(Date.now()+remaining).toISOString()});
       const nearEnd=near.read().company.trialEndsAt;
-      assert.equal((await near.request('/api/billing/checkout','POST',{plan:'starter'})).status,200);
+      assert.equal((await near.request('/api/billing/checkout','POST',{plan:'starter', billingCycle:'monthly'})).status,200);
       const p=near.read().company.pendingCheckout;
       assert.equal(p.params['subscription_data[billing_cycle_anchor]'],Math.ceil(Date.parse(nearEnd)/1000));
       assert.equal(p.params['subscription_data[proration_behavior]'],'none');
@@ -253,7 +257,7 @@ async function webhook(subscription, suffix) {
       assert.equal(near.read().company.trialEndsAt,nearEnd);
     }
     const near=await signup(); near.mutate(db=>{db.company.trialEndsAt=new Date(Date.now()-1000).toISOString()});
-    assert.equal((await near.request('/api/billing/checkout','POST',{plan:'starter'})).status,200);
+    assert.equal((await near.request('/api/billing/checkout','POST',{plan:'starter', billingCycle:'monthly'})).status,200);
     assert.equal(near.read().company.pendingCheckout.params['subscription_data[billing_cycle_anchor]'],undefined);
     assert.deepEqual(policy.trialParameters({trialEndsAt:end,stripeTrialUsed:true},false),{});
     assert.deepEqual(policy.trialParameters({trialEndsAt:end},true),{});
@@ -273,31 +277,31 @@ async function webhook(subscription, suffix) {
 
     // Cancellation of the original anchored free period never forfeits its deadline.
     trialing.status='canceled'; await webhook(trialing,'initial_trial_cancel');
-    assert.equal((await c.request('/api/billing/checkout','POST',{plan:'starter'})).status,200);
+    assert.equal((await c.request('/api/billing/checkout','POST',{plan:'starter', billingCycle:'monthly'})).status,200);
     assert.equal(c.read().company.pendingCheckout.params['subscription_data[billing_cycle_anchor]'],Math.ceil(Date.parse(end)/1000));
     assert.equal(c.read().company.trialEndsAt,end);
     // Missed confirmation/webhook still recovers provider-verified original free eligibility.
-    const missed=await signup(); assert.equal((await missed.request('/api/billing/checkout','POST',{plan:'starter'})).status,200);
+    const missed=await signup(); assert.equal((await missed.request('/api/billing/checkout','POST',{plan:'starter', billingCycle:'monthly'})).status,200);
     const missedPending=missed.read().company.pendingCheckout, missedSub=providerSubscription(missed,'canceled');
     Object.assign(missedSub,{billing_cycle_anchor:missedPending.params['subscription_data[billing_cycle_anchor]'],metadata:{company_id:missed.id,original_trial_end:missedPending.params['subscription_data[metadata][original_trial_end]']}});
     Object.assign(sessions.get(missedPending.id),{status:'complete',customer:missedSub.customer,subscription:missedSub.id});
     assert.equal(missed.read().company.stripeFreePeriod,undefined);
-    assert.equal((await missed.request('/api/billing/checkout','POST',{plan:'growth'})).status,200);
+    assert.equal((await missed.request('/api/billing/checkout','POST',{plan:'growth', billingCycle:'monthly'})).status,200);
     assert.equal(missed.read().company.pendingCheckout.params['subscription_data[billing_cycle_anchor]'],missedPending.params['subscription_data[billing_cycle_anchor]']);
     assert.equal(missed.read().company.pendingCheckout.params['subscription_data[proration_behavior]'],'none');
     // Known open checkout is reused after deadline; a new plan starts normal billing then.
     const crossing=await signup(); crossing.mutate(db=>{db.company.trialEndsAt=new Date(Date.now()+1000).toISOString()});
-    assert.equal((await crossing.request('/api/billing/checkout','POST',{plan:'starter'})).status,200);
+    assert.equal((await crossing.request('/api/billing/checkout','POST',{plan:'starter', billingCycle:'monthly'})).status,200);
     const crossingSession=crossing.read().company.pendingCheckout.id;
     await new Promise(resolve=>setTimeout(resolve,1100));
-    assert.equal((await crossing.request('/api/billing/checkout','POST',{plan:'starter'})).status,200);
+    assert.equal((await crossing.request('/api/billing/checkout','POST',{plan:'starter', billingCycle:'monthly'})).status,200);
     assert.equal(crossing.read().company.pendingCheckout.id,crossingSession);
-    assert.equal((await crossing.request('/api/billing/checkout','POST',{plan:'growth'})).status,200);
+    assert.equal((await crossing.request('/api/billing/checkout','POST',{plan:'growth', billingCycle:'monthly'})).status,200);
     assert.equal(sessions.get(crossingSession).status,'expired');
     assert.equal(crossing.read().company.pendingCheckout.params['subscription_data[billing_cycle_anchor]'],undefined);
     // Completing the selected anchored checkout after its deadline activates normally.
     const completed=await signup(); completed.mutate(db=>{db.company.trialEndsAt=new Date(Date.now()+1000).toISOString()});
-    assert.equal((await completed.request('/api/billing/checkout','POST',{plan:'starter'})).status,200);
+    assert.equal((await completed.request('/api/billing/checkout','POST',{plan:'starter', billingCycle:'monthly'})).status,200);
     const completePending=completed.read().company.pendingCheckout, completeSub=providerSubscription(completed,'active');
     Object.assign(completeSub,{billing_cycle_anchor:completePending.params['subscription_data[billing_cycle_anchor]'],metadata:{company_id:completed.id,original_trial_end:completePending.params['subscription_data[metadata][original_trial_end]']}});
     await new Promise(resolve=>setTimeout(resolve,2100));
@@ -305,14 +309,14 @@ async function webhook(subscription, suffix) {
     assert.equal((await completed.request('/api/billing/confirm?session_id='+completePending.id)).status,200);
     assert.equal((await completed.request('/api/billing')).data.status,'Active');
     completeSub.status='canceled'; await webhook(completeSub,'canceled_after_deadline');
-    assert.equal((await completed.request('/api/billing/checkout','POST',{plan:'starter'})).status,200);
+    assert.equal((await completed.request('/api/billing/checkout','POST',{plan:'starter', billingCycle:'monthly'})).status,200);
     assert.equal(completed.read().company.pendingCheckout.params['subscription_data[billing_cycle_anchor]'],undefined);
     // An unresolved creation crossing its anchor fails closed, without a new charge attempt.
     const ambiguous=await signup(); ambiguous.mutate(db=>{db.company.trialEndsAt=new Date(Date.now()+1000).toISOString()});
-    failAfterCreate=true; assert.equal((await ambiguous.request('/api/billing/checkout','POST',{plan:'starter'})).status,502);
+    failAfterCreate=true; assert.equal((await ambiguous.request('/api/billing/checkout','POST',{plan:'starter', billingCycle:'monthly'})).status,502);
     const ambiguousAttempt=ambiguous.read().company.pendingCheckout.attempt, callsBefore=calls.length;
     await new Promise(resolve=>setTimeout(resolve,2100));
-    assert.equal((await ambiguous.request('/api/billing/checkout','POST',{plan:'starter'})).status,409);
+    assert.equal((await ambiguous.request('/api/billing/checkout','POST',{plan:'starter', billingCycle:'monthly'})).status,409);
     assert.equal(ambiguous.read().company.pendingCheckout.attempt,ambiguousAttempt);
     assert.equal(calls.slice(callsBefore).filter(call=>call.pathname==='/checkout/sessions').length,0);
 
@@ -326,16 +330,16 @@ async function webhook(subscription, suffix) {
     const billing = (await returning.request('/api/billing')).data;
     assert.equal(billing.hasSubscription, false); assert.equal(billing.hasBillingCustomer, true);
     corruptSubscription = true;
-    assert.equal((await returning.request('/api/billing/checkout', 'POST', { plan: 'starter' })).status, 503);
+    assert.equal((await returning.request('/api/billing/checkout', 'POST', { plan: 'starter', billingCycle:'monthly'})).status, 503);
     assert.equal(returning.read().company.stripeSubscriptionId, old.id); corruptSubscription = false;
     corruptSubscription = 'mode';
-    assert.equal((await returning.request('/api/billing/checkout', 'POST', { plan: 'starter' })).status, 503);
+    assert.equal((await returning.request('/api/billing/checkout', 'POST', { plan: 'starter', billingCycle:'monthly'})).status, 503);
     assert.equal(returning.read().company.stripeSubscriptionId, old.id); corruptSubscription = false;
-    providerOutage = true; assert.equal((await returning.request('/api/billing/checkout', 'POST', { plan: 'starter' })).status, 502);
+    providerOutage = true; assert.equal((await returning.request('/api/billing/checkout', 'POST', { plan: 'starter', billingCycle:'monthly'})).status, 502);
     assert.equal(returning.read().company.stripeSubscriptionId, old.id); providerOutage = false;
-    historyMore = true; assert.equal((await returning.request('/api/billing/checkout', 'POST', { plan: 'starter' })).status, 503); historyMore = false;
+    historyMore = true; assert.equal((await returning.request('/api/billing/checkout', 'POST', { plan: 'starter', billingCycle:'monthly'})).status, 503); historyMore = false;
     const recoveredCount = created;
-    const retry = await Promise.all([1, 2, 3].map(() => returning.request('/api/billing/checkout', 'POST', { plan: 'starter' })));
+    const retry = await Promise.all([1, 2, 3].map(() => returning.request('/api/billing/checkout', 'POST', { plan: 'starter', billingCycle:'monthly'})));
     assert.ok(retry.every(r => r.status === 200 && r.data.url === retry[0].data.url)); assert.equal(created, recoveredCount + 1);
     assert.equal(returning.read().company.stripeCustomerId, old.customer); assert.equal(returning.read().company.stripeSubscriptionId, undefined);
     assert.equal(returning.read().company.pendingCheckout.params['subscription_data[billing_cycle_anchor]'], undefined, 'never grant returning subscriber another trial');
@@ -345,26 +349,26 @@ async function webhook(subscription, suffix) {
     const fresh = providerSubscription(returning, 'active', 'sub_mock_replacement');
     assert.equal((await webhook(fresh, 'new')).status, 200); assert.equal(returning.read().company.stripeSubscriptionId, fresh.id);
     assert.equal((await webhook(old, 'old_after_new')).status, 200); assert.equal(returning.read().company.subscriptionStatus, 'Active');
-    assert.equal((await returning.request('/api/billing/checkout', 'POST', { plan: 'starter' })).status, 409);
+    assert.equal((await returning.request('/api/billing/checkout', 'POST', { plan: 'starter', billingCycle:'monthly'})).status, 409);
 
     for (const status of ['active', 'trialing', 'past_due', 'unpaid', 'paused', 'incomplete']) {
       const a = await signup(), sub = providerSubscription(a, status);
       a.mutate(db => Object.assign(db.company, { stripeSubscriptionId: sub.id, stripeCustomerId: sub.customer, subscriptionStatus: 'Cancelled' }));
-      assert.equal((await a.request('/api/billing/checkout', 'POST', { plan: 'starter' })).status, 409);
+      assert.equal((await a.request('/api/billing/checkout', 'POST', { plan: 'starter', billingCycle:'monthly'})).status, 409);
       assert.equal(a.read().company.stripeSubscriptionId, sub.id);
     }
     const missing = await signup(), hidden = providerSubscription(missing, 'active');
     missing.mutate(db => { db.company.stripeCustomerId = hidden.customer; });
-    assert.equal((await missing.request('/api/billing/checkout', 'POST', { plan: 'starter' })).status, 409, 'provider history protects a lost local subscription ID');
+    assert.equal((await missing.request('/api/billing/checkout', 'POST', { plan: 'starter', billingCycle:'monthly'})).status, 409, 'provider history protects a lost local subscription ID');
     const expired = await signup(), expiredSub = providerSubscription(expired, 'incomplete_expired');
     expired.mutate(db => Object.assign(db.company, { stripeSubscriptionId: expiredSub.id, stripeCustomerId: expiredSub.customer, subscriptionStatus: 'Cancelled' }));
-    assert.equal((await expired.request('/api/billing/checkout', 'POST', { plan: 'starter' })).status, 200);
+    assert.equal((await expired.request('/api/billing/checkout', 'POST', { plan: 'starter', billingCycle:'monthly'})).status, 200);
     const founder = await signup(), founderSub = providerSubscription(founder, 'canceled');
     const founderTerms = { requested: true, plan: 'starter', billingCycle: 'monthly', assistedSetup: true,
       paidAt: '2026-09-28T00:00:00Z', protectedUntil: '2028-09-28T00:00:00Z' };
     founder.mutate(db => Object.assign(db.company, { stripeSubscriptionId: founderSub.id, stripeCustomerId: founderSub.customer,
       subscriptionStatus: 'Cancelled', founder: founderTerms }));
-    const founderResult = await founder.request('/api/billing/checkout', 'POST', { plan: 'starter' });
+    const founderResult = await founder.request('/api/billing/checkout', 'POST', { plan: 'starter', billingCycle:'monthly'});
     assert.equal(founderResult.status, 409); assert.match(founderResult.data.error, /original pricing and setup terms/);
     assert.deepEqual(founder.read().company.founder, founderTerms);
     assert.equal(founder.read().company.stripeSubscriptionId, founderSub.id);

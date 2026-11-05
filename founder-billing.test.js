@@ -14,6 +14,8 @@ async function run(){
   assert.throws(()=>billing.enroll({founderCode:'wrong'},env),/invalid/);
   assert.throws(()=>billing.enroll({founderCode:'TEST-INVITE',plan:'starter'},env),/Accept/);
   const input={founderCode:'TEST-INVITE',plan:'starter',billingCycle:'monthly',founderTermsAccepted:true,assistedSetup:true};
+  assert.equal(billing.enroll({...input,billingCycle:undefined},env).billingCycle,'annual');
+  assert.equal(billing.checkout({}, {plan:'starter'},env).cycle,'annual');
   const enrollment=billing.enroll(input,env),company={id:'company_test',founder:enrollment};
   assert.equal(enrollment.assistedSetup,true);
   assert.equal(JSON.stringify(enrollment).includes('TEST-INVITE'),false);

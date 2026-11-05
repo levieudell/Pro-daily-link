@@ -144,12 +144,14 @@ function updateFounderOffer(){
   $('#annual-cycle-label').textContent='Annual — pay today · two months free';
   $('#create-company').textContent='Continue to secure payment';
   const standard={starter:[99,990,'10 users · 5 active projects'],growth:[199,1990,'30 users · 25 active projects'],pro:[399,3990,'75 users · unlimited projects']};
+  const annual=document.querySelector('[name="billingCycle"]:checked').value==='annual';
   for(const [id,values] of Object.entries(standard)){
     const card=document.querySelector('[name="plan"][value="'+id+'"]').closest('label');
-    card.querySelector('strong').textContent='$'+(active?founderOffer.prices[id].monthly:values[0])+'/mo';
-    card.querySelector('small').textContent='$'+(active?founderOffer.prices[id].annual:values[1]).toLocaleString()+'/year · '+values[2];
+    const monthly=active?founderOffer.prices[id].monthly:values[0],yearly=active?founderOffer.prices[id].annual:values[1];
+    card.querySelector('strong').textContent='$'+(annual?yearly:monthly).toLocaleString()+(annual?'/year':'/mo');
+    card.querySelector('small').textContent='$'+(annual?monthly:yearly).toLocaleString()+(annual?'/mo':'/year')+' · '+values[2];
   }
-  const plan=document.querySelector('[name="plan"]:checked').value,annual=document.querySelector('[name="billingCycle"]:checked').value==='annual';
+  const plan=document.querySelector('[name="plan"]:checked').value;
   const amount=annual?(active?founderOffer.prices[plan].annual:standard[plan][1]):(active?founderOffer.prices[plan].monthly:standard[plan][0]);
   $('#payment-summary').textContent=`${plan[0].toUpperCase()+plan.slice(1)} · $${amount.toLocaleString()} per ${annual?'year':'month'}. Charged today at checkout${active&&$('#assisted-setup').checked?' + $499 one-time setup':''}. Taxes, if applicable, are shown before you pay.`;
   $('#founder-renewal').textContent='Before the 24-month founder period ends, we will contact you to review renewal options. Your price will not automatically jump to the regular rate. Optional setup is charged only once. Taxes, if applicable, are shown at checkout.';

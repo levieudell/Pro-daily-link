@@ -29,7 +29,7 @@ function enroll(input, env = process.env) {
   if (!String(input.founderCode || '').trim()) return null;
   if (!validCode(input.founderCode, env)) throw fail('This founder invitation code is invalid or unavailable.');
   if (input.founderTermsAccepted !== true) throw fail('Accept the founder payment and renewal terms to continue.');
-  const cycle = input.billingCycle === 'annual' ? 'annual' : 'monthly';
+  const cycle = input.billingCycle === 'monthly' ? 'monthly' : 'annual';
   if (!PRICES[input.plan]) throw fail('Choose a valid founder plan.');
   if (!env.STRIPE_SECRET_KEY || !env.STRIPE_WEBHOOK_SECRET ||
       !env[priceKey(input.plan, cycle, true)] || !env[priceKey(input.plan, cycle)]) {
@@ -42,7 +42,7 @@ function enroll(input, env = process.env) {
 }
 function isFounder(company) { return company.founder?.requested === true; }
 function checkout(company, input, env = process.env) {
-  const founder = isFounder(company), cycle = input.billingCycle === 'annual' ? 'annual' : 'monthly';
+  const founder = isFounder(company), cycle = input.billingCycle === 'monthly' ? 'monthly' : 'annual';
   if (company.stripeSubscriptionId) throw fail('Use Manage billing for an existing subscription.', 409);
   if (founder && !enabled(env)) throw fail('Founder checkout is temporarily unavailable.', 503);
   if (founder && (input.plan !== company.founder.plan || cycle !== company.founder.billingCycle)) {
