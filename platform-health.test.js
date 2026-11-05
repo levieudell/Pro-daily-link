@@ -93,6 +93,31 @@ server.listen(4231, async () => {
     assert.ok(!company.health.alerts.includes('No daily reports submitted'), `fresh account must not flag missing dailies, got ${JSON.stringify(company.health.alerts)}`);
     assert.equal(company.health.status, 'Healthy');
 
+    // E) The At risk metric counts only real, non-archived customers so its
+    // click-through cannot be empty because all flagged rows are hidden.
+    db.company.subscriptionStatus = 'Past due';
+    db.company.createdAt = daysAgo(60);
+    db.company.trialEndsAt = null;
+    db.projects = [];
+    db.reports = [];
+    writeDb(db);
+    const tenantsDir = path.join(tempDir, 'tenants');
+    fs.mkdirSync(tenantsDir, {recursive: true});
+    const demoDb = structuredClone(db);
+    demoDb.company.id = 'qa-demo-at-risk';
+    demoDb.company.name = 'QA Test Account';
+    demoDb.company.demo = false;
+    fs.writeFileSync(path.join(tenantsDir, 'qa-demo-at-risk.json'), JSON.stringify(demoDb));
+    const archivedDb = structuredClone(db);
+    archivedDb.company.id = 'archived-at-risk';
+    archivedDb.company.name = 'Archived At Risk Account';
+    archivedDb.company.archivedDuplicate = true;
+    fs.writeFileSync(path.join(tenantsDir, 'archived-at-risk.json'), JSON.stringify(archivedDb));
+    const {response, data} = await request('/api/platform/overview', {headers: platform});
+    assert.equal(response.status, 200);
+    assert.equal(data.companies.filter(row => row.health.status === 'At risk').length, 3);
+    assert.equal(data.metrics.atRisk, 1, 'demo/test and archived workspaces do not inflate the At risk customer metric');
+
     console.log('platform-health: ok');
     server.close(() => process.exit(0));
   } catch (error) {

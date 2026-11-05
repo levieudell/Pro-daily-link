@@ -1111,6 +1111,7 @@ function accountAccess(company){const days=trialDaysRemaining(company),demo=Bool
 const WEEKLY_DIGEST_TIMEZONE=process.env.PDL_DIGEST_TIMEZONE||'America/Chicago';
 const platformInternalAccount=c=>Boolean(c.demo)||/\b(test|qa|demo)\b|delete me|checkout verification/i.test(c.name||'');
 const platformActiveSubscription=c=>c.subscriptionStatus==='Active'&&!c.billingExempt&&!c.archived&&!platformInternalAccount(c);
+const platformAtRiskCustomer=c=>c.health?.status==='At risk'&&!c.archived&&!platformInternalAccount(c);
 const digestInternalAccount=platformInternalAccount;
 function digestWallClock(date){const parts=new Intl.DateTimeFormat('en-US',{timeZone:WEEKLY_DIGEST_TIMEZONE,weekday:'short',year:'numeric',month:'numeric',day:'numeric',hour:'numeric',minute:'numeric',hour12:false}).formatToParts(date),get=type=>(parts.find(part=>part.type===type)||{}).value,weekdays={Sun:0,Mon:1,Tue:2,Wed:3,Thu:4,Fri:5,Sat:6};return{weekday:weekdays[get('weekday')],year:+get('year'),month:+get('month'),day:+get('day'),hours:+get('hour')%24,minutes:+get('minute')}}
 function digestOffsetMinutes(date){const part=new Intl.DateTimeFormat('en-US',{timeZone:WEEKLY_DIGEST_TIMEZONE,timeZoneName:'shortOffset'}).formatToParts(date).find(row=>row.type==='timeZoneName'),match=/GMT([+-])(\d{1,2})(?::?(\d{2}))?/.exec(part?.value||'GMT');return match?(+match[2]*60+(+match[3]||0))*(match[1]==='-'?-1:1):0}
@@ -2853,7 +2854,7 @@ async function api(req,res,url){
         activeSubscriptions:companies.filter(platformActiveSubscription).length,
         trials:companies.filter(row=>row.subscriptionStatus==='Trial'&&row.trialEndsAt&&new Date(row.trialEndsAt)>new Date()).length,
         users:companies.reduce((sum,row)=>sum+row.users,0),
-        atRisk:companies.filter(row=>row.health.status==='At risk').length,
+        atRisk:companies.filter(platformAtRiskCustomer).length,
         openTickets:can(PLATFORM_CAPABILITIES.SUPPORT_READ)?(platform.supportTickets||[]).filter(row=>!['Resolved','Closed'].includes(row.status)).length:null,
         configuredPlanTotal:can(PLATFORM_CAPABILITIES.REVENUE_READ)?companies.filter(row=>row.subscriptionStatus==='Active'&&!row.billingExempt).reduce((sum,row)=>sum+row.planPrice,0):null
       },
