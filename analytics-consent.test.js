@@ -11,6 +11,7 @@ const app = fs.readFileSync('app.js', 'utf8');
 const server = fs.readFileSync('server.js', 'utf8');
 const privacy = fs.readFileSync('privacy.html', 'utf8');
 const signup = fs.readFileSync('signup.js', 'utf8');
+const csp = require('./content-security-policy');
 const read = file => fs.readFileSync(file, 'utf8');
 
 // The loader is consent-first: it never identifies anyone and initializes
@@ -64,7 +65,7 @@ assert.ok(analytics.indexOf("window.fbq('init', PDL_FACEBOOK_PIXEL_ID)") > analy
 assert.ok(analytics.indexOf("window.fbq('track', 'PageView')") > analytics.indexOf('function startFacebookPixel'), 'PageView fires only after the pixel starts');
 assert.equal((analytics.match(/connect\.facebook\.net/g) || []).length, 1, 'pixel script is injected exactly once, inside the gated starter');
 assert.ok(analytics.indexOf('startFacebookPixel();') > analytics.indexOf("accept.onclick"), 'pixel starts from the Accept action');
-assert.ok(analytics.indexOf("if (consent === 'accepted') { startAnalytics().catch(() => {}); startFacebookPixel(); }") > analytics.indexOf('const consent = readConsent()'), 'pixel restarts for returning visitors who already accepted');
+assert.ok(analytics.indexOf("if (consent === 'accepted') { startAnalytics().catch(() => {}); startFacebookPixel(); startGoogleAnalytics(); }") > analytics.indexOf('const consent = readConsent()'), 'consent-gated analytics restart for returning visitors who already accepted');
 assert.match(analytics, /Meta&#39;s ad measurement pixel/, 'consent banner names Meta');
 assert.match(privacy, /Meta for advertising measurement/, 'policy names Meta in the providers list');
 assert.match(privacy, /Meta&#39;s advertising measurement pixel only after a visitor chooses “Accept”/, 'policy describes the pixel consent gate');
@@ -77,5 +78,17 @@ assert.ok(signup.includes("if(typeof fbq==='function')"), 'Signup event is a no-
 // Private surfaces stay clean of the pixel too.
 for (const file of ['index.html', 'guest.html', 'app.js'])
   assert.ok(!read(file).includes('fbq') && !read(file).includes('fbevents'), `${file} must not touch the pixel`);
+
+// Google Analytics uses the requested production measurement ID, is limited
+// to the landing page, and starts only from the existing consent gate.
+assert.ok(analytics.includes("PDL_GOOGLE_ANALYTICS_ID = 'G-BDXQC0Z07E'"), 'Google Analytics measurement ID is wired');
+assert.ok(analytics.includes("['/', '/landing.html'].includes(location.pathname)"), 'Google Analytics is limited to the landing page');
+assert.ok(analytics.indexOf("window.gtag('config', PDL_GOOGLE_ANALYTICS_ID)") > analytics.indexOf('function startGoogleAnalytics'), 'gtag configuration lives inside its starter');
+assert.ok(analytics.indexOf('startGoogleAnalytics();') > analytics.indexOf('accept.onclick'), 'Google Analytics starts only after Accept');
+assert.match(read('landing.html'), /analytics\.js\?v=20261105-google-analytics/, 'landing page busts the analytics loader cache');
+assert.match(privacy, /main landing page also loads Google Analytics after that choice/, 'privacy policy discloses consent-gated Google Analytics');
+assert.match(privacy, /HeyCatch and Google Analytics for website analytics/, 'privacy policy names Google Analytics as a provider');
+assert.ok(csp.SCRIPT_ORIGINS.includes('https://www.googletagmanager.com'), 'CSP allows the Google tag script');
+assert.ok(csp.CONNECT_ORIGINS.includes('https://*.google-analytics.com'), 'CSP allows Google Analytics collection');
 
 console.log('analytics consent contracts: ok');

@@ -1,4 +1,4 @@
-// HeyCatch analytics — consent-first client loader.
+// Public-site analytics — consent-first client loader.
 //
 // Privacy posture (owner-approved after review):
 // - This file is included on PUBLIC pages only. The signed-in app
@@ -10,6 +10,7 @@
 // The project key is publishable by design.
 const PDL_ANALYTICS_PROJECT_KEY = 'hck_pk_Ytw7NVIoMAahVhRRPN0UCxwmyuLEo70-';
 const PDL_FACEBOOK_PIXEL_ID = '2581023075730326';
+const PDL_GOOGLE_ANALYTICS_ID = 'G-BDXQC0Z07E';
 const CONSENT_KEY = 'pdl-analytics-consent';
 
 async function startAnalytics() {
@@ -24,8 +25,8 @@ async function startAnalytics() {
 }
 
 // Meta (Facebook) ad-measurement pixel — same consent gate and public-pages
-// only rule as HeyCatch. Loads after acceptance, never identifies anyone,
-// and is disclosed in privacy.html.
+// only rule as the other providers. Loads after acceptance, never identifies
+// anyone, and is disclosed in privacy.html.
 function startFacebookPixel() {
   if (window.fbq) return;
   !function(f, b, e, v, n, t, s) {
@@ -38,6 +39,20 @@ function startFacebookPixel() {
   }(window, document, 'script', 'https://connect.facebook.net/en_US/fbevents.js');
   window.fbq('init', PDL_FACEBOOK_PIXEL_ID);
   window.fbq('track', 'PageView');
+}
+
+// Google Analytics is requested for the main landing page only. It shares the
+// public-page consent gate above and never runs inside the signed-in app.
+function startGoogleAnalytics() {
+  if (!['/', '/landing.html'].includes(location.pathname) || window.gtag) return;
+  window.dataLayer = window.dataLayer || [];
+  window.gtag = function gtag() { window.dataLayer.push(arguments); };
+  window.gtag('js', new Date());
+  window.gtag('config', PDL_GOOGLE_ANALYTICS_ID);
+  const script = document.createElement('script');
+  script.async = true;
+  script.src = `https://www.googletagmanager.com/gtag/js?id=${encodeURIComponent(PDL_GOOGLE_ANALYTICS_ID)}`;
+  document.head.appendChild(script);
 }
 
 function readConsent() {
@@ -57,7 +72,7 @@ function showConsentBanner() {
   banner.style.cssText = 'position:fixed;left:12px;right:12px;bottom:12px;z-index:99999;display:flex;flex-wrap:wrap;gap:10px 18px;align-items:center;justify-content:center;padding:14px 18px;border-radius:12px;background:#000000;color:#ffffff;border:1px solid rgba(255,255,255,.32);font:14px/1.45 Inter,sans-serif;box-shadow:0 10px 32px rgba(0,0,0,.35)';
   const text = document.createElement('span');
   text.style.cssText = 'flex:1 1 280px;max-width:560px';
-  text.innerHTML = 'We use privacy-friendly analytics and Meta&#39;s ad measurement pixel to understand how this site is used and to measure our ads. No personal details are collected — nothing is ever taken from your account. <a href="/privacy.html" style="color:#ffffff;font-weight:700;text-decoration:underline;text-decoration-color:#0066FF;text-decoration-thickness:2px">Privacy policy</a>';
+  text.innerHTML = 'We use analytics, Google Analytics, and Meta&#39;s ad measurement pixel to understand how this site is used and to measure our ads. No personal details are collected — nothing is ever taken from your account. <a href="/privacy.html" style="color:#ffffff;font-weight:700;text-decoration:underline;text-decoration-color:#0066FF;text-decoration-thickness:2px">Privacy policy</a>';
   const accept = document.createElement('button');
   accept.type = 'button';
   accept.textContent = 'Accept';
@@ -66,17 +81,17 @@ function showConsentBanner() {
   decline.type = 'button';
   decline.textContent = 'Decline';
   decline.style.cssText = 'min-height:40px;padding:8px 18px;border:1px solid #ffffff;border-radius:8px;background:transparent;color:#ffffff;font:700 14px Inter,sans-serif;cursor:pointer';
-  accept.onclick = () => { writeConsent('accepted'); banner.remove(); startAnalytics().catch(() => {}); startFacebookPixel(); };
+  accept.onclick = () => { writeConsent('accepted'); banner.remove(); startAnalytics().catch(() => {}); startFacebookPixel(); startGoogleAnalytics(); };
   decline.onclick = () => { writeConsent('declined'); banner.remove(); };
   banner.append(text, accept, decline);
   (document.body || document.documentElement).appendChild(banner);
 }
 
 const consent = readConsent();
-if (consent === 'accepted') { startAnalytics().catch(() => {}); startFacebookPixel(); }
+if (consent === 'accepted') { startAnalytics().catch(() => {}); startFacebookPixel(); startGoogleAnalytics(); }
 else if (consent !== 'declined') {
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', showConsentBanner);
   else showConsentBanner();
 }
 
-export { startAnalytics };
+export { startAnalytics, startGoogleAnalytics };
