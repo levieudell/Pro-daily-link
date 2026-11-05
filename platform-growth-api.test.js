@@ -70,13 +70,18 @@ server.listen(0, async () => {
 
     const created = await expect(201, '/api/platform/growth/opportunities', {
       method: 'POST', idempotencyKey: 'growth:api-contract-create-1',
-      body: { companyName: 'Contract Builders', email: 'owner@contract.example', ownerUserId: '42', linkedCompanyId: String(tenant.company.id), source: 'Website', expectedMrrMinor: 19900, currency: 'usd' }
+      body: { companyName: 'Contract Builders', email: 'owner@contract.example', ownerUserId: '42', source: 'Website', expectedMrrMinor: 19900, currency: 'usd' }
     });
     assert.equal(created.status, 'created');
     let opportunity = created.opportunity;
     assert.equal(opportunity.version, 1);
     assert.equal(Object.hasOwn(opportunity, 'history'), false);
     assert.equal(Object.hasOwn(opportunity, 'idempotency'), false);
+
+    await expect(201, '/api/platform/growth/opportunities', {
+      method: 'POST', idempotencyKey: 'growth:api-internal-account',
+      body: { companyName: 'QA Sandbox', email: 'qa-sandbox@example.invalid', source: 'Internal verification' }
+    });
 
     const duplicate = await expect(409, '/api/platform/growth/opportunities', {
       method: 'POST', idempotencyKey: 'growth:api-contract-create-2',
@@ -124,6 +129,7 @@ server.listen(0, async () => {
     assert.equal(report.opportunityTotal, 1);
     assert.equal(report.metrics.pipeline.count, 1);
     assert.equal(report.opportunities[0].companyName, 'Contract Builders LLC');
+    assert.equal(report.opportunities.some(item => item.companyName === 'QA Sandbox'), false, 'internal/test opportunities stay out of the working CRM and its metrics');
 
     opportunity = (await expect(200, `/api/platform/growth/opportunities/${id}/stage`, {
       method: 'POST', body: { stage: 'lost', lossReason: 'Chose another product', expectedVersion: opportunity.version }

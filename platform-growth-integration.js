@@ -114,7 +114,7 @@
       case 'pending_action_exists': return 'Add a replacement reason, or complete the current follow-up first.';
       case 'no_change': return 'Change at least one field before saving.';
       case 'duplicate_opportunity': return 'This looks like an existing opportunity. Review the pipeline before adding another.';
-      case 'growth_write_denied': return 'You no longer have permission to change growth records.';
+      case 'growth_write_denied': return 'You no longer have permission to change CRM records.';
       default: return 'The update could not be saved. Your entries are still here; try again.';
     }
   }
@@ -256,14 +256,14 @@
     }
 
     function unavailable(message) {
-      title.textContent = 'Growth action unavailable'; description.textContent = message; body.replaceChildren();
+      title.textContent = 'CRM action unavailable'; description.textContent = message; body.replaceChildren();
       submit.hidden = true; cancel.textContent = 'Close'; current = { action: 'unavailable', controls: {} }; show();
     }
 
     function open(detail, trigger = document.activeElement) {
       if (!detail || !ACTIONS.has(detail.action)) return false;
       const api = controller();
-      if (!api?.actions) { unavailable('The Growth workspace is still loading. Close this message and refresh.'); return false; }
+      if (!api?.actions) { unavailable('The CRM workspace is still loading. Close this message and refresh.'); return false; }
       const opportunity = detail.opportunityId ? api.getOpportunity?.(detail.opportunityId) : null;
       if (detail.action !== 'create' && (!opportunity || !Number.isSafeInteger(detail.version))) {
         unavailable('This opportunity is no longer in the loaded pipeline. Close this message and refresh.'); return false;
