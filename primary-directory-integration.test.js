@@ -57,6 +57,9 @@ supabase.loadLocalEnv = () => {};
 
 const activeCompanyId = '11111111-1111-4111-8111-111111111111';
 const archivedCompanyId = '22222222-2222-4222-8222-222222222222';
+const testCompanyId = '33333333-3333-4333-8333-333333333333';
+const demoCompanyId = '44444444-4444-4444-8444-444444444444';
+const exemptCompanyId = '55555555-5555-4555-8555-555555555555';
 const lookupCalls = [];
 let directoryCalls = 0;
 let forbiddenFullScanCalls = 0;
@@ -106,6 +109,27 @@ supabase.listTransactionalTenantSummaries = async () => {
       reports: 5,
       lastReport: null,
       updatedAt: '2026-10-18T12:00:00.000Z'
+    },
+    {
+      companyId: testCompanyId,
+      databaseCompanyId: testCompanyId,
+      revision: 1,
+      company: { id: testCompanyId, name: 'QA Test Account', plan: 'Starter', subscriptionStatus: 'Active', createdAt: now.toISOString() },
+      users: 0, projects: 0, reports: 0, lastReport: null, updatedAt: '2026-10-18T12:00:00.000Z'
+    },
+    {
+      companyId: demoCompanyId,
+      databaseCompanyId: demoCompanyId,
+      revision: 1,
+      company: { id: demoCompanyId, name: 'Sales Workspace', demo: true, plan: 'Starter', subscriptionStatus: 'Active', createdAt: now.toISOString() },
+      users: 0, projects: 0, reports: 0, lastReport: null, updatedAt: '2026-10-18T12:00:00.000Z'
+    },
+    {
+      companyId: exemptCompanyId,
+      databaseCompanyId: exemptCompanyId,
+      revision: 1,
+      company: { id: exemptCompanyId, name: 'Complimentary Builder', billingExempt: true, plan: 'Starter', subscriptionStatus: 'Active', createdAt: now.toISOString() },
+      users: 0, projects: 0, reports: 0, lastReport: null, updatedAt: '2026-10-18T12:00:00.000Z'
     }
   ];
 };
@@ -164,7 +188,8 @@ async function jsonRequest(base, route, options = {}) {
     assert.equal(indexed.projects, 7);
     assert.equal(indexed.reports, 93);
     assert.equal(indexed.lastReport, '2026-10-19T23:15:00.000Z');
-    assert.equal(overview.data.metrics.companies, 2);
+    assert.equal(overview.data.metrics.companies, 5);
+    assert.equal(overview.data.metrics.activeSubscriptions, 1, 'archived, demo, test and billing-exempt workspaces do not inflate active subscriptions');
     assert.equal(overview.data.metrics.users, 16);
 
     const archivedSummary = overview.data.companies.find(company => company.id === archivedCompanyId);
