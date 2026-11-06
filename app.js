@@ -152,7 +152,7 @@ function renderBilling(){
   $$('[data-plan-support]').forEach(button=>button.onclick=()=>notify(billing.planChange?.message||'Contact support to change plans.'));
   $('#billing-portal').hidden=!billing.hasBillingCustomer;
 }
-async function loadBilling(){billing=await api('/api/billing');if(!billing.hasSubscription)billingCycle=billing.founder?.billingCycle||billing.billingCycle||'annual';renderPlanCard();renderBilling();return billing}
+async function loadBilling({background=false}={}){billing=await api('/api/billing',{workspaceFeedback:!background});if(!billing.hasSubscription)billingCycle=billing.founder?.billingCycle||billing.billingCycle||'annual';renderPlanCard();renderBilling();return billing}
 async function openBilling(){if(currentUser?.role!=='owner')return notify('Only the Account Owner can manage billing');try{await loadBilling();$('#billing-modal').showModal()}catch(error){notify(error.message)}}
 async function startCheckout(plan){const selected=billing?.plans.find(row=>row.id===plan),available=billingCycle==='annual'?selected?.annualAvailable:selected?.available;if(!billing?.configured||!available)return notify('Stripe products still need to be connected by Pro Daily Link');try{const result=await api('/api/billing/checkout',{method:'POST',body:JSON.stringify({plan,billingCycle})});location.href=result.url}catch(error){notify(error.message)}}
 $$('[data-billing-cycle]').forEach(button=>button.onclick=()=>{billingCycle=button.dataset.billingCycle;renderBilling()});
@@ -1073,7 +1073,7 @@ renderTable=function(){const result=renderTableBeforeHealth();$$('#project-table
 const renderCatalogBeforeDerivedScopes=renderCatalog;
 renderCatalog=function(filter=''){const result=renderCatalogBeforeDerivedScopes(filter),items=catalog.filter(item=>(item.name+item.category).toLowerCase().includes(filter.toLowerCase()));$$('#catalog-grid .catalog-card').forEach((card,index)=>{if(!items[index]?.derived)return;const button=card.querySelector('[data-use-catalog]');if(button){button.textContent='Already used on a project estimate';button.disabled=true}});return result};
 const loadRoleBeforeBillingReconcile=loadRole;
-loadRole=async function(role){const result=await loadRoleBeforeBillingReconcile(role);if(role==='office'&&currentUser?.role==='owner')await loadBilling().catch(()=>{});return result};
+loadRole=async function(role){const result=await loadRoleBeforeBillingReconcile(role);if(role==='office'&&currentUser?.role==='owner')await loadBilling({background:true}).catch(()=>{});return result};
 // All workspace controllers must be installed before data renders expose actions.
 if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',()=>boot(),{once:true});else boot();
 
@@ -1655,7 +1655,7 @@ function setWorkspaceUpdating(active){
   }
 }
 const apiBeforeWorkspaceFeedback=api;
-api=async function(path,options={}){setWorkspaceUpdating(true);try{return await apiBeforeWorkspaceFeedback(path,options)}finally{setWorkspaceUpdating(false)}};
+api=async function(path,options={}){const {workspaceFeedback=true,...requestOptions}=options;if(!workspaceFeedback)return apiBeforeWorkspaceFeedback(path,requestOptions);setWorkspaceUpdating(true);try{return await apiBeforeWorkspaceFeedback(path,requestOptions)}finally{setWorkspaceUpdating(false)}};
 
 // Empty screens should always explain the next useful action.
 const renderProjectCardsBeforeEmptyAction=renderProjectCards;
