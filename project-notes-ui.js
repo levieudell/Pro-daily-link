@@ -87,6 +87,14 @@ else {
     content.innerHTML='<section class="project-detail-loading" role="status" aria-live="polite"><strong>Opening project details</strong><span>Loading the latest job records…</span><div class="project-detail-loading-bar" aria-hidden="true"></div></section>';
     if(!dialog.open)dialog.showModal();
   }
+  let closeShieldTimer=null;
+  function shieldProjectCloseTap(){
+    document.querySelector('.project-close-shield')?.remove();
+    const shield=document.createElement('div');shield.className='project-close-shield';shield.setAttribute('aria-hidden','true');document.body.append(shield);
+    const remove=()=>{clearTimeout(closeShieldTimer);closeShieldTimer=null;shield.remove()};
+    shield.addEventListener('click',event=>{event.preventDefault();event.stopPropagation();remove()},{once:true});
+    closeShieldTimer=setTimeout(remove,450);
+  }
   document.addEventListener('click',event=>{
     const target=event.target.closest('[data-open-project],[data-project-card],[data-office-project],[data-open-health]');
     if(target&&!event.target.closest('dialog')&&(!target.hasAttribute('data-project-card')||!event.target.closest('button,summary,details,a,input,select,textarea')))target.focus({preventScroll:true});
@@ -107,6 +115,7 @@ else {
   showPage=function(...args){if(active)leaveProject();const result=previousShowPage(...args);if(currentRole==='office'){if(args[0]==='projects'&&typeof renderProjectCards==='function')renderProjectCards($('#project-search')?.value||'');if(args[0]==='dashboard'&&typeof renderTable==='function')renderTable();}return result};
   const projectDialog=$('#project-detail-modal');
   if(projectDialog){
+    projectDialog.addEventListener('click',event=>{const close=event.target.closest('.close-button');if(!close)return;event.preventDefault();event.stopPropagation();shieldProjectCloseTap();projectDialog.close('cancel')});
     projectDialog.addEventListener('close',()=>{
       if(projectDialog.open)return;
       const saved=projectReturnView;projectReturnView=null;

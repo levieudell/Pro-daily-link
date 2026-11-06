@@ -1216,3 +1216,4 @@ html.workspace-authenticated:not(.workspace-ready) .app-shell{visibility:hidden}
 :root[data-theme="dark"] .project-detail-loading{background:#000;color:#FFF}
 :root[data-theme="dark"] .project-detail-loading-bar{background:#000}
 @media(prefers-reduced-motion:reduce){.project-detail-loading-bar::after{width:100%;animation:none}}
+.project-close-shield{position:fixed;inset:0;z-index:2147483647;background:transparent;touch-action:none;cursor:default}
