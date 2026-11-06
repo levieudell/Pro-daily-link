@@ -245,9 +245,6 @@ test('project shell opens immediately and closing cancels the slow load before a
   assert.equal(dialog.open,true);assert.equal(dialog.getAttribute('aria-busy'),'true');assert.match(h.query('#project-detail-content').textContent,/Opening project details.*Loading the latest job records/);assert.equal(h.query('#detail-project-name').textContent,'Synthetic project 1');assert.equal(signal.aborted,false);
   dialog.close();assert.equal(signal.aborted,true);await h.open(2);assert.equal(dialog.open,true);assert.equal(dialog.getAttribute('aria-busy'),null);assert.equal(h.query('#detail-project-name').textContent,'Synthetic project 2');first.resolve();await opening;await flush();assert.equal(h.query('#detail-project-name').textContent,'Synthetic project 2');assert.equal(h.all('[data-project-detail-tab="notes"]').length,1);
 });
-test('the project X closes once and shields header controls from the same mobile tap',async()=>{
-  const wait=deferred(),h=harness({predecessor:()=>wait.promise}),opening=h.context.openProject(1);await flush();const signal=h.opens[0].view.signal;h.click('.close-button');assert.equal(h.query('#project-detail-modal').open,false);assert.equal(signal.aborted,true);const shield=h.query('.project-close-shield');assert.ok(shield?.isConnected);assert.equal(h.context.page,'projects');shield.click();assert.equal(h.query('.project-close-shield'),null);assert.equal(h.context.page,'projects');wait.resolve();await opening;
-});
 test('an old queued dialog close cannot cancel a newer project opening',async()=>{
   // Native dialog.close queues close on the user-interaction task source:
   // https://html.spec.whatwg.org/multipage/interactive-elements.html#close-the-dialog
@@ -289,6 +286,7 @@ for(const wrapper of wrapperCases.filter(row=>['T&M estimate summary','change tr
 });
 test('every project-opening layer accepts and forwards view, including reporting loaded before notes',()=>{
   const all=[...app.matchAll(/openProject=async function\(([^)]*)\)/g)];assert.equal(all.length,7,'Review/test any new app openProject layer');for(const match of all)assert.equal(match[1],'id,view');assert.match(reporting,/openProject=async function\(id,view\)/);assert.match(reporting,/await pdlOpenProject\(id,view\)/);
+  assert.match(app,/Date\.now\(\)>=suppressReportOpenUntil\|\|!event\.target\.closest\?\.\('\.topbar'\)/,'the close cooldown consumes delayed taps on Help and Back without covering the project list');
 });
 
 function installActualApi(context){
