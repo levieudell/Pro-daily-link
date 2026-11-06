@@ -877,6 +877,7 @@ async function openNav(page, name) {
     assert.match(savedLock.notes, /Poured 40 LF of curb/);
     await page.evaluate(() => document.querySelector('#report-modal .close-button')?.click());
     await page.waitForFunction(() => !document.querySelector('#report-modal')?.open);
+    await page.waitForFunction(() => Date.now() >= suppressReportOpenUntil);
     await page.evaluate(() => {
       document.querySelector('#sidebar')?.classList.remove('open');
       (document.querySelector('[data-open-report]') || document.querySelector('[data-assignment-daily]'))?.click();
