@@ -24,6 +24,10 @@ assert.match(index, /rel="manifest" href="manifest\.webmanifest"/);
 assert.match(login, /rel="manifest" href="manifest\.webmanifest"/);
 assert.match(app, /Create your first project/);
 assert.match(app, /Create daily report/);
+assert.match(app, /const \{workspaceFeedback=true,\.\.\.requestOptions\}=options/);
+assert.match(app, /await loadBilling\(\{background:true\}\)\.catch\(\(\)=>\{\}\)/);
+assert.doesNotMatch(app, /await loadBilling\(\)\.catch\(\(\)=>\{\}\)/);
+assert.match(app, /api\('\/api\/billing',\{workspaceFeedback:!background\}\)/);
 assert.match(app, /function projectHealthDetails/);
 assert.match(app, /Review project health/);
 assert.match(app, /Changes & extra work/);
@@ -96,6 +100,7 @@ assert.match(styles, /\[data-theme="dark"\] \.schedule-view-switcher button\.act
 assert.match(styles, /\[data-theme="dark"\] table th/);
 assert.match(index, /styles\.css\?v=20261014-review3/);
 assert.match(index, /app\.js\?v=\d{8}-[a-z0-9-]+/i);
+assert.match(index, /app\.js\?v=20261106-login-background-loading/);
 assert.ok(index.indexOf('csv-cell.js?') < index.indexOf('app.js?'), 'shared CSV encoder must load before application exporters');
 assert.match(app, /Launch polish for the subcontractor directory/);
 assert.match(app, /function goToOverview\(\)\{showPage\(defaultPage\(\)\)/);
