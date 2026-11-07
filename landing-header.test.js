@@ -9,6 +9,7 @@ const root = __dirname;
 const V = '20261027-public3';
 const heroVersion = '20261105-hero-trial';
 const landingAnalyticsVersion = '20261105-google-analytics';
+const rootDomainVersion = '20261106-root-domain';
 const signupVersion = '20261104-card-trial';
 const pages = [
   'landing.html',
@@ -29,7 +30,7 @@ for (const file of pages) {
     const sheet = /rel="stylesheet"/.test(tag);
     const script = /^<script\b/.test(tag) && /\bsrc=/.test(tag);
     if (!sheet && !script) continue;
-    assert.match(tag, new RegExp(`\\?v=${file === 'signup.html' ? (tag.includes('signup.js') ? '20261105-trial-copy' : signupVersion) : file === 'landing.html' && tag.includes('analytics.js') ? landingAnalyticsVersion : file === 'landing.html' && tag.includes('landing.css') ? heroVersion : tag.includes('public-header.js') ? '20261105-trial-copy' : V}["']`), `${file} pins ${tag}`);
+    assert.match(tag, new RegExp(`\\?v=${file === 'signup.html' ? (tag.includes('signup.js') ? '20261105-trial-copy' : signupVersion) : tag.includes('landing-demo.js') || tag.includes('landing-content.js') || tag.includes('blog.js') ? rootDomainVersion : file === 'landing.html' && tag.includes('analytics.js') ? landingAnalyticsVersion : file === 'landing.html' && tag.includes('landing.css') ? heroVersion : tag.includes('public-header.js') ? '20261105-trial-copy' : V}["']`), `${file} pins ${tag}`);
   }
   if (headerPages.includes(file)) {
     assert.match(html, new RegExp(`href="(?:\\.\\./)?landing\\.css\\?v=${file === 'landing.html' ? heroVersion : V}"`), `${file} pins the header stylesheet`);
