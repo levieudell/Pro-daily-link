@@ -16,7 +16,7 @@ else {
   let sequence=0,active=null,identity='';
   function context(){return JSON.stringify([signedInCompanyId(),company?.id,currentUser?.id,currentUser?.role,currentUser?.memberId,currentUser?.projectIds,currentUser?.permissions,currentRole])}
   function permitted(){return Boolean(currentUser?.id&&['owner','admin','project_manager','foreman','field'].includes(currentUser.role))}
-  function clear(){sequence++;$('#project-detail-content')?.classList.remove('project-notes-active');if(active){active.controller?.abort();active.pane?.remove();active.tab?.remove();active.items=[];active.editor=null}active=null}
+  function clear(){sequence++;$('#project-detail-modal')?.removeAttribute('aria-busy');$('#project-detail-content')?.classList.remove('project-notes-active');if(active){active.controller?.abort();active.pane?.remove();active.tab?.remove();active.items=[];active.editor=null}active=null}
   function leaveProject(){clear();const dialog=$('#project-detail-modal');if(dialog?.open)dialog.close()}
   function current(state){return Boolean(active===state&&state.sequence===sequence&&state.identity===context()&&permitted()&&$('#project-detail-modal')?.open&&state.pane?.isConnected)}
   function message(state,text,error=false){if(!current(state))return;const node=state.pane.querySelector('[data-notes-message]');node.textContent=text;node.setAttribute('role',error?'alert':'status');node.hidden=!text}
@@ -78,6 +78,15 @@ else {
     for(let node=opener;node;node=node.parentElement)scrolls.push([node,node.scrollLeft,node.scrollTop]);
     projectReturnView={opener,key,value:key?opener.dataset[key]:null,scrolls,x:window.scrollX,y:window.scrollY,hash:location.hash,page:$('.page.active')};
   }
+  function showProjectLoading(id){
+    const dialog=$('#project-detail-modal'),content=$('#project-detail-content'),project=projects.find(item=>Number(item.id)===Number(id));
+    if(!dialog||!content||!project)return;
+    dialog.dataset.projectId=String(project.id);
+    $('#detail-project-name').textContent=project.name;
+    dialog.setAttribute('aria-busy','true');
+    content.innerHTML='<section class="project-detail-loading" role="status" aria-live="polite"><strong>Opening project details</strong><span>Loading the latest job records…</span><div class="project-detail-loading-bar" aria-hidden="true"></div></section>';
+    if(!dialog.open)dialog.showModal();
+  }
   document.addEventListener('click',event=>{
     const target=event.target.closest('[data-open-project],[data-project-card],[data-office-project],[data-open-health]');
     if(target&&!event.target.closest('dialog')&&(!target.hasAttribute('data-project-card')||!event.target.closest('button,summary,details,a,input,select,textarea')))target.focus({preventScroll:true});
@@ -86,8 +95,9 @@ else {
   openProject=async function(id){
     rememberProjectReturn();
     clear();identity=context();const state={sequence,identity,projectId:Number(id),items:[],editor:null,load:0,loaded:false,busy:false,controller:new AbortController()};active=state;
-    const view={current:()=>active===state&&state.sequence===sequence&&state.identity===context()};
-    const result=await previousOpenProject(id,view);if(!view.current()||!$('#project-detail-modal')?.open)return result;mount(state);return result;
+    const view={current:()=>active===state&&state.sequence===sequence&&state.identity===context(),signal:state.controller.signal};
+    showProjectLoading(id);
+    const result=await previousOpenProject(id,view);if(!view.current()||!$('#project-detail-modal')?.open)return result;$('#project-detail-modal').removeAttribute('aria-busy');mount(state);return result;
   };
   const previousRenderEverything=renderEverything;
   renderEverything=function(){if(identity!==context()){leaveProject();identity=context()}return previousRenderEverything()};

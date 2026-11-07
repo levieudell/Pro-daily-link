@@ -8,6 +8,8 @@ const path = require('node:path');
 const root = __dirname;
 const V = '20261027-public3';
 const heroVersion = '20261105-hero-trial';
+const landingAnalyticsVersion = '20261105-google-analytics';
+const rootDomainVersion = '20261106-root-domain';
 const signupVersion = '20261104-card-trial';
 const pages = [
   'landing.html',
@@ -28,11 +30,11 @@ for (const file of pages) {
     const sheet = /rel="stylesheet"/.test(tag);
     const script = /^<script\b/.test(tag) && /\bsrc=/.test(tag);
     if (!sheet && !script) continue;
-    assert.match(tag, new RegExp(`\\?v=${file === 'signup.html' ? (tag.includes('signup.js') ? '20261104-founder-upfront' : signupVersion) : file === 'landing.html' && tag.includes('landing.css') ? heroVersion : tag.includes('public-header.js') ? '20261103-paid-signup' : V}["']`), `${file} pins ${tag}`);
+    assert.match(tag, new RegExp(`\\?v=${file === 'signup.html' ? (tag.includes('signup.js') ? '20261105-trial-copy' : signupVersion) : tag.includes('landing-demo.js') || tag.includes('landing-content.js') || tag.includes('blog.js') ? rootDomainVersion : file === 'landing.html' && tag.includes('analytics.js') ? landingAnalyticsVersion : file === 'landing.html' && tag.includes('landing.css') ? heroVersion : tag.includes('public-header.js') ? '20261105-trial-copy' : V}["']`), `${file} pins ${tag}`);
   }
   if (headerPages.includes(file)) {
     assert.match(html, new RegExp(`href="(?:\\.\\./)?landing\\.css\\?v=${file === 'landing.html' ? heroVersion : V}"`), `${file} pins the header stylesheet`);
-    assert.match(html, new RegExp(`src="/public-header\\.js\\?v=20261103-paid-signup" defer`), `${file} loads the header fitter from head`);
+    assert.match(html, new RegExp(`src="/public-header\\.js\\?v=20261105-trial-copy" defer`), `${file} loads the header fitter from head`);
   }
 }
 assert.match(fs.readFileSync(path.join(root, 'landing.html'), 'utf8'), new RegExp(`href="landing-demo\\.css\\?v=${V}"`));
@@ -168,6 +170,7 @@ const inspect = `(() => {
           assert.match(hero.font,/Inter/); assert.equal(hero.weight,'400'); assert.equal(hero.size,'12px');
           assert.ok(hero.noteGap >= 0 && hero.noteGap <= 10, 'note directly follows CTA');
           if(width === 390){assert.ok(hero.gap >= 16 && hero.gap <= 32, 'no empty mobile header gap');assert.equal(hero.overflow,false);}
+          assert.ok(result.items.some(item=>['Start your 7-day trial','Start free trial'].includes(item.text)), 'trial CTA in header');
           assert.ok(result.founder, 'founder block is on the landing page');
           assert.ok(Math.abs(result.founder.copy - result.founder.cap) <= 1, `${width} founder-copy ${result.founder.copy}px, expected ${result.founder.cap}`);
           assert.ok(result.founder.copy <= 760, `${width} founder-copy exceeds 760`);

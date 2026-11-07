@@ -252,8 +252,8 @@
       case 'invalid_period': return 'Choose a valid reporting period.';
       case 'revision_conflict': return 'This opportunity changed. Refresh before saving your changes.';
       case 'duplicate_opportunity': return 'An active opportunity already matches that email, phone, or company contact.';
-      case 'busy': return 'Growth data is already updating. Try again shortly.';
-      default: return 'Growth data is temporarily unavailable. Refresh to try again.';
+      case 'busy': return 'CRM data is already updating. Try again shortly.';
+      default: return 'CRM data is temporarily unavailable. Refresh to try again.';
     }
   }
 
@@ -467,7 +467,7 @@
     const content = node(document, 'div', undefined, 'pdl-growth');
     const wins = metricTotal(metrics.leaderboard, 'wins');
     const kpis = node(document, 'section', undefined, 'pdl-growth__grid');
-    kpis.setAttribute('aria-label', 'Growth key performance indicators');
+    kpis.setAttribute('aria-label', 'CRM key performance indicators');
     kpis.append(
       kpi(document, 'New opportunities', safeCount(metrics.cohortSize), 'Created in this period'),
       kpi(document, 'Open pipeline', safeCount(metrics.pipeline?.count), 'Current active opportunities'),
@@ -535,7 +535,7 @@
     const createFields = ['companyName', 'contactName', 'email', 'phone', 'ownerUserId', 'source', 'medium', 'campaign', 'referrer', 'landingPage', 'plan', 'expectedMrrMinor', 'currency', 'nextAction', 'nextActionDueAt', 'note', 'linkedCompanyId'];
     const updateFields = ['companyName', 'contactName', 'email', 'phone', 'ownerUserId', 'source', 'medium', 'campaign', 'referrer', 'landingPage', 'plan', 'expectedMrrMinor', 'currency', 'linkedCompanyId'];
     async function write(key, path, method, payload, extraHeaders = {}) {
-      if (!canWrite()) throw Object.assign(new Error('You do not have permission to change growth records.'), { code: 'growth_write_denied' });
+      if (!canWrite()) throw Object.assign(new Error('You do not have permission to change CRM records.'), { code: 'growth_write_denied' });
       if (pending.has(key)) throw Object.assign(new Error('This growth update is already running.'), { code: 'busy' });
       pending.add(key);
       try {
@@ -581,7 +581,7 @@
     function showAccessDenied() {
       user = null; lastReport = null; mount(); syncWriteAccess(); root.hidden = false;
       controls.results.replaceChildren(); root.setAttribute('aria-busy', 'false');
-      status('You no longer have access to Growth. Choose another back-office section or ask a platform owner to update your role.', true);
+      status('You no longer have access to CRM. Choose another back-office section or ask a platform owner to update your role.', true);
     }
 
     async function request(path, options = {}) {
@@ -592,7 +592,7 @@
         revoked = true; hide(); requireSignIn();
         throw Object.assign(new Error('Your platform session expired.'), { status: 401, code: 'session_expired' });
       }
-      if (response.status === 403) throw Object.assign(new Error('You no longer have permission to change growth records.'), { status: 403, code: 'growth_write_denied' });
+      if (response.status === 403) throw Object.assign(new Error('You no longer have permission to change CRM records.'), { status: 403, code: 'growth_write_denied' });
       if (!response.ok) throw Object.assign(new Error(apiErrorMessage(result?.code)), { status: response.status, code: result?.code });
       return result;
     }
@@ -635,8 +635,8 @@
       const hero = node(document, 'section', undefined, 'pdl-growth__hero');
       const heading = node(document, 'div', undefined, 'pdl-growth__heading');
       const copy = node(document, 'div');
-      const title = node(document, 'h2', 'Growth command center'); title.id = 'platform-growth-title';
-      copy.append(title, node(document, 'p', 'Prioritize follow-ups and measure demos, wins, response time, and recurring revenue without vanity scores.'));
+      const title = node(document, 'h2', 'CRM pipeline'); title.id = 'platform-growth-title';
+      copy.append(title, node(document, 'p', 'Move leads from first contact to a clear next action, then measure demos, wins, and recurring revenue.'));
       const filters = node(document, 'form', undefined, 'pdl-growth__filters'); filters.noValidate = true;
       const makeDate = (labelText, id, value) => {
         const label = node(document, 'label', labelText), input = node(document, 'input');
@@ -690,7 +690,7 @@
         if (!current()) return;
         if (!hasCapability(access, 'growth:read')) { showAccessDenied(); return; }
         accessVerified = true;
-        user = access; mount(); syncWriteAccess(); root.hidden = false; root.setAttribute('aria-busy', 'true'); status('Loading growth outcomes…');
+        user = access; mount(); syncWriteAccess(); root.hidden = false; root.setAttribute('aria-busy', 'true'); status('Loading CRM pipeline…');
         const response = await fetcher(`/api/platform/growth?start=${encodeURIComponent(start)}&end=${encodeURIComponent(end)}`, options);
         if (!current()) return;
         if (response.status === 401) { revoked = true; hide(); requireSignIn(); return; }
@@ -699,18 +699,18 @@
         try { report = await response.json(); } catch { /* Local unavailable state below. */ }
         if (!current()) return;
         if (!response.ok || report?.status === 'error') { lastReport = null; controls.results.replaceChildren(); status(apiErrorMessage(report?.code), true); return; }
-        if (report?.status === 'unavailable') { lastReport = null; controls.results.replaceChildren(); status('Growth reporting is not configured yet. No metrics are shown.'); return; }
+        if (report?.status === 'unavailable') { lastReport = null; controls.results.replaceChildren(); status('CRM reporting is not configured yet. No metrics are shown.'); return; }
         if (!validGrowthReport(report, start, end)) throw new Error('Invalid growth report');
         lastReport = report;
         const rendered = node(document, 'div');
         renderGrowthReport(document, rendered, report, { canWrite: hasCapability(user, 'growth:write') });
         controls.results.replaceChildren(...rendered.children);
-        status(`Growth refreshed as of ${dateTime(report.asOf)}.`);
+        status(`CRM refreshed as of ${dateTime(report.asOf)}.`);
       } catch (_error) {
         if (!current()) return;
         if (!accessVerified) {
           user = null; lastReport = null; mount(); syncWriteAccess(); root.hidden = false; controls.results.replaceChildren();
-          status('Growth access could not be verified. Check your connection and select Refresh to retry.', true);
+          status('CRM access could not be verified. Check your connection and select Refresh to retry.', true);
           return;
         }
         lastReport = null; controls.results.replaceChildren(); status(apiErrorMessage(), true);
