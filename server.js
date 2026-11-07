@@ -22,6 +22,7 @@ const safeCsvCell = require('./csv-cell');
 const csvCell = value => safeCsvCell(value, { quoteAll: false });
 const { isPublicFile } = require('./public-file-policy');
 const { contentSecurityPolicy } = require('./content-security-policy');
+const marketingRoutes = require('./marketing-routes');
 const { mergeTenantSnapshots } = require('./tenant-merge');
 const PDLProjectSchedule = require('./project-schedule');
 const { demoRequestTime } = require('./demo-request-time');
@@ -3992,6 +3993,30 @@ const server=http.createServer(async(req,res)=>{
     if(mcpHttp.matches(url))return mcpHttp.handle(req,res,url);
     const shortLink=req.method==='GET'&&/^\/[a-z0-9]$/.test(url.pathname);
     if(shortLink){res.writeHead(302,{Location:`/?utm_source=heycatch&utm_campaign=${url.pathname.slice(1)}`});return res.end()}
+    const domainAction=marketingRoutes.hostAction({headers:req.headers,method:req.method,url,env:process.env});
+    if(domainAction?.type==='redirect'){
+      res.writeHead(domainAction.status,{Location:domainAction.location,'Cache-Control':'no-store'});
+      return res.end();
+    }
+    if(domainAction?.type==='robots'){
+      res.writeHead(200,{'Content-Type':'text/plain; charset=utf-8','Cache-Control':'public, max-age=300'});
+      return res.end(marketingRoutes.robotsText(domainAction.audience,domainAction.settings.marketingOrigin));
+    }
+    if(domainAction?.type==='sitemap'){
+      res.writeHead(200,{'Content-Type':'application/xml; charset=utf-8','Cache-Control':'public, max-age=300'});
+      return res.end(marketingRoutes.sitemapXml(domainAction.settings.marketingOrigin));
+    }
+    const marketingCorsOrigin=req.headers.origin===marketingRoutes.config(process.env).marketingOrigin?req.headers.origin:null;
+    const requestedCorsMethod=req.method==='OPTIONS'?String(req.headers['access-control-request-method']||'GET').toUpperCase():req.method;
+    if(marketingCorsOrigin&&marketingRoutes.publicMarketingApi(requestedCorsMethod,url.pathname)){
+      res.setHeader('Access-Control-Allow-Origin',marketingCorsOrigin);
+      res.setHeader('Access-Control-Allow-Credentials','true');
+      res.setHeader('Access-Control-Allow-Headers','Content-Type, Accept');
+      res.setHeader('Access-Control-Allow-Methods','GET, POST, OPTIONS');
+      res.setHeader('Cross-Origin-Resource-Policy','cross-origin');
+      res.setHeader('Vary','Origin');
+      if(req.method==='OPTIONS'){res.writeHead(204);return res.end()}
+    }
     if(url.pathname.startsWith('/api/')){
       if(!rateLimit(req,res,url))return;
       if(req.method==='GET'&&url.pathname==='/api/health')return await api(req,res,url);
@@ -4043,11 +4068,21 @@ const server=http.createServer(async(req,res)=>{
         }
       },url.pathname)
     }
-    let requested=decodeURIComponent(url.pathname==='/'?'/landing.html':url.pathname==='/app'?'/index.html':url.pathname==='/favicon.ico'?'/assets/pro-daily-link-logo.png':/^\/guest\/[a-f0-9]{48}$/.test(url.pathname)?'/guest.html':url.pathname);
+    const appRequestHost=marketingRoutes.requestHost(req.headers)===marketingRoutes.config(process.env).appHost;
+    let requested;
+    if(domainAction?.type==='marketing')requested='/'+domainAction.route.file;
+    else if(domainAction?.type==='app-root')requested='/login.html';
+    else requested=decodeURIComponent(url.pathname==='/'?'/landing.html':url.pathname==='/app'?'/index.html':appRequestHost&&url.pathname==='/login'?'/login.html':appRequestHost&&url.pathname==='/signup'?'/signup.html':url.pathname==='/favicon.ico'?'/assets/pro-daily-link-logo.png':/^\/guest\/[a-f0-9]{48}$/.test(url.pathname)?'/guest.html':url.pathname);
     if(requested.startsWith('/uploads/')){res.writeHead(307,{Location:'/api/local-files/'+requested.slice(9).split('/').map(encodeURIComponent).join('/'),'Cache-Control':'no-store'});return res.end()}
     let file=path.resolve(ROOT,'.'+requested);
     if(!isPublicFile(ROOT,file)||!file.startsWith(ROOT+path.sep)||!fs.existsSync(file)||fs.statSync(file).isDirectory()||!fs.realpathSync(file).startsWith(ROOT+path.sep)){res.writeHead(404);return res.end('Not found')}
     const extension=path.extname(file),mustRevalidate=['.html','.js','.css'].includes(extension);
+    if(domainAction?.type==='marketing'){
+      const html=marketingRoutes.marketingHtml(fs.readFileSync(file,'utf8'),domainAction.route,domainAction.settings);
+      res.writeHead(200,{'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-cache, no-store, must-revalidate'});
+      return res.end(html);
+    }
+    if(appRequestHost&&extension==='.html')res.setHeader('X-Robots-Tag','noindex, nofollow');
     res.writeHead(200,{'Content-Type':MIME[extension]||'application/octet-stream','Cache-Control':mustRevalidate?'no-cache, no-store, must-revalidate':'public, max-age=3600'});
     fs.createReadStream(file).pipe(res)
   }catch(error){

@@ -1,14 +1,16 @@
 const headerActions=document.querySelector('.header-actions');
-const trialButton=headerActions?.querySelector('a[href="/signup.html"]');
+const publicAppOrigin=document.querySelector('meta[name="pdl-app-origin"]')?.content||location.origin||'';
+const publicAppUrl=pathname=>`${publicAppOrigin.replace(/\/$/,'')}${pathname}`;
+const trialButton=headerActions?.querySelector('a[href$="/signup.html"]');
 async function reflectSignedInSession(){
   const companyId=localStorage.getItem('pdl-company-id')||'';
   try{
-    const response=await fetch('/api/auth/me',{credentials:'include',cache:'no-store',headers:companyId?{'x-pdl-company':companyId}:{}});
+    const response=await fetch(publicAppUrl('/api/auth/me'),{credentials:'include',cache:'no-store',headers:companyId?{'x-pdl-company':companyId}:{}});
     if(!response.ok)return;
     document.body.classList.add('has-active-session');
     document.querySelector('.header-login')?.remove();
-    document.querySelectorAll('a[href="/login.html"],a[href="/app"]').forEach(link=>{link.href='/app';link.textContent=link.closest('footer')?'Open app':'Open your workspace →'});
-    document.querySelectorAll('a[href^="/signup.html"]').forEach(link=>{link.href='/app';link.textContent=link.closest('#pricing')?'Manage plan in workspace':'Open your workspace'});
+    document.querySelectorAll('a[href$="/login.html"],a[href$="/app"]').forEach(link=>{link.href=publicAppUrl('/app');link.textContent=link.closest('footer')?'Open app':'Open your workspace →'});
+    document.querySelectorAll('a[href*="/signup.html"]').forEach(link=>{link.href=publicAppUrl('/app');link.textContent=link.closest('#pricing')?'Manage plan in workspace':'Open your workspace'});
   }catch{}
 }
 reflectSignedInSession();
@@ -119,7 +121,7 @@ demoForm?.addEventListener('submit',async event=>{
   payload.requestId=demoRequestId;
   button.disabled=true;button.textContent='Sending…';demoStatus.className='form-status';demoStatus.textContent='Sending your request…';
   try{
-    const response=await fetch('/api/demo-requests',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
+    const response=await fetch(publicAppUrl('/api/demo-requests'),{method:'POST',credentials:'include',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
     const result=await response.json();
     if(!response.ok)throw new Error(result.error||'We could not send your request.');
     demoForm.reset();demoRequestId='';demoRequestBody='';demoStatus.className='form-status success';demoStatus.textContent='Your demo request is in. We will contact you to confirm the time; no calendar slot is reserved yet.';

@@ -18,7 +18,8 @@ const CONNECT_ORIGINS = Object.freeze([
   'https://www.google-analytics.com',
   'https://*.google-analytics.com',
   'https://*.analytics.google.com',
-  'https://www.googletagmanager.com'
+  'https://www.googletagmanager.com',
+  'https://app.prodailylink.com'
 ]);
 
 function publicHtmlFiles(root) {
