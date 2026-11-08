@@ -36,7 +36,7 @@ const executablePath = process.env.PDL_BROWSER_PATH || ['C:/Program Files/Google
       showPage('projects');renderProjectCards();
     });
     const card=page.locator('[data-project-card]').first();
-    assert.equal(await card.locator('.project-card-actions .status').innerText(),'At risk');
+    assert.equal(await card.locator('.project-health-status').innerText(),'At risk');
     assert.match(await card.locator('.project-health-reason').innerText(),/25 LF over estimate/);
     await page.evaluate(()=>{
       const project=projects[0];project.estimateItems=[{id:991,name:'Wall',unit:'LF',plannedQuantity:100,budgetHours:100}];
@@ -46,7 +46,7 @@ const executablePath = process.env.PDL_BROWSER_PATH || ['C:/Program Files/Google
     });
     assert.match(await card.locator('.project-health-reason').innerText(),/85%.*approved.*4 scheduled workdays/);
     await page.evaluate(()=>{productionData.projects[0].items[0].actualQuantity=85;window.warningShifts=assignments;assignments=assignments.slice(0,1);showPage('dashboard');showPage('projects');});
-    assert.equal(await card.locator('.project-card-actions .status').innerText(),'On track','updated schedule is checked on return');
+    assert.equal(await card.locator('.project-health-status').innerText(),'On track','updated schedule is checked on return');
     await page.evaluate(()=>{assignments=window.warningShifts;delete window.warningShifts;showPage('dashboard');showPage('projects');});
     assert.match(await card.locator('.project-health-reason').innerText(),/4 scheduled workdays/);
 
