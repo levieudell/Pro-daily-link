@@ -113,7 +113,7 @@ async function checkOfficeBrandMatrix(page){
   assert.equal(await page.$eval('#office-photo-count',el=>el.textContent),'1 photo selected');
   assert.equal(await page.$eval('#report-photos',el=>el.files.length),1);
   await page.click('#close-report');await page.waitForFunction(()=>Date.now()>=suppressReportOpenUntil);
-  await page.locator('[data-office-new-daily]').click();await page.waitForSelector('#report-modal[open]');
+  await page.waitForSelector('[data-office-new-daily]');await page.$eval('[data-office-new-daily]',button=>button.click());await page.waitForSelector('#report-modal[open]');
   assert.equal(await page.$eval('#office-photo-count',el=>el.hidden),true,'a fresh daily clears the photo count');
   await page.click('#close-report');
   console.log(`Office brand ${theme}: ${sizes.map(size=>size.join('x')).join(', ')}; complete photo/control clearance, centered draft label, formatted date, bounded wide layouts, initial/expanded/review footers, AA text and same photo input passed.`);
@@ -194,7 +194,7 @@ async function checkOfficeLayout(page,width,height,shot){
     assert(await page.$eval('#report-modal',el=>el.scrollWidth<=el.clientWidth+1),`${width} review no horizontal overflow`);
     if(process.env.PDL_TEST_SCREENSHOTS)await page.screenshot({path:path.join(process.env.PDL_TEST_SCREENSHOTS,`office-review-${width}.png`)});
    }
-   await page.setViewport({width:390,height:844,isMobile:true,hasTouch:true});await page.$eval('#close-report',el=>el.scrollIntoView({block:'center'}));await page.click('#close-report');await page.waitForFunction(()=>Date.now()>=suppressReportOpenUntil);await page.locator('[data-office-new-daily]').click();await page.waitForSelector('#report-modal[open]');assert.equal(await page.$eval('#report-context-details',el=>el.open),false,'reopening keeps notes-first default');
+   await page.setViewport({width:390,height:844,isMobile:true,hasTouch:true});await page.$eval('#close-report',el=>el.scrollIntoView({block:'center'}));await page.click('#close-report');await page.waitForFunction(()=>Date.now()>=suppressReportOpenUntil);await page.waitForSelector('[data-office-new-daily]');await page.$eval('[data-office-new-daily]',button=>button.click());await page.waitForSelector('#report-modal[open]');assert.equal(await page.$eval('#report-context-details',el=>el.open),false,'reopening keeps notes-first default');
    if(process.env.PDL_TEST_SCREENSHOTS){fs.mkdirSync(process.env.PDL_TEST_SCREENSHOTS,{recursive:true});for(const name of fs.readdirSync(root).filter(name=>name.endsWith('.png')))fs.copyFileSync(path.join(root,name),path.join(process.env.PDL_TEST_SCREENSHOTS,name));}
    await context.close();
   }
