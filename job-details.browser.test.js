@@ -59,7 +59,7 @@ const executablePath = process.env.PDL_BROWSER_PATH || ['C:/Program Files/Google
         assert.ok((await page.locator('#job-card-details').innerText()).includes(await page.evaluate(()=>projectHealthDetails(projects[0]).reason)));
         await page.locator('#job-card-details [data-overview-tab="estimate"]').click();
         assert.equal(await page.locator('[data-project-detail-pane="estimate"]').isVisible(),true);
-        assert.equal(await dialog.locator('[data-pdl-default-rate]').isVisible(),true);
+        assert.equal(await dialog.locator('[data-pdl-default-rate]').isVisible(),false,'future rates are edited in project settings, not project details');
         const expectedSummary=await page.evaluate(()=>api(`/api/projects/${projects[0].id}/tm-summary`));
         const totals=await dialog.locator('.tm-summary-grid strong').allTextContents();
         assert.deepEqual(totals,[String(expectedSummary.approvedDailies),expectedSummary.laborHours.toLocaleString('en-US'),expectedSummary.laborAmount==null?'Incomplete':'$'+expectedSummary.laborAmount.toLocaleString('en-US'),`${expectedSummary.materialEntries} / ${expectedSummary.equipmentEntries}`]);
