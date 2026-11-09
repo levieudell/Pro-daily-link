@@ -36,6 +36,9 @@ const executablePath = process.env.PDL_BROWSER_PATH || ['C:/Program Files/Google
       showPage('projects');renderProjectCards();
     });
     const card=page.locator('[data-project-card]').first();
+    assert.equal(await card.locator('.project-lifecycle-status').count(),1,'one lifecycle status is rendered');
+    assert.equal(await card.locator('.project-health-status').count(),1,'one health status is rendered');
+    assert.equal(await card.locator('.project-lifecycle-status').innerText(),'Active');
     assert.equal(await card.locator('.project-health-status').innerText(),'At risk');
     assert.match(await card.locator('.project-health-reason').innerText(),/25 LF over estimate/);
     await page.evaluate(()=>{
