@@ -100,7 +100,7 @@ assert.match(styles, /\[data-theme="dark"\] \.schedule-view-switcher button\.act
 assert.match(styles, /\[data-theme="dark"\] table th/);
 assert.match(index, /styles\.css\?v=20261108-project-status-settings/);
 assert.match(index, /app\.js\?v=\d{8}-[a-z0-9-]+/i);
-assert.match(index, /app\.js\?v=20261108-project-status-settings/);
+assert.match(index, /app\.js\?v=20261113-debrief-access/);
 assert.ok(index.indexOf('csv-cell.js?') < index.indexOf('app.js?'), 'shared CSV encoder must load before application exporters');
 assert.match(app, /Launch polish for the subcontractor directory/);
 assert.match(app, /function goToOverview\(\)\{showPage\(defaultPage\(\)\)/);
