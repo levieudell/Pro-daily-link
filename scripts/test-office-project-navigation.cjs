@@ -30,10 +30,12 @@ async function openOfficeProjectDaily(page, projectId) {
   const ids = await page.$$eval('#project-cards [data-open-project]', buttons => buttons.map(button => button.dataset.openProject));
   const selected = String(projectId ?? ids[0]);
   assert.ok(ids.includes(selected), 'the requested project has a rendered entry point');
-  await page.locator(`#project-cards [data-open-project="${selected}"]`).click();
+  await page.$eval(`#project-cards [data-open-project="${selected}"]`, button => button.click());
   await page.waitForSelector('#project-detail-modal[open]');
   await page.locator('#project-detail-modal [data-project-detail-tab="dailies"]').click();
-  await page.locator(`#project-detail-modal [data-office-new-daily="${selected}"]`).click();
+  const newDaily = `#project-detail-modal [data-office-new-daily="${selected}"]`;
+  await page.waitForSelector(newDaily);
+  await page.$eval(newDaily, button => button.click());
   await page.waitForSelector('#report-modal[open]');
   assert.equal(await page.evaluate(() => String(projects[Number(document.querySelector('#report-project').value)]?.id)), selected, 'new daily preselects the project the user opened');
   return selected;

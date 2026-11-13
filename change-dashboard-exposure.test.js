@@ -82,7 +82,7 @@ async function call(method, route, body, auth = ownerToken) {
     const styles = fs.readFileSync('styles.css', 'utf8');
     assert.ok(styles.includes('.project-co-badge'), 'badges are styled');
     assert.match(index, /app\.js\?v=\d{8}-[a-z0-9-]+/i);
-    assert.match(index, /styles\.css\?v=20261014-review3/);
+    assert.match(index, /styles\.css\?v=20261108-project-status-settings/);
 
     console.log('Change dashboard exposure passed: per-project summaries, pricing-gated amounts, raw-row removal, revised contract, and client contracts.');
   } finally {
