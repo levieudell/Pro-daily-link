@@ -95,7 +95,7 @@ fs.mkdirSync(path.join(__dirname, 'output'), { recursive: true });
       const access=page.locator('#user-modal');
       await access.evaluate(async el=>{await Promise.all(el.getAnimations({subtree:true}).map(a=>a.finished.catch(()=>{})));});
       for(const selector of ['#user-projects','#user-crews','.permission-grid']){
-        const choices=await access.locator(selector+' input[type=checkbox]').evaluateAll(inputs=>inputs.map(input=>{const box=input.getBoundingClientRect(),row=input.closest('label').getBoundingClientRect();return {width:box.width,height:box.height,rowHeight:row.height,offset:box.left-row.left};}));
+        const choices=await access.locator(selector+' input[type=checkbox]').evaluateAll(inputs=>inputs.filter(input=>input.offsetParent).map(input=>{const box=input.getBoundingClientRect(),row=input.closest('label').getBoundingClientRect();return {width:box.width,height:box.height,rowHeight:row.height,offset:box.left-row.left};}));
         assert(choices.length>0);
         for(const choice of choices){assert.equal(choice.width,20);assert.equal(choice.height,20);assert(choice.rowHeight>=48);assert(choice.offset>=0&&choice.offset<=16);}
       }
@@ -104,6 +104,14 @@ fs.mkdirSync(path.join(__dirname, 'output'), { recursive: true });
       await page.screenshot({path:`docs/team-members/access-${theme}-${width}.png`,animations:'disabled'});
       await access.evaluate(el=>el.close());
     }
+    await page.setViewportSize({width:390,height:667});
+    await page.evaluate(id=>openUserModal(users.find(row=>row.id===id)),user.id);
+    for(const [role,editVisible,viewVisible] of [['project_manager',true,false],['foreman',false,true],['field',false,false],['admin',false,false]]){
+      await page.locator('#user-role').selectOption(role);
+      assert.equal(await page.locator('#user-debrief-edit-wrap').isVisible(),editVisible,`${role} edit checkbox visibility`);
+      assert.equal(await page.locator('#user-debrief-view-wrap').isVisible(),viewVisible,`${role} view checkbox visibility`);
+    }
+    await page.locator('#user-modal').evaluate(el=>el.close());
     await card.click();await dialog.locator('[data-edit-profile]').click();await dialog.locator('[name=phone]').fill('555-0100');await dialog.locator('[type=submit]').click();
     await page.waitForFunction(id=>team.find(row=>row.id===id)?.phone==='555-0100',member.id);
     let state=(await request('GET','/api/state')).data;
