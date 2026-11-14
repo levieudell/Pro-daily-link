@@ -357,7 +357,7 @@ body.field-mode #report-modal.report-field-compact :is(small,dt,.input-help,.fie
 body.field-mode #report-modal.report-field-compact :is(.field-flag button,#field-clock-out,#field-add-line) { background:var(--pdl-black); color:var(--pdl-white); border-color:var(--pdl-gray); }
 body.field-mode #report-modal.report-field-compact .field-flag button:is([data-flag-choice="extra"],[data-flag-choice="bill"]) { background:var(--pdl-orange); color:var(--pdl-black); border-color:var(--pdl-orange); }
 body.field-mode #report-modal.report-field-compact .field-flag button.is-selected { outline-color:var(--pdl-orange); }
-body.field-mode #report-modal.report-field-compact :is(input,select,textarea) { color:var(--text-primary); background:var(--surface-panel) !important; border-color:var(--border-strong); }
+body.field-mode #report-modal.report-field-compact :is(input:not([type="checkbox"]),select,textarea) { color:var(--text-primary); background:var(--surface-panel) !important; border-color:var(--border-strong); }
 body.field-mode #report-modal.report-field-compact .production-hours { border-color:var(--border-strong) !important; }
 body.field-mode #report-modal.report-field-compact .ai-changed { border-color:var(--pdl-orange) !important; }
 body.field-mode #report-modal.report-field-compact .ai-changed-label { color:var(--text-primary); }
