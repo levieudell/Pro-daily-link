@@ -5,7 +5,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const test = require('node:test');
-const { canViewDebrief, canEditDebrief } = require('./debrief-access');
+const { canViewDebrief, canEditDebrief, grantFor } = require('./debrief-access');
 
 test('debrief permissions follow durable roles and narrow grants', () => {
   const cases = [
@@ -23,6 +23,9 @@ test('debrief permissions follow durable roles and narrow grants', () => {
   const foremanSession = { role: 'field', accessRole: 'foreman', permissionGrants: ['debrief_view', 'debrief_edit'] };
   assert.equal(canViewDebrief(foremanSession), true);
   assert.equal(canEditDebrief(foremanSession), false);
+  assert.equal(grantFor({ accessRole: 'project_manager' }), 'edit');
+  assert.equal(grantFor(foremanSession), 'view');
+  assert.equal(grantFor({ role: 'field' }), '');
 });
 
 test('owner-only debrief grant endpoint enforces role rules without changing payroll', async () => {
@@ -49,6 +52,10 @@ test('owner-only debrief grant endpoint enforces role rules without changing pay
     const response = await nativeFetch(base + route, { method: 'PATCH', headers: { 'Content-Type': 'application/json', 'X-PDL-Company': companyId, Authorization: `Bearer ${tokens[userId]}` }, body: JSON.stringify(data) });
     return { status: response.status, data: await response.json() };
   }
+  async function request(method, route, data, userId = 1) {
+    const response = await nativeFetch(base + route, { method, headers: { 'Content-Type': 'application/json', 'X-PDL-Company': companyId, Authorization: `Bearer ${tokens[userId]}` }, body: data === undefined ? undefined : JSON.stringify(data) });
+    return { status: response.status, data: await response.json() };
+  }
   try {
     await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
     base = `http://127.0.0.1:${server.address().port}`;
@@ -67,6 +74,18 @@ test('owner-only debrief grant endpoint enforces role rules without changing pay
     assert.equal(canViewDebrief(foremanView.data), true);
     assert.equal(canEditDebrief(foremanView.data), false);
     assert.equal((await patch('/api/users/4/payroll-access', { payroll: true })).status, 403, 'payroll still hard-denies foremen');
+    const created = await request('POST', '/api/users', { name: 'Created Manager', email: 'created-manager@example.test', role: 'project_manager', projectIds: [], assignedCrews: [], permissions: {}, debriefAccess: { edit: true } });
+    assert.equal(created.status, 201, JSON.stringify(created.data));
+    const listed = await request('GET', '/api/users');
+    assert.equal(listed.status, 200);
+    assert.deepEqual(listed.data.find(user => user.id === created.data.id).permissionGrants, ['debrief_edit']);
+    const html = fs.readFileSync(path.join(__dirname, 'index.html'), 'utf8');
+    const localScripts = [...html.matchAll(/<script[^>]+src="([^"]+)"/g)].map(match => match[1]).filter(src => !/^https?:\/\//.test(src));
+    assert(localScripts.length > 0);
+    for (const src of localScripts) {
+      const response = await nativeFetch(new URL(src, base + '/'));
+      assert.equal(response.status, 200, `${src} resolves`);
+    }
   } finally {
     server.closeAllConnections();
     await new Promise(resolve => server.close(resolve));

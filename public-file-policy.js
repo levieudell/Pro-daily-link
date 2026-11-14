@@ -8,7 +8,7 @@ const PUBLIC_FILES=new Set([
   'crew-workspace.js','crew-details-ui.js','crew-details.css','team-members-ui.js','team-members.css','safety-dashboard-ui.js','safety-dashboard-ui.css','platform-safety-ui.js', 'safety-pm-ui.js','safety-pm-ui.css','safety-workspace-ui.js','safety-workspace-ui.css',
   'company-timezone.js','report-work-details.js',
   'schedule-approved-labor.js',
-  'project-assistant-access.js',
+  'project-assistant-access.js','debrief-access.js',
   'personal-clock-ui.js','project-assistant-ui.js','project-assistant-ui.css','project-assistant-voice.js','project-assistant-conversation.js','project-assistant-chat.js','project-assistant-names.js',
   'index.html','landing.html','about.html','blog.html','login.html','signup.html','forgot-password.html','reset-password.html','verify-email.html','guest.html','platform.html','platform-login.html','platform-forgot-password.html','platform-reset-password.html','support.html','privacy.html','terms.html',
   'robots.txt','sitemap.xml','llms.txt','MCP.md','vs/raken.html','vs/procore.html','vs/paper-daily-logs.html','change-order.html','change-order.js',
