@@ -96,7 +96,7 @@ for (const source of [install, route, platformDemo, platform]) {
 }
 // Cache pins carry the new release marker.
 assert.match(index, /app\.js\?v=\d{8}-[a-z0-9-]+/i);
-assert.match(index, /styles\.css\?v=20261114-daily-day-flags/);
+assert.match(index, /styles\.css\?v=20261114-daily-day-flags-fix/);
 assert.match(index, /company-timezone\.js\?v=20261014-review3/);
 
 // R2.1 Dashboard metric consistency: people and sites come from the same live
