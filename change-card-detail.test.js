@@ -121,7 +121,7 @@ async function call(method, route, body, auth = ownerToken) {
     assert.ok(app.includes('FROM THE FIELD'), 'field-flag context block renders');
     assert.ok(app.includes('data-change-line-row'), 'save gathers line rows');
     assert.match(index, /app\.js\?v=\d{8}-[a-z0-9-]+/i);
-    assert.match(index, /styles\.css\?v=20261108-project-status-settings/);
+    assert.match(index, /styles\.css\?v=20261113-debrief-access-fix/);
     const styles = fs.readFileSync('styles.css', 'utf8');
     assert.ok(styles.includes('.change-line-row'), 'line rows are styled');
     assert.ok(styles.includes('.change-photo-strip'), 'photo strip is styled');
